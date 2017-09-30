@@ -15,3 +15,4 @@ defsasi3:	DEFSASI3 files
 
 All source/text files are in Linux/Unix format - no CR or Ctrl-Z characters.
 Use "unix2dos" ("dos2unix" package) or equivalent to convert to CP/M format.
+Or TR.COM may be used in CP/M to translate line endings.
