@@ -10,3 +10,5 @@ help:	CP/M 3 HELP source files and build
 util:	CP/M 3 additional utilities
 
 net:	CP/NET for CP/M 3 files
+
+defsasi3:	DEFSASI3 files
