@@ -50,7 +50,7 @@ rtc	equ	0a0h	; standard port address
 
 	dseg	; this part can be banked
 
-regs:	db	0,0,0,0,0,0,0,0,0,0,0,0
+regs:	db	0,0,0,0,0,0,0,0,0,0,0,0,0
 
 	ds	32
 stack:	ds	0
@@ -78,8 +78,12 @@ settm:	push	h
 	call	stbin
 	mov	a,d
 	call	stbcd
+	push	h
+	lhld	@date
+	call	weekdy
+	pop	h
+	mov	m,a
 	xra	a
-	out	rtc+12	; TODO: compute real weekday?
 	out	rtc+13
 	out	rtc+14
 	mvi	a,0100b	; 24-hour format
@@ -87,7 +91,7 @@ settm:	push	h
 	call	hold
 	lxi	h,regs
 	mvi	c,rtc-1
-	mvi	b,12
+	mvi	b,13
 settm0:	inr	c
 	outi
 	jrnz	settm0
@@ -235,6 +239,33 @@ stbcd:	mov	b,a
 	ani	0fh
 	mov	m,a
 	inx	h
+	ret
+
+; HL=CP/M date value (days since epoch)
+; From DATE.PLM: week$day = (word$value + base$day - 1) mod 7;
+;                base$day  lit '0',
+weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
+	lxi	d,7000
+	ora	a
+wd0:	dsbc	d
+	jrnc	wd0
+	dad	d
+	lxi	d,700
+	ora	a
+wd1:	dsbc	d
+	jrnc	wd1
+	dad	d
+	lxi	d,70
+	ora	a
+wd2:	dsbc	d
+	jrnc	wd2
+	dad	d
+	lxi	d,7
+	ora	a
+wd3:	dsbc	d
+	jrnc	wd3
+	dad	d
+	mov	a,l
 	ret
 
 ; DE=CP/M date value (days since epoch)

@@ -94,6 +94,8 @@ tohex:
 	daa
 	ret
 
+wdays:	db	'Sun$Mon$Tue$Wed$Thu$Fri$Sat$'
+
 ; HL = CP/M Date-time field, w/o seconds
 ; Print date and time to console.
 prdate:
@@ -102,6 +104,20 @@ prdate:
 	mov	d,m
 	inx	h
 	push	h
+	push	d
+	xchg
+	call	weekdy
+	add	a
+	add	a	; *4
+	mov	c,a
+	mvi	b,0
+	lxi	h,wdays
+	dad	b
+	xchg
+	call	xitmsg
+	mvi	a,' '
+	call	prout
+	pop	d
 ; compute year
 	mvi	c,78	; base year, epoch, binary
 	mvi	b,078h	; year, BCD
@@ -274,6 +290,9 @@ nocpnet:
 	ora	a
 	jnz	error
 settime:
+	; BDOS function 104 forces seconds to zero...
+	; but we need to inform the BIOS that time changed...
+	; So we set SCB fields then call BIOS function 
 	lhld	scbadr
 	lxi	d,058h	; date/time
 	dad	d
@@ -283,11 +302,47 @@ settime:
 	di
 	ldir
 	ei
+	lxi	d,biospb
+	mvi	c,50
+	call	bdos
 	lxi	d,done
 	mvi	c,PRINT
 	call	BDOS
 	lxi	h,gottime+5
 	call	prdate
+	ret
+
+biospb:	db	26	; BIOS TIME function
+	db	0	; A
+	dw	00ffh	; BC - C=FF: SET TIME
+	dw	0	; DE
+	dw	0	; HL
+
+; HL=CP/M date value (days since epoch)
+; From DATE.PLM: week$day = (word$value + base$day - 1) mod 7;
+;                base$day  lit '0',
+weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
+	lxi	d,7000
+	ora	a
+wd0:	dsbc	d
+	jrnc	wd0
+	dad	d
+	lxi	d,700
+	ora	a
+wd1:	dsbc	d
+	jrnc	wd1
+	dad	d
+	lxi	d,70
+	ora	a
+wd2:	dsbc	d
+	jrnc	wd2
+	dad	d
+	lxi	d,7
+	ora	a
+wd3:	dsbc	d
+	jrnc	wd3
+	dad	d
+	mov	a,l
 	ret
 
 error:
