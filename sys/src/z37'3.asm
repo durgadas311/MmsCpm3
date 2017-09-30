@@ -1009,5 +1009,3 @@ htflag: db	0
 TRKS:	DB	255,255,255,255,0	
 
 	end
-ent head positions for each drive
-;----------------

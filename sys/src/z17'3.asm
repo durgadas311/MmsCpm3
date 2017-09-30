@@ -681,8 +681,3 @@ SAVEIX: DW	0
 SAVEIY: DW	0
 
 	END
-
-
-	0
-
-SSC:	DB	0

@@ -165,14 +165,3 @@ vrst0:	jmp	$-$
 ?STACK	EQU	$+128
 
 	END
-
-ACK OF HALF-TRACK DETECTION
-syssiz: dw	0
-
-vrst0:	jmp	$-$
-
-	rept	256-($-boot)
-	db	0
-	endm
-
-?STA

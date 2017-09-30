@@ -879,6 +879,3 @@ CSV:	ds	0
 ALV:	ds	0
 
 	end
-
-for each drive
-TRKS:	DB	255,255,255,

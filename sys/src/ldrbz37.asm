@@ -186,8 +186,3 @@ syssiz: dw	0
 ?STACK: EQU	$+128
 
 	END
-
-	EI
-	JMP	INTRTN		; JUMP BACK TO READ LOOP
-
-syssiz:

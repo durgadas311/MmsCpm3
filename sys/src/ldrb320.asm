@@ -187,6 +187,3 @@ syssiz	dw	0
 ?stack: equ	$+128
 
 	END
-
-SYSADR-1
-CMBFR:	DB	8,0,0,0,0,

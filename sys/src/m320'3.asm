@@ -746,4 +746,3 @@ BASE$PORT:
 STAT:	DB	0
 
 	END
-	RECAL,0,0,0,0,0 ; Restore 

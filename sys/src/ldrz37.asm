@@ -887,5 +887,3 @@ CSV	DS	0
 ALV	DS	0
 
 	end
-rent head positions for each drive
-TRKS:	DB	255

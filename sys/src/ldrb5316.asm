@@ -268,11 +268,3 @@ ctrlpt	db	0
 ?STACK: EQU	$+128
 
 	END
-R $-1
-
-errf:	db	0
-retry:	db	0
-syssiz: dw	0
-ctrlpt	db	0	
-
-	REPT	256-($-BOO

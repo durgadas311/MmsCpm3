@@ -25,9 +25,3 @@
 	db	255	;Drive P:
 
 	end
-
-:
-	db	255	;Drive K:
-	db	255	;Drive L:
-	db	255	;Drive M:
-	db	255	;Dri
