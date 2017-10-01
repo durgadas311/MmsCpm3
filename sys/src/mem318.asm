@@ -30,9 +30,10 @@ port	equ	0f2h	;interupt/memory control port
 @nbnk:	db	3
 @mmerr: db	cr,lf,bell,'No 77318$'
 
-; B=source bank, C=dest bank, HL=address, A=num recs
+; Uses XMOVE semantics
+; C=source bank, B=dest bank, HL=address, A=num recs
 ?mvccp: exaf	;save number of records
-	mov	a,b
+	mov	a,c
 	call	?bnksl	;select source bank
 	push	b
 	push	h
@@ -41,7 +42,7 @@ port	equ	0f2h	;interupt/memory control port
 	ldir
 	pop	h
 	pop	b
-	mov	a,c
+	mov	a,b
 	call	?bnksl	;select destination bank
 	push	b
 	xchg

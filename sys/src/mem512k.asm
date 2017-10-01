@@ -34,7 +34,8 @@ map	equ	080h	; mmu flag to enable mapping...
 @mmerr: db	cr,lf,bell,'No H89-512K$'
 @m512k:	db	mmu
 
-; B=source bank, C=dest bank, HL=address, A=num recs
+; Uses XMOVE semantics
+; C=source bank, B=dest bank, HL=address, A=num recs
 ?mvccp:
 	push	psw
 	push	h

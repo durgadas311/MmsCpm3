@@ -29,9 +29,10 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 @compg:	db	0c0h
 @mmerr: db	cr,lf,bell,'No X/2-H8$'
 
-; B=source bank, C=dest bank, HL=address, A=num recs
+; Uses XMOVE semantics...
+; C=source bank, B=dest bank, HL=address, A=num recs
 ?mvccp: exaf	;save number of records
-	mov	a,b
+	mov	a,c
 	call	?bnksl	;select source bank
 	push	b
 	push	h
@@ -40,7 +41,7 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 	ldir
 	pop	h
 	pop	b
-	mov	a,c
+	mov	a,b
 	call	?bnksl	;select destination bank
 	push	b
 	xchg

@@ -168,8 +168,8 @@ boot$1:
 	call	bdose
 	mov	a,h	;H=number of records actually read
 	sta	ccprecs
-	mvi	b,1	; save CCP in bank 0 for warm boots.
-	mvi	c,0	;NOTE: this restricts banked OS size to 39K.
+	mvi	c,1	; save CCP in bank 0 for warm boots.
+	mvi	b,0	;NOTE: this restricts banked OS size to 39K.
 	jmp	goccp	; (allowing 16K for "CCP" and reserving page 0)
 
 ; Don't know which bank is selected...
@@ -177,8 +177,8 @@ wboot:	lxi	sp,stack
 	call	reset$pg0	; initialize page zero
 				; leaves bank 1 selected...
 	lda	ccprecs 	; reload CCP
-	mvi	b,0
-	mvi	c,1
+	mvi	c,0
+	mvi	b,1
 goccp:	lxi	h,ccp
 	call	?mvccp
 	mvi	a,0	; allow I/O modules to partake in the warm$boot.
