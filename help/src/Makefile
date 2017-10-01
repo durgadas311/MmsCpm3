@@ -49,9 +49,9 @@ HELPS = commands.help \
 	user.help \
 	xref.help
 
-all: ../bin/help.hlp
+all: makehelp ../bin/help.hlp
 
-../bin/help.hlp: makehelp $(HELPS)
+../bin/help.hlp: $(HELPS)
 	cat $^ | unix2dos >help.raw
 	./makehelp help.raw >$@
 	@rm help.raw
