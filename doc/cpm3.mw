@@ -1,0 +1,306 @@
+\draft,lm0,rm80,pl66,tm3,bm3,ssa{,ssb}
+\head 4
+ * All Information PROPRIATARY to Magnolia Microsystems *     PAGE \%page\
+
+; August 15, 1983  14:56  mjm  "CPM3.   "
+
+\np
+\ctr\MMS CP/M 3.0 IMPLEMENTATION
+
+
+CP/M 3 Main BIOS:
+
++0		jmp	nnnn	;cold start entry
++3		jmp	nnnn	;warm start entry
++6		jmp	nnnn	; etc...standard CP/M 3 entries
+		.
+		.
+		.
++90		jmp	nnnn	;entry to search for a module
++93		jmp	nnnn	; reserved by DRI
++96		jmp	nnnn	; reserved by DRI
+
++99		ds	1	;status of previous disk access (R/W)
++100		ds	1	;Z89 interupt/memory control port image
+
++101		dw	lptbl	;address of logical/physical drive table
++103		dw	thread	;module thread start
++105		dw	?serdp	;entry address to search disk parameter tables
+
++107		ds	1	;absolute drive number (A-P as 0-15)
++108		ds	1	;physical drive number
++109		ds	1	;relative drive number (to module)
++110		ds	2	;current module address
++112		ds	2	;current drive's mode bytes
++114		ds	2	;current drive's DPH (in bank 0 memory)
+
+LPTBL		Standard MMS logical/physical drive table, 1 byte for each logical drive A: thru P:, first byte is A:.
+
+THREAD		Address of first I/O module. The address at "THREAD" points to the next module, and so on. See module definitions for data that follows THREAD address.
+
+?SERDP		Position independent entry for ?GETDP routine discribed below. On entry DE points to mode bytes and HL must be the actual memory address relating to ?SERDP. Example: if the BIOS is ORGed at 0000 but loaded into memory at 2000 (offset = (2000-0000) = 2000) then the address ?SERDP is added to 2000 and then that address is called. Sample code:
+
+	; Assume HL=?SERDP and DE=modes.
+	lxi	b,2000h
+	dad	b
+	call	icall
+	...
+
+icall:	pchl
+
+
+
+CP/M 3 I/O MODULE DEFINITION
+
+	dw	thread		;used to "thread" through the modules.
+	db	dev0,ndev	;physical device number base, number of dev.
+
+; If Disk I/O:	(devices 0-199)
+	jmp	init	;cold-start initialization of module.
+	jmp	login	;login drive (if drive requires it)
+	jmp	read	;read a physical sector
+	jmp	write	;write a physical sector
+	dw	string	;module title
+	dw	dphtbl	;table of dph's
+	dw	modtbl	;table of modes
+
+
+; If Char I/O:	(devices 200-249)
+	jmp	init	;device (re-)initialization
+	jmp	inst	;input status
+	jmp	input	;input a character
+	jmp	outst	;output status
+	jmp	output	;output a character
+	dw	string	;module title
+	dw	chrtbl	;table of device parameters
+	dw	xmodes	;extended modes for char I/O
+
+	...
+
+string: db	'Module Name',0,'Module Discription',0,'Version #','$'
+
+	...
+
+; Disk I/O modules:
+dphtbl: 	;one entry for each drive ("ndev" bytes)
+	dw	0,0,0,0,0,0,(dpb),(csv),(alv),(dirbcb),(dtabcb),(hash)
+	db	(hash bank)
+	...
+
+modtbl: db	00000000b,00000000b,00000000b,00000000b ;modes for drive dev0+0
+	db	11111111b,11111111b,11111111b,11111111b   ;masks
+	...
+
+
+; Character I/O modules:
+chrtbl: db	'name0 '	;device dev0+0
+	db	0,0	;mode enable, baud rate
+
+xmodes: db	00000000b,00000000b,00000000b,000h	;xmodes for dev0+0
+	db	00000000b,00000000b,00000000b,000h	;dev0+1
+	...
+
+
+; (end of module)
+	cseg
+thread	equ	$	;next module must be contiguous.
+
+	END
+
+
+Character I/O modes:
+three bytes for each device.
+
+--------- byte 0 -------------	  --------- byte 1 -------------
+ 7   6	 5   4	 3   2	 1   0	   7   6   5   4   3   2   1   0
+RLSD RI DSR CTS  0   0	USE DCE   RLSD RI DSR CTS  H3  H2  H1  H0
+   
+--------- byte 2 -------------
+ 7   6	 5   4	 3   2	 1   0
+INIT	STK EPS PEN STB  WDLEN
+   
+Byte 0: 		- 0 -		- 1 -
+RLSD	RLSD enable	don't care      must have
+RI	RI enable	don't care      must have
+DSR	DSR enable	don't care      must have
+CTS	CTS enable	don't care      must have
+USE	Usage bit	use xmode bytes don't use xmodes
+DCE	terminal type	DCE		DTE
+
+Byte 1: 		- 0 -		- 1 -
+RLSD	RLSD state	low		hi
+RI	RI state	low		hi
+DSR	DSR state	low		hi
+CTS	CTS state	low		hi
+H3	OUT2 state	low		hi   -+
+H2	OUT1 state	low		hi    | outputs
+H1	RTS state	low		hi    |
+H0	DTR state	low		hi   -+
+
+Byte 2: 		- 0 -		- 1 -
+INIT	Initialize	disable 	enable
+STK	Stick parity	normal		P = not(EPS)
+EPS	Even Parity Sel odd		even
+PEN	Parity Enable	disable 	enable
+STB	Stop Bits	1 bit		2 bits (1.5 if 5 bit word)
+WDLEN	Word Length  00=5, 01=6, 10=7, 11=8
+
+Byte 3:
+Base port address
+
+
+Disk Mode Bytes:
+eight bytes for each drive, 4 modes+4 masks
+
+Bytes 0,1: (one and only one bit set for floppies)
+
+ byte 0    byte 1	Format Origin:
+00000000  00000001	  MMS (77316)	-+
+00000000  00000010	  Z17		 |
+00000000  00000100	  M47		 |
+00000000  00001000	  Z37		 |
+00000000  00010000	  Z37 extended	 |
+00000000  00100000	  Z47		 |
+00000000  01000000	  Z47 extended	 |
+00000000  10000000	  Z67		 +- Floppy formats
+00000001  00000000	  Z100		 |
+00000010  00000000	  FMT1		 |
+00000100  00000000	  FMT2		 |
+00001000  00000000	  FMT3		 |
+00010000  00000000	  FMT4		 |
+00100000  00000000	  FMT5		 |
+01000000  00000000	  FMT6		-+
+1-------  --------	  Winchester partition
+
+bytes 0-3, Winchester partition mode:
+
+--------- byte 0 -------------	  --------- byte 1 -------------
+ 7   6	 5   4	 3   2	 1   0	   7   6   5   4   3   2   1   0
+"1" "0" FLP RMV  ---- PTN ----	   -- LUN --   ---- ADR (hi) ---
+
+
+--------- byte 2 -------------	  --------- byte 3 -------------
+ 7   6	 5   4	 3   2	 1   0	   7   6   5   4   3   2   1   0
+ --------- ADR (mid) ---------	   ---------- ADR (lo) ---------
+
+				- 0 -		- 1 -
+FLP	Floppy flag	      Hard disk      Floppy drive  ****  not used *****
+RMV	Removable flag	     Media fixed     Media removable
+LUN	Logical Unit Number (CORVUS daisy-chained drive number)
+PTN	Partition number (0-8)
+ADR	Sector address of partition
+NOTE: Bit 6 of Byte 0 may be used by module for an initialization flag.
+
+
+Bytes 2-3, Floppy formats:
+
+--- Physical drive ---	 --------- Media characteristics -------
+   characteristics
+--------- byte 2 -------------	  --------- byte 3 -------------
+ 7   6	 5   4	 3   2	 1   0	   7   6   5   4   3   2   1   0
+8IN DDS DDT DDD  STEPR	 PHYSZ	  CNF MDS MDT MDD  TRK0D   DSALG
+
+Byte 2: 			 - 0 -		 - 1 -
+8IN	Drive 8 inch		5.25"           8"
+DDS	Drive Double Sided	1 head		2 heads
+DDT	Drive Double Track	48 tpi		96 tpi
+DDD	Drive Double Density	FM only 	FM or MFM
+STEPR	Steprate (current)	00=3mS, 01=6mS, 10=10mS, 11=15mS (*2 for 5")
+
+Byte 3:
+PHYSZ	Physical sector size	00=128, 01=256, 10=512, 11=1024
+CNF	Configuration data	None		track 0 sector 1
+MDS	Media Double sided	1 side		2 sides
+MDT	Media Double Track	48 tpi		96 tpi
+MDD	Media Double Density	FM		MFM
+TRK0D	Track 0 Density (8" only)
+	MSB: Side 0		|same as   |	FM, 128 bytes/sector
+	LSB: Side 1		|tracks 1-n|	MFM, 256 bytes/sector
+DSALG	Double Sided Algorithm	00=wrap, 01=alt, 10=cont, 11=??
+
+
+Double Sided Algorithms:
+
+Logical/Physical track relationship:
+
+     (MMS)	      (Zenith)	       (EXO, Gnat)
+     ---- wrap -----  ---- alt ------  --- cont ------	--- ?? --------
+       T  S  sectors	T  S  sectors	T   S  sectors	  T  S	sectors
+     ---------------  ---------------  ---------------	---------------
+00:    0  0   1-n	0  0   1-n	0  0,1	1-2n
+01:    1  0   1-n	0  1   1-n	1  0,1	1-2n
+02:    2  0   1-n	1  0   1-n	2  0,1	1-2n
+03:    3  0   1-n	1  1   1-n	3  0,1	1-2n
+ .
+ .
+ .
+38:   38  0   1-n      19  0   1-n     38  0,1	1-2n
+39:   39  0   1-n      19  1   1-n     39  0,1	1-2n
+40:   39  1   1-n      20  0   1-n   +---------------+
+41:   38  1   1-n      20  1   1-n   |		     |
+ .				     | (not	     |
+ .				     |	 applicable) |
+ .				     |		     |
+76:    3  1   1-n      38  0   1-n   |		     |
+77:    2  1   1-n      38  1   1-n   |		     |
+78:    1  1   1-n      39  0   1-n   |		     |
+79:    0  1   1-n      39  1   1-n   |		     |
+-------------------------------------+---------------+-------------------------
+
+NOTE: "wrap" algorithm on Z17 drives skips tracks 39,38,37,36 on side 1 (79,78,77,76,75,74,73,72 on 96 tpi drives) thus mapping logical track 40 (80) to physical track 35 (71) on side 1.
+
+
+Routine Discription:
+
+INIT		Do re-initialization.  For serial ports, initialize port and baud rate for relative device number in register (B).
+
+LOGIN		Do any initialization required by a drive on first-access.  On entry: DE = Mode bytes, HL = DPB if mode=floppy.
+
+READ		Read a physical sector specified in @sector and @track into memory at @dma, bank @dbnk.  Return error code.
+
+WRITE		Write a physical sector @sector, @track from memory at @dma, bank @dbnk.  Return error code.
+
+INST		Input status check for device (B).  Return 0FFH if device has input ready.
+
+INPUT		Input a character from device (B).
+
+OUTST		Output status check for device (B).  Return 0FFH if device is ready for output.
+
+OUTPUT		Output a character to device (B).
+
+
+Tables in I/O modules:
+
+DPHTBL		Actual DPH's for use by system.  GENCPM can not "see" these so buffers can't be left for GENCPM to allocate.  For floppy drives, DPB and XLAT fields are filled in at login time by the main BIOS, prior to calling the module's LOGIN routine.
+
+MODTBL		One set of (8) mode bytes for each drive supported, must be validly initilized prior to cold-start.
+
+CHRTBL		Standard DRI image, used only for cold-start initialization of working table in main BIOS.
+
+STRING		Title string for module, three fields, separated by a 0, last field terminated by an ASCII "$".  First field is Controller name, Second is description, last is version.
+
+THREAD		Links all modules together.  Requires that the last module linked be a dummy module that terminates the thread with an address of 0000.
+
+
+Tables in Main BIOS:
+
+@LPTBL		Logical/Physical drive table.  May be initialized by a utility after system is built.
+
+@CTBL		Standard DRI table for character I/O devices, does not contain valid data untill after cold-start.
+
+CDTBL		Table containing the address of the module for each character device.  The first address is the module that supports device #0, etc thru the last address for device #11.  The character device numbers 0-11 correspond directly with physical devices 200-211.
+
+@DTBL		Table for DPH's for each logical drive.  Initially it contains one dummy entry to satisfy GENCPM.  Is filled in with valid DPH addresses as each drive is selected (logged-in) and is used on subsequent selects untill the drive is "logged out".  Note: the actual DPH's are contained in each respective module.
+
+
+An "external" routine, "?GETDP", may be called from a module in the "login" routine to select a DPB and sector translation table.  The routine is called with registers HL pointing to the mode bytes and returns DE pointing to DPB and BC pointing to the XLAT table (or BC=0 if no translation) and A=0.  If A is not 0 then no parameters exist for that mode (in the current table).
+
+There is also an entry point for utilities that is used to test a new mode configuration.  The routine is position independant so that it can be called in a new system image that is not in its target address space (by a SETUP or whatever).  The DPBs and XLAT tables are in banked memory so this entry is used only to verify the validity of a mode in an executing system.
+
+The Main BIOS contains a routine "?TIMOT" to allow modules to "program" a timeout.  The routine is called with the number of seconds to count, an I.D. of the caller, and the address of the routine to be CALLed when the count is exhausted.	There are only 2 "timeout slots" so if a third module calls while two are timing-out, the third will hang intil a slot is available (one of the others times-out).  The I.D. should be the base physical device number for the module, this being a unique value for each module.  Register conventions on entry are:
+	C	number of seconds
+	B	I.D.
+	DE	address of routine
+
+
+\* end
