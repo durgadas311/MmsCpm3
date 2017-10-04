@@ -8,7 +8,7 @@ VERS EQU '2 ' ; Sep  9, 2017  17:07  drm  "RD512K'3.ASM"
 
 	extrn	@trk,@sect,@dma,@dbnk,@cbnk
 	extrn	@dircb,@dtacb
-	extrn	@m512k
+	extrn	@m512k,@t512k
 	extrn	?bnksl
 
 ;---------------------------------------------------------
@@ -65,7 +65,7 @@ rd$map:
 rd$addr:
 	dw	0	; always in low 16K
 usr$map:
-	db	0	; map value, not bank number, from @dbnk + @dma
+	dw	0	; pointer to map value, not bank number, from @dbnk + @dma
 usr$addr:
 	dw	0	; always in low 16K, from @dma
 
@@ -77,11 +77,10 @@ rd$read:
 	lda	rd$map	; source mapping
 	outp	a
 	mov	c,b
-	lda	usr$map	; dest mapping
-	outp	a
-	inr	a	; in case of overlap
-	inr	c	;
-	outp	a	;
+	lhld	usr$map	; dest mapping
+	outi	; OK in all cases that matter...
+	inr	c
+	outi
 	lhld	usr$addr; DATA BUFFER ADDRESS (dest)
 	xchg
 	lhld	rd$addr	; source addr
@@ -91,12 +90,12 @@ rd$read:
 
 rd$write:
 	lbcd	r$port
-	lda	usr$map	; source mapping
-	outp	a
-	inr	a	; in case of overlap
-	inr	c	;
-	outp	a	;
-	mov	c,b
+	mov	a,b	; save from OUTI
+	lhld	usr$map	; dest mapping
+	outi	; OK in all cases that matter...
+	inr	c
+	outi
+	mov	c,a
 	lda	rd$map	; dest mapping
 	outp	a
 	lhld	rd$addr	; dest addr
@@ -171,17 +170,20 @@ setup$rw:
 	ani	0c0h
 	rlc
 	rlc
-	mov	b,a
+	mov	b,a	; 000000aa
 	mov	a,h
 	ani	03fh
 	mov	h,a
 	shld	usr$addr
 	lda	@dbnk
 	add	a
-	add	a
-	ora	b	; this makes assumptions...
-	ori	map
-	sta	usr$map
+	add	a	; 0000bb00
+	ora	b	; 0000bbaa
+	mov	c,a
+	mvi	b,0
+	lxi	h,@t512k
+	dad	b
+	shld	usr$map
 	lda	@sect	; 0-127
 	ora	a
 	rar	; * 128

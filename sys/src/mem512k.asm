@@ -22,7 +22,8 @@ map	equ	080h	; mmu flag to enable mapping...
 	extrn @bnkbf,@cbnk
 
 ;  Variables for use by other modules
-	public @nbnk,@compg,@mmerr,@m512k
+	public @nbnk,@compg,@mmerr
+	public @m512k,@t512k	; used by RD512K'3
 
 ;  Routines for use by other modules
 	public ?bnksl,?bnkck,?xmove,?mvccp,?move
@@ -90,11 +91,13 @@ bnksl2:
 	ret
 
 ; Once memory is verified, these all have 'map' bit set.
+@t512k:
 table:
 	db	 0, 1, 2,3	; Bank 0 map pattern
 	db	 4, 5, 6,3	; Bank 1 map pattern
 	db	 8, 9,10,3	; Bank 2 map pattern
 	db	12,13,14,3	; Bank 3 map pattern
+	db	0	; safety stop for RD512K'3
 tablez	equ	$-table
 
 xcache:	dw	0
