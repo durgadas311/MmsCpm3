@@ -1,4 +1,4 @@
-vers equ '1 ' ; August 10, 1983   9:51	mjm  "M316'3.ASM"
+vers equ '2 ' ; Oct 7, 2017  15:45 drm "M316'3.ASM"
 ;*********************************************************
 ;	Disk I/O module for MMS CP/M 3.1
 ;	Copyright (c) 1983 Magnolia Microsystems
@@ -9,7 +9,7 @@ vers equ '1 ' ; August 10, 1983   9:51	mjm  "M316'3.ASM"
 
 	extrn @dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
 	extrn @dtacb,@dircb,@scrbf,@rcnfg,@cmode
-	extrn ?bnksl,?getdp
+	extrn ?bnksl,?getdp,?halloc
 
 
 ; Ports and Constants
@@ -34,11 +34,11 @@ MODE2S	EQU	00000001H	; DOUBLE SIDED
 LABDPB	EQU	0DH		; START OF DPB IN SECTOR 0
 LABVER	EQU	00		; LABEL VERSION NUMBER
 zdpbl	equ	15
-z207dev equ	001$00000b	; label device type codes used to get format 
-z37dev	equ	011$00000b	 
+z207dev equ	001$00000b	; label device type codes used to get format
+z37dev	equ	011$00000b	
 z47dev	equ	100$00000b
 z67dev	equ	110$00000b
- 
+
 ;--------- Start of Code-producing Source --------------
 
 	cseg		;put only whats necessary in common memory...
@@ -74,7 +74,7 @@ modtbl:
  DB   00000000b,00000001b,01011110B,00011100B ; drive 36 MMS,DD,SS,ST,5"
    db 11111110b,11100110b,10010000b,00000000b
 
-zdpb	ds	17		; space for dpb for zenith formats 
+zdpb	ds	17		; space for dpb for zenith formats
 	ds	17		; that use a label
 	ds	17
 	ds	17
@@ -166,10 +166,10 @@ thread	equ	$	;must be last statement in "cseg"
 
 	dseg		;put most everything in banked memory...
 
-dphtbl: dw 0,0,0,0,0,0,0,csv29,alv29,@dircb,@dtacb,0		;hash buffers
-	db 0	;(hash buffer bank number)			;are allocated
-	dw 0,0,0,0,0,0,0,csv30,alv30,@dircb,@dtacb,0		;by main BIOS
-	db 0							;during LOGIN.
+dphtbl: dw 0,0,0,0,0,0,0,csv29,alv29,@dircb,@dtacb,0	;hash buffers
+	db 0	;(hash buffer bank number)		;are allocated
+	dw 0,0,0,0,0,0,0,csv30,alv30,@dircb,@dtacb,0	;during login
+	db 0
 	dw 0,0,0,0,0,0,0,csv31,alv31,@dircb,@dtacb,0
 	db 0
 	dw 0,0,0,0,0,0,0,csv32,alv32,@dircb,@dtacb,0
@@ -223,11 +223,13 @@ login:	pushix		;save IX
 	ora	a
 	CZ	PHYSEL3 	; CHECK FOR HALF TRACK: must update DPB.
 eight:	popix
+	lxi	b,256*4		;max dir entries: 256
+	call	?halloc
 	lda	selerr	;return error code, error during configuration.
 	ora	a
 	RET
 
-PHYSEL: 
+PHYSEL:
 	lxi	h,0		;
 	shld	@trk		; TRACK 0
 	shld	@sect		; SECTOR 0
@@ -279,7 +281,7 @@ CHKLAB1:ADD	M
 ;
 PHYSEL2:
 	LXI	H,@scrbf+LABHTH ; DE POINTS TO HEATH EXTENSION IN LABEL
-	ldx	b,-1		; keep old format 
+	ldx	b,-1		; keep old format
 	ldx	c,-2
 	mvix	0,-1
 	mvix	0,-2
@@ -289,7 +291,7 @@ PHYSEL2:
 	jrnz	nf1
 	setx	0,-2;		; set mode byte
 	jr	setmode
-nf1:	cpi	z37dev	       
+nf1:	cpi	z37dev	
 	jrnz	nf2
 	bit	2,m		; check for extended density
 	jrz	gf1
@@ -322,7 +324,7 @@ setmode:
 	jrz	gs0
 	setx	5,+0		; set drive and media to dt
 	setx	5,+1
-	jr	gs2 
+	jr	gs2
 gs0:	resx	5,+0
 	resx	5,+1
 gs2:	bit	1,a		; density bit
@@ -340,10 +342,10 @@ gs6:
 	call	?getdp		; setup mode bytes
 	jnz	physel6 	; error if format doesnt exists
 	push	b		; save XLAT table pointer
- 
+
 	lxi	h,zdpb		; move dpb from label to module and set dph
 	lxi	d,17
-	lda	@rdrv	 
+	lda	@rdrv	
 gdpb2:	ora	a
 	jrz	gdpb1
 	dad	d
@@ -358,7 +360,7 @@ gdpb1:	liyd	@dph		; set dpb and xlat addr in dph
 	xchg
 	lxi	b,zdpbl 	; 15
 	lxi	h,@scrbf+labdpb
-	ldir			; move dpb 
+	ldir			; move dpb
 
 	xchg			; hl points to psh byte (15)
 	lda	@scrbf+labhth+2 ; cpm sectors per physical sector
@@ -411,7 +413,7 @@ PHYSEL3:CALL	SELECT
 	mvi	a,0ffh
 	sta	@rcnfg	;set "re-configure" flag so BIOS will get new DPB/XLAT
 PHYSEL4:
-	CALL	HOME  
+	CALL	HOME
 	JRC	PHYSEL6
 	JR	PHYSEL7
 
@@ -461,7 +463,7 @@ NOT8DDW:MVI	B,10101000B	; WRITE COMMAND W/O SIDE SELECT
 
 TYPE$II:
 	STA	FIX1+1		;setup physical routines for read/write
-RETRY:						     
+RETRY:						
 	PUSH	B		; save registers
 	PUSH	D
 	lxi	h,@intby
@@ -518,7 +520,7 @@ RETRY:
 	EI
 
 	XRA	A		; CLEAR CARRY FOR DSBC
-	lded	@dma 
+	lded	@dma
 	DSBC	D		; HL NOW CONTAINS # OF BYTES TRANSFERRED
 	LDA	@dstat		; check for successful transfer
 	ANI	10111111B
@@ -805,16 +807,16 @@ WNB:	IN	STAT		; poll controller for function-complete
 	
 ;
 CHKRDY:
-	LXI	D,56000 	; WAIT NO MORE THAN 1.6 SECOND FOR READY 
+	LXI	D,56000 	; WAIT NO MORE THAN 1.6 SECOND FOR READY
 CHKR0:	
 	IN	STAT		; read disk status
 	RLC			; shift 'NOT READY' bit into Carry
-	RNC			; stop if drive is ready 
-	DCX	D		; count loops	 
+	RNC			; stop if drive is ready
+	DCX	D		; count loops	
 	MOV	A,D	
 	ORA	E		; Test for end of loops
 	JRNZ	CHKR0		; loop again if not
-	IN	STAT		; one last chance for drive to be ready  
+	IN	STAT		; one last chance for drive to be ready
 	RLC			; Y if NOTRDY	
 	RET			; End
 
@@ -827,7 +829,7 @@ INTRQ$ROUTINE:
 LEN$IR	EQU	$-INTRQ$ROUTINE ; length of routine to transfer.
 
 flag$8dd: db	0
-STEPRA	DB	0		; STEP RATE CODE 
+STEPRA	DB	0		; STEP RATE CODE
 RETRYS	DB	0
 SEKERR	DB	0,0		; SEEK,RESTORE ERROR COUNTS
 MODE	DW	0		; POINTER TO MODE BYTE

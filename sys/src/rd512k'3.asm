@@ -1,4 +1,4 @@
-VERS EQU '2 ' ; Sep  9, 2017  17:07  drm  "RD512K'3.ASM"
+VERS EQU '3 ' ; Oct  7, 2017  15:45  drm  "RD512K'3.ASM"
 ;*********************************************************
 ;	Disk I/O module for MMS CP/M 3.1
 ;	for RAM disk on the 512K RAM board
@@ -109,7 +109,8 @@ thread	equ	$
 
 	dseg
 
-dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0
+; No data buffers, no HASH
+dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0ffffh
 	db 0
 
 alv40:	ds	(256)/4 	; max blocks: 256

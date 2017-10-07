@@ -1,4 +1,4 @@
-vers equ '2 ' ; Sep 27, 2017  17:35   drm "MBIOS3.ASM"
+vers equ '3 ' ; Oct 7, 2017  15:45   drm "MBIOS3.ASM"
 ;****************************************************************
 ; Main BIOS module for CP/M 3 (CP/M plus),			*
 ;	 Banked memory and Time split-out.			*
@@ -38,7 +38,7 @@ port	equ	0f2h	;interupt control port
 
 ;  Routines for use by other modules
 	public ?timot
-	public ?dvtbl,?drtbl
+	public ?dvtbl,?drtbl,?halloc
 	public ?stbnk
 
 ;-------- Start of Code-producing source -----------
@@ -132,20 +132,6 @@ boot$1:
 	lda	bnkflg
 	ora	a	;is banked memory installed?
 	jz	ramerr
-	lda	@compg
-	dcr	a	; minus 0100h
-	rrc
-	rrc
-	rrc
-	rrc
-	mov	h,a
-	ani	0f0h
-	mov	l,a
-	mov	a,h
-	ani	00fh
-	mov	h,a	; HL=space in a bank / 16
-	shld	hsize	; not used until seldsk... currently.
-	mvi	c,0
 	call	set$jumps  ;setup system jumps and put in all banks
 	; interrupts now enabled
 	; bank 1 selected
@@ -606,10 +592,6 @@ icall:	pchl		;indirect call
 @cbnk:	db	0		; bank for processor operations
 bnkflg: ds	1	;flag for banked RAM installed.
 
-hbnk	equ	2	;bank to use for Hash tables.
-hstart	equ	100h	;reserve page 0 for interupt vectors, etc.
-hsize	dw	0	;1/16 of amount of space in a bank
-
 dtabf1: ds	1024
 dtabf2: ds	1024-1
 	db	0	;to force LINK to fill with "00"
@@ -620,11 +602,22 @@ thread	equ	$
 	dseg	; this part can be banked
 @login: ds	2	;position is assumed by special BNKBDOS3.SPR...
 			; must be first item in DSEG.
+
+hbnk	equ	2	;bank to use for Hash tables.
+hstart	equ	100h	;reserve page 0 for interupt vectors, etc.
+hleft	dw	0
+hlast	dw	hstart
+
 boot:	lxi	sp,stack
 	lda	13
 	ani	11111101b	;we must be in bank 0 now or all is lost...
 	sta	@intby
 	out	port
+	lda	@compg
+	dcr	a	; minus 0100h
+	mov	h,a
+	mvi	l,0
+	shld	hleft
 ; Verify that we have banked RAM...
 	call	?bnkck
 	sta	bnkflg	;assume X/2-H8 Bank Switch not installed (error)
@@ -858,23 +851,6 @@ gh2:	dcr	b
 	srlr	a
 	jr	gh2
 gh3:	sta	@pspt	;physical sectors per track
-	lda	@adrv	;allocate hash buffer by logical drive number
-	lxi	h,hstart
-	lbcd	hsize
-	inr	a
-gh0:	dcr	a
-	jrz	gh1
-	dad	b
-	jr	gh0
-gh1:	mov	c,l
-	mov	b,h
-	lxi	h,+22
-	dad	d	;point to hash address
-	mov	m,c	;set hash buffer address for this drive.
-	inx	h
-	mov	m,b
-	inx	h
-	mvi	m,hbnk	;set hash bank also.
 	xchg	;put DPH in (HL) for BDOS
 	ret
 
@@ -896,6 +872,42 @@ setup$dph:
 	inx	h
 	mov	m,d	;(DE=dpb)
 	ora	a	;reset [CY]
+	ret
+
+; Allocate space from hash pool into DPH.HASH/HBNK.
+; Does nothing if space exhausted (caller must init for "no hash")
+; BC = size of hash, @dph setup
+; Preserves BC (only)
+?halloc:
+	lhld	@dph	; check if already set
+	lxi	d,22
+	dad	d	; point to &DPH.HASH
+	mov	a,m
+	inx	h
+	ora	m
+	rnz	; <> 00000h, leave as-is
+	dcr	m	; 0ffh
+	dcx	h
+	dcr	m	; 0ffh = no HASH
+	xchg
+	mov	a,b
+	ora	c
+	rz
+	lhld	hleft
+	ora	a
+	dsbc	b
+	rc	; no space - TODO: try next bank
+	shld	hleft
+	lhld	hlast
+	xchg
+	mov	m,e
+	inx	h
+	mov	m,d
+	inx	h
+	mvi	m,hbnk
+	xchg
+	dad	b
+	shld	hlast
 	ret
 
 home:	lxi b,0 	; same as set track zero

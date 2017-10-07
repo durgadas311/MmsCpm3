@@ -1,4 +1,4 @@
-vers equ '1 ' ; July 22, 1983  14:36  mjm  "Z17'3.ASM"
+vers equ '2 ' ; Oct 7, 2017  15:45  drm  "Z17'3.ASM"
 ********** CP/M 3 DISK I/O ROUTINES FOR Z17  **********
 ******* Copyright (c) 1983 Magnolia Microsystems ******
 	maclib Z80
@@ -8,7 +8,7 @@ true	equ	not false
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
 	extrn	@dtacb,@dircb,@scrbf,@rcnfg,@cmode,@tick0
-	extrn	?bnksl,?timot
+	extrn	?bnksl,?timot,?halloc
 
 ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
 *****					      *****
@@ -39,7 +39,7 @@ PASS		equ	003eh
 
 ***************************************************
 ** START OF RELOCATABLE DISK I/O MODULE
-*************************************************** 
+***************************************************
 	cseg
 	dw	thread
 	db	driv0,ndriv
@@ -194,10 +194,10 @@ thread	equ	$	;last line in "cseg"
 
 	dseg
 
-dphtbl: DW	0,0,0,0,0,0,0,CSV0,ALV0,@dircb,@dtacb,0 ;hash buffers are
-	db	0					;allocated by main
-	DW	0,0,0,0,0,0,0,CSV1,ALV1,@dircb,@dtacb,0 ;BIOS during login.
-	db	0					;
+dphtbl: DW	0,0,0,0,0,0,0,CSV0,ALV0,@dircb,@dtacb,0	;hash buffers are
+	db	0					;allocated during login.
+	DW	0,0,0,0,0,0,0,CSV1,ALV1,@dircb,@dtacb,0
+	db	0
 	DW	0,0,0,0,0,0,0,CSV2,ALV2,@dircb,@dtacb,0
 	db	0
 
@@ -236,6 +236,8 @@ login$Z17:
 	mov	a,m
 	STA	ASTEPR	;COUNTER VALUE EQUIVELENT TO STEPRATE CODE
 	CALL	LOGIN	;CONDITIONAL LOG-IN OF DRIVE (TEST FOR HALF-TRACK)
+	lxi	b,64*4	;Max DIR entries: 64
+	call	?halloc
 	xra	a
 	jmp	rwerr
 

@@ -1,4 +1,4 @@
-VERS EQU '1 ' ; Aug 10, 1983   9:07  mjm  "Z37'3.ASM"
+VERS EQU '2 ' ; Oct 7, 2017  15:45  drm  "Z37'3.ASM"
 ;*********************************************************
 ;	Disk I/O module for MMS CP/M 3.1
 ;	for the Zenith Z37 controller
@@ -8,7 +8,7 @@ VERS EQU '1 ' ; Aug 10, 1983   9:07  mjm  "Z37'3.ASM"
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
 	extrn	@dtacb,@dircb,@scrbf,@rcnfg,@cmode,@tick0
-	extrn	?bnksl,?timot,?getdp
+	extrn	?bnksl,?timot,?getdp,?halloc
 
 ;---------------------------------------------------------
 ;
@@ -182,7 +182,7 @@ string: DB	'Z89-37',0,' Double Density Controller ',0,'v3.10'
 	DB	'$'
 
 modtbl: db	00000000b,00000001b,01011110b,00010000b ; drive 46 mms,dd,ss,st
-	  db	11111110b,11100110b,10010000b,00000000b       
+	  db	11111110b,11100110b,10010000b,00000000b
 	db	00000000b,00000001b,01011110b,00010000b ; drive 47 mms,dd,ss,st
 	  db	11111110b,11100110b,10010000b,00000000b
 	db	00000000b,00000001b,01011110b,00010000b ; drive 48 mms,dd,ss,st
@@ -238,7 +238,7 @@ motoff: LDA	H37CTL		; GET THE CURRENT VALUE OF THE CONTROL PORT
 
 desel:	LDA	H37CTL		; DESELECT THE DRIVE
 	ANI	0FFH-CONDS0-CONDS1-CONDS2-CONDS3
-	STA	H37CTL	  
+	STA	H37CTL
 	OUT	FD$CON
 	XRA	A
 	STA	RDYFLG		; FLAG DRIVE AS NOT READY
@@ -259,13 +259,13 @@ thread	equ	$
 
 	dseg
 
-dphtbl: dw	0,0,0,0,0,0,0,csv46,alv46,@dircb,@dtacb,0 
+dphtbl: dw	0,0,0,0,0,0,0,csv46,alv46,@dircb,@dtacb,0
 	db 0
-	dw	0,0,0,0,0,0,0,csv47,alv47,@dircb,@dtacb,0 
+	dw	0,0,0,0,0,0,0,csv47,alv47,@dircb,@dtacb,0
 	db 0
-	dw	0,0,0,0,0,0,0,csv48,alv48,@dircb,@dtacb,0 
+	dw	0,0,0,0,0,0,0,csv48,alv48,@dircb,@dtacb,0
 	db 0
-	dw	0,0,0,0,0,0,0,csv49,alv49,@dircb,@dtacb,0  
+	dw	0,0,0,0,0,0,0,csv49,alv49,@dircb,@dtacb,0
 	db 0
 
 csv46:	ds	(256)/4 	; max dir entries: 256
@@ -283,7 +283,7 @@ alv49:	ds	(400)/4
 ; INIT$Z37 -- SETS UP JUMP TO INTERRUPT ROUTINE IN PAGE 0 OF MEMORY	 *
 ;   AND JUMP TO Z37 MOTOR TIME OUT ROUTINE IN BIOS OVERLAY AREA 	 *
 ;*************************************************************************
- 
+
 INIT$Z37:
 	MVI	A,(JMP) 	; INSTALL H37 INTERRUPT ROUTINE
 	LXI	H,H37ISR
@@ -306,6 +306,8 @@ login$z37:
 	ora	a
 	cz	physel3 	; check for half track if no selerr
 	popix
+	lxi	b,256*4 	; max dir entries: 256
+	call	?halloc
 	lda	selerr
 	ora	a
 	ret
@@ -315,7 +317,7 @@ login$z37:
 ;   AND CHECK FOR HALF-TRACK
 ;--------------------------------------------------------------------------
 
-PHYSEL: 
+PHYSEL:
 	lxi	h,0		;
 	shld	@trk		; TRACK 0
 	shld	@sect		; SECTOR 0
@@ -366,7 +368,7 @@ CHKLAB1:ADD	M
 ;
 PHYSEL2:
 	LXI	H,@scrbf+LABHTH ; DE POINTS TO HEATH EXTENSION IN LABEL
-	ldx	b,-1		; keep old format 
+	ldx	b,-1		; keep old format
 	ldx	c,-2
 	mvix	0,-1
 	mvix	0,-2
@@ -376,7 +378,7 @@ PHYSEL2:
 	jrnz	nf1
 	setx	0,-2;		; set mode byte
 	jr	setmode
-nf1:	cpi	z37dev	       
+nf1:	cpi	z37dev	
 	jrnz	nf2
 	bit	2,m		; check for extended density
 	jrz	gf1
@@ -398,7 +400,7 @@ setmode:
 	jrz	gs0
 	setx	5,+0		; set drive and media to dt
 	setx	5,+1
-	jr	gs2 
+	jr	gs2
 gs0:	resx	5,+0
 	resx	5,+1
 gs2:	bit	1,a		; density bit
@@ -416,10 +418,10 @@ gs6:
 	call	?getdp		; setup mode bytes
 	jnz	physel6 	; error if format doesnt exists
 	push	b		; save XLAT table pointer
- 
+
 	lxi	h,z37dpb	; move dpb from label to module and set dph
 	lxi	d,17
-	lda	@rdrv	 
+	lda	@rdrv	
 gdpb2:	ora	a
 	jrz	gdpb1
 	dad	d
@@ -434,7 +436,7 @@ gdpb1:	liyd	@dph		; set dpb and xlat addr in dph
 	xchg
 	lxi	b,zdpbl 	; 15
 	lxi	h,@scrbf+labdpb
-	ldir			; move dpb 
+	ldir			; move dpb
 
 	xchg			; hl points to psh byte (15)
 	lda	@scrbf+labhth+2 ; cpm sectors per physical sector
@@ -485,7 +487,7 @@ PHYSEL3:CALL	SELECT
 	mvi	a,0ffh
 	sta	@rcnfg	;set "re-configure" flag so BIOS will get new DPB/XLAT
 PHYSEL4:
-	CALL	HOME  
+	CALL	HOME
 	JRC	PHYSEL6
 	JR	PHYSEL7
 
@@ -531,7 +533,7 @@ ht0:	CALL	ACCESS$R	; ACCESS DRIVE FOR WRITE
 	MVI	A,0A3H		; OUTI INSTRUCTION (2ND BYTE)
 TYPE$II:
 	STA	FIX1+1		;setup physical routines for read/write
-RETRY:						     
+RETRY:						
 	PUSH	B		; save registers
 	PUSH	D
  IF 0	;this is not needed with Z89-37 hardware.
@@ -576,7 +578,7 @@ RETRY:
 	MOV	A,B		; GET COMMAND BACK IN ACC.
 	call	type$II$com	; transfer the sector
 	STA	@dstat		; save status of transfer
-	LDA	H37CTL	  
+	LDA	H37CTL	
 	OUT	FD$CON		; TURN OFF INTERRUPTS
 	MVI	A,FDCFI
 	OUT	FD$CMD		; FORCE TYPE I STATUS
@@ -837,7 +839,7 @@ WNB:	IN	FD$STA		; poll controller for function-complete
 	RAL
 	STA	@dstat		;SAVE TYPE$II (III) STATUS FOR ERROR DETECTION.
 	MVI	A,FDCFI 	;TERMINATE COMMAND (RESET STATUS TO TYPE 1)
-	OUT	FD$CMD 
+	OUT	FD$CMD
 	EI			; re-enable interrupts.
 	IN	FD$DAT
 	IN	FD$STA		; MUST RETURN WITH STATUS IN ACC.
@@ -926,7 +928,7 @@ RDYH37D:
 	RC			; IF < 1 THEN ERROR
 	CPI	3*2+1		; IF <=3 THEN OK
 	CMC
-	RET 
+	RET
 
 ;------------------------------------------------------------------
 ; TURN ON MOTOR, SELECT DRIVE, AND SET SETTLE DELAY COUNTER
@@ -991,7 +993,7 @@ WAIT:	LDA	@tick0
 ; MISCELLANEOUS STORAGE
 ;-------------------------------------------------------------------------
 DLYW:	DB	0
-STEPRA	DB	0		; STEP RATE CODE 
+STEPRA	DB	0		; STEP RATE CODE
 RETRYS	DB	0
 SEKERR	DB	0,0		; SEEK,RESTORE ERROR COUNTS
 MODE	DW	0		; POINTER TO MODE BYTE
