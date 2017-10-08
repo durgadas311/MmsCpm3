@@ -1,4 +1,4 @@
-VERS EQU '2 ' ; 11/2/83 14:06 mjm "M320'3.ASM"
+VERS EQU '3 ' ; Oct 7, 2017 15:45 drm "M320'3.ASM"
 *************************************************************************
 
 	TITLE	'SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE'
@@ -7,7 +7,7 @@ VERS EQU '2 ' ; 11/2/83 14:06 mjm "M320'3.ASM"
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
 	extrn	@dtacb,@dircb,@scrbf,@rcnfg,@cmode,@lptbl,@login
-	extrn	?bnksl
+	extrn	?bnksl,?halloc
 
 **************************************************************************
 ; Configure the number of partitions (numparX) on each LUN in your system
@@ -16,7 +16,7 @@ VERS EQU '2 ' ; 11/2/83 14:06 mjm "M320'3.ASM"
 
 false	equ	0
 true	equ	not false
- 
+
 ; Logical Unit 0 characteristics
 
 numpar0 equ	8		; number of partitions on LUN
@@ -75,7 +75,7 @@ initflg equ	16	;    "   "   "   "   of lun initialization flag
 parstr	equ	17	;    "   "   "   "   of partition start of lun
 numpar	equ	18	;    "   "   "   "   of the number of partitions
 
-CSTRNG	EQU	13	; Offsets of data in magic sector 
+CSTRNG	EQU	13	; Offsets of data in magic sector
 NPART	EQU	19
 CBYTE	EQU	4
 DDATA	EQU	5
@@ -83,7 +83,7 @@ DCTYPE	EQU	3
 SECTBL	EQU	20
 DDPB	EQU	47
 
-*************************************************** 
+***************************************************
 	cseg
 
 	dw	STHRD
@@ -330,7 +330,29 @@ MLOOP	LDX	A,+0
 	jnz	init$hard	;  MUST INITIALIZE
 	call	init$drive
 	jnz	init$err
-endlog	xra	a
+endlog:
+	; TODO: removable requires MAX size?
+	; Note: computation not needed if already set
+	lhld	@dph
+	lxi	d,12	; offset of DPH.DPB
+	dad	d
+	mov	e,m
+	inx	h
+	mov	d,m
+	lxi	h,7	; offset of DPB.DRM
+	dad	d
+	mov	a,m
+	inx	h
+	mov	h,m
+	mov	l,a	; HL=DRM
+	inx	h
+	; TODO: check overflow? must be < 8192
+	dad	h
+	dad	h	; HL*=4: HASH size
+	mov	c,l
+	mov	b,h
+	call	?halloc
+	xra	a
 	ret
 
 INIT$HARD:
@@ -359,11 +381,11 @@ INIT$HARD:
 	JNZ	INIT$ERR
 
 	lda	@scrbf+NPART	; COMPARE # OF PART. DRIVER & MAGIC SECTOR
-	lixd	dataptr  
+	lixd	dataptr
 	cmpx	+numpar
 	jnc	usemag		; USE THE SMALLEST ONE
 	stx	a,+numpar
-usemag: 
+usemag:
 	ldx	b,+parstr	; Calculate start of dpb for current lun
 	inr	b
 	lxi	h,SDPB-dpbl
@@ -410,7 +432,7 @@ modloop dad	d
 
 	xchg
 	lxi	h,@scrbf+SECTBL ; FROM ADDRESS
-	ldx	b,+numpar 
+	ldx	b,+numpar
 nxtdef	push	b		; MOVE PARTITION ADDRESS TABLE INTO DRIVER
 	inx	d		; skip over first mode byte
 	ldax	d		; DE = modtbl
@@ -435,8 +457,7 @@ nxtdef	push	b		; MOVE PARTITION ADDRESS TABLE INTO DRIVER
 
 	lixd	dataptr
 	setx	7,+initflg	; Set initialization bit
-	xra	a
-	RET
+	jmp	endlog
 
 INIT$ERR:
 	mvi	a,0ffh		; error flag to bios
@@ -586,7 +607,7 @@ GETCN1: DCR	C
 	DJNZ	GETCN1
 	DCR	B		; RESET PSW/Z TO INDICATE ERROR
 	RET
-GETCN2: 
+GETCN2:
 	MVI	A,SEL
 	OUTP	A		; WAKE UP CONTROLER
 	MVI	B,0
@@ -597,7 +618,7 @@ GETCN3:
 	DJNZ	GETCN3
 	DCR	B		; RESET PSW/Z TO INDICATE ERROR
 	RET
-GETCN4: 
+GETCN4:
 	MVI	A,RUN
 	OUTP	A
 	XRA	A		; NO ERROR
@@ -697,7 +718,7 @@ iloop1	push	psw		; Put on stack
 	cmp	h		; see if equal to previous lun
 	jz	nxtlun		; if equal next mode byte entry
 	mov	h,a		; save new lun
-	ldy	a,+numpar	; add number partitions and old part. start 
+	ldy	a,+numpar	; add number partitions and old part. start
 	addy	+parstr 	;  equals new partition start.
 	dady	d		; next lun data entry
 	sty	a,+parstr
@@ -712,7 +733,7 @@ nxtlun	inry	+numpar 	; inc # of partitions
 ;	DATA BUFFERS AND STORAGE
 ;
 
-; 16 bytes of data are pull from each logical unit 
+; 16 bytes of data are pull from each logical unit
 ; from the magic sector, 3 bytes for system use.
 
 LUNDATA:
@@ -726,7 +747,7 @@ LUNDATA:
 ; BYTES 2 - 9		: DRIVE CHARACTERISTIC DATA
 ; BYTES 10 - 15 	: ASSIGN DRIVE TYPE COMMAND
 
-; BYTE 16 - BITS 1,0	: BLK CODE Set in init$hard 0=128,1=256,2=512,3=1024 
+; BYTE 16 - BITS 1,0	: BLK CODE Set in init$hard 0=128,1=256,2=512,3=1024
 ;	  - BIT  7	: LOGICAL UNIT INITIALZATION FLAG (Set in init$hard)
 ; BYTE 17		: STARTING PARTITION # OF THE LUN (Set in findstr)
 ; BYTE 18		: NUMBER OF PARTITIONS ON THE LUN (Set in findstr)

@@ -407,7 +407,7 @@ movdpblp:
 	mov	a,m		; Get old 2.2 mode byte 1 from magic sector
 	ani	00000011b	; mask - leave phyiscal sector size
 	stax	d		; 16th byte in cpm 3 dpb is block code (psh)
-	inx	d	
+	inx	d
 	cpi	2
 	jrc	gotit
 	inr	a
