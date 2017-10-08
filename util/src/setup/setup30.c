@@ -32,7 +32,7 @@ main(argc,argv) 		/* main entry point from CP/M */
 	initial();	/* initialize terminal */
 	prtsignon();
 	vers=bdos(12,0);
-	if( ((vers & 0xff) < 0x30) || (vers & 0xff00) != 0 )
+	if( ((vers & 0xff) < 0x30) || (vers & 0xfd00) != 0 )
 		{
 		deinit();
 		bell();
