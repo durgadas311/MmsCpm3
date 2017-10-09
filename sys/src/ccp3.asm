@@ -13,6 +13,8 @@ title	'CP/M 3 - Console Command Processor - November 1982'
 ;	*****  The following equates must be set to 100H ***
 ;	*****  + the addresses specified in LOADER.PRN   ***
 ;	*****                                            ***
+; This forces phase errors so that addresses can be checked.
+; Phase errors here can be ignored.
 equ1	equ	rsxstart  ;does this adr match loader's?
 equ2	equ	fixchain  ;does this adr match loader's?
 equ3	equ	fixchain1 ;does this adr match loader's?
@@ -99,6 +101,7 @@ crawf	equ	6		;raw console input
 pbuff	equ	9		;print buffer to console
 rbuff	equ	10		;read buffer from console
 cstatf	equ	11		;console status
+getvers	equ	12		;get version
 resetf	equ	13		;disk system reset
 self	equ	14		;select drive
 openf	equ	15		;open file
@@ -115,6 +118,8 @@ rreadf	equ	33		;read file
 flushf	equ	48		;flush buffers
 scbf	equ	49		;set/get SCB value
 loadf	equ	59		;program load
+getcfg	equ	69	; CP/NET support
+setcpat	equ	70	; CP/NET support
 allocf	equ	98		;reset allocation vector
 trunf	equ	99		;read file
 parsef	equ	152		;parse file
@@ -278,6 +283,11 @@ start:
 	lxi	sp,stack
 	lxi	h,ccpret		;push CCPRET on stack, in case of
 	push	h			; profile error we will go there
+	mvi	c,getvers	; CP/NET doesn't modify SCB
+	call	bdos		; (should it?)
+	mov	a,h
+	ani	2
+	sta	cpnet	; this could change on any command
 	lxi	d,scbadd
 	mvi	c,scbf
 	call	bdos
@@ -312,6 +322,11 @@ movldr:
 reset$alloc:
 	mvi	c,allocf
 	call	bdos
+	mvi	c,setcpat
+	mvi	e,0
+	lda	cpnet
+	ora	a
+	cnz	bdos
 ;
 ;	
 ;
@@ -1167,6 +1182,11 @@ exec1:	push	b		;save drive offset(B) & count(C)
 ;	successful open, now jump to processor
 ;	
 exec2:
+	push	d
+	lda	cpnet
+	ora	a
+	cnz	set$cpnet
+	pop	d
 	if	dayfile
 	lxi	b,display
 	call	getflg
@@ -1215,6 +1235,54 @@ xptbl:	dw	xcom
 	dw	xsub
 	dw	xcom
 
+; DE=.fcb from opencom (destroyed)
+set$cpnet:
+	push	d
+	; NOTE: there is no hook for "Ctrl-P OFF"...
+	; User must manually ENDLIST...
+	mvi	b,con$mode
+	call	getbyte	; from SCB
+	ani	14h
+	jnz	cpnet2	; Ctrl-P disabled
+	mvi	b,listcp
+	call	getbyte	; from SCB
+	ora	a
+	jnz	cpnet2	; Ctrl-P active
+	mvi	c,getcfg
+	call	bdos
+	lxi	d,36
+	dad	d
+	mov	a,m
+	ral
+	jnc	cpnet2	; LST: not networked
+	mvi	e,0ffh
+	mvi	c,5
+	call	bdos
+cpnet2:
+	pop	d
+	lxi	b,4	; C=4, B=0
+cpnet0:
+	inx	d	; F1
+	ldax	d
+	ral
+	mov	a,b
+	ral
+	mov	b,a
+	dcr	c
+	jnz	cpnet0
+	add	a
+	add	a
+	add	a
+	add	a
+	mov	e,a
+	ani	10h
+	jz	cpnet1
+	mov	a,e
+	ori	70h
+	mov	e,a
+cpnet1:
+	mvi	c,setcpat
+	jmp	bdos
 
 ;
 ;	unsuccessful attempt to open command file
@@ -2747,6 +2815,7 @@ multibufl:
 	dw	0		;multiple commands buffer length
 	endif
 scbadd:	db	scbad-pag$off,0
+cpnet:	db	0
 	;********** CAUTION FOLLOWING DATA MUST BE IN THIS ORDER *********
 pfncb:				;BDOS func 152 (parse filename)
 parsep:	dw	0		;pointer to current position in command
