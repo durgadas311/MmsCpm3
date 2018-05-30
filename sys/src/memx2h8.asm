@@ -126,23 +126,25 @@ table:
 	out	mmu
 	ldax	d
 	cpi	1
-	jnz	noram
+	jrnz	noram
 	mvi	a,0$001$0000b
 	out	mmu
 	mvi	a,0$010$0001b
 	out	mmu
 	ldax	d
 	cpi	2
-	jnz	noram
+	jrnz	noram
 	mvi	a,0$010$0000b
 	out	mmu
 	mvi	a,0$011$0001b
 	out	mmu
 	ldax	d
 	cpi	3
-	jnz	noram
+	jrnz	noram
 	mvi	a,true
-noram:	push	psw
+	jr	bnkck0
+noram:	xra	a
+bnkck0:	push	psw
 	xra	a
 	call	?bnksl
 	pop	psw

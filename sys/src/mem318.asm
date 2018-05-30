@@ -126,23 +126,25 @@ table:	db	20H	;select code for bank 0
 	out	port
 	ldax	d
 	cpi	1
-	jnz	noram
+	jrnz	noram
 	mov	a,m
 	ani	11001011b
 	ori	04h
 	out	port
 	ldax	d
 	cpi	2
-	jnz	noram
+	jrnz	noram
 	mov	a,m
 	ani	11001011b
 	ori	24h
 	out	port
 	ldax	d
 	cpi	3
-	jnz	noram
+	jrnz	noram
 	mvi	a,true
-noram:	push	psw
+	jr	bnkck0
+noram:	xra	a
+bnkck0:	push	psw
 	mov	a,m
 	out	port
 	pop	psw
