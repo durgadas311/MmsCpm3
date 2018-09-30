@@ -1,0 +1,168 @@
+ 2031 =         vers equ '1 ' ; July 19, 1983  10:07  mjm  "LDRBZ17.ASM"
+                ********** LOADER BOOT ROUTINE **********
+                ********** FOR Z17 BOOT        **********
+                
+                	maclib Z80
+                	$-MACRO
+                
+                	extrn cboot,btend,loader
+                
+                ******** Select Boot mode from: ************
+                **  0 = 5.25" SD SS ST          Drive 0
+                **  1 = 5.25" SD DS ST          Drive 0
+                **  2 = 5.25" SD SS DT          Drive 0
+                **  3 = 5.25" SD DS DT          Drive 0
+                ********************************************
+ 0003 =         ndrv	equ	3
+ 0000 =         drv0	equ	0
+                
+                ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
+                *****					      *****
+                *****  0 = FIRST (BUILT-IN) MINI FLOPPY       *****
+                *****  1 = SECOND (ADD-ON) MINI FLOPPY	      *****
+                *****  2 = THIRD (LAST ADD-ON) MINI FLOPPY    *****
+                *****					      *****
+                ***************************************************
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+ 00F2 =         ?PORT	EQU	0F2H
+                
+ 205E =         R@XOK	EQU	205EH	;TURN OFF Z17
+ 2067 =         R@READ	EQU	2067H	;ENTRY TO 444-19 ROM FOR READ DISK
+ 2076 =         R@SDT	EQU	2076H	;SEEK DESIRED TRACK (IN "R@TT")
+ 2079 =         R@MAI	EQU	2079H	;MOVE ARM IN (STEP IN)
+ 207C =         R@MAO	EQU	207CH	;MOVE ARM OUT (STEP OUT)
+ 2082 =         R@RDB	EQU	2082H	;READ NEXT BYTE FROM DISK
+ 2085 =         R@SDP	EQU	2085H	;SELECT Z17 DRIVE (DELAY IF NEEDED)
+ 2088 =         R@STS	EQU	2088H	;SKIP-THIS-SECTOR (WAIT FOR SECTOR HOLE)
+ 208B =         R@STZ	EQU	208BH	;SEEK TRACK ZERO
+ 2091 =         R@WSC	EQU	2091H	;WAIT FOR SYNC CHARACTER
+                
+ 20A0 =         D@TT	EQU	20A0H	;LOCATION FOR DESTINATION TRACK (SEEK)
+ 20A5 =         D@TRKPT EQU	20A5H	;ADDRESS TO ACTUAL CURRENT TRACK
+                ***************************************************
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK BOOT MODULE
+                *************************************************** 
+                	aseg
+ 2280           	ORG	2280H
+ 2280 C38B22    BOOT:	JMP	AROUND
+                
+ 2283 0000      sysend: dw	btend
+ 2285 0000      systrt: dw	loader
+ 2287 00        drive:	db	drv0
+ 2288 01        btmode: db	1
+ 2289 00        	db	drv0
+ 228A 03        	db	ndrv
+                
+ 228B E1        around: pop	h
+ 228C 310024    	LXI	SP,?STACK
+ 228F 223A23    	shld	vrst0+1
+                ***************************************************
+                *** START OF UNIQUE ROUTINE FOR BOOTING
+                ***************************************************
+ 2292 210000    	lxi	h,btend
+ 2295 110000    	lxi	d,loader	;DE=load address
+ 2298 B7        	ora	a
+ 2299           	dsbc	d
+ 229B 223723    	shld	syssiz
+ 229E 11FF00    	lxi	d,00ffh ;round up.
+ 22A1 19        	dad	d	;
+ 22A2 110031    	lxi	d,3000h+256
+ 22A5 44        	mov	b,h	;number of 256 byte sectors to load
+ 22A6 212123    	LXI	H,U@SDT
+ 22A9 227720    	SHLD	R@SDT+1 ;CHANGE ROM'S SEEK ROUTINE TO OURS
+ 22AC 210100    	LXI	H,0001H ;DISK ADDRESS OF FIRST SECTOR (0-399)
+ 22AF 0E09      	MVI	C,9	;9 SECTORS LEFT IN THIS TRACK (TRACK 0)
+ 22B1 AF        DNTRK:	XRA	A
+ 22B2 323623    	STA	HT$FLAG
+ 22B5 E5        DOTRK:	PUSH	H
+ 22B6 D5        	PUSH	D
+ 22B7 C5        	PUSH	B
+ 22B8 010001    	LXI	B,0100H ;ONE SECTOR READ AT A TIME
+ 22BB CD6720    	CALL	R@READ	;READ A SECTOR
+ 22BE DADA22    	JC	ERR00
+ 22C1 C1        	POP	B
+ 22C2 D1        	POP	D
+ 22C3 E1        	POP	H
+ 22C4 14        	INR	D	;STEP DMA ADDRESS 256 BYTES
+ 22C5 23        	INX	H	;POINT TO NEXT SECTOR
+ 22C6 05        	DCR	B	;NO MORE SECTORS TO READ??
+ 22C7 CAFD22    	JZ	DONE
+ 22CA 0D        	DCR	C	;MORE SECTORS ON THIS TRACK??
+ 22CB C2B522    	JNZ	DOTRK
+ 22CE 0E0A      	MVI	C,10
+ 22D0 3A3523    	LDA	TRK
+ 22D3 3C        	INR	A
+ 22D4 323523    	STA	TRK
+ 22D7 C3B122    	JMP	DNTRK
+                
+ 22DA C1        ERR00:	POP	B
+ 22DB 79        	MOV	A,C
+ 22DC FE0A      	CPI	10
+ 22DE C23923    	JNZ	VRST0	;THIS TEST ONLY VALID IF ERROR ON 1ST SECTOR OF TRACK
+ 22E1 3A3623    	LDA	HT$FLAG ;THIS CAN ANLY OCCURE ONCE PER REQUESTED TRACK
+ 22E4 B7        	ORA	A
+ 22E5 C23923    	JNZ	VRST0
+ 22E8 2F        	CMA
+ 22E9 323623    	STA	HT$FLAG
+ 22EC C5        	PUSH	B
+ 22ED CD8520    	CALL	R@SDP	;SELECT DRIVE
+ 22F0 CD7920    	CALL	R@MAI	;STEP HEAD IN ONE TRACK
+ 22F3 213523    	LXI	H,TRK
+ 22F6 34        	INR	M
+ 22F7 C1        	POP	B
+ 22F8 D1        	POP	D
+ 22F9 E1        	POP	H
+ 22FA C3B522    	JMP	DOTRK
+                
+                DONE:
+ 22FD F3        	DI
+ 22FE 211623    	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
+ 2301 0607      	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
+ 2303 0EF2      	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
+ 2305           	OUTIR
+ 2307 210031    	lxi	h,3000h+256
+ 230A 110000    	lxi	d,loader
+ 230D           	lbcd	syssiz
+ 2311           	ldir
+ 2313 C30000    	JMP	CBOOT
+                
+ 2316 04        ?CODE	DB	0000$01$00B
+ 2317 0C        	DB	0000$11$00B
+ 2318 04        	DB	0000$01$00B
+ 2319 08        	DB	0000$10$00B
+ 231A 0C        	DB	0000$11$00B
+ 231B 08        	DB	0000$10$00B
+ 231C 22        	DB	0010$00$10B	;ALSO WORKS IN Z89-FA
+ 0007 =         ?CODE$LEN	EQU	$-?CODE
+                
+                ; OUR OWN SEEK ROUTINE THAT USES OUR TRACK NUMBER (ALLOWS HALF-TRACK)
+ 231D 34        SDT3:	INR	M
+ 231E CD7920    	CALL	R@MAI
+ 2321 2AA520    U@SDT:	LHLD	D@TRKPT
+ 2324 3A3523    	LDA	TRK
+ 2327 BE        	CMP	M
+ 2328 CA8820    	JZ	R@STS
+ 232B F21D23    	JP	SDT3
+ 232E 35        SDT1:	DCR	M
+ 232F CD7C20    	CALL	R@MAO
+ 2332 C32123    	JMP	U@SDT
+                
+ 2335 00        TRK:	DB	0	;OUR CURRENT PHYSICAL TRACK NUMBER
+ 2336 00        HT$FLAG DB	0	;USED TO KEEP TRACK OF HALF-TRACK DETECTION
+ 2337 0000      syssiz: dw	0
+                
+ 2339 C30000    vrst0:	jmp	$-$
+                
+                	rept	256-($-boot)
+                	db	0
+                	endm
+                
+ 2400 =         ?STACK	EQU	$+128
+                
+ 2380           	END
+

@@ -1,0 +1,167 @@
+ 2031 =         vers equ '1 ' ; Sep 24, 2017  16:24   drm "MEMX2H8.ASM"
+                ;****************************************************************
+                ; Banked Memory BIOS module for CP/M 3 (CP/M plus), 		*
+                ; Copyright (c) 1983 Magnolia Microsystems			*
+                ;****************************************************************
+                	maclib Z80
+                
+ FFFF =         true	equ -1
+ 0000 =         false	equ not true
+                
+ 000D =         cr	equ 13
+ 000A =         lf	equ 10
+ 0007 =         bell	equ 7
+                
+ 0000 =         mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
+                
+                ;  SCB registers
+                	extrn @bnkbf,@cbnk
+                
+                ;  Variables for use by other modules
+                	public @nbnk,@compg,@mmerr
+                
+                ;  Routines for use by other modules
+                	public ?bnksl,?bnkck,?xmove,?mvccp,?move
+                
+                	cseg		; GENCPM puts CSEG stuff in common memory
+                
+ 0000 04        @nbnk:	db	4
+ 0001 C0        @compg:	db	0c0h
+ 0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No X/2-H8$'
+                
+                ; Uses XMOVE semantics...
+                ; C=source bank, B=dest bank, HL=address, A=num recs
+                ?mvccp: exaf	;save number of records
+ 000F+08        	DB	08H
+ 0010 79        	mov	a,c
+ 0011 CD3600    	call	?bnksl	;select source bank
+ 0014 C5        	push	b
+ 0015 E5        	push	h
+                	lded	@bnkbf
+ 0016+ED5B      	DB	0EDH,5BH
+ 0018+0000      	DW	@BNKBF
+ 001A 018000    	lxi	b,128
+                	ldir
+ 001D+EDB0      	DB	0EDH,0B0H
+ 001F E1        	pop	h
+ 0020 C1        	pop	b
+ 0021 78        	mov	a,b
+ 0022 CD3600    	call	?bnksl	;select destination bank
+ 0025 C5        	push	b
+ 0026 EB        	xchg
+ 0027 2A0000    	lhld	@bnkbf
+ 002A 018000    	lxi	b,128
+                	ldir
+ 002D+EDB0      	DB	0EDH,0B0H
+ 002F EB        	xchg
+ 0030 C1        	pop	b
+                	exaf
+ 0031+08        	DB	08H
+ 0032 3D        	dcr	a
+                	jrnz	?mvccp
+ 0033+20DA      	DB	20H,?MVCCP-$-1
+ 0035 C9        	ret
+                
+                ?bnksl:
+ 0036 320000    	sta	@cbnk		; remember current bank
+ 0039 C5        	push	b		; save register b for temp
+ 003A E5        	push	h		;
+ 003B 214D00    	lxi	h,table 	;
+ 003E 87        	add	a
+ 003F 87        	add	a
+ 0040 4F        	mov	c,a		;
+ 0041 0600      	mvi	b,0		;
+ 0043 09        	dad	b		;
+ 0044 0604      	mvi	b,4
+ 0046 0E00      	mvi	c,mmu
+                	outir
+ 0048+EDB3      	DB	0EDH,0B3H
+ 004A E1        	pop	h		;
+ 004B C1        	pop	b		; restore register b
+ 004C C9        	ret
+                
+                table:
+ 004D 0F        	db	0$000$1111b	; Bank 0
+ 004E 10        	db	0$001$0000b
+ 004F 20        	db	0$010$0000b
+ 0050 30        	db	0$011$0000b
+ 0051 08        	db	0$000$1000b	; Bank 1
+ 0052 17        	db	0$001$0111b
+ 0053 20        	db	0$010$0000b
+ 0054 30        	db	0$011$0000b
+ 0055 08        	db	0$000$1000b	; Bank 2
+ 0056 10        	db	0$001$0000b
+ 0057 27        	db	0$010$0111b
+ 0058 30        	db	0$011$0000b
+ 0059 08        	db	0$000$1000b	; Bank 3
+ 005A 10        	db	0$001$0000b
+ 005B 20        	db	0$010$0000b
+ 005C 37        	db	0$011$0111b
+                
+ 005D EB        ?move:	xchg		; we are passed source in DE and dest in HL
+                	ldir		; use Z80 block move instruction
+ 005E+EDB0      	DB	0EDH,0B0H
+ 0060 EB        	xchg		; need next addresses in same regs
+                ?xmove:
+ 0061 C9        	ret
+                
+                	dseg	; this part can be banked
+                
+                ; Verify that we have banked RAM...
+                ; This code assumes the Bank Switch Board is set as for "bank 0" in 'table'
+                ?bnkck:
+ 0000 114000    	lxi	d,40h
+ 0003 3E0E      	mvi	a,0$000$1110b
+ 0005 D300      	out	mmu
+ 0007 3E11      	mvi	a,0$001$0001b
+ 0009 D300      	out	mmu
+ 000B 3E01      	mvi	a,1
+ 000D 12        	stax	d	;put bank number in 40h of respective bank
+ 000E 3E10      	mvi	a,0$001$0000b
+ 0010 D300      	out	mmu
+ 0012 3E21      	mvi	a,0$010$0001b
+ 0014 D300      	out	mmu
+ 0016 3E02      	mvi	a,2
+ 0018 12        	stax	d	;put bank number in 40h of respective bank
+ 0019 3E20      	mvi	a,0$010$0000b
+ 001B D300      	out	mmu
+ 001D 3E31      	mvi	a,0$011$0001b
+ 001F D300      	out	mmu
+ 0021 3E03      	mvi	a,3
+ 0023 12        	stax	d	;put bank number in 40h of respective bank
+ 0024 3E30      	mvi	a,0$011$0000b
+ 0026 D300      	out	mmu
+ 0028 3E11      	mvi	a,0$001$0001b
+ 002A D300      	out	mmu
+ 002C 1A        	ldax	d
+ 002D FE01      	cpi	1
+                	jrnz	noram
+ 002F+201E      	DB	20H,NORAM-$-1
+ 0031 3E10      	mvi	a,0$001$0000b
+ 0033 D300      	out	mmu
+ 0035 3E21      	mvi	a,0$010$0001b
+ 0037 D300      	out	mmu
+ 0039 1A        	ldax	d
+ 003A FE02      	cpi	2
+                	jrnz	noram
+ 003C+2011      	DB	20H,NORAM-$-1
+ 003E 3E20      	mvi	a,0$010$0000b
+ 0040 D300      	out	mmu
+ 0042 3E31      	mvi	a,0$011$0001b
+ 0044 D300      	out	mmu
+ 0046 1A        	ldax	d
+ 0047 FE03      	cpi	3
+                	jrnz	noram
+ 0049+2004      	DB	20H,NORAM-$-1
+ 004B 3EFF      	mvi	a,true
+                	jr	bnkck0
+ 004D+1801      	DB	18H,BNKCK0-$-1
+ 004F AF        noram:	xra	a
+ 0050 F5        bnkck0:	push	psw
+ 0051 AF        	xra	a
+ 0052 CD3600    	call	?bnksl
+ 0055 F1        	pop	psw
+ 0056 C9        	ret
+                
+ 0057           	end
+

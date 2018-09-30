@@ -1,0 +1,988 @@
+ 2031 =         vers equ '1 ' ; July 13, 1983  10:48  mjm  "LDR316.ASM"
+                **********************************************************
+                ;	Loader Disk I/O module for MMS CP/M 3.1
+                ;	for the MMS DD controller 77316
+                ;	Copyright (c) 1983 Magnolia Microsystems
+                ;*********************************************************
+                
+                	MACLIB Z80
+                
+                	public btend		;end of system (boot stops loading there)
+                	extrn BDOS,CBOOT,DSKSTA,TIMEOT,MIXER,DIRBUF,DLOG
+                	extrn NEWDSK,NEWTRK,NEWSEC,DMAA
+                
+ 001D =         driv0	equ	29		; first drive in system
+                
+                ; Physical drives are assigned as follows:
+                ;
+                ;	29 - 1st 8" drive
+                ;	30 - 2nd 8" drive
+                ;	31 - 3rd 8" drive
+                ;	32 - 4th 8" drive
+                ;	33 - 1st 5" drive
+                ;	34 - 2nd 5" drive
+                ;	35 - 3rd 5" drive
+                ;	36 - 4th 5" drive
+                ;
+                ;	Ports and Constants
+                
+ 0038 =         CTRL	EQU	038H		; EXTERNAL DISK CONTROL
+ 003C =         WD1797	EQU	03CH		; CONTROLLER CHIP ADDRESS
+ 003C =         STAT	EQU	WD1797		; STATUS REGISTER
+ 003D =         TRACK	EQU	WD1797+1	; TRACK REGISTER
+ 003E =         SECTOR	EQU	WD1797+2	; SECTOR REGISTER
+ 003F =         DATA	EQU	WD1797+3	; DATA REGISTER
+ 00F2 =         PORT	EQU	0F2H		; Z89 INTERRUPT CONTROL
+                
+ 0010 =         DPHL	EQU	16		; LENGTH OF DISK PARAMETER HEADER
+ 000F =         DPBL	EQU	15		; LENGTH OF DISK PARAMETER BLOCK
+ 000A =         DPHDPB	EQU	10		; LOCATION OF DPB ADDRESS WITHIN DPH
+ 0004 =         MOD48RO EQU	00000100B	; 48 TPI DISK IN 96 TPI DRIVE (R/O)
+ 0040 =         MODEDD	EQU	01000000B	; DOUBLE DENSITY
+ 0019 =         LABLEN	EQU	19H		; LENGTH OF Z37 DISK LABEL
+ 0004 =         LABEL	EQU	04H		; POSITION OF LABEL IN SECTOR 0
+ 0005 =         LABHTH	EQU	05H		; START OF "HEATH EXTENSION" IN SECTOR 0
+ 0001 =         MODE2S	EQU	00000001H	; DOUBLE SIDED
+ 000D =         LABDPB	EQU	0DH		; START OF DPB IN SECTOR 0
+ 0000 =         LABVER	EQU	00		; LABEL VERSION NUMBER
+ 0060 =         DPEH37	EQU	60H		; I.D.
+                
+                ; Standard CP/M page-zero assignments
+ 000D =         ?INT$BYTE	equ	13
+ 0030 =         ?RST6		equ	(6)*8	; Interrupt routine for DD board
+                
+                ; Start of relocatable disk I/O module.
+                	cseg			; START OF MODULE
+                
+ 0000 C35801    	jmp	init
+ 0003 C36C01    	JMP	SEL$COMBO
+ 0006 C3D502    	JMP	READ$COMBO
+                
+ 0009 3737333136	DB	'77316 ',0,'MMS Double Density Loader ',0,'3.10'
+ 002F 3120      	dw	vers
+ 0031 24        	db	'$'
+                
+                ; NOTE: DPH's are selected for mode and not by drive.   ; btmode codes
+ 0032 0000000000DPH:	DW	0,0,0,0,DIRBUF,dpb8sdss,CSV,ALV 	; 0 = SD 8"    bit 7=0
+ 0042 0000000000	DW	0,0,0,0,DIRBUF,dpb8ddss,CSV,ALV 	; 1 = DD SS 8" bit 7=1
+ 0052 0000000000	DW	0,0,0,0,DIRBUF,dpb8ddds,CSV,ALV 	; 2 = DD DS 8" bit 7=1
+ 0062 0000000000	DW	0,0,0,0,DIRBUF,dpb5ssst,CSV,ALV 	; 3 = DD SS ST 5"
+ 0072 0000000000	DW	0,0,0,0,DIRBUF,dpb5dsst,CSV,ALV 	; 4 = DD DS ST 5"
+ 0082 0000000000	DW	0,0,0,0,DIRBUF,dpb5ssdt,CSV,ALV 	; 5 = DD SS DT 5"
+ 0092 0000000000	DW	0,0,0,0,DIRBUF,dpb5dsdt,CSV,ALV 	; 6 = DD DS DT 5"
+ 00A2 0000000000defdph: dw	0,0,0,0,0,DEFDPB
+                
+                dpb8ddds:	; MMS 8" DD DS
+ 00AE 4000      	DW	64		; SECTORS PER TRACK
+ 00B0 040F00    	DB	4,15,0		; BSH,BSM,EXM
+ 00B3 5F02BF00  	DW	608-1,192-1	; DSM-1,DRM-1
+ 00B7 E000      	DB	11100000B,0	; AL0,AL1
+ 00B9 30000200  	DW	48,2		; CKS,OFF
+ 00BD 226600    	DB	00100010B,01100110B,00000000B	; MODE BYTES
+                
+                dpb8ddss:	; MMS 8" DD SS
+ 00C0 4000      	DW	64		; SECTORS PER TRACK
+ 00C2 040F00    	DB	4,15,0		; BSH,BSM,EXM
+ 00C5 2B01BF00  	DW	300-1,192-1	; DSM-1,DRM-1
+ 00C9 E000      	DB	11100000B,0	; AL0,AL1
+ 00CB 30000200  	DW	48,2		; CKS,OFF
+ 00CF 026600    	DB	00000010B,01100110B,00000000B	; MODE BYTES
+                
+                dpb8sdss:	; 8" SD SS
+ 00D2 1A00      	DW	26		; SECTORS PER TRACK
+ 00D4 030700    	DB	3,7,0		; BSH,BSM,EXM
+ 00D7 F2003F00  	DW	243-1,64-1	; DSM-1,DRM-1
+ 00DB C000      	DB	11000000B,0	; AL0,AL1
+ 00DD 10000200  	DW	16,2		; CKS,OFF
+ 00E1 000601    	DB	00000000B,00000110B,00000001B	; MODE BYTES
+                
+                dpb5ssst:	; MMS 5" SS ST (DD)
+ 00E4 2400      	DW	36		; SECTORS PER TRACK
+ 00E6 040F01    	DB	4,15,1		; BSH,BSM,EXM
+ 00E9 52005F00  	DW	83-1,96-1	; DSM-1,DRM-1
+ 00ED C000      	DB	11000000B,0	; AL0,AL1
+ 00EF 18000300  	DW	24,3		; CKS,OFF
+ 00F3 026300    	DB	00000010B,01100011B,00000000B	; MODE BYTES
+                
+                dpb5dsst:	; MMS 5" DS ST (DD)
+ 00F6 2400      	DW	36		; SECTORS PER TRACK
+ 00F8 040F01    	DB	4,15,1		; BSH,BSM,EXM
+ 00FB AC005F00  	DW	173-1,96-1	; DSM-1,DRM-1
+ 00FF C000      	DB	11000000B,0	; AL0,AL1
+ 0101 18000300  	DW	24,3		; CKS,OFF
+ 0105 226300    	DB	00100010B,01100011B,00000000B	; MODE BYTES
+                
+                dpb5ssdt:	; MMS 5" SS DT (DD)
+ 0108 2400      	DW	36		; SECTORS PER TRACK
+ 010A 051F03    	DB	5,31,3		; BSH,BSM,EXM
+ 010D 55007F00  	DW	86-1,128-1	; DSM-1,DRM-1
+ 0111 8000      	DB	10000000B,0	; AL0,AL1
+ 0113 20000300  	DW	32,3		; CKS,OFF
+ 0117 026B00    	DB	00000010B,01101011B,00000000B	; MODE BYTES
+                
+                dpb5dsdt:	; MMS 5" DS DT (DD)
+ 011A 2400      	DW	36		; SECTORS PER TRACK
+ 011C 051F03    	DB	5,31,3		; BSH,BSM,EXM
+ 011F AF007F00  	DW	176-1,128-1	; DSM-1,DRM-1
+ 0123 8000      	DB	10000000B,0	; AL0,AL1
+ 0125 20000300  	DW	32,3		; CKS,OFF
+ 0129 226B00    	DB	00100010B,01101011B,00000000B	; MODE BYTES
+                
+ 012C 1A00      DEFDPB: DW	26		; EXTRA DPB AND MODE BYTES TO BE USED ONLY
+ 012E 030700    	DB	3,7,0		; BY DRIVER WHEN ACCESSING TRACK 0
+ 0131 F2003F00  	DW	243-1,64-1	; OF A ZENITH 8" DD DISK. TRACK 0 ON THESE
+ 0135 C000      	DB	11000000B,0	; DISKS IS OF THE STANDARD SINGLE DENSITY
+ 0137 10000200  	DW	16,2		; FORMAT
+ 013B 000200    	DB	00000000B,00000010B,00000000B
+                
+                ;	Sector translation tables for 8" 
+                
+ 013E 01070D1319SKEW1:	DB	1,7,13,19,25,5,11,17,23,3,9,15,21
+ 014B 02080E141A	DB	2,8,14,20,26,6,12,18,24,4,10,16,22
+                
+                 if 0	;not needed if booting only from MMS formats
+                SKEW2:	DB	1,2,19,20,37,38,3,4,21,22,39,40
+                	DB	5,6,23,24,41,42,7,8,25,26,43,44
+                	DB	9,10,27,28,45,46,11,12,29,30,47,48
+                	DB	13,14,31,32,49,50,15,16,33,34,51,52
+                	DB	17,18,35,36
+                
+                SKEW3:	DB	1,2,3,4,5,6,7,8,33,34,35,36,37,38,39,40
+                	DB	9,10,11,12,13,14,15,16,41,42,43,44,45,46,47,48
+                	DB	17,18,19,20,21,22,23,24,49,50,51,52,53,54,55,56
+                	DB	25,26,27,28,29,30,31,32,57,58,59,60,61,62,63,64
+                
+                SKEW4:	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                 endif
+                 
+                INIT:
+ 0158 21CA05    	LXI	H,INTRQ$ROUTINE ; load interrupt routine into page-zero
+ 015B 113000    	LXI	D,?RST6 	; as Restart 6.
+ 015E 010600    	LXI	B,LEN$IR
+                	LDIR			; block transfer
+ 0161+EDB0      	DB	0EDH,0B0H
+ 0163 DB3C      	IN	STAT		; CLEAR WD-1797 from power-on (or whatever)
+ 0165 3A8722    	lda	2287H		; boot drive in boot module
+ 0168 320000    	sta	mixer
+ 016B C9        	RET
+                
+                
+                SEL$COMBO:
+ 016C 3A0000    	LDA	NEWDSK		; get drive select code in 'A'.
+ 016F D61D      	SUI	DRIV0
+ 0171 32D805    	STA	RELDSK		; SAVE IT
+ 0174 213200    	LXI	H,DPH		; POINT TO DPH TABLE
+ 0177 3A8822    	lda	2288H		; select which mode we booted in from boot mod
+ 017A 87        	add	a
+ 017B 87        	add	a
+ 017C 87        	add	a
+ 017D 87        	add	a	;*16 for DPH select
+ 017E 85        	add	l
+ 017F 6F        	mov	l,a
+ 0180 3E00      	mvi	a,0
+ 0182 8C        	adc	h
+ 0183 67        	mov	h,a
+ 0184 E5        SEL0:	PUSH	H		; SAVE DPH ADDRESS
+ 0185 AF        	XRA	A
+ 0186 32E805    	STA	SELERR		; NO SELECT ERROR (YET)
+ 0189 32D005    	STA	FLAG$8DD	; CLEAR 8" DD FLAG
+ 018C 110A00    	LXI	D,DPHDPB
+ 018F 19        	DAD	D		; POINT TO ADDRESS OF DPB
+ 0190 CDC505    	CALL	HLIHL		; POINT TO DPB
+ 0193 22EA05    	SHLD	CURDPB
+ 0196 110F00    	LXI	D,DPBL
+ 0199 19        	DAD	D		; POINT TO MODE BYTES
+ 019A 22D605    	SHLD	MODE		; SAVE MODE BYTE POINTER
+ 019D E5        	PUSH	H
+ 019E CD0002    	CALL	LOGIN		; HAS DISK BEEN LOGGED IN ?
+                	JRC	LOGGED
+ 01A1+380F      	DB	38H,LOGGED-$-1
+ 01A3 E1        	POP	H		; GET MODE BYTE 1
+ 01A4 E5        	PUSH	H
+                	BIT	4,M		; SHOULD WE READ TRACK 0 SECTOR 0 ?
+ 01A5+CB66      	DB	0CBH,4*8+M+40H
+ 01A7 C40602    	CNZ	PHYSEL
+ 01AA E1        	POP	H		; GET MODE BYTE 1
+ 01AB E5        	PUSH	H
+ 01AC 23        	INX	H		; MODE BYTE 2
+                	BIT	2,M		; IS IT A 5.25" DISK ?
+ 01AD+CB56      	DB	0CBH,2*8+M+40H
+ 01AF CC9C02    	CZ	PHYSEL3 	; THEN CHECK FOR HALF TRACK
+ 01B2 E1        LOGGED: POP	H		; GET MODE BYTE 1
+ 01B3 23        	INX	H		; MODE BYTE 2
+ 01B4 3E28      	MVI	A,40		; 40 TRACKS PER SIDE
+                	BIT	3,M		; CHECK TRACK DENSITY BIT
+ 01B6+CB5E      	DB	0CBH,3*8+M+40H
+                	JRZ	STRK
+ 01B8+2801      	DB	28H,STRK-$-1
+ 01BA 87        	ADD	A		; 80 TRACKS PER SIDE
+                STRK:	BIT	2,M		; CHECK FOR 8"
+ 01BB+CB56      	DB	0CBH,2*8+M+40H
+                	JRZ	NOT8DD
+ 01BD+2809      	DB	28H,NOT8DD-$-1
+ 01BF 3E4D      	MVI	A,77		; 8" DISK HAVE 77 TRACKS PER SIDE
+                	BIT	6,M		; CHECK FOR DD
+ 01C1+CB76      	DB	0CBH,6*8+M+40H
+                	JRZ	NOT8DD
+ 01C3+2803      	DB	28H,NOT8DD-$-1
+ 01C5 32D005    	STA	FLAG$8DD	; FLAG AN 8" DD DISK
+ 01C8 32D105    NOT8DD: STA	TPS		; SAVE TRACKS PER SIDE
+ 01CB 23        	INX	H		; POINT TO MODE BYTE 3
+ 01CC 7E        	MOV	A,M
+ 01CD E607      	ANI	00000111B	; ISOLATE SKEW TABLE BITS
+ 01CF 110000    	LXI	D,0
+                	JRZ	GOTSKW 
+ 01D2+2806      	DB	28H,GOTSKW-$-1
+ 01D4 113E01    	LXI	D,SKEW1
+ 01D7 3D        	DCR	A
+                	JRZ	GOTSKW
+ 01D8+2800      	DB	28H,GOTSKW-$-1
+                 if 0	;not needed for MMS formats
+                	LXI	D,SKEW2
+                	DCR	A
+                	JRZ	GOTSKW
+                	LXI	D,SKEW3
+                	DCR	A
+                	JRZ	GOTSKW
+                	LXI	D,SKEW4
+                 endif
+ 01DA E1        GOTSKW: POP	H		; GET DPH ADDRESS BACK
+ 01DB E5        	push	h
+ 01DC 73        	MOV	M,E
+ 01DD 23        	INX	H
+ 01DE 72        	MOV	M,D		; SKEW TABLE ADDRESS INSTALLED IN DPH
+                ; CALCULATE DEBLOCKING PARAMETERS
+ 01DF 2AEA05    	LHLD	CURDPB		; GET DPB ADDRESS
+ 01E2 23        	INX	H
+ 01E3 23        	INX	H
+ 01E4 23        	INX	H
+ 01E5 7E        	MOV	A,M		; GET BLOCK MASK
+ 01E6 32DE05    	STA	BLKMSK		; SAVE IT
+ 01E9 110A00    	LXI	D,10
+ 01EC 19        	DAD	D
+ 01ED 7E        	MOV	A,M		; GET TRACK OFFSET
+ 01EE 32E705    	STA	OFFSET		; SAVE IT
+ 01F1 2AD605    	LHLD	MODE
+ 01F4 7E        	MOV	A,M
+ 01F5 E603      	ANI	03H		; ISOLATE SECTOR SIZE BITS
+ 01F7 32E605    	STA	BLCODE		; STARE AS DEBLOCK CODE
+                ; RETURN TO BIOS
+ 01FA 3AD805    	LDA	RELDSK
+ 01FD 4F        	MOV	C,A		; RESTORE PHYSICAL DRIVE #
+ 01FE E1        	pop	h		; SELDSK NEEDS DPH in HL
+ 01FF C9        	RET
+                
+ 0200 2A0000    LOGIN:	lhld	dlog		; CHECK FOR DISK LOGGED IN
+ 0203 7D        	mov	a,l
+ 0204 1F        	rar
+ 0205 C9        	RET
+                
+ 0206 3A0000    PHYSEL: LDA	NEWDSK
+ 0209 32DF05    	STA	HSTDSK
+ 020C AF        	XRA	A
+ 020D 32E005    	STA	HSTTRK		; TRACK 0
+ 0210 32E105    	STA	HSTSEC		; SECTOR 0
+ 0213 32E905    	STA	SELOP		; FLAG A SELECT OPERATION
+ 0216 32EC05    	STA	MODFLG		; RESET CHANGED MODE FLAG
+ 0219 3E05      	MVI	A,5		; 5 RETRYS FOR A SELECT OPERATION
+ 021B 32D305    	STA	RETRYS
+ 021E CD9203    	CALL	READ		; TRY READING LABEL AT DENSITY
+                				; CURRENTLY INDICATED IN TABLES
+                	JRZ	PHYSEL1 	; BR IF SUCCESSFUL
+ 0221+2815      	DB	28H,PHYSEL1-$-1
+ 0223 3E05      	MVI	A,5		; RESET RETRYS TO 5
+ 0225 32D305    	STA	RETRYS
+ 0228 32EC05    	STA	MODFLG		; SET CHANGED MODE FLAG
+ 022B 2AD605    	LHLD	MODE
+ 022E 23        	INX	H		; POINT TO MODE BYTE 2
+ 022F 7E        	MOV	A,M		; TRY OTHER DENSITY
+ 0230 EE40      	XRI	MODEDD
+ 0232 77        	MOV	M,A
+ 0233 CD9203    	CALL	READ		; TRY TO READ LABEL
+                	JRNZ	PHYSEL5 	; ERROR
+ 0236+2054      	DB	20H,PHYSEL5-$-1
+ 0238 AF        PHYSEL1:XRA	A		; ZERO ACCUM.
+ 0239 0619      	MVI	B,LABLEN	; GET LENGTH OF LABEL
+ 023B 21FA05    	LXI	H,HSTBUF+LABEL
+ 023E 86        CHKLAB1:ADD	M
+ 023F 23        	INX	H
+                	DJNZ	CHKLAB1
+ 0240+10FC      	DB	10H,CHKLAB1-$-1
+ 0242 3C        	INR	A
+                	JRZ	PHYSEL2 	; BR IF CORRECT CHECKSUM
+ 0243+2808      	DB	28H,PHYSEL2-$-1
+ 0245 3AEC05    	LDA	MODFLG
+ 0248 B7        	ORA	A		; MODE BEEN CHANGED ?
+                	JRNZ	PHYSEL6 	;  THEN ERROR
+ 0249+2046      	DB	20H,PHYSEL6-$-1
+                	JR	PHYSEL7 	; OTHERWISE DONE, KEEPING OLD MODE BYTES
+ 024B+1849      	DB	18H,PHYSEL7-$-1
+                
+                ;
+                ;  EXTRACT MODE INFORMATION FROM LABEL
+                ;
+                PHYSEL2:
+ 024D 2AD605    	LHLD	MODE		; HL POINTS TO MODE BYTE
+ 0250 11FB05    	LXI	D,HSTBUF+LABHTH ; DE POINTS TO HEATH EXTENSION IN LABEL
+ 0253 1A        	LDAX	D		; GET FIRST BYTE OF HEATH EXTENSION
+ 0254 0618      	MVI	B,00011000B	; Z37 DOUBLE DENSITY FORMAT
+ 0256 0E01      	MVI	C,00000001B	; 256 BYTES PER SECTOR
+                	BIT	2,A		; GET EXTENDED DOUBLE DENSITY BIT
+ 0258+CB57      	DB	0CBH,2*8+A+40H
+                	JRZ	GETSID
+ 025A+2804      	DB	28H,GETSID-$-1
+ 025C 0630      	MVI	B,00110000B	; Z37 EXTENDED DOUBLE DENSITY FORMAT
+ 025E 0E03      	MVI	C,00000011B	; 1024 BYTES PER SECTOR
+ 0260 E601      GETSID: ANI	00000001B	; GET SIDED BIT
+ 0262 0F        	RRC
+ 0263 0F        	RRC
+ 0264 0F        	RRC			; MOVE TO BIT POSITION 5
+ 0265 B1        	ORA	C		; OR IN SECTOR SIZE BITS
+ 0266 F614      	ORI	00010100B	; OR IN OTHER Z37 RELATED BITS
+ 0268 77        	MOV	M,A		; SAVE NEW MODE BYTE 1
+ 0269 23        	INX	H		; POINT TO MODE BYTE 2
+ 026A 0E00      	MVI	C,0		; BITS FOR SINGLE DENSITY
+ 026C 1A        	LDAX	D
+                	BIT	1,A		; GET DOUBLE DENSITY BIT
+ 026D+CB4F      	DB	0CBH,1*8+A+40H
+                	JRZ	SDEN
+ 026F+2802      	DB	28H,SDEN-$-1
+ 0271 0E60      	MVI	C,01100000B	; DOUBLE DENSITY
+ 0273 E608      SDEN:	ANI	00001000B	; GET TRACK DENSITY BIT
+ 0275 B1        	ORA	C		; OR IN SECTOR SIZE BITS
+ 0276 4F        	MOV	C,A
+ 0277 7E        	MOV	A,M		; GET MODE BYTE 2
+ 0278 E603      	ANI	00000011B	; KEEP STEP RATE BITS
+ 027A B1        	ORA	C		; OR IN NEW BITS
+ 027B 77        	MOV	M,A		; SAVE NEW MODE BYTE 2
+ 027C 23        	INX	H		; POINT TO MODE BYTE 3
+ 027D 70        	MOV	M,B		; SAVE NEW MODE BYTE 3
+                ;
+                ;		MOVE LABEL INFO TO DISK PARAMETER BLOCK.
+                ;
+                	LDED	CURDPB		; GET DPB ADDRESS
+ 027E+ED5B      	DB	0EDH,5BH
+ 0280+EA05      	DW	CURDPB
+ 0282 210306    	LXI	H,HSTBUF+LABDPB ; GET ADDRESS OF INFO IN LABEL
+ 0285 010F00    	LXI	B,DPBL		; COUNT TO MOVE
+                	LDIR			; MOVE INFO
+ 0288+EDB0      	DB	0EDH,0B0H
+                	JR	PHYSEL7
+ 028A+180A      	DB	18H,PHYSEL7-$-1
+                
+                
+ 028C 3EFF      PHYSEL5:MVI	A,0FFH
+ 028E 32DF05    	STA	HSTDSK		; FLAG BUFFER AS UNKNOWN
+ 0291 3E01      PHYSEL6:MVI	A,1
+ 0293 32E805    	STA	SELERR		; FLAG A SELECT ERROR
+ 0296 3EFF      PHYSEL7:MVI	A,0FFH
+ 0298 32E905    	STA	SELOP		; SELECT OPERATION IS OVER
+ 029B C9        	RET
+                
+ 029C CD6404    PHYSEL3:CALL	SELECT
+ 029F CDB505    	CALL	CHKRDY
+                	JRC	PHYSEL6 	; ERROR IF NOT READY
+ 02A2+38ED      	DB	38H,PHYSEL6-$-1
+ 02A4 CD6905    	CALL	HOME		;RESTORE HEAD TO TRACK 0
+                	JRC	PHYSEL6
+ 02A7+38E8      	DB	38H,PHYSEL6-$-1
+ 02A9 0648      	MVI	B,01001000B	;STEP IN, NO UPDATE
+ 02AB CD9905    	CALL	TYPE$I
+ 02AE CD9905    	CALL	TYPE$I		;STEP IN TWICE
+ 02B1 3EC0      	MVI	A,11000000B	; READ ADDRESS
+ 02B3 CD9D05    	CALL	PUT$I
+ 02B6 E630      	ANI	00011000B SHL 1
+                	JRNZ	PHYSEL6
+ 02B8+20D7      	DB	20H,PHYSEL6-$-1
+ 02BA DB3E      	IN	SECTOR
+ 02BC FE02      	CPI	2
+                	JRZ	PHYSEL4
+ 02BE+280E      	DB	28H,PHYSEL4-$-1
+ 02C0 FE01      	CPI	1
+                	JRNZ	PHYSEL6
+ 02C2+20CD      	DB	20H,PHYSEL6-$-1
+ 02C4 2AD605    	LHLD	MODE
+ 02C7 23        	INX	H		; MODE BYTE 2
+                	BIT	3,M		; IS MODE SET TO DOUBLE TRACK ?
+ 02C8+CB5E      	DB	0CBH,3*8+M+40H
+                	JRNZ	PHYSEL6 	; ERROR BECAUSE WRONG DPB IS INSTALLED
+ 02CA+20C5      	DB	20H,PHYSEL6-$-1
+                	SETB	4,M		; SET HALF TRACK BIT
+ 02CC+CBE6      	DB	0CBH,4*8+M+0C0H
+                PHYSEL4:			; RESTORE
+ 02CE CD6905    	CALL	HOME  
+                	JRC	PHYSEL6
+ 02D1+38BE      	DB	38H,PHYSEL6-$-1
+                	JR	PHYSEL7
+ 02D3+18C1      	DB	18H,PHYSEL7-$-1
+                
+                READ$COMBO:
+ 02D5 3AE805    	LDA	SELERR		; WAS THERE AN ERROR ON SELECT ?
+ 02D8 B7        	ORA	A
+ 02D9 C0        	RNZ
+ 02DA 3E15      	MVI	A,21		; 21 RETRYS FOR A READ/WRITE OPERATION
+ 02DC 32D305    	STA	RETRYS
+ 02DF 3A0000    	LDA	NEWTRK
+ 02E2 B7        	ORA	A		; ARE WE ON TRACK 0 ?
+                	JRNZ	NOTZ8DD
+ 02E3+2017      	DB	20H,NOTZ8DD-$-1
+ 02E5 2AD605    	LHLD	MODE
+ 02E8 23        	INX	H		; MODE BYTE 2
+ 02E9 7E        	MOV	A,M
+ 02EA E660      	ANI	01100000B	; ISOLATE THE TWO DENSITY BITS
+ 02EC FE40      	CPI	01000000B	; IS IT DD WITH TRACK 0 SD ?
+                	JRNZ	NOTZ8DD
+ 02EE+200C      	DB	20H,NOTZ8DD-$-1
+ 02F0 21A200    	lxi	h,defdph	; THEN WE MUST RE-SELECT DISK AS 8" SD
+ 02F3 D5        	PUSH	D		; SAVE REG. D
+ 02F4 CD8401    	CALL	SEL0
+ 02F7 D1        	POP	D		; RESTORE REG. D
+ 02F8 218C03    	LXI	H,RESEL 	; RESELECT DISK WHEN DONE WITH I/O OPERATION
+ 02FB E5        	PUSH	H
+ 02FC D5        NOTZ8DD:PUSH	D		; TEMPORARILY SAVE RECORD NUMBER
+ 02FD 010300    	LXI	B,3
+ 0300 210000    	LXI	H,NEWDSK
+ 0303 11E205    	LXI	D,REQDSK
+                	LDIR
+ 0306+EDB0      	DB	0EDH,0B0H
+ 0308 D1        	POP	D		; RESTORE RECORD NUMBER
+ 0309 AF        	XRA	A		; CLEAR CARRY
+ 030A 4F        	MOV	C,A		; CALCULATE PHYSICAL SECTOR
+ 030B 3AE605    	LDA	BLCODE
+ 030E 47        	MOV	B,A
+ 030F 3A0000    	LDA	NEWSEC
+ 0312 05        DBLOK1: DCR	B
+ 0313 FA1B03    	JM	DBLOK2
+ 0316 1F        	RAR
+                	RARR	C
+ 0317+CB19      	DB	0CBH, 18H + C
+                	JR	DBLOK1
+ 0319+18F7      	DB	18H,DBLOK1-$-1
+ 031B 32E405    DBLOK2: STA	REQSEC		; SAVE IT
+ 031E 3AE605    	LDA	BLCODE		; CALCULATE BLKSEC
+ 0321 3D        DBLOK3: DCR	A
+ 0322 FA2903    	JM	DBLOK4
+                	RLCR	C
+ 0325+CB01      	DB	0CBH, 00H + C
+                	JR	DBLOK3
+ 0327+18F8      	DB	18H,DBLOK3-$-1
+ 0329 79        DBLOK4: MOV	A,C
+ 032A 32E505    	STA	BLKSEC		; STORE IT
+                
+ 032D 3C        	INR	A		; NON-ZERO VALUE TO ACC.
+ 032E 32DC05    	STA	RD$FLAG 	; FLAG A PRE-READ
+ 0331 AF        	XRA	A		; NO LONGER WRITING AN UNALLOCATED BLOCK
+ 0332 32DD05    	STA	UNALLOC
+ 0335 210000    	LXI	H,NEWTRK
+ 0338 3AE705    	LDA	OFFSET
+ 033B BE        	CMP	M		; IS IT THE DIRECTORY TRACK ?
+                	JRNZ	CHKBUF
+ 033C+2005      	DB	20H,CHKBUF-$-1
+ 033E 23        	INX	H
+ 033F 7E        	MOV	A,M
+ 0340 B7        	ORA	A		; FIRST SECTOR OF DIRECTORY ?
+                	JRZ	READIT 
+ 0341+2812      	DB	28H,READIT-$-1
+ 0343 21E205    CHKBUF: LXI	H,REQDSK
+ 0346 11DF05    	LXI	D,HSTDSK
+ 0349 0603      	MVI	B,3
+ 034B 1A        CHKNXT: LDAX	D
+ 034C BE        	CMP	M
+                	JRNZ	READIT
+ 034D+2006      	DB	20H,READIT-$-1
+ 034F 23        	INX	H
+ 0350 13        	INX	D
+                	DJNZ	CHKNXT
+ 0351+10F8      	DB	10H,CHKNXT-$-1
+                	JR	NOREAD		; THEN NO NEED TO PRE-READ
+ 0353+1812      	DB	18H,NOREAD-$-1
+                READIT:
+ 0355 11DF05    	LXI	D,HSTDSK	; SET UP NEW BUFFER PARAMETERS
+ 0358 21E205    	LXI	H,REQDSK
+ 035B 010300    	LXI	B,3
+                	LDIR
+ 035E+EDB0      	DB	0EDH,0B0H
+ 0360 3ADC05    	LDA	RD$FLAG 	; DO WE NEED TO PRE-READ ?
+ 0363 B7        	ORA	A
+ 0364 C47F03    	CNZ	RD$SEC		; READ THE SECTOR
+ 0367 21F605    NOREAD: LXI	H,HSTBUF	; POINT TO START OF SECTOR BUFFER
+ 036A 018000    	LXI	B,128
+ 036D 3AE505    	LDA	BLKSEC		; POINT TO LOCATION OF CORRECT LOGICAL SECTOR
+ 0370 3D        MOVIT1: DCR	A
+ 0371 FA7703    	JM	MOVIT2
+ 0374 09        	DAD	B
+                	JR	MOVIT1
+ 0375+18F9      	DB	18H,MOVIT1-$-1
+                MOVIT2: LDED	DMAA		; POINT TO DMA
+ 0377+ED5B      	DB	0EDH,5BH
+ 0379+0000      	DW	DMAA
+                	LDIR			; MOVE IT
+ 037B+EDB0      	DB	0EDH,0B0H
+ 037D AF        	XRA	A		; FLAG NO ERROR
+ 037E C9        	RET			; RETURN TO BDOS (OR RESEL ROUTINE)
+                
+ 037F CD9203    RD$SEC: CALL	READ		; READ A PHYSICAL SECTOR
+ 0382 C8        	RZ			; RETURN IF SUCCESSFUL
+ 0383 3EFF      	MVI	A,0FFH		; FLAG BUFFER AS UNKNOWN
+ 0385 32DF05    	STA	HSTDSK
+ 0388 D1        	POP	D		; THROW AWAY TOP OF STACK
+ 0389 3E01      	MVI	A,1		; SIGNAL ERROR TO BDOS
+ 038B C9        	RET			; RETURN TO BDOS (OR RESEL ROUTINE)
+                
+ 038C F5        RESEL:	PUSH	PSW		; SAVE STATUS OF I/O OPERATION
+ 038D CD6C01    	CALL	SEL$COMBO	; SET UP CORRECT DISK PARAMETERS AGAIN
+ 0390 F1        	POP	PSW		; RECALL STATUS OF I/O OPERATION FOR BDOS
+ 0391 C9        	RET			; RETURN TO BDOS
+                
+ 0392 CDA804    READ:	CALL	ACCESS$R	; START DRIVE AND STEP TO PROPER TRACK
+                	JRC	ERROR
+ 0395+380E      	DB	38H,ERROR-$-1
+ 0397 CD1204    	CALL	IO$COMBO	; Read in the sector to the proper buffer.
+                	JRZ	NOT8DDR
+ 039A+2803      	DB	28H,NOT8DDR-$-1
+ 039C 113904    	LXI	D,RD$8DD
+ 039F 0688      NOT8DDR:MVI	B,10001000B	; READ COMMAND W/O SIDE SELECT
+ 03A1 3EA2      	MVI	A,0A2H		; INI INSTRUCTION (2ND BYTE)
+                	JR	TYPE$II
+ 03A3+1803      	DB	18H,TYPE$II-$-1
+                
+ 03A5 AF        ERROR:	XRA	A		; PSW/Z MUST BE RESET TO INDICATE ERROR
+ 03A6 3C        	INR	A
+ 03A7 C9        	RET
+                
+                TYPE$II:
+ 03A8 323604    	STA	FIX1+1		;setup physical routines for read/write
+                RETRY:						     
+ 03AB C5        	PUSH	B		; save registers
+ 03AC D5        	PUSH	D
+ 03AD 3A0D00    	LDA	?INT$BYTE	; get interrupt byte
+ 03B0 E6FD      	ANI	11111101B	; Turn 2 millisecond clock off
+ 03B2 D3F2      	OUT	PORT		; to prevent interupts from causing lost-data
+                
+ 03B4 3ADB05    	LDA	SIDE		; get the side select bits
+ 03B7 B0        	ORA	B		; merge COMMAND and SIDE SELECT bits
+ 03B8 CD5C04    	CALL	TYPE$II$COM	; execute disk transfer routine set by 'DE'.
+ 03BB 320000    	STA	DSKSTA		; save status of transfer
+ 03BE 3ADA05    	LDA	CTRL$IMAGE
+ 03C1 D338      	OUT	CTRL		; BURST MODE OFF.
+ 03C3 3A0D00    	LDA	?INT$BYTE	; get interrupt byte
+ 03C6 D3F2      	OUT	PORT		; CLOCK ON AGAIN
+                
+ 03C8 AF        	XRA	A		; CLEAR CARRY FOR DSBC
+ 03C9 11F605    	LXI	D,HSTBUF
+                	DSBC	D		; HL NOW CONTAINS # OF BYTES TRANSFERRED
+ 03CC+ED52      	DB	0EDH,D*8+42H
+ 03CE 3A0000    	LDA	DSKSTA		; check for successful transfer
+ 03D1 E6BF      	ANI	10111111B
+                	JRNZ	IOERR		; RETRY IF ERROR
+ 03D3+2014      	DB	20H,IOERR-$-1
+ 03D5 3AE905    	LDA	SELOP		; IS THIS A SELECT OPERATION ?
+ 03D8 B7        	ORA	A
+                	JRZ	POPRET		; THEN DON'T CHECK SECTOR SIZE
+ 03D9+2809      	DB	28H,POPRET-$-1
+ 03DB 3AE605    	LDA	BLCODE		; CHECK IF CORRECT NUMBER OF BYTES TRANSFERRED
+ 03DE FE03      	CPI	3
+                	JRNZ	NOTED		; BLCODE=3 => 1024 BYTE SECTOR EXPECTED
+ 03E0+2001      	DB	20H,NOTED-$-1
+ 03E2 3C        	INR	A		; INCREMENT BECAUSE (H) FOR 1024 IS 4
+ 03E3 BC        NOTED:	CMP	H		; COMPARE TO EXPECTED SIZE
+ 03E4 D1        POPRET: POP	D
+ 03E5 C1        	POP	B
+ 03E6 C8        	RZ			; RETURN IF CORRECT
+                	JR	TRYAGN		; RETRY IF INCORRECT
+ 03E7+1808      	DB	18H,TRYAGN-$-1
+ 03E9 FCB505    IOERR:	CM	CHKRDY		; IF DISK WAS NOT READY, WAIT FOR READY SIGNAL
+ 03EC D1        	POP	D
+ 03ED C1        	POP	B
+ 03EE DAA503    	JC	ERROR		; ERROR IF NO READY SIGNAL
+ 03F1 21D305    TRYAGN: LXI	H,RETRYS	; decrement retry count
+ 03F4 35        	DCR	M
+ 03F5 CAA503    	JZ	ERROR		; NO MORE RETRIES
+ 03F8 7E        	MOV	A,M
+ 03F9 FE0A      	CPI	10
+ 03FB D2AB03    	JNC	RETRY		; LESS THAN TEN RETRYS LEFT => STEP HEAD
+ 03FE 3AE905    	LDA	SELOP
+ 0401 B7        	ORA	A
+ 0402 CAAB03    	JZ	RETRY		; DO NOT STEP HEAD IF SELECT OPERATION
+ 0405 C5        	PUSH	B		; SAVE REGISTERS
+ 0406 D5        	PUSH	D
+ 0407 CD5A05    	CALL	STEPIN		; STEP IN COMMAND
+ 040A CDB704    	CALL	SEEK		; SEEK WILL REPOSITION HEAD
+ 040D D1        	POP	D		; RESTORE REGISTERS
+ 040E C1        	POP	B
+ 040F C3AB03    	JMP	RETRY		; TRY AGAIN
+                
+                IO$COMBO:
+ 0412 2AD605    	LHLD	MODE
+ 0415 7E        	MOV	A,M		; GET MODE BYTE 1
+ 0416 E60C      	ANI	00001100B	; ISOLATE TRACK NUMBERING BITS
+ 0418 FE08      	CPI	00001000B	; IS IT XOS/GNAT NUMBERING ?
+ 041A 3AE105    	LDA	HSTSEC		; GET SECTOR NUMBER
+                	JRNZ	NOTRAN
+ 041D+2007      	DB	20H,NOTRAN-$-1
+ 041F 2AEA05    	LHLD	CURDPB		;*** This is supposed to translate sector
+ 0422 BE        	CMP	M		;*** for the GNAT or X-O but it won't
+                	JRC	NOTRAN		;*** work as coded here. The SIDE byte must be
+ 0423+3801      	DB	38H,NOTRAN-$-1
+ 0425 96        	SUB	M		;*** updated and the sector must be compared to
+                				;*** SPT/2 not SPT as coded.
+ 0426 3C        NOTRAN: INR	A		; MAKE IT 1,2,3,...,SPT
+ 0427 D33E      	OUT	SECTOR		; give to controller
+ 0429 113104    	LXI	D,IO$1024	; I/O ROUTINE FOR ALL BUT 8" DD
+ 042C 3AD005    	LDA	FLAG$8DD	; CHECK FOR 8" DD
+ 042F B7        	ORA	A		; ZERO FLAG SET IF NOT
+ 0430 C9        	RET
+                
+                IO$1024:
+ 0431 D33C      	OUT	STAT		; send command to controller
+ 0433 FB        	EI			; turn on interrupts
+ 0434 76        RW1	HLT			; WAIT FOR DRQ
+                FIX1	INI			; transfer byte (INI becomes OUTI for writes)
+ 0435+EDA2      	DB	0EDH,0A2H
+                	JR	RW1		; loop until transfer complete.
+ 0437+18FB      	DB	18H,RW1-$-1
+                
+                
+                RD$8DD:
+ 0439 F5        	PUSH	PSW		; SAVE COMMAND
+ 043A 3ADA05    	LDA	CTRL$IMAGE
+ 043D E6DF      	ANI	11011111B	; set BURST MODE for hi-speed transfer
+ 043F D338      	OUT	CTRL
+ 0441 F1        	POP	PSW		; restore disk command
+ 0442 D33C      	OUT	STAT		; GIVE COMMAND TO CONTROLLER
+ 0444 FB        	EI
+ 0445 76        	HLT
+                RD1	INI
+ 0446+EDA2      	DB	0EDH,0A2H
+ 0448 C24604    	JNZ	RD1
+                RD2	INI
+ 044B+EDA2      	DB	0EDH,0A2H
+ 044D C24B04    	JNZ	RD2
+                RD3	INI
+ 0450+EDA2      	DB	0EDH,0A2H
+ 0452 C25004    	JNZ	RD3
+                RD4	INI
+ 0455+EDA2      	DB	0EDH,0A2H
+ 0457 C25504    	JNZ	RD4
+                	JR	$-1
+ 045A+18FE      	DB	18H,$-1-$-1
+                
+                TYPE$II$COM:
+ 045C 013F00    	LXI	B,(0)*256+(DATA) ; SETUP FOR 256 BYTES
+ 045F 21F605    	LXI	H,HSTBUF	 ; DATA BUFFER ADDRESS
+ 0462 D5        	PUSH	D		 ; put 'DE' on stack.
+ 0463 C9        	RET			 ; return to that address.
+                
+                SELECT:
+ 0464 2AD605    	LHLD	MODE		; point to drive mode byte table
+ 0467 3AD805    	LDA	RELDSK		; get the RELATIVE drive number
+ 046A 4F        	MOV	C,A		; relative drive number in (C) (rel. to driv0)
+ 046B 23        	INX	H		; POINT TO MODE BYTE 2
+ 046C 7E        	MOV	A,M
+ 046D E640      	ANI	01000000B	; ISOLATE DENSITY BIT
+ 046F EE40      	XRI	01000000B	; REVERSE IT (CONTROLLER WANTS 1 FOR SDEN.)
+ 0471 B1        	ORA	C		; OR IN DRIVE SELECT CODE
+ 0472 F628      	ORI	00101000B	; BURST MODE OFF, interrupt line enabled
+ 0474 32DA05    	STA	CTRL$IMAGE	; save image for subsequent outputs
+ 0477 7E        	MOV	A,M
+ 0478 E603      	ANI	00000011B	; setup steprate bits for seek-restore commands
+ 047A 32D205    	STA	STEPRA		; RATE FOR SUBSEQUENT SEEK/RESTORE
+ 047D 21D905    	LXI	H,LOGDSK	; save position (track) of current drive
+ 0480 7E        	MOV	A,M
+ 0481 91        	SUB	C		; CURRENT DRIVE SAME AS REQUESTED DRIVE ?
+ 0482 F5        	PUSH	PSW		; SAVE RESULT ON STACK
+ 0483 5E        	MOV	E,M		; in 'trks' array addressed by contents of
+ 0484 71        	MOV	M,C		; location 'logdsk'.
+ 0485 0600      	MVI	B,0
+ 0487 50        	MOV	D,B
+ 0488 21ED05    	LXI	H,TRKS
+ 048B 19        	DAD	D
+ 048C DB3D      	IN	TRACK
+ 048E 77        	MOV	M,A		; SAVE CURRENT TRACK #
+ 048F 21ED05    	LXI	H,TRKS		; identify position (track) of requested drive
+ 0492 09        	DAD	B		; from 'trks' array addressed by new 'logdsk'.
+ 0493 F1        	POP	PSW
+ 0494 4F        	MOV	C,A		; RETURN RESULT OF ABOVE SUB C TO REG. C
+ 0495 7E        	MOV	A,M
+ 0496 D33D      	OUT	TRACK		; set track number
+ 0498 D33F      	OUT	DATA		; SEEK TO same TRACK CAUSES
+ 049A 3E1B      	MVI	A,00011011B	; HEAD-LOAD ONLY
+ 049C F3        	DI	;MUST NOT BE DISTRACTED
+ 049D D33C      	OUT	STAT		; ISSUE COMMAND, HEAD WILL LOAD IN 15uS
+ 049F 19        	DAD	D		; 5.371 uS
+ 04A0 3ADA05    	LDA	CTRL$IMAGE	; +6.348 =11.719 uS
+ 04A3 D338      	OUT	CTRL		; +5.371 = 17.090 uS, HEAD IS LOADED BY NOW
+ 04A5 FB        	EI			; COMMAND WILL FINISH IN ABOUT 30 uS
+                	JR $-1			; "RET" DONE BY INTRQ ROUTINE
+ 04A6+18FE      	DB	18H,$-1-$-1
+                
+                ACCESS$R:
+ 04A8 CD6404    	CALL	SELECT
+ 04AB 79        	MOV	A,C		; ARE WE SELECTING A DIFFERENT
+ 04AC B7        	ORA	A		; DRIVE FROM BEFORE ?
+                	JRZ	SEEK
+ 04AD+2808      	DB	28H,SEEK-$-1
+ 04AF 11E880    	LXI	D,33000 	; MUST WAIT 400 MS
+ 04B2 1B        WAIT:	DCX	D
+ 04B3 7A        	MOV	A,D
+ 04B4 B3        	ORA	E
+                	JRNZ	WAIT
+ 04B5+20FB      	DB	20H,WAIT-$-1
+                SEEK:
+ 04B7 3AE005    	LDA	HSTTRK		; GET REQUESTED TRACK
+ 04BA 0600      	MVI	B,0		; SET SIDE VALUE FOR SIDE 0
+ 04BC 2AD605    	LHLD	MODE
+                	BIT	2,M	;*** NOTE: this test doesnot take into account the
+ 04BF+CB56      	DB	0CBH,2*8+M+40H
+                			;*** condition of "GNAT/XO" or UNDEFINED codes.
+                	JRNZ	CONZEN		; ALTERNATE CONVERT PROCEDURE FOR ZENITH DISKS
+ 04C1+200E      	DB	20H,CONZEN-$-1
+ 04C3 21D105    	LXI	H,TPS		; GET TRACKS PER SIDE
+ 04C6 4E        	MOV	C,M
+ 04C7 B9        	CMP	C		; compare requested track with tracks-per-side
+                	JRC	SIDE0		; no conversion if on first side.	 
+ 04C8+3810      	DB	38H,SIDE0-$-1
+ 04CA 2F        	CMA			; negate logical track number	 
+ 04CB 3C        	INR	A	
+ 04CC 81        	ADD	C		; add tot tracks on disk surfaces (2*NUM$TRKS)
+ 04CD 81        	ADD	C	
+ 04CE 3D        	DCR	A		; sub 1 because tracks start at 0	 
+                	JR	SIDE1 
+ 04CF+1807      	DB	18H,SIDE1-$-1
+                CONZEN: BIT	5,M		; CHECK SIDED BIT
+ 04D1+CB6E      	DB	0CBH,5*8+M+40H
+                	JRZ	SIDE0		; NO CONVERT IF SINGLE SIDED
+ 04D3+2805      	DB	28H,SIDE0-$-1
+ 04D5 1F        	RAR			; DIVIDE BY 2 TO GET REAL TRACK NUMBER
+                	JRNC	SIDE0
+ 04D6+3002      	DB	30H,SIDE0-$-1
+ 04D8 0602      SIDE1:	MVI	B,00000010B	; set side value for 2nd side	 
+                
+ 04DA 4F        SIDE0:	MOV	C,A		; store track number
+ 04DB 78        	MOV	A,B		
+ 04DC 32DB05    	STA	SIDE		; save side value for read/write command
+ 04DF 21D405    	LXI	H,SEKERR	; initialize seek error counters
+ 04E2 3604      	MVI	M,4		; 4 ERRORS ON SEEK IS FATAL
+ 04E4 23        	INX	H
+ 04E5 360A      	MVI	M,10		; RESTORE once, then 9 errors are fatal
+ 04E7 CDB505    RETRS:	CALL	CHKRDY		; MAKE SURE DRIVE IS READY
+ 04EA D8        	RC			; quit if drive is not ready
+ 04EB 79        	MOV	A,C		; get track number back
+ 04EC B7        	ORA	A		; FORCES "RESTORE" IF "seek to track 0"
+                	JRZ	HOME		;RESTORE HEAD TO TRACK 0
+ 04ED+287A      	DB	28H,HOME-$-1
+ 04EF 2AD605    	LHLD	MODE		;TRACK NUMBER IN (A) MUST BE PRESERVED
+ 04F2 23        	INX	H		; MODE BYTE 2
+ 04F3 66        	MOV	H,M		; BIT 4 IS THE HALF-TRACK OPTION
+ 04F4 DB3D      	IN	TRACK		;CURRENT HEAD POSITION,
+ 04F6 91        	SUB	C		;SEE HOW FAR WE WANT TO GO.
+ 04F7 C8        	RZ			;IF ZERO TRACKS TO STEP, WERE FINISHED
+ 04F8 0678      	MVI	B,01111000B	;ASSUME STEP-OUT + UPDATE + HEADLOAD
+                	JRNC	STOUT	;ASSUMPTION WAS CORRECT...
+ 04FA+3004      	DB	30H,STOUT-$-1
+ 04FC 0658      	MVI	B,01011000B	;ELSE MUST BE STEP-IN
+                	NEG		;AND NUMBER OF TRACKS WOULD BE NEGATIVE
+ 04FE+ED44      	DB	0EDH,44H
+ 0500 6F        STOUT:	MOV	L,A		;COUNTER FOR STEPING
+                SEEK5:	BIT	4,H		; CHECK FOR 48 TPI DISK IN 96 TPI DRIVE
+ 0501+CB64      	DB	0CBH,4*8+H+40H
+                	JRZ	NOTHT
+ 0503+2809      	DB	28H,NOTHT-$-1
+                	RES	4,B	;SELECT NO-UPDATE
+ 0505+CBA0      	DB	0CBH,4*8+B+80H
+ 0507 CD9905    	CALL	TYPE$I	;STEP HEAD
+ 050A E608      	ANI	00000100B SHL 1 ;DID THIS STEP PUT US AT TRACK 0 ?
+                	JRNZ	TRK0ERR
+ 050C+202E      	DB	20H,TRK0ERR-$-1
+                NOTHT:	SETB	4,B	;SELECT UPDATE TO TRACK-REG
+ 050E+CBE0      	DB	0CBH,4*8+B+0C0H
+ 0510 CD9905    	CALL	TYPE$I	;STEP HEAD
+ 0513 E608      	ANI	00000100B SHL 1 ;DID THIS STEP PUT US AT TRACK 0 ?
+                	JRNZ	TRK0ERR
+ 0515+2025      	DB	20H,TRK0ERR-$-1
+ 0517 2D        	DCR	L
+                	JRNZ	SEEK5
+ 0518+20E7      	DB	20H,SEEK5-$-1
+ 051A DB3E      	IN	SECTOR		;SAVE CURRENT SECTOR NUMBER
+ 051C 6F        	MOV	L,A
+ 051D CD9205    	CALL	READ$ADDR	; GET ACTUAL TRACK UNDER HEAD (IN SECTOR REG)
+ 0520 DB3E      	IN	SECTOR		;GET TRACK NUMBER FROM MEDIA
+ 0522 67        	MOV	H,A
+ 0523 7D        	MOV	A,L
+ 0524 D33E      	OUT	SECTOR		;RESTORE SECTOR NUMBER
+ 0526 3A0000    	LDA	DSKSTA		;GET TRUE ERROR STATUS OF READ-ADDRESS
+ 0529 07        	RLC
+ 052A D8        	RC			;DRIVE NOT READY
+ 052B E630      	ANI	00011000B SHL 1 ; CRC ERROR + REC-NOT-FOUND
+ 052D 7C        	MOV	A,H		; ACTUAL TRACK FROM READ-ADDRESS
+ 052E 21D405    	LXI	H,SEKERR	;POINT TO ERROR COUNTERS
+                	JRNZ	RESTR0
+ 0531+200F      	DB	20H,RESTR0-$-1
+ 0533 B9        	CMP	C		; (C) MUST STILL BE VALID DEST. TRACK
+ 0534 C8        	RZ	;NO ERRORS
+ 0535 35        RTS00:	DCR	M		; SHOULD WE KEEP TRYING ?
+ 0536 37        	STC
+ 0537 C8        	RZ			;NO, WE'VE TRYED TOO MUCH
+ 0538 D33D      	OUT	TRACK		; re-define head position accordingly
+                	JR	RETRS		; RETRY SEEK
+ 053A+18AB      	DB	18H,RETRS-$-1
+                
+                TRK0ERR:
+ 053C AF        	XRA	A
+ 053D 21D405    	LXI	H,SEKERR
+                	JR	RTS00
+ 0540+18F3      	DB	18H,RTS00-$-1
+                
+ 0542 23        RESTR0: INX	H		; RESTORE ERROR COUNT
+ 0543 35        	DCR	M
+ 0544 37        	STC
+ 0545 C8        	RZ			; If count 0, return with Carry set.
+ 0546 7E        	MOV	A,M
+ 0547 FE09      	CPI	9
+                	JRNC	RESTR1		; RESTORE ONLY FIRST TIME
+ 0549+3005      	DB	30H,RESTR1-$-1
+ 054B CD5A05    	CALL	STEPIN		; OTHERWISE STEP HEAD IN 1 TRACK
+                	JR	RETRS
+ 054E+1897      	DB	18H,RETRS-$-1
+                RESTR1: 			; RESTORE HEAD TO TRACK 0
+ 0550 3E03      	MVI	A,00000011B
+ 0552 32D205    	STA	STEPRA		; RETRY WITH MAXIMUM STEP RATE
+ 0555 CD6905    	CALL	HOME
+                	JR	RETRS		; RETRY SEEK
+ 0558+188D      	DB	18H,RETRS-$-1
+                
+ 055A 2AD605    STEPIN: LHLD	MODE
+ 055D 23        	INX	H		; MODE BYTE 2
+                	BIT	4,M		; CHECK HALF TRACK BIT
+ 055E+CB66      	DB	0CBH,4*8+M+40H
+ 0560 0648      	MVI	B,01001000B	; STEP IN WITHOUT UPDATE
+ 0562 C49905    	CNZ	TYPE$I		; STEP A SECOND TIME (W/O UPDATE) FOR HALF-TRK
+ 0565 0658      	MVI	B,01011000B	; STEP IN AND UPDATE TRACK REGISTER
+                	JR	TYPE$I
+ 0567+1830      	DB	18H,TYPE$I-$-1
+                
+                HOME:		;POSITION HEAD AT TRACK ZERO...
+ 0569 DB3C      	IN	STAT
+ 056B E604      	ANI	00000100B	;TEST TRACK ZERO SENSOR,
+                	JRNZ	@TRK0		;SKIP ROUTINE IF WE'RE ALREADY AT TRACK 0.
+ 056D+201E      	DB	20H,@TRK0-$-1
+ 056F DB3D      	IN	TRACK		;DOES THE SYSTEM THINK WE'RE AT TRACK 0 ??
+ 0571 B7        	ORA	A
+                	JRNZ	HOME1	;IF IT DOESN'T, ITS PROBEBLY ALRIGHT TO GIVE "RESTORE"
+ 0572+200E      	DB	20H,HOME1-$-1
+ 0574 2E06      	MVI	L,6 ;(6 TRKS)	;ELSE WE COULD BE IN "NEGATIVE TRACKS" SO...
+ 0576 0648      	MVI	B,01001000B	;WE MUST STEP-IN A FEW TRACKS, LOOKING FOR THE
+ 0578 CD9905    HOME0:	CALL	TYPE$I		;TRACK ZERO SIGNAL.
+ 057B E608      	ANI	00000100B SHL 1 ;"SHL 1" BECAUSE CHKRDY DOES AN "RLC"
+                	JRNZ	@TRK0
+ 057D+200E      	DB	20H,@TRK0-$-1
+ 057F 2D        	DCR	L
+                	JRNZ	HOME0
+ 0580+20F6      	DB	20H,HOME0-$-1
+ 0582 0608      HOME1:	MVI	B,00001000B	;RESTORE COMMAND, WITH HEADLOAD
+ 0584 CD9905    	CALL	TYPE$I
+ 0587 EE08      	XRI	00000100B SHL 1 ;TEST TRACK-0 SIGNAL
+ 0589 1F        	RAR
+ 058A 1F        	RAR
+ 058B 1F        	RAR
+ 058C 1F        	RAR	;[CY] = 1 IF NOT AT TRACK 0
+ 058D 3E00      @TRK0:	MVI	A,0
+ 058F D33D      	OUT	TRACK		;MAKE SURE EVERYONE KNOWS WERE AT TRACK 0
+ 0591 C9        	RET
+                
+                READ$ADDR:
+ 0592 3ADB05    	LDA	SIDE
+ 0595 F6C4      	ORI	11000100B	; READ-ADDRESS COMMAND WITH SETTLE DELAY
+                	JR	PUT$I		; IGNORE DATA (AND DATA-LOST ERROR)
+ 0597+1804      	DB	18H,PUT$I-$-1
+                
+                TYPE$I:
+ 0599 3AD205    	LDA	STEPRA		; STEP-RATE BITS
+ 059C B0        	ORA	B		; MERGE COMMAND
+ 059D F3        PUT$I	DI			; prevent interrupt routines
+ 059E D33C      	OUT	STAT		; SEND command TO CONTROLLER
+ 05A0 DB3C      WB:	IN	STAT		; WAIT FOR BUSY SIGNAL
+ 05A2 1F        	RAR			; TO COME UP
+                	JRNC	WB
+ 05A3+30FB      	DB	30H,WB-$-1
+ 05A5 DB3C      WNB:	IN	STAT		; poll controller for function-complete
+ 05A7 1F        	RAR			; Busy?
+                	JRC	WNB		; wait until not busy.
+ 05A8+38FB      	DB	38H,WNB-$-1
+ 05AA 17        	RAL
+ 05AB 320000    	STA	DSKSTA		;SAVE TYPE$II (III) STATUS FOR ERROR DETECTION.
+ 05AE 3ED0      	MVI	A,11010000B	;TERMINATE COMMAND (RESET STATUS TO TYPE 1)
+ 05B0 D33C      	OUT	STAT
+ 05B2 FB        	EI			; re-enable interrupts.
+ 05B3 DB3F      	IN	DATA		; FALL THROUGH TO CHKRDY
+                	
+                CHKRDY:
+ 05B5 11C0DA    	LXI	D,56000 	; WAIT NO MORE THAN 1.6 SECOND FOR READY 
+                CHKR0:	
+ 05B8 DB3C      	IN	STAT		; read disk status
+ 05BA 07        	RLC			; shift 'NOT READY' bit into Carry
+ 05BB D0        	RNC			; stop if drive is ready 
+ 05BC 1B        	DCX	D		; count loops	 
+ 05BD 7A        	MOV	A,D	
+ 05BE B3        	ORA	E		; Test for end of loops
+                	JRNZ	CHKR0		; loop again if not
+ 05BF+20F7      	DB	20H,CHKR0-$-1
+ 05C1 DB3C      	IN	STAT		; one last chance for drive to be ready  
+ 05C3 07        	RLC			; Y if NOTRDY	
+ 05C4 C9        	RET			; End
+                	
+                
+ 05C5 7E        HLIHL:	MOV	A,M		; LOAD HL INDIRECT THRU HL
+ 05C6 23        	INX	H
+ 05C7 66        	MOV	H,M
+ 05C8 6F        	MOV	L,A
+ 05C9 C9        	RET
+                
+                INTRQ$ROUTINE:
+ 05CA DB3C      	IN	STAT		; Clear interrupt request
+ 05CC 33        	INX	SP		; TERMINATE SUB-ROUTINE by eliminating the
+ 05CD 33        	INX	SP		; return address PUSHed by the interrupt.
+ 05CE FB        	EI			; turn interrupts back on.
+ 05CF C9        	RET			; end
+ 0006 =         LEN$IR	EQU	$-INTRQ$ROUTINE ; length of routine to transfer.
+                
+ 05D0 00        FLAG$8DD: DB	0
+ 05D1 00        TPS:	DB	0		; TRACKS PER SIDE
+ 05D2 00        STEPRA	DB	0		; STEP RATE CODE 
+ 05D3 00        RETRYS	DB	0
+ 05D4 0000      SEKERR	DB	0,0		; SEEK,RESTORE ERROR COUNTS
+ 05D6 0000      MODE	DW	0		; POINTER TO MODE BYTE
+ 05D8 00        RELDSK	DB	0		; DRIVE # RELATIVE TO 0
+ 05D9 08        LOGDSK	DB	8		; CURRENT DRIVE SELECTED BY THIS MODULE
+ 05DA 00        CTRL$IMAGE: DB	0		; IMAGE OF CONTROL PORT
+ 05DB 00        SIDE	DB	0		; SIDE SELECT BIT FOR COMMANDS
+ 05DC 00        RD$FLAG DB	0
+ 05DD 00        UNALLOC DB	0
+ 05DE 00        BLKMSK	DB	0
+ 05DF FF        HSTDSK	DB	0FFH
+ 05E0 00        HSTTRK	DB	0
+ 05E1 00        HSTSEC	DB	0
+ 05E2 0000      REQDSK: DB	0,0
+ 05E4 00        REQSEC: DB	0
+ 05E5 00        BLKSEC	DB	0
+ 05E6 00        BLCODE	DB	0
+ 05E7 00        OFFSET: DB	0		; OFFSET TO DIRECTORY TRACK
+ 05E8 00        SELERR: DB	0
+ 05E9 FF        SELOP:	DB	0FFH
+ 05EA 0000      CURDPB: DW	0
+ 05EC 00        MODFLG: DB	0
+                
+                ; Current head positions for each drive
+ 05ED FFFFFFFFFFTRKS:	DB	255,255,255,255,255,255,255,255,0	
+                
+ 05F6 =         btend	equ	$
+                
+ 05F6           HSTBUF: DS	1024
+ 09F6           CSV:	ds	0
+ 09F6           ALV:	ds	0
+                
+ 09F6           	end
+

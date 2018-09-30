@@ -1,0 +1,326 @@
+ 2031 =         vers equ '1 ' ; June 28, 1983  10:03  drm  "CHRIO3.ASM"
+                ;********************************************************
+                ;   Character I/O module for MMS CP/M plus		*
+                ; Copyright (C) 1983 Magnolia Microsystems		*
+                ;********************************************************
+                	maclib Z80
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                 
+ FFFF =         int	equ	true	;Console input via interupts?
+ 0010 =         bufsiz	equ	16	;use only 2,4,8,16,32,64,128,256.
+ 000F =         bufmsk	equ	bufsiz-1
+                
+ 0018 =         RST3	equ	(3)*8
+                
+ 00E8 =         crt	equ	0e8h	;CONSOLE
+ 00E0 =         lp	equ	0e0h	;PRINTER
+ 00D8 =         dte	equ	0d8h	;MODEM
+ 00D0 =         dce	equ	0d0h	;AUX
+                
+ 00C8 =         dev0	equ	200	;first device
+ 0004 =         ndev	equ	4	;number of devices
+                
+                	extrn @ctbl
+                
+                	cseg	;common memory, other parts in banked.
+ 0000 D500      	dw	thread
+ 0002 C804      	db	dev0,ndev
+                
+ 0004 C33500    	jmp	init
+ 0007 C39600    	jmp	inst
+ 000A C38500    	jmp	input
+ 000D C3B300    	jmp	outst
+ 0010 C3A700    	jmp	output
+ 0013 1900      	dw	string
+ 0015 0000      	dw	chrtbl
+ 0017 4100      	dw	xmodes
+                
+ 0019 5A38392000string: db	'Z89 ',0,'Standard and interupt I/O ',0,'v3.10'
+ 003E 3120      	dw	vers
+ 0040 24        	db	'$'
+                
+ 0041 303F03E8  xmodes: db	00110000b,00111111b,00000011b,crt
+ 0045 303F83E0  	db	00110000b,00111111b,10000011b,lp
+ 0049 313F83D8  	db	00110001b,00111111b,10000011b,dte
+ 004D 303F83D0  	db	00110000b,00111111b,10000011b,dce
+                
+                 if int
+ 0051 11C500    index:	lxi	d,keybd
+ 0054 7B        	mov	a,e
+ 0055 86        	add	m
+ 0056 5F        	mov	e,a
+ 0057 F5        	push	psw
+ 0058 7E        	mov	a,m
+ 0059 3C        	inr	a
+ 005A E60F      	ani	bufmsk
+ 005C 77        	mov	m,a
+ 005D F1        	pop	psw
+ 005E D0        	rnc
+ 005F 14        	inr	d
+ 0060 C9        	ret
+                
+                interupt:
+                	sspd	ustk
+ 0061+ED73      	DB	0EDH,73H
+ 0063+B100      	DW	USTK
+ 0065 31C300    	lxi	sp,istk
+ 0068 F5        	push	psw
+ 0069 C5        	push	b
+ 006A D5        	push	d
+ 006B E5        	push	h
+ 006C DBED      	in	crt+5
+                	bit	4,a
+ 006E+CB67      	DB	0CBH,4*8+A+40H
+ 0070 C2A100    	jnz	break
+ 0073 0F        	rrc
+ 0074 D29300    	jnc	exit
+ 0077 21C300    	lxi	h,keypt0
+ 007A 3AC400    	lda	keypt1
+ 007D 3D        	dcr	a
+ 007E E60F      	ani	bufmsk
+ 0080 BE        	cmp	m
+ 0081 F5        	push	psw
+ 0082 CD5100    	call	index
+ 0085 DBE8      	in	crt
+ 0087 E67F      	ani	01111111b
+ 0089 12        	stax	d
+ 008A F1        	pop	psw
+ 008B C29300    	jnz	exit
+ 008E 7E        gobl:	mov	a,m
+ 008F 3D        	dcr	a
+ 0090 E60F      	ani	bufmsk
+ 0092 77        	mov	m,a
+ 0093 3E05      exit:	mvi	a,0101b
+ 0095 D3E9      	out	crt+1
+ 0097 E1        	pop	h
+ 0098 D1        	pop	d
+ 0099 C1        	pop	b
+ 009A F1        	pop	psw
+                	lspd	ustk
+ 009B+ED7B      	DB	0EDH,07BH
+ 009D+B100      	DW	USTK
+ 009F FB        	ei
+ 00A0 C9        	ret
+                
+ 00A1 DBE8      break:	in	crt
+ 00A3 AF        	xra	a
+ 00A4 32C500    	sta	keybd
+ 00A7 32C400    	sta	keypt1
+ 00AA 3C        	inr	a
+ 00AB 32C300    	sta	keypt0
+ 00AE C39300    	jmp	exit
+                
+ 00B1 0000      ustk:	dw	0
+ 00B3 0000000000	dw	0,0,0,0,0,0,0,0
+ 00C3           istk:	ds	0
+                
+ 00C3 00        keypt0: db	0
+ 00C4 00        keypt1: db	0
+ 00C5           keybd:	ds	bufsiz
+                 endif
+                
+ 00D5 =         thread	equ	$
+                
+                	dseg	;banked memory.
+                chrtbl: 	;initial values only, copied by BIOS to its table.
+                 if int
+ 0000 4943525420	db	'ICRT  ',00000111b,14 ;I/O, soft-baud, no protocal, 9600
+                 else
+                	db	'CRT   ',00000111b,14 ;I/O, soft-baud, no protocal, 9600
+                 endif
+ 0008 4C50542020	db	'LPT   ',00000111b,14 ;... 9600
+ 0010 4454452020	db	'DTE   ',00000111b, 6 ;... 300 baud
+ 0018 4443452020	db	'DCE   ',00000111b,14 ;... 9600
+                
+ 0020 78        getx:	mov	a,b	;B=device #, 0-15
+ 0021 D600      	sui	dev0-200
+ 0023 87        	add	a	;*2
+ 0024 87        	add	a	;*4
+ 0025 C603      	adi	3	;to point to port address
+ 0027 5F        	mov	e,a
+ 0028 1600      	mvi	d,0
+ 002A 214100    	lxi	h,xmodes
+ 002D 19        	dad	d
+ 002E 7E        	mov	a,m
+ 002F 5F        	mov	e,a
+ 0030 C605      	adi	5
+ 0032 4F        	mov	c,a
+ 0033 2B        	dcx	h
+ 0034 C9        	ret		;HL => xmode(dev)+2 = line control register image
+                
+                init:
+                 if int
+ 0035 78        	mov	a,b
+ 0036 FE00      	cpi	dev0-200
+ 0038 CCCC00    	cz	intcrt
+                 endif
+ 003B CD2000    	call	getx
+ 003E 4B        	mov	c,e
+                	bit	7,m	;is INIT allowed ??
+ 003F+CB7E      	DB	0CBH,7*8+M+40H
+ 0041 C8        	rz
+ 0042 E5        	push	h
+ 0043 78        	mov	a,b
+ 0044 87        	add	a
+ 0045 87        	add	a
+ 0046 87        	add	a	;*8
+ 0047 6F2600    	mov l,a ! mvi h,0
+ 004A 110700196E	lxi d,@ctbl+7 ! dad d ! mov l,m ; get baud rate
+ 004F 2600291101	mvi h,0 ! dad h ! lxi d,speed$table ! dad d  ; point to counter entry
+ 0056 5E2356    	mov e,m ! inx h ! mov d,m	; get and save count
+ 0059 79        	mov	a,c	;DE=baud rate divisor
+ 005A 47        	mov	b,a	;port base for INS8250 in question.
+ 005B C603      	adi	3
+ 005D 4F        	mov	c,a	;+3 = access divisor latch bit
+ 005E 3E80      	mvi	a,10000000b
+                	outp	a	;access divisor latch
+ 0060+ED79      	DB	0EDH,A*8+41H
+ 0062 61        	mov	h,c
+ 0063 48        	mov	c,b	;+0 = lo byte of baud rate divisor
+                	outp	e
+ 0064+ED59      	DB	0EDH,E*8+41H
+ 0066 0C        	inr	c
+                	outp	d	;send divisor to divisor latch
+ 0067+ED51      	DB	0EDH,D*8+41H
+ 0069 4C        	mov	c,h	;get port+3 back into (C)
+ 006A E1        	pop	h	;point to BASE+3 initial value
+ 006B 7E        	mov	a,m	;disable divisor latch access.
+ 006C E67F      	ani	01111111b
+                	outp	a	;and setup # bits, parity, etc...
+ 006E+ED79      	DB	0EDH,A*8+41H
+ 0070 0C        	inr	c	;+4 = modem control
+ 0071 2B        	dcx	h	;next, handshake lines state
+ 0072 7E        	mov	a,m
+ 0073 E60F      	ani	00001111b	;enable handshake lines
+                	outp	a
+ 0075+ED79      	DB	0EDH,A*8+41H
+ 0077 0C        	inr	c	;+5 = line status
+                	inp	a	;clear any pending activity
+ 0078+ED78      	DB	0EDH,A*8+40H
+ 007A 79        	mov	a,c
+ 007B E6F8      	ani	11111000b	;reset port to base
+ 007D 4F        	mov	c,a
+                	inp	a	;clear any input data
+ 007E+ED78      	DB	0EDH,A*8+40H
+ 0080 0C        	inr	c	;+1 = interupt control
+ 0081 AF        	xra	a
+                	outp	a	;disable chip interupts
+ 0082+ED79      	DB	0EDH,A*8+41H
+ 0084 C9        	ret
+                
+                input:
+                 if int
+ 0085 78        	mov	a,b
+ 0086 FE00      	cpi	dev0-200	;console?
+ 0088 CAE800    	jz	inpint
+                 endif
+ 008B CD9600    inp0:	call	inst
+                	jrz	inp0			; wait for character ready
+ 008E+28FB      	DB	28H,INP0-$-1
+ 0090 4B        	mov	c,e			;get data register address
+                	inp	a			; get data
+ 0091+ED78      	DB	0EDH,A*8+40H
+ 0093 E67F      	ani	7Fh			; mask parity
+ 0095 C9        	ret
+                
+                inst:
+                 if int
+ 0096 78        	mov	a,b
+ 0097 FE00      	cpi	dev0-200
+ 0099 CAF600    	jz	stsint
+                 endif
+ 009C CD2000    	call	getx			;
+                	inp	a			; read from status port
+ 009F+ED78      	DB	0EDH,A*8+40H
+ 00A1 E601      	ani	1			; isolate RxRdy
+ 00A3 C8        	rz				; return with zero
+ 00A4 F6FF      	ori	true
+ 00A6 C9        	ret
+                
+ 00A7 79        output: mov	a,c
+ 00A8 F5        	push	psw			; save character from <C>
+ 00A9 CDB300    outp0:	call	outst
+                	jrz	outp0			; wait for TxEmpty, HL->port
+ 00AC+28FB      	DB	28H,OUTP0-$-1
+ 00AE 4B        	mov	c,e			; get port address
+ 00AF F1        	pop	psw
+                	outp	a			; send data
+ 00B0+ED79      	DB	0EDH,A*8+41H
+ 00B2 C9        	ret
+                
+ 00B3 CD2000    outst:	call	getx	; character output status
+ 00B6 2B        	dcx	h
+ 00B7 0C        	inr	c		; get port+6
+                	inp	a		; get handshake status
+ 00B8+ED78      	DB	0EDH,A*8+40H
+ 00BA AE        	xra	m 
+ 00BB 2B        	dcx	h		;
+ 00BC A6        	ana	m		; [ZR] = ready
+ 00BD E6F0      	ani	11110000b
+                	jrnz	nrdy
+ 00BF+2009      	DB	20H,NRDY-$-1
+ 00C1 0D        	dcr	c		; line status register (+5)
+                	inp	a
+ 00C2+ED78      	DB	0EDH,A*8+40H
+ 00C4 E620      	ani	20h		; test xmit holding register empty
+ 00C6 C8        	rz			;
+ 00C7 F6FF      	ori	true
+ 00C9 C9        	ret			; return true if ready
+                
+ 00CA AF        nrdy:	xra	a
+ 00CB C9        	ret
+                
+                 if int
+                intcrt:
+ 00CC E1        	pop	h
+ 00CD CDE700    	call	icall	;do regular init routine.
+ 00D0 3EC3      	mvi	a,(JMP) ;now do special init.
+ 00D2 321800    	sta	RST3
+ 00D5 216100    	lxi	h,interupt
+ 00D8 221900    	shld	RST3+1
+ 00DB AF        	xra	a
+ 00DC 32C300    	sta	keypt0
+ 00DF 32C400    	sta	keypt1
+ 00E2 3E05      	mvi	a,0101b
+ 00E4 D3E9      	out	crt+1
+ 00E6 C9        	ret
+                
+ 00E7 E9        icall:	pchl
+                
+ 00E8 CDF600    inpint: call	stsint
+ 00EB CAE800    	jz	inpint
+ 00EE 21C400    	lxi	h,keypt1
+ 00F1 CD5100    	call	index
+ 00F4 1A        	ldax	d
+ 00F5 C9        	ret
+                
+ 00F6 21C300    stsint: lxi	h,keypt0
+ 00F9 3AC400    	lda	keypt1
+ 00FC 96        	sub	m
+ 00FD C8        	rz
+ 00FE F6FF      	ori	true
+ 0100 C9        	ret
+                
+                 endif
+                speed$table:
+ 0101 0000      	dw	0	;no baud rate
+ 0103 0009      	dw	2304	;50 baud
+ 0105 0006      	dw	1536	;75
+ 0107 1704      	dw	1047	;110
+ 0109 5803      	dw	856	;134.5
+ 010B 0003      	dw	768	;150
+ 010D 8001      	dw	384	;300
+ 010F C000      	dw	192	;600
+ 0111 6000      	dw	96	;1200
+ 0113 4000      	dw	64	;1800
+ 0115 3000      	dw	48	;2400
+ 0117 2000      	dw	32	;3600
+ 0119 1800      	dw	24	;4800
+ 011B 1000      	dw	16	;7200
+ 011D 0C00      	dw	12	;9600
+ 011F 0600      	dw	6	;19200
+                
+ 0121           	end
+

@@ -1,0 +1,166 @@
+ 2031 =         vers equ '1 ' ; Sep 24, 2017  17:30   drm "MEM318.ASM"
+                ;****************************************************************
+                ; Banke Membory BIOS module for CP/M 3 (CP/M plus),		*
+                ; Copyright (c) 1983 Magnolia Microsystems			*
+                ;****************************************************************
+                	maclib Z80
+                
+ FFFF =         true	equ -1
+ 0000 =         false	equ not true
+                
+ 0038 =         bnksiz	equ	56	;size of banks, in "K". Either 48 or 56.
+                
+ 000D =         cr	equ 13
+ 000A =         lf	equ 10
+ 0007 =         bell	equ 7
+                
+ 00F2 =         port	equ	0f2h	;interupt/memory control port
+                
+                ;  SCB registers
+                	extrn @bnkbf,@cbnk,@intby
+                
+                ;  Variables for use by other modules
+                	public @nbnk,@compg,@mmerr
+                
+                ;  Routines for use by other modules
+                	public ?bnksl,?bnkck,?xmove,?mvccp,?move
+                
+                	cseg		; GENCPM puts CSEG stuff in common memory
+                
+ 0000 03        @nbnk:	db	3
+ 0001 0D0A074E6F@mmerr: db	cr,lf,bell,'No 77318$'
+                
+                ; Uses XMOVE semantics
+                ; C=source bank, B=dest bank, HL=address, A=num recs
+                ?mvccp: exaf	;save number of records
+ 000D+08        	DB	08H
+ 000E 79        	mov	a,c
+ 000F CD3400    	call	?bnksl	;select source bank
+ 0012 C5        	push	b
+ 0013 E5        	push	h
+                	lded	@bnkbf
+ 0014+ED5B      	DB	0EDH,5BH
+ 0016+0000      	DW	@BNKBF
+ 0018 018000    	lxi	b,128
+                	ldir
+ 001B+EDB0      	DB	0EDH,0B0H
+ 001D E1        	pop	h
+ 001E C1        	pop	b
+ 001F 78        	mov	a,b
+ 0020 CD3400    	call	?bnksl	;select destination bank
+ 0023 C5        	push	b
+ 0024 EB        	xchg
+ 0025 2A0000    	lhld	@bnkbf
+ 0028 018000    	lxi	b,128
+                	ldir
+ 002B+EDB0      	DB	0EDH,0B0H
+ 002D EB        	xchg
+ 002E C1        	pop	b
+                	exaf
+ 002F+08        	DB	08H
+ 0030 3D        	dcr	a
+                	jrnz	?mvccp
+ 0031+20DA      	DB	20H,?MVCCP-$-1
+ 0033 C9        	ret
+                
+                ?bnksl:
+ 0034 320000    	sta	@cbnk		; remember current bank
+ 0037 C5        	push	b		; save register b for temp
+ 0038 E5        	push	h		;
+ 0039 214F00    	lxi	h,table 	;
+ 003C 4F        	mov	c,a		;
+ 003D 0600      	mvi	b,0		;
+ 003F 09        	dad	b		;
+ 0040 46        	mov	b,m		;
+ 0041 210000    	lxi	h,@intby	;
+ 0044 7E        	mov	a,m		;
+ 0045 E6CB      	ani	11001011b	;
+ 0047 B0        	ora	b		;
+ 0048 77        	mov	m,a		;
+ 0049 D3F2      	out	port		;
+ 004B E1        	pop	h		;
+ 004C C1        	pop	b		; restore register b
+ 004D C9        	ret
+                
+                
+                	IF bnksiz EQ 56
+                
+ 004E E0        @compg	db	0e0h
+                
+ 004F 20        table:	db	20H	;select code for bank 0
+ 0050 14        	db	14H	; bank 1 (56K)
+ 0051 34        	db	34H	; bank 2 (56K)
+                
+                	endif
+                
+                	IF bnksiz EQ 48
+                
+                @compg	db	0c0h
+                
+                table:	db	20H	;select code for bank 0
+                	db	10H	; bank 1 (48K)
+                	db	30H	; bank 2 (48K)
+                
+                	endif
+                
+ 0052 EB        ?move:	xchg		; we are passed source in DE and dest in HL
+                	ldir		; use Z80 block move instruction
+ 0053+EDB0      	DB	0EDH,0B0H
+ 0055 EB        	xchg		; need next addresses in same regs
+                ?xmove:
+ 0056 C9        	ret
+                
+                	dseg	; this part can be banked
+                
+                ; Verify that we have banked RAM...
+                ?bnkck:
+ 0000 210000    	lxi	h,@intby
+ 0003 114000    	lxi	d,40h
+ 0006 3E01      	mvi	a,1
+ 0008 12        	stax	d	;put bank number in 40h of respective bank
+ 0009 7E        	mov	a,m
+ 000A E6CB      	ani	11001011b
+ 000C F604      	ori	04h
+ 000E D3F2      	out	port
+ 0010 3E02      	mvi	a,2
+ 0012 12        	stax	d
+ 0013 7E        	mov	a,m
+ 0014 E6CB      	ani	11001011b
+ 0016 F624      	ori	24h
+ 0018 D3F2      	out	port
+ 001A 3E03      	mvi	a,3
+ 001C 12        	stax	d
+ 001D 7E        	mov	a,m
+ 001E D3F2      	out	port
+ 0020 1A        	ldax	d
+ 0021 FE01      	cpi	1
+                	jrnz	noram
+ 0023+201C      	DB	20H,NORAM-$-1
+ 0025 7E        	mov	a,m
+ 0026 E6CB      	ani	11001011b
+ 0028 F604      	ori	04h
+ 002A D3F2      	out	port
+ 002C 1A        	ldax	d
+ 002D FE02      	cpi	2
+                	jrnz	noram
+ 002F+2010      	DB	20H,NORAM-$-1
+ 0031 7E        	mov	a,m
+ 0032 E6CB      	ani	11001011b
+ 0034 F624      	ori	24h
+ 0036 D3F2      	out	port
+ 0038 1A        	ldax	d
+ 0039 FE03      	cpi	3
+                	jrnz	noram
+ 003B+2004      	DB	20H,NORAM-$-1
+ 003D 3EFF      	mvi	a,true
+                	jr	bnkck0
+ 003F+1801      	DB	18H,BNKCK0-$-1
+ 0041 AF        noram:	xra	a
+ 0042 F5        bnkck0:	push	psw
+ 0043 7E        	mov	a,m
+ 0044 D3F2      	out	port
+ 0046 F1        	pop	psw
+ 0047 C9        	ret
+                
+ 0048           	end
+

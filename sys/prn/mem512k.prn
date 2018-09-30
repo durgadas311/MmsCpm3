@@ -1,0 +1,219 @@
+ 2031 =         vers equ '1 ' ; Sep 24, 2017  17:05   drm "MEM512K.ASM"
+                ;****************************************************************
+                ; Banked Memory BIOS module for CP/M 3 (CP/M plus)		*
+                ; Copyright (c) 1983 Magnolia Microsystems			*
+                ;****************************************************************
+                	maclib Z80
+                
+ FFFF =         true	equ -1
+ 0000 =         false	equ not true
+                
+ 000D =         cr	equ 13
+ 000A =         lf	equ 10
+ 0007 =         bell	equ 7
+                
+ 0000 =         mmu	equ	000h	; base port of RAM256K
+                
+ 0000 =         rd	equ	0	; mmu offset for read
+ 0004 =         wr	equ	4	; mmu offset for write
+ 0080 =         map	equ	080h	; mmu flag to enable mapping...
+                
+                ;  SCB registers
+                	extrn @bnkbf,@cbnk
+                
+                ;  Variables for use by other modules
+                	public @nbnk,@compg,@mmerr
+                	public @m512k,@t512k	; used by RD512K'3
+                
+                ;  Routines for use by other modules
+                	public ?bnksl,?bnkck,?xmove,?mvccp,?move
+                
+                	cseg		; GENCPM puts CSEG stuff in common memory
+                
+ 0000 04        @nbnk:	db	4	; actually, 8 but we save 4 for ramdisk...
+ 0001 C0        @compg:	db	0c0h
+ 0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No H89-512K$'
+ 0011 00        @m512k:	db	mmu
+                
+                ; Uses XMOVE semantics
+                ; C=source bank, B=dest bank, HL=address, A=num recs
+                ?mvccp:
+ 0012 F5        	push	psw
+ 0013 E5        	push	h
+ 0014 CD8600    	call	?xmove
+ 0017 E1        	pop	h
+ 0018 F1        	pop	psw
+ 0019 47        	mov	b,a
+ 001A 0E00      	mvi	c,0
+                	srlr	b
+ 001C+CB38      	DB	0CBH, 38H + B
+                	rarr	c	; BC = A * 128
+ 001E+CB19      	DB	0CBH, 18H + C
+ 0020 5D        	mov	e,l
+ 0021 54        	mov	d,h	; same address, diff banks
+ 0022 CD6D00    	call	?move
+ 0025 C9        	ret
+                
+                xbnksl:	
+ 0026 F3        	di	; might already be disabled??
+ 0027 C5        	push	b
+ 0028 E5        	push	h
+ 0029 2A6A00    	lhld	xtable+2
+ 002C E5        	push	h
+ 002D 2A6800    	lhld	xtable
+                	jr	bnksl0	; restores HL, BC...
+ 0030+180F      	DB	18H,BNKSL0-$-1
+                ; TODO: avoid redundant selection...
+                ; But must handle xmove also...
+                ?bnksl:
+ 0032 320000    	sta	@cbnk		; remember current bank
+ 0035 C5        	push	b		; save register b for temp
+ 0036 E5        	push	h		;
+ 0037 215500    	lxi	h,table 	;
+ 003A 87        	add	a
+ 003B 87        	add	a
+ 003C 4F        	mov	c,a		;
+ 003D 0600      	mvi	b,0		;
+ 003F 09        	dad	b		;
+ 0040 E5        	push	h	; same mapping for WR
+                bnksl0:	; HL = RD table entry, TOS = WR table entry
+ 0041 0604      	mvi	b,4
+ 0043 0EFF      	mvi	c,mmu-1
+                bnksl1:
+ 0045 0C        	inr	c
+                	outi
+ 0046+EDA3      	DB	0EDH,0A3H
+                	jrnz	bnksl1
+ 0048+20FB      	DB	20H,BNKSL1-$-1
+ 004A E1        	pop	h
+ 004B 0604      	mvi	b,4
+                bnksl2:
+ 004D 0C        	inr	c
+                	outi
+ 004E+EDA3      	DB	0EDH,0A3H
+                	jrnz	bnksl2
+ 0050+20FB      	DB	20H,BNKSL2-$-1
+ 0052 E1        	pop	h		;
+ 0053 C1        	pop	b		; restore register b
+ 0054 C9        	ret
+                
+                ; Once memory is verified, these all have 'map' bit set.
+                @t512k:
+                table:
+ 0055 00010203  	db	 0, 1, 2,3	; Bank 0 map pattern
+ 0059 04050603  	db	 4, 5, 6,3	; Bank 1 map pattern
+ 005D 08090A03  	db	 8, 9,10,3	; Bank 2 map pattern
+ 0061 0C0D0E03  	db	12,13,14,3	; Bank 3 map pattern
+ 0065 00        	db	0	; safety stop for RD512K'3
+ 0011 =         tablez	equ	$-table
+                
+ 0066 0000      xcache:	dw	0
+ 0068 55005500  xtable:	dw	table,table
+ 006C 00        xflag:	db	0
+                
+ 006D 3A6C00    ?move:	lda	xflag
+ 0070 B7        	ora	a
+ 0071 C42600    	cnz	xbnksl	; disables interrupts
+                xxm0:
+ 0074 EB        	xchg		; we are passed source in DE and dest in HL
+                	ldir		; use Z80 block move instruction
+ 0075+EDB0      	DB	0EDH,0B0H
+ 0077 EB        	xchg		; need next addresses in same regs
+ 0078 B7        	ora	a
+ 0079 C8        	rz
+ 007A 3A0000    	lda	@cbnk
+ 007D CD3200    	call	?bnksl
+ 0080 AF        	xra	a
+ 0081 326C00    	sta	xflag
+ 0084 FB        	ei	; is this OK??
+ 0085 C9        	ret
+                
+                ?xmove:
+ 0086 E5        	push	h
+                	; cache mappings...
+ 0087 2A6600    	lhld	xcache
+ 008A B7        	ora	a
+                	dsbc	b
+ 008B+ED42      	DB	0EDH,B*8+42H
+                	jrz	xnomap
+ 008D+281D      	DB	28H,XNOMAP-$-1
+                xremap:
+                	sbcd	xcache
+ 008F+ED43      	DB	0EDH,43H
+ 0091+6600      	DW	XCACHE
+ 0093 D5        	push	d
+ 0094 115500    	lxi	d,table
+ 0097 78        	mov	a,b	; WR bank number
+ 0098 87        	add	a
+ 0099 87        	add	a
+ 009A 6F        	mov	l,a
+ 009B 2600      	mvi	h,0
+ 009D 19        	dad	d
+ 009E 226A00    	shld	xtable+2
+ 00A1 79        	mov	a,c	; RD bank number
+ 00A2 87        	add	a
+ 00A3 87        	add	a
+ 00A4 6F        	mov	l,a
+ 00A5 2600      	mvi	h,0
+ 00A7 19        	dad	d	; RD bank in HL
+ 00A8 226800    	shld	xtable
+ 00AB D1        	pop	d
+                xnomap:
+ 00AC AF        	xra	a
+ 00AD 3D        	dcr	a
+ 00AE 326C00    	sta	xflag	; return NZ status (required?)
+ 00B1 E1        	pop	h
+ 00B2 C9        	ret
+                
+                	dseg	; this part can be banked
+                
+ 0000 AF        noram:	xra	a	; disable banked memory
+ 0001 D300      	out	mmu
+ 0003 C9        	ret		; A=0 no banked memory
+                
+                ?bnkck:
+ 0004 AF        	xra	a
+ 0005 CD3200    	call	?bnksl	; setup mapping without enabling
+ 0008 114000    	lxi	d,40h	; a likely addr in low 16K
+ 000B 3E84      	mvi	a,4+map		; bank 1 map code
+ 000D D304      	out	mmu+wr
+ 000F 3E01      	mvi	a,1
+ 0011 12        	stax	d	;put bank number in 40h of respective bank
+ 0012 3E88      	mvi	a,8+map		; bank 2 map code
+ 0014 D304      	out	mmu+wr
+ 0016 3E02      	mvi	a,2
+ 0018 12        	stax	d	;put bank number in 40h of respective bank
+ 0019 3E8C      	mvi	a,12+map	; bank 3 map code
+ 001B D304      	out	mmu+wr
+ 001D 3E03      	mvi	a,3
+ 001F 12        	stax	d	;put bank number in 40h of respective bank
+ 0020 3E84      	mvi	a,4+map		; bank 1 map code
+ 0022 D300      	out	mmu
+ 0024 1A        	ldax	d
+ 0025 FE01      	cpi	1
+ 0027 C20000    	jnz	noram
+ 002A 3E88      	mvi	a,8+map		; bank 2 map code
+ 002C D300      	out	mmu
+ 002E 1A        	ldax	d
+ 002F FE02      	cpi	2
+ 0031 C20000    	jnz	noram
+ 0034 3E8C      	mvi	a,12+map	; bank 3 map code
+ 0036 D300      	out	mmu
+ 0038 1A        	ldax	d
+ 0039 FE03      	cpi	3
+ 003B C20000    	jnz	noram
+                	; Set the "map" enable bit on all mappings
+ 003E 215500    	lxi	h,table
+ 0041 0611      	mvi	b,tablez
+                in6:	setb	7,m	; (HL) |= map
+ 0043+CBFE      	DB	0CBH,7*8+M+0C0H
+ 0045 23        	inx	h
+                	djnz	in6
+ 0046+10FB      	DB	10H,IN6-$-1
+ 0048 AF        	xra	a
+ 0049 CD3200    	call	?bnksl	; this enables mapping...
+ 004C 3EFF      	mvi	a,true
+ 004E C9        	ret		; A<>0 banked memory available
+                
+ 004F           	end
+

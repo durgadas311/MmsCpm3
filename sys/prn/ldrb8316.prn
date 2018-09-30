@@ -1,0 +1,299 @@
+ 2031 =         vers equ '1 ' ; July 14, 1983  16:30 mjm "LDRB316.ASM"
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                	MACLIB Z80
+                	$*MACRO
+                	extrn cboot,btend,loader
+                
+                **************	Boot mode codes **************
+                **	 0 = 8"    SD SS                    **
+                **	 1 = 8"    DD SS                    **
+                **	 2 = 8"    DD DS                    **
+                **	 3 = 5.25" DD SS ST                 **
+                **	 4 = 5.25" DD DS ST                 **
+                **	 5 = 5.25" DD SS DT                 **
+                **	 6 = 5.25" DD DS DT                 **
+                ********** 77316 xxxxxxxx BOOT ROUTINE *******
+ 0008 =         disksiz equ	8		; 8 = 8 inch disk or 5 = 5.25 inch disk
+                
+ 0068 =         ctl$bytsd equ	 01101000b	;single density
+ 0028 =         ctl$bytdd equ	 00101000b	;double density
+                
+ 001A =         SPT8SD	  EQU	 26		;SECTORS PER TRACK  8" sd
+ 0010 =         SPT8DD	  EQU	 16		;   "     "    "    8" dd
+ 0009 =         SPT5	  EQU	 9		;   "     "    "    5" dd
+                
+ 007F =         secmsksd  equ	  007fh 	 
+ 01FF =         secmskdd  equ	  01ffh
+                
+ 0007 =         secshfsd  equ	  7
+ 0009 =         secshfdd  equ	  9
+                
+ 0008 =         ndrv	equ	8
+ 001D =         drv0	equ	29
+                
+                ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
+                *****					      *****
+                *****  29 = FIRST 8" DRIVE                    *****
+                *****  30 = SECOND 8" DRIVE                   *****
+                *****  31 = THIRD 8" DRIVE                    *****
+                *****  32 = FOURTH 8" DRIVE                   *****
+                *****  33 = FIRST 5.25" DRIVE                 *****
+                *****  34 = SECOND 5.25" DRIVE                *****
+                *****  35 = THIRD 5.25" DRIVE                 *****
+                *****  36 = FOURTH 5.25" DRIVE                *****
+                *****					      *****
+                ***************************************************
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+ 0038 =         CTRL	EQU	38H
+ 003C =         WD1797	EQU	3CH
+ 003C =         STAT	EQU	WD1797+0
+ 003D =         TRACK	EQU	WD1797+1
+ 003E =         SECTOR	EQU	WD1797+2
+ 003F =         DATA	EQU	WD1797+3
+                
+ 00F2 =         ?PORT	EQU	0F2H
+                ***************************************************
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK BOOT MODULE
+                *************************************************** 
+                	aseg
+ 2280           	org	2280h
+ 2280 C38B22    BOOT:	jmp	around
+                
+ 2283 0000      sysend: dw	btend
+ 2285 0000      systrt: dw	loader
+                 if disksiz eq 8
+ 2287 1D        drive:	db	29		; boot drive
+ 2288 02        btmode: db	2		; boot mode default DD DS
+ 2289 1D        	db	29		; first drive
+                 else
+                drive:	db	33
+                btmode: db	4
+                	db	33
+                 endif
+ 228A 04        	db	4		; number of valid drives
+                
+ 228B E1        around: POP	H	;ADDRESS OF ERROR ROUTINE
+ 228C 310024    	LXI	SP,?STACK
+ 228F E5        	PUSH	H
+                
+                ***************************************************
+                *** START OF UNIQUE ROUTINE FOR BOOTING
+                ***************************************************
+ 2290 210000    	lxi	h,btend
+ 2293 110000    	lxi	d,loader
+ 2296 B7        	ora	a
+                	dsbc	d	;length of system, in bytes
+ 2297+ED52
+ 2299 227B23    	shld	syssiz
+                 if disksiz eq 8
+ 229C 3A8822    	lda	btmode
+ 229F B7        	ora	a
+                	jrnz	yes$dd	
+ 22A0+2008
+ 22A2 117F01    	lxi	d,secmsksd+100h   ;add in boot size, round up.
+ 22A5 19        	dad	d
+ 22A6 3E07      	mvi	a,secshfsd
+                	jr	div0
+ 22A8+1806
+                yes$dd:
+                 endif
+ 22AA 11FF02    	lxi	d,secmskdd+100h   ; add in boot size, round up
+ 22AD 19        	dad	d
+ 22AE 3E09      	mvi	a,secshfdd
+                div0:	srlr	h
+ 22B0+CB3C
+                	rarr	l
+ 22B2+CB1D
+ 22B4 3D        	dcr	a
+                	jrnz	div0
+ 22B5+20F9
+ 22B7 5D        	mov	e,l	;number of sectors to load
+ 22B8 210030    	LXI	H,3000h
+ 22BB 3A8722    	lda	drive
+ 22BE D61D      	SUI	drv0
+ 22C0 FE08      	CPI	ndrv	;don't allow invalid drives
+ 22C2 D0        	RNC
+                 if disksiz eq 8
+ 22C3 47        	mov	b,a
+ 22C4 3A8822    	lda	btmode
+ 22C7 B7        	ora	a
+ 22C8 78        	mov	a,b
+                	jrz	not$dd
+ 22C9+2804
+ 22CB F628      	ORI	ctl$bytdd
+                	jr	a1
+ 22CD+1802
+ 22CF F668      not$dd	ORI	ctl$bytsd
+                 else
+                	ORI	ctl$bytdd
+                 endif
+ 22D1 327D23    a1:	STA	ctrlpt
+ 22D4 D338      	OUT	CTRL
+ 22D6 3E0B      	MVI	A,00001011B	;RESTORE COMMAND
+ 22D8 CD6023    LOOP0	CALL	COMMAND
+ 22DB DB3C      	IN	STAT
+ 22DD E699      	ANI	10011001B
+ 22DF C0        	RNZ
+                 if disksiz eq 8	;8" drives
+ 22E0 3E0A      	MVI	A,10	;NUMBER OF RETRYS
+ 22E2 327A23    	STA	RETRY
+ 22E5 3A8822    	lda	btmode 
+ 22E8 B7        	ora	a
+                	jrz	no$burst0
+ 22E9+2808
+ 22EB 3E00      	mvi	a,(NOP) 	;nop out halts in read sector 
+ 22ED 326B23    	sta	RD0
+ 22F0 327123    	sta	RD1
+                no$burst0:
+                 endif
+ 22F3 1601      	MVI	D,1
+ 22F5 013F00    	LXI	B,(0)*256+(DATA)
+ 22F8 E5        SECL0	PUSH	H	;SAVE DMA ADDRESS IN CASE OF RETRY
+                 if disksiz eq 8	;8" drives
+ 22F9 3A8822    	lda	btmode	
+ 22FC B7        	ora	a
+                	jrz	no$burst1
+ 22FD+2807
+ 22FF 3A7D23    	LDA	ctrlpt
+ 2302 E6DF      	ANI	11011111B	;BURST ON
+ 2304 D338      	OUT	CTRL
+                no$burst1:
+                 endif
+ 2306 7A        	MOV	A,D
+ 2307 D33E      	OUT	SECTOR
+ 2309 3E88      	MVI	A,10001000B	;READ SINGLE SECTOR
+ 230B CD6523    	CALL	READ$REC
+ 230E E6BF      	ANI	10111111B
+                 if disksiz eq 8	;8" drives
+ 2310 3A7D23    	LDA	ctrlpt		  
+ 2313 D338      	OUT	CTRL
+                 endif
+                	JRZ	OK
+ 2315+280B
+ 2317 E1        	POP	H
+                 if disksiz eq 5	 ;5" drives
+                	lda	errf
+                	ora	a
+                	rnz
+                	cma
+                	sta	errf
+                	mvi	a,01001011b	;step-in, w/o update, for HT
+                	jr	loop0
+                 else			;8" drives
+ 2318 3A7A23    	LDA	RETRY
+ 231B 3D        	DCR	A
+ 231C 327A23    	STA	RETRY
+                	JRNZ	SECL0
+ 231F+20D7
+ 2321 C9        	RET
+                 endif
+ 2322 E3        OK:	XTHL
+ 2323 E1        	POP	H
+                 if disksiz eq 5	 ;5" drives
+                	cma
+                	sta	errf
+                 endif
+ 2324 1D        	DCR	E
+                	JRZ	DONE
+ 2325+2819
+ 2327 14        	INR	D
+                 if disksiz eq 8
+ 2328 3A8822    	lda	btmode
+ 232B B7        	ora	a
+ 232C 7A        	MOV	A,D
+                	jrz	not$dd2
+ 232D+2804
+ 232F FE11      	CPI	SPT8DD+1
+                	JRC	SECL0
+ 2331+38C5
+ 2333 FE1B      not$dd2 CPI	SPT8SD+1
+                 else
+                	MOV	A,D
+                	CPI	SPT5+1
+                 endif
+                	JRC	SECL0
+ 2335+38C1
+                 if disksiz eq 5	 ;5" drives
+                	xra	a
+                	sta	errf
+                	mvi	a,01011011b	;step in, with update
+                	jr	loop0
+                 else			;8" drives
+ 2337 DB3D      	IN	TRACK
+ 2339 3C        	INR	A
+ 233A D33F      	OUT	DATA
+ 233C 3E1B      	MVI	A,00011011B	;SEEK
+                	JR	LOOP0
+ 233E+1898
+                 endif
+                DONE:
+ 2340 F3        	DI
+ 2341 215923    	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
+ 2344 0607      	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
+ 2346 0EF2      	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
+                	OUTIR
+ 2348+EDB3
+ 234A 210031    	lxi	h,3000h+256
+ 234D 110000    	lxi	d,loader
+                	lbcd	syssiz
+ 2350+ED4B
+ 2352+7B23
+                	ldir
+ 2354+EDB0
+ 2356 C30000    	JMP	CBOOT
+                
+ 2359 04        ?CODE	DB	0000$01$00B
+ 235A 0C        	DB	0000$11$00B
+ 235B 04        	DB	0000$01$00B
+ 235C 08        	DB	0000$10$00B
+ 235D 0C        	DB	0000$11$00B
+ 235E 08        	DB	0000$10$00B
+ 235F 22        	DB	0010$00$10B	;FOR "-FA" MACHINES
+ 0007 =         ?CODE$LEN	EQU	$-?CODE
+                
+                COMMAND:
+ 2360 D33C      	OUT	STAT
+ 2362 FB        	EI
+                	JR $-1
+ 2363+18FE
+                
+                READ$REC:
+ 2365 D33C      	OUT	STAT
+ 2367 FB        	EI
+ 2368 76        	HLT
+                	INI
+ 2369+EDA2
+ 236B 76        RD0	HLT		; changed to a NOP on 8" dd
+                	INI
+ 236C+EDA2
+ 236E C26B23    	JNZ	RD0
+ 2371 76        RD1	HLT		; changed to a NOP on 8" dd
+                	INI
+ 2372+EDA2
+ 2374 C27123    	JNZ	RD1
+                	JR $-1
+ 2377+18FE
+                
+ 2379 00        errf:	db	0
+ 237A 00        retry:	db	0
+ 237B 0000      syssiz: dw	0
+ 237D 00        ctrlpt	db	0	
+                
+                	REPT	256-($-BOOT)
+                	DB	0
+                	ENDM
+ 237E+00
+ 237F+00
+                
+ 2400 =         ?STACK: EQU	$+128
+                
+ 2380           	END
+

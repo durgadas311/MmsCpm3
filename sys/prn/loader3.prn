@@ -1,0 +1,766 @@
+CP/M RMAC ASSEM 1.1	#001	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+                title	'CP/M 3 - PROGRAM LOADER RSX - November 1982'
+                ;	version 3.0b  Nov 04 1982 - Kathy Strutynski
+                ;	version 3.0c  Nov 23 1982 - Doug Huskey
+                ;	              Dec 22 1982 - Bruce Skidmore
+                ;
+                ;
+                ;	copyright (c) 1982
+                ;	digital research
+                ;	box 579
+                ;	pacific grove, ca.
+                ;	93950
+                ;
+                 	****************************************************
+                 	*****  The following values must be placed in    ***
+                 	*****  equates at the front of CCP3.ASM.         ***
+                 	*****                                            ***
+                 	*****  Note: Due to placement at the front these ***
+                 	*****  equates cause PHASE errors which can be   ***
+                 	*****  ignored.                                  ***
+P0100 =         equ1	equ	rsxstart +0100h  ;set this equate in the CCP
+P01D0 =         equ2	equ	fixchain +0100h  ;set this equate in the CCP
+P01EB =         equ3	equ	fixchain1+0100h  ;set this equate in the CCP
+P01F0 =         equ4	equ	fixchain2+0100h  ;set this equate in the CCP
+P0200 =         equ5	equ	rsx$chain+0100h  ;set this equate in the CCP
+P02CA =         equ6	equ	reloc    +0100h  ;set this equate in the CCP
+P030F =         equ7	equ	calcdest +0100h  ;set this equate in the CCP
+P038D =         equ8	equ	scbaddr	 +0100h  ;set this equate in the CCP
+P038F =         equ9	equ	banked	 +0100h  ;set this equate in the CCP
+P0394 =         equ10	equ	rsxend	 +0100h  ;set this equate in the CCP
+P041A =         ccporg	equ	CCP		 ;set origin to this in CCP
+P0369 =         patch	equ	patcharea+0100h  ;LOADER patch area
+                
+ 041A =         CCP	equ	41Ah		 ;ORIGIN OF CCP3.ASM
+                
+                
+                 	****************************************************
+                
+                ;	conditional assembly toggles:
+                
+ FFFF =         true		equ	0ffffh
+ 0000 =         false		equ	0h
+ FFFF =         spacesaver	equ	true
+                
+ 0020 =         stacksize	equ	32		;16 levels of stack
+ 0030 =         version		equ	30h
+ 0100 =         tpa		equ	100h
+ 000F =         ccptop		equ	0Fh		;top page of CCP
+ 0006 =         osbase		equ	06h		;base page in BDOS jump
+ 000A =         off$nxt		equ	10		;address in next jmp field
+ 0020 =         currec		equ	32		;current record field in fcb
+ 0021 =         ranrec		equ	33		;random record field in fcb
+                
+                
+                
+                ;
+                ;
+CP/M RMAC ASSEM 1.1	#002	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+                ;     dsect for SCB
+                ;
+ 0098 =         bdosbase	equ	98h		; offset from page boundary
+ 00B3 =         ccpflag1	equ	0b3h		; offset from page boundary
+ 00E6 =         multicnt	equ	0e6h		; offset from page boundary
+ 00FD =         rsx$only$clr	equ	0FDh		;clear load RSX flag
+ 0002 =         rsx$only$set	equ	002h
+ 003A =         rscbadd		equ	3ah		;offset of scbadd in SCB
+ 003C =         dmaad		equ	03ch		;offset of DMA address in SCB
+ 0062 =         bdosadd		equ	62h		;offset of bdosadd in SCB
+                ;
+ 0002 =         loadflag	equ	02H		;flag for LOADER in memory
+                ;
+                ;     dsect for RSX
+ 0006 =         entry		equ	06h		;RSX contain jump to start
+                ;
+ 000B =         nextadd		equ	0bh		;address of next RXS in chain
+ 000C =         prevadd		equ	0ch		;address of previous RSX in chain
+ 000E =         warmflg		equ	0eh		;remove on wboot flag
+ 0018 =         endchain	equ	18h		;end of RSX chain flag
+                ;
+                ;
+ 0014 =         readf	equ	20	;sequential read
+ 001A =         dmaf	equ	26	;set DMA address
+ 0031 =         scbf	equ	49	;get/set SCB info
+ 003B =         loadf	equ	59	;load function
+                ;
+                ;
+ 0040 =         maxread	equ	64	;maximum of 64 pages in MULTIO
+                ;
+                ;
+ 0000 =         wboot	equ	0000h	;BIOS warm start
+ 0005 =         bdos	equ	0005h	;bdos entry point
+ 0009 =         print	equ	9	;bdos print function
+ 000C =         vers	equ	12	;get version number
+ 0200 =         module	equ	200h	;module address
+                ;
+                ;	DSECT for COM file header
+                ;
+ 0101 =         comsize	equ	tpa+1h
+ 0103 =         scbcode	equ	tpa+3h
+ 0110 =         rsxoff	equ	tpa+10h
+ 0112 =         rsxlen	equ	tpa+12h
+                ;
+                ;
+ 000D =         cr	equ	0dh
+ 000A =         lf	equ	0ah
+                ;
+                ;
+                	cseg
+                ;
+                ;
+                ;     ********* LOADER  RSX HEADER ***********
+                ;
+                rsxstart:
+ 0000 C31A04    	jmp	ccp		;the ccp will move this loader to 
+CP/M RMAC ASSEM 1.1	#003	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0003 000000    	db	0,0,0		;high memory, these first 6 bytes
+                				;will receive the serial number from
+                				;the 6 bytes prior to the BDOS entry
+                				;point
+                tojump:
+ 0006 C31B00    	jmp	begin
+ 0009 C3        next	db	0c3h		;jump to next module
+ 000A 0600      nextjmp	dw	06
+ 000C 0700      prevjmp	dw	07
+ 000E 00        	db	0		;warm start flag
+ 000F 00        	db	0		;bank flag
+ 0010 4C4F414445	db	'LOADER  '	;RSX name
+ 0018 FF        	db	0ffh		;end of RSX chain flag
+ 0019 00        	db	0		;reserved
+ 001A 00        	db	0		;patch version number
+                
+                ;     ********* LOADER  RSX ENTRY POINT ***********
+                
+                begin:
+ 001B 79        	mov	a,c
+ 001C FE3B      	cpi	loadf
+ 001E C20900    	jnz	next
+                beginlod:
+ 0021 C1        	pop	b
+ 0022 C5        	push	b		;BC = return address
+ 0023 210000    	lxi	h,0		;switch stacks
+ 0026 39        	dad	sp
+ 0027 31BE02    	lxi	sp,stack	;our stack
+ 002A 229A02    	shld	ustack		;save user stack address
+ 002D C5        	push	b		;save return address
+ 002E EB        	xchg			;save address of user's FCB
+ 002F 229802    	shld	usrfcb
+ 0032 7C        	mov	a,h		;is .fcb = 0000h
+ 0033 B5        	ora	l
+ 0034 F5        	push	psw
+ 0035 CC0001    	cz	rsx$chain	;if so , remove RSXs with remove flag on
+ 0038 F1        	pop	psw
+ 0039 C43001    	cnz	loadfile
+ 003C D1        	pop	d		;return address
+ 003D 210001    	lxi	h,tpa
+ 0040 7E        	mov	a,m
+ 0041 FEC9      	cpi	ret
+ 0043 CA9E00    	jz	rsxfile
+ 0046 7A        	mov	a,d		;check return address
+ 0047 3D        	dcr	a		; if CCP is calling 
+ 0048 B3        	ora	e		; it will be 100H
+ 0049 C25F00    	jnz	retuser1	;jump if not CCP
+                retuser:
+ 004C 3A0D00    	lda	prevjmp+1	;get high byte
+ 004F B7        	ora	a		;is it the zero page (i.e. no RSXs present)
+ 0050 C25F00    	jnz	retuser1	;jump if not
+ 0053 2A0A00    	lhld	nextjmp		;restore five....don't stay arround
+ 0056 220600    	shld	osbase
+ 0059 229402     	shld	newjmp
+ 005C CDF800    	call	setmaxb
+                retuser1:
+CP/M RMAC ASSEM 1.1	#004	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 005F 2A9A02    	lhld	ustack		;restore the stack
+ 0062 F9        	sphl
+ 0063 AF        	xra	a
+ 0064 6F        	mov	l,a
+ 0065 67        	mov	h,a		;A,HL=0 (successful return)
+ 0066 C9        	ret			;CCP pushed 100H on stack
+                ;
+                ;
+                ;	BDOS FUNC 59 error return
+                ;
+                reterror:
+ 0067 11FE00    	lxi	d,0feh
+                reterror1:
+                	;DE = BDOS error return
+ 006A 2A9A02    	lhld	ustack
+ 006D F9        	sphl
+ 006E E1        	pop	h		;get return address
+ 006F E5        	push	h
+ 0070 25        	dcr	h		;is it 100H?
+ 0071 7C        	mov	a,h
+ 0072 B5        	ora	l
+ 0073 EB        	xchg			;now HL = BDOS error return
+ 0074 7D        	mov	a,l
+ 0075 44        	mov	b,h
+ 0076 C0        	rnz			;return if not the CCP
+                ;
+                ;
+                loaderr:
+ 0077 0E09      	mvi	c,print
+ 0079 115302    	lxi	d,nogo		;cannot load program
+ 007C CD0500    	call	bdos		;to print the message
+ 007F C30000    	jmp	wboot		;warm boot
+                
+                ;
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	MOVE RSXS TO HIGH MEMORY
+                ;
+                ;************************************************************************
+                ;
+                ;
+                ;      RSX files are present
+                ;
+                	
+ 0082 23        rsxf1:	inx	h
+ 0083 4E        	mov	c,m
+ 0084 23        	inx	h
+ 0085 46        	mov	b,m		;BC contains RSX length
+ 0086 3A8F02    	lda	banked
+ 0089 B7        	ora	a		;is this the non-banked system?
+ 008A CA9200    	jz	rsxf2		;jump if so
+ 008D 23        	inx	h		;HL = banked/non-banked flag
+ 008E 34        	inr	m		;is this RSX only for non-banked?
+ 008F CA9D00    	jz	rsxf3		;skip if so
+CP/M RMAC ASSEM 1.1	#005	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0092 D5        rsxf2:	push	d		;save offset
+ 0093 CD0F02    	call	calcdest	;calculate destination address and bias
+ 0096 E1        	pop	h		;rsx offset in file
+ 0097 CDCA01    	call	reloc		;move and relocate file
+ 009A CDD000    	call	fixchain	;fix up rsx address chain
+ 009D E1        rsxf3:	pop	h		;RSX length field in header
+                
+                
+                rsxfile:
+                	;HL = .RSX (n-1) descriptor 
+ 009E 111000    	lxi	d,10h		;length of RSX descriptor in header
+ 00A1 19        	dad	d		;HL = .RSX (n) descriptor
+ 00A2 E5        	push	h		;RSX offset field in COM header
+ 00A3 5E        	mov	e,m
+ 00A4 23        	inx	h
+ 00A5 56        	mov	d,m		;DE = RSX offset
+ 00A6 7B        	mov	a,e
+ 00A7 B2        	ora 	d
+ 00A8 C28200    	jnz	rsxf1		;jump if RSX offset is non-zero
+                ;
+                ;
+                ;
+                comfile:
+                	;RSXs are in place, now call SCB setting code 
+ 00AB CD0301    	call	scbcode		;set SCB flags for this com file
+                	;is there a real COM file?
+ 00AE 3A0002    	lda	module		;is this an RSX only
+ 00B1 FEC9      	cpi	ret
+ 00B3 C2BF00    	jnz	comfile2	;jump if real COM file
+ 00B6 2A8D02    	lhld	scbaddr
+ 00B9 2EB3      	mvi	l,ccpflag1
+ 00BB 7E        	mov	a,m
+ 00BC F602      	ori	rsx$only$set	;set if RSX only
+ 00BE 77         	mov	m,a
+                comfile2:
+ 00BF 2A0101    	lhld	comsize		;move COM module to 100H
+ 00C2 44        	mov	b,h
+ 00C3 4D        	mov	c,l		;BC contains length of COM module
+ 00C4 210002    	lxi	h,tpa+100h	;address of source for COM move to 100H
+ 00C7 110001    	lxi	d,tpa		;destination address
+ 00CA CD2602    	call	move
+ 00CD C35F00    	jmp	retuser1		;restore stack and return
+                ;;
+                ;************************************************************************
+                ;
+                ;	ADD AN RSX TO THE CHAIN
+                ;
+                ;************************************************************************
+                ;
+                ;
+                fixchain:
+ 00D0 2A0600    	lhld	osbase		;next RSX link
+ 00D3 2E00      	mvi	l,0
+ 00D5 010600    	lxi	b,6
+ 00D8 CD2602    	call	move		;move serial number down
+ 00DB 1E18      	mvi	e,endchain
+CP/M RMAC ASSEM 1.1	#006	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 00DD 12        	stax	d		;set loader flag=0
+ 00DE 1E0D      	mvi	e,prevadd+1
+ 00E0 12        	stax	d		;set previous field to 0007H
+ 00E1 1B        	dcx	d
+ 00E2 3E07      	mvi	a,7
+ 00E4 12        	stax	d		;low byte = 7H
+ 00E5 6B        	mov	l,e		;HL address previous field in next RSX
+ 00E6 1E0B      	mvi	e,nextadd	;change previous field in link
+ 00E8 73        	mov	m,e
+ 00E9 23        	inx	h
+ 00EA 72        	mov	m,d		;current <-- next
+                ;
+                fixchain1:
+                	;entry:	H=next RSX page, 
+                	;	DE=.(high byte of next RSX field) in current RSX
+ 00EB EB        	xchg			;HL-->current  DE-->next
+ 00EC 72        	mov	m,d		;put page of next RSX in high(next field)
+ 00ED 2B        	dcx	h
+ 00EE 3606      	mvi	m,6
+                ;
+                fixchain2:
+                	;entry:	H=page of lowest active RSX in the TPA
+                	;this routine resets the BDOS address @ 6H and in the SCB
+ 00F0 2E06      	mvi	l,6
+ 00F2 220600    	shld	osbase		;change base page BDOS vector
+ 00F5 229402    	shld	newjmp		;change SCB value for BDOS vector
+                ;
+                ;
+                setmaxb:
+ 00F8 119202    	lxi	d,scbadd2
+                scbfun:
+ 00FB 0E31      	mvi	c,scbf
+ 00FD C30500    	jmp	bdos
+                ;
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	REMOVE TEMPORARY RSXS
+                ;
+                ;************************************************************************
+                ;
+                ;
+                ;
+                rsx$chain:
+                	;
+                	;	Chase up RSX chain, removing RSXs with the
+                	;	remove flag on (0FFH)
+                	;
+ 0100 2A0600    	lhld	osbase			;base of RSX chain
+ 0103 44        	mov	b,h
+                
+                rsx$chain1:
+                	;B  = current RSX
+ 0104 60        	mov	h,b
+ 0105 2E18      	mvi	l,endchain
+CP/M RMAC ASSEM 1.1	#007	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0107 34        	inr	m
+ 0108 35        	dcr	m			;is this the loader?
+ 0109 C0        	rnz				;return if so (m=0ffh)
+ 010A 2E0B      	mvi	l,nextadd		;address of next node
+ 010C 46        	mov	b,m			;DE -> next link
+                ;
+                ;
+                check$remove:
+                ;
+ 010D 2E0E      	mvi	l,warmflg		;check remove flag
+ 010F 7E         	mov	a,m			;warmflag in A
+ 0110 B7        	ora	a			;FF if remove on warm start
+ 0111 CA0401    	jz	rsx$chain1		;check next RSX if not
+                ;
+                remove:
+                		;remove this RSX from chain
+                ;
+                	;first change next field of prior link to point to next RSX
+                	;HL = current  B = next
+                ;
+ 0114 2E0C      	mvi	l,prevadd
+ 0116 5E        	mov	e,m			;address of previous RSX link
+ 0117 23        	inx	h
+ 0118 56        	mov	d,m
+ 0119 78        	mov	a,b			;A = next (high byte)
+ 011A 12        	stax	d			;store in previous link
+ 011B 1B        	dcx	d			;previous RSX chains to next RSX
+ 011C 3E06      	mvi	a,6			;initialize low byte to 6
+ 011E 12        	stax	d			;
+ 011F 13        	inx	d			;DE = .next (high byte)
+                ;
+                	;now change previous field of next link to address previous RSX
+ 0120 60        	mov	h,b			;next in HL...previous in DE
+ 0121 2E0C      	mvi	l,prevadd
+ 0123 73        	mov	m,e
+ 0124 23        	inx	h
+ 0125 72        	mov	m,d			;next chained back to previous RSX
+ 0126 7A        	mov	a,d			;check to see if this is the bottom
+ 0127 B7        	ora	a			;RSX...
+ 0128 C5        	push	b
+ 0129 CCF000    	cz	fixchain2		;reset BDOS BASE to page in H
+ 012C C1        	pop	b
+ 012D C30401    	jmp	rsx$chain1		;check next RSX in the chain
+                ;
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	PROGRAM LOADER
+                ;
+                ;************************************************************************
+                ;
+                ;
+                ;
+                loadfile:
+                ;	entry: HL = .FCB
+CP/M RMAC ASSEM 1.1	#008	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0130 E5        	push	h
+ 0131 119002    	lxi	d,scbdma		
+ 0134 CDFB00    	call	scbfun
+ 0137 EB        	xchg
+ 0138 E1        	pop	h			;.fcb
+ 0139 E5        	push	h			;save .fcb
+ 013A 012000    	lxi	b,currec
+ 013D 09        	dad	b
+ 013E 3600      	mvi	m,0			;set current record to 0
+ 0140 23        	inx	h
+ 0141 4E        	mov	c,m			;load address 
+ 0142 23        	inx	h
+ 0143 66        	mov	h,m
+ 0144 69        	mov	l,c
+ 0145 25        	dcr	h
+ 0146 24        	inr	h	
+ 0147 CA6700    	jz	reterror		;Load address < 100h
+ 014A E5        	push	h			;now save load address
+ 014B D5        	push	d			;save the user's DMA
+ 014C E5        	push	h
+ 014D CD3102    	call	multio1			;returns A=multio
+ 0150 E1        	pop	h
+ 0151 F5        	push	psw			;save A = user's multisector I/O
+ 0152 1E80      	mvi	e,128			;read 16k
+                
+                	;stack:		|return address|
+                	;		|.FCB          |
+                	;		|Load address  |
+                	;		|users DMA     |
+                	;		|users Multio  |
+                	;
+                
+                loadf0:
+                	;HL= next load address (DMA)
+                	; E= number of records to read
+ 0154 3A0700    	lda	osbase+1		;calculate maximum number of pages
+ 0157 3D        	dcr	a
+ 0158 94        	sub	h
+ 0159 DAFA01    	jc	endload			;we have used all we can
+ 015C 3C        	inr	a
+ 015D FE40      	cpi	maxread			;can we read 16k?
+ 015F D27601    	jnc	loadf2
+ 0162 07        	rlc				;change to sectors
+ 0163 5F        	mov	e,a			;save for multi i/o call
+ 0164 7D        	mov	a,l			;A = low(load address)
+ 0165 B7        	ora	a
+ 0166 CA7601    	jz	loadf2			;load on a page boundary
+ 0169 0602      	mvi	b,2			;(to subtract from # of sectors)
+ 016B 3D        	dcr	a			;is it greater than 81h?
+ 016C FA7001    	jm	subtract		;080h < l(adr) <= 0FFh (subtract 2)
+ 016F 05        	dcr	b			;000h < l(adr) <= 080h (subtract 1)
+                subtract:
+ 0170 7B        	mov	a,e			;reduce the number of sectors to
+ 0171 90        	sub	b			;compensate for non-page aligned
+                					;load address
+ 0172 CAFA01    	jz	endload			;can't read zero sectors
+CP/M RMAC ASSEM 1.1	#009	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0175 5F        	mov	e,a
+                ;
+                loadf2:
+                	;read the file
+ 0176 D5        	push	d			;save number of records to read
+ 0177 E5        	push	h			;save load address
+ 0178 CD3302    	call	multio			;set multi-sector i/o
+ 017B E1        	pop	h
+ 017C E5        	push	h
+ 017D CD3B02    	call	readb			;read sector
+ 0180 E1        	pop	h
+ 0181 D1        	pop	d			;restore number of records
+ 0182 F5        	push	psw			;zero flag set if no error
+ 0183 7B        	mov	a,e			;number of records in A
+ 0184 3C        	inr	a
+ 0185 1F        	rar				;convert to pages
+ 0186 84        	add	h
+ 0187 67        	mov	h,a			;add to load address
+ 0188 229602    	shld	loadtop			;save next free page address
+ 018B F1        	pop	psw
+ 018C CA5401    	jz	loadf0			;loop if more to go
+                
+                loadf4:
+                	;FINISHED load  A=1 if successful (eof)
+                	;		A>1 if a I/O error occured
+                	;
+ 018F C1        	pop	b			;B=multisector I/O count
+ 0190 3D        	dcr	a			;not eof error?
+ 0191 58        	mov	e,b			;user's multisector count
+ 0192 CD3302    	call	multio
+ 0195 0E1A      	mvi	c,dmaf			;restore the user's DMA address
+ 0197 D1        	pop	d	
+ 0198 F5        	push	psw			;zero flag => successful load
+ 0199 CD0500    	call	bdos			; user's DMA now restored
+ 019C F1        	pop	psw
+ 019D 2A9C02    	lhld	bdosret			;BDOS error return
+ 01A0 EB        	xchg
+ 01A1 C26A00    	jnz	reterror1
+ 01A4 D1        	pop	d			;load address	
+ 01A5 E1        	pop	h			;.fcb
+ 01A6 010900    	lxi	b,9			;is it a PRL?
+ 01A9 09        	dad	b			;.fcb(type)
+ 01AA 7E        	mov	a,m
+ 01AB E67F      	ani	7fh			;get rid of attribute bit
+ 01AD FE50      	cpi	'P'			;is it a P?
+ 01AF C0        	rnz				;return if not
+ 01B0 23        	inx	h
+ 01B1 7E        	mov	a,m
+ 01B2 E67F      	ani	7fh
+ 01B4 FE52      	cpi	'R'			;is it a R
+ 01B6 C0        	rnz				;return if not
+ 01B7 23        	inx	h
+ 01B8 7E        	mov	a,m
+ 01B9 E67F      	ani	7fh
+ 01BB D64C      	sui	'L'			;is it a L?
+ 01BD C0        	rnz				;return if not
+CP/M RMAC ASSEM 1.1	#010	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+                	;load PRL file
+ 01BE 7B        	mov	a,e
+ 01BF B7        	ora	a			;is load address on a page boundary
+ 01C0 C26700    	jnz	reterror		;error, if not
+ 01C3 62        	mov	h,d
+ 01C4 6B        	mov	l,e			;HL,DE = load address
+ 01C5 23        	inx	h
+ 01C6 4E        	mov	c,m
+ 01C7 23        	inx	h
+ 01C8 46        	mov	b,m
+ 01C9 6B        	mov	l,e			;HL,DE = load address BC = length
+                ;	jmp	reloc			;relocate PRL file at load address
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	PAGE RELOCATOR
+                ;
+                ;************************************************************************
+                ;
+                ;
+                reloc:
+                ;	HL,DE = load address (of PRL header)
+                ;	BC    = length of program (offset of bit map)
+ 01CA 24        	inr	h		;offset by 100h to skip header
+ 01CB D5        	push	d		;save destination address
+ 01CC C5        	push	b		;save length in bc
+ 01CD CD2602    	call	move		;move rsx to correct memory location
+ 01D0 C1        	pop	b
+ 01D1 D1        	pop	d
+ 01D2 D5        	push	d		;save DE for fixchain...base of RSX
+ 01D3 5A        	mov	e,d		;E will contain the BIAS from 100h
+ 01D4 1D        	dcr	e		;base address is now 100h
+                				;after move HL addresses bit map
+                	;
+                	;storage moved, ready for relocation
+                	;	HL addresses beginning of the bit map for relocation
+                	;	E contains relocation bias
+                	;	D contain relocation address
+                	;	BC contains length of code
+ 01D5 E5        rel0:	push	h	;save bit map base in stack
+ 01D6 63        	mov	h,e	;relocation bias is in e
+ 01D7 1E00      	mvi	e,0
+                ;
+ 01D9 78        rel1:	mov	a,b	;bc=0?
+ 01DA B1        	ora	c
+ 01DB CAF701    	jz	endrel
+                ;
+                ;	not end of the relocation, may be into next byte of bit map
+ 01DE 0B         	dcx	b	;count length down
+ 01DF 7B        	mov	a,e
+ 01E0 E607      	ani	111b	;0 causes fetch of next byte
+ 01E2 C2EA01    	jnz	rel2
+                ;	fetch bit map from stacked address
+ 01E5 E3        	xthl
+ 01E6 7E        	mov	a,m	;next 8 bits of map
+CP/M RMAC ASSEM 1.1	#011	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 01E7 23        	inx	h
+ 01E8 E3        	xthl		;base address goes back to stack
+ 01E9 6F        	mov	l,a	;l holds the map as we process 8 locations
+ 01EA 7D        rel2:	mov	a,l
+ 01EB 17        	ral		;cy set to 1 if relocation necessary
+ 01EC 6F        	mov	l,a	;back to l for next time around
+ 01ED D2F301    	jnc	rel3	;skip relocation if cy=0
+                ;
+                ;	current address requires relocation
+ 01F0 1A        	ldax	d
+ 01F1 84        	add	h	;apply bias in h
+ 01F2 12        	stax	d
+ 01F3 13        rel3:	inx	d	;to next address
+ 01F4 C3D901    	jmp	rel1	;for another byte to relocate
+                ;
+                endrel:	;end of relocation
+ 01F7 D1        	pop	d	;clear stacked address
+ 01F8 D1        	pop	d	;restore DE to base of PRL
+ 01F9 C9        	ret
+                
+                
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	PROGRAM LOAD TERMINATION
+                ;
+                ;************************************************************************
+                ;
+                ;;	
+                ;;
+                endload:
+ 01FA CD3102    	call	multio1		;try to read after memory is filled
+ 01FD 218000    	lxi	h,80h		;set load address = default buffer
+ 0200 CD3B02    	call	readb
+ 0203 C28F01    	jnz	loadf4		;eof => successful
+ 0206 21FE00    	lxi	h,0feh		;set BDOSRET to indicate an error
+ 0209 229C02    	shld	bdosret
+ 020C C38F01    	jmp	loadf4		;unsuccessful (file to big)
+                ;
+                ;;
+                ;
+                ;;
+                ;************************************************************************
+                ;
+                ;	SUBROUTINES
+                ;
+                ;************************************************************************
+                ;
+                ;
+                ;
+                ;	Calculate RSX base in the top of the TPA
+                ;
+                calcdest:
+                ;
+                ;	calcdest returns destination in DE
+CP/M RMAC ASSEM 1.1	#012	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+                ;	BC contains length of RSX
+                ;
+ 020F 3A0700    	lda	osbase+1	;a has high order address of memory top
+ 0212 3D        	dcr	a		;page directly below bdos
+ 0213 0B        	dcx	b		;subtract 1 to reflect last byte of code
+ 0214 90        	sub	b		;a has high order address of reloc area
+ 0215 03        	inx	b		;add 1 back get bit map offset
+ 0216 FE0F      	cpi	ccptop		;are we below the CCP
+ 0218 DA7700    	jc	loaderr
+ 021B 2A9602    	lhld	loadtop
+ 021E BC        	cmp	h		;are we below top of this module
+ 021F DA7700    	jc	loaderr
+ 0222 57        	mov	d,a
+ 0223 1E00      	mvi	e,0		;d,e addresses base of reloc area
+ 0225 C9        	ret
+                ;
+                ;;
+                ;;-----------------------------------------------------------------------
+                ;;
+                ;;	move memory routine
+                
+                move:
+                ;	move source to destination
+                ;	where source is in HL and destination is in DE
+                ;	and length is in BC
+                ;
+ 0226 78        	mov	a,b	;bc=0?
+ 0227 B1        	ora	c
+ 0228 C8        	rz
+ 0229 0B        	dcx	b	;count module size down to zero
+ 022A 7E        	mov	a,m	;get next absolute location
+ 022B 12        	stax	d	;place it into the reloc area
+ 022C 13        	inx	d
+ 022D 23        	inx	h
+ 022E C32602    	jmp	move
+                ;;
+                ;;-----------------------------------------------------------------------
+                ;;
+                ;;	Multi-sector I/O 
+                ;;	(BDOS function #44)
+                ;
+                multio1:
+ 0231 1E01      	mvi	e,1		;set to read 1 sector
+                ;
+                multio:
+                	;entry: E = new multisector count
+                	;exit:	A = old multisector count
+ 0233 2A8D02    	lhld	scbaddr
+ 0236 2EE6      	mvi	l,multicnt
+ 0238 7E        	mov	a,m
+ 0239 73        	mov	m,e
+ 023A C9        	ret	
+                ;;
+                ;;-----------------------------------------------------------------------
+                ;;
+                ;;	read file 
+CP/M RMAC ASSEM 1.1	#013	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+                ;;	(BDOS function #20)
+                ;;
+                ;;	entry:	hl = buffer address (readb only)
+                ;;	exit	z  = set if read ok
+                ;;
+ 023B EB        readb:	xchg
+ 023C 0E1A      setbuf:	mvi	c,dmaf
+ 023E E5        	push	h		;save number of records
+ 023F CD0500    	call	bdos
+ 0242 0E14      	mvi	c,readf
+ 0244 2A9802    	lhld	usrfcb
+ 0247 EB        	xchg
+ 0248 CD0500    	call	bdos
+ 024B 229C02    	shld	bdosret		;save bdos return
+ 024E D1        	pop	d		;restore number of records
+ 024F B7        	ora	a
+ 0250 C8        	rz				;no error on read
+ 0251 5C        	mov	e,h		;change E to number records read
+ 0252 C9        	ret
+                ;
+                ;
+                ;************************************************************************
+                ;
+                ;	DATA AREA
+                ;
+                ;************************************************************************
+                ;
+                
+ 0253 0D0A43616Enogo	db	cr,lf,'Cannot load Program$'
+                
+                patcharea:
+ 0269           	ds	36			;36 byte patch area
+                
+ 028D 0000      scbaddr	dw	0
+ 028F 00        banked	db	0
+                
+ 0290 3C        scbdma	db	dmaad
+ 0291 00        	db	00h			;getting the value
+ 0292 62        scbadd2	db	bdosadd			;current top of TPA
+ 0293 FE        	db	0feh			;set the value
+                ;
+                
+                	if not spacesaver
+                
+                newjmp	ds	2			;new BDOS vector
+                loadtop	ds	2			;page above loaded program
+                usrfcb	ds	2			;contains user FCB add
+                ustack:	ds	2			; user stack on entry
+                bdosret	ds	2			;bdos error return
+                ;
+                rsxend	:
+                stack	equ	rsxend+stacksize
+                
+                	else
+                
+                rsxend:
+CP/M RMAC ASSEM 1.1	#014	CP/M 3 - PROGRAM LOADER RSX - NOVEMBER 1982
+
+ 0294 =         newjmp	equ	rsxend
+ 0296 =         loadtop	equ	rsxend+2
+ 0298 =         usrfcb	equ	rsxend+4
+ 029A =         ustack	equ	rsxend+6
+ 029C =         bdosret	equ	rsxend+8
+ 02BE =         stack	equ	rsxend+10+stacksize
+                
+                	endif
+ 0294           	end
+

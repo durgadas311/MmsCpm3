@@ -1,0 +1,567 @@
+                ; July 27, 1983  11:53	mjm  "GETDP.ASM"
+                	maclib Z80
+                	$-MACRO
+ FFFF =         @	equ	-1
+                ; CP/M 3.0 system routine to select a DPB and sector translation table
+                ;  given the mode bytes (4)
+                
+                ****************************************************
+                * label:  calcdpb   spt,spb,bpd,dpd,nst,pss[,flg]
+                *
+                *  spt = Sectors per Track
+                *  spb = Sectors per allocation Block
+                *  bpd = allocation Blocks per Disk (max (DS))
+                *  dpd = Directory entries per Disk
+                *  nst = Number of System Tracks
+                *  pss = Physical Sector Size (bytes)
+                * [flg]= optional flag to intentionally produce incorrect EXM
+                *	 (used to maintain compatability with previous formats)
+                *
+                calcdpb macro ?spt0,?spb0,?dsm0,?drm0,?off0,?pss0,?flg
+                
+                ?bsm	set	?spb0-1
+                ?exm	set	?bsm shr 3
+                	if ?dsm0 gt 256
+                ?exm	set	?exm shr 1
+                	endif
+                
+                	if not NUL ?flg
+                ?exm	set	?exm shr 1
+                	endif
+                
+                ?cks	set	?drm0/4
+                
+                ?bsh	set	0
+                ?@	set	?spb0
+                	rept 8
+                ?@	set	?@ shr 1
+                	if ?@ eq 0
+                	exitm
+                	endif
+                ?bsh	set	?bsh+1
+                	endm
+                
+                ?al0	set	0
+                	rept (?cks+?bsm)/?spb0
+                ?al0	set	(?al0 shr 1) or 10000000$00000000b
+                	endm
+                ?al1	set	low ?al0
+                ?al0	set	high ?al0
+                
+                ?psh	set	0
+                ?psm	set	0
+                ?@	set	high ?pss0
+                	rept 8
+                	if ?@ eq 0
+                	exitm
+                	endif
+                ?psh	set	?psh+1
+                ?psm	set	(?psm shl 1) or 1
+                ?@	set	?@ shr 1
+                	endm
+                
+                	dw	?spt0
+                	db	?bsh,?bsm,?exm
+                	dw	?dsm0-1,?drm0-1
+                	db	?al0,?al1
+                	dw	?cks,?off0
+                	db	?psh,?psm
+                
+                	endm
+                ; Entry:  HL = points to Mode bytes
+                ; Exit:    A = error code (0 if DPs found)
+                ;	  DE = points to DPB
+                ;	  BC = points to sector translation table (or BC=0)
+                ;	  HL = offset from ?serdp to beginning of format string table
+                ; Uses 2 levels of stack.
+                ;
+                	public ?getdp,?serdp
+                	cseg	;for now we'll put it all in common memory.
+                ?serdp: 		;user has to tell us where we are.
+ 0000 01EA00    	lxi	b,PTRTBL-?serdp  ;HL=memory address of "?serdp"
+ 0003 09        	dad	b		 ;DE=mode bytes
+ 0004 EB        	xchg
+ 0005           	jr	gd1
+                
+                ?GETDP:
+ 0007 11EA00    	lxi	d,ptrtbl
+ 000A E5        gd1:	PUSH	H		; save mode byte pointer
+ 000B D5        	push	d	;save parameter table address
+ 000C 4E        	mov	c,m	;no need to mask format origin code.
+ 000D 23        	inx	h
+ 000E 46        	mov	b,m
+ 000F 23        	inx	h
+ 0010 7E        	MOV	A,M		; get first mode byte
+ 0011 E680      	ani	srm0		; mask FIRST BYTE
+ 0013 5F        	MOV	E,A    
+ 0014 23        	INX	H		; and point to the second
+ 0015 7E        	MOV	A,M
+ 0016 E670      	ani	srm1		; mask SECOND BYTE
+ 0018 57        	MOV	D,A
+ 0019 E1        	pop	h		; table lookup...
+                NXDPB:
+ 001A 7E        	MOV	A,M		; format origin code.
+ 001B 23        	inx	h
+ 001C A1        	ana	c	;compare it: if the format requested matches
+ 001D           	jrnz	got1	    ;(if the bit is set in both DPB and requested
+ 001F 7E        	mov	a,m	    ; mode ([NZ] condition) then we have a match.)
+ 0020 A0        	ana	b		;check for possible extend format origin
+ 0021           	jrz	nxd1	;...
+ 0023 23        got1:	inx	h
+ 0024 7E        	MOV	A,M		; get first byte
+ 0025 23        	INX	H
+ 0026 E680      	ani	srm0		;mask it also
+ 0028 BB        	CMP	E		;compare to target mode
+ 0029           	jrnz	NXD3
+ 002B 7E        	MOV	A,M		; and the second
+ 002C E670      	ani	srm1		;mask it
+ 002E BA        	CMP	D		;compare it
+ 002F           	jrnz	NXD3
+ 0031 23        	inx	h
+ 0032 5E        	mov	e,m	;pick up DPB
+ 0033 23        	inx	h
+ 0034 56        	mov	d,m
+ 0035 23        	inx	h
+ 0036 4E        	mov	c,m	;pick up XLAT also
+ 0037 23        	inx	h
+ 0038 46        	mov	b,m
+ 0039 EB        	xchg		;DE=table pointer, HL=DPB
+ 003A E3        	xthl		;put DPB on stack, get HL=requested mode
+ 003B 23        	inx	h
+ 003C 23        	inx	h	;point past "format origin"
+ 003D C5        	push	b	;put XLAT on stack.
+ 003E EB        	xchg
+ 003F 01FBFF    	lxi	b,-5
+ 0042 09        	dad	b	;point back to table's modes
+ 0043 EB        	xchg		;
+ 0044 1A        	ldax	d		;get "excess" mode bits.
+ 0045 E603      	ani	xsm0		;mask in bits to give caller.
+ 0047 4F        	mov	c,a
+ 0048 3EFC      	mvi	a,(not xsm0) and 0ffh
+ 004A A6        	ana	m		;clear callers bits prior to setting again
+ 004B B1        	ora	c		;complete callers mode bytes
+ 004C 77        	mov	m,a
+ 004D 23        	inx	h
+ 004E 13        	inx	d
+ 004F 1A        	ldax	d		;get "excess" mode bits.
+ 0050 E68F      	ani	xsm1		;mask in bits to give caller.
+ 0052 4F        	mov	c,a
+ 0053 3E70      	mvi	a,(not xsm1) and 0ffh
+ 0055 A6        	ana	m		;clear callers bits prior to setting again
+ 0056 B1        	ora	c		;complete callers mode bytes
+ 0057 77        	mov	m,a
+ 0058 C1        	pop	b	;restore XLAT
+ 0059 D1        	pop	d	;restore DPB
+ 005A 217200    	lxi	h,strtbl-?serdp ; load address of string table
+ 005D AF        	XRA	A		; and clear the accumulator
+ 005E C9        	RET			; as this is the successful return
+                
+ 005F 23        NXD1:	INX	H
+ 0060 23        NXD2:	INX	H
+ 0061 23        nxd3:	inx	h
+ 0062 23        	inx	h
+ 0063 23        	inx	h
+ 0064 23        	inx	h
+ 0065 23        	inx	h
+ 0066 7E        	MOV	A,M
+ 0067 FEFF      	CPI	11111111B
+ 0069           	jrnz	NXDPB		; loop if more entries in table
+ 006B E1        	POP	H		; restore mode byte pointer
+ 006C 217200    	lxi	h,strtbl-?serdp ; load address of string table
+ 006F AF3D      	xra a ! dcr a		; return [NZ] if DPs not found.
+ 0071 C9        	RET			; as this is the error return
+                
+                ;						     ; (10-256 byte)
+                ; Format string name table - all formats must have a entry here
+                ;
+ 0072 4D4D532020strtbl	db	'MMS     '	;bit 0 - must be 8 characters wide
+ 007A 5A31372020	db	'Z17     '	;bit 1
+ 0082 4D34372020	db	'M47     '	;    2
+ 008A 5A33372020	db	'Z37     '	;    3
+ 0092 5A33375820	db	'Z37X    '	;    4
+ 009A 5A34372020	db	'Z47     '	;    5
+ 00A2 5A34375820	db	'Z47X    '	;    6
+ 00AA 5A36372020	db	'Z67     '	;    7
+ 00B2 5A31303020	db	'Z100    '	;    8
+ 00BA 464D543120	db	'FMT1    '	;    9
+ 00C2 464D543220	db	'FMT2    '	;   10
+ 00CA 464D543320	db	'FMT3    '	;   11
+ 00D2 464D543420	db	'FMT4    '	;   12
+ 00DA 464D543520	db	'FMT5    '	;   13
+ 00E2 464D543620	db	'FMT6    '	;   14
+                
+                ;
+                ;----------------------------------------------------------------------
+                ;
+                ;
+                ;----------------------------------------------------------------------
+                ;
+                ; 
+ 0080 =         SRM0:	equ	10000000B	      ;
+ 0070 =         SRM1:	equ		  01110000B   ;SEARCH MODES MASKS
+                
+ 0003 =         XSM0:	equ	00000011B	      ;
+ 008F =         XSM1:	equ		  10001111B   ;EXCESS MODES MASKS
+                
+                PTRTBL:
+ 00EA 01E58000  	DB	00000001b,11100101B,10000000B,00000000B ; 8" SD SS
+ 00EE FB013D04  	dw	std8,stdx
+ 00F2 00048310  	DB	00000000b,00000100B,10000011B,00010000B ; m47,dd,ss
+ 00F6 0C027104  	dw	m471,z47xx
+ 00FA 00048350  	DB	00000000b,00000100B,10000011B,01010000B ; m47,dd,ds
+ 00FE 1D027104  	dw	m472,z47xx
+ 0102 00018210  	DB	00000000b,00000001B,10000010B,00010000B ; mms,dd,ss
+ 0106 2E020000  	dw	mms5,0
+ 010A 00018250  	DB	00000000b,00000001B,10000010B,01010000B ; mms,dd,ds
+ 010E 3F020000  	dw	mms6,0
+ 0112 01A08041  	DB	00000001b,10100000B,10000000B,01000001B ; z47,z67,z100,sd,ds
+ 0116 50023D04  	dw	z471,stdx
+ 011A 01A08118  	DB	00000001b,10100000B,10000001B,00011000B ; z47,z67,z100,dd,ss
+ 011E 61025704  	dw	z472,z47x
+ 0122 01A08159  	DB	00000001b,10100000B,10000001B,01011001B ; z47,z67,z100,dd,ds
+ 0126 72025704  	dw	z473,z47x
+ 012A 0040831C  	DB	00000000b,01000000B,10000011B,00011100B ; z47x,dd,ss
+ 012E 83027104  	dw	z474,z47xx
+ 0132 0040835D  	DB	00000000b,01000000B,10000011B,01011101B ; z47x,dd,ds
+ 0136 94027104  	dw	z475,z47xx
+ 013A 00020100  	DB	00000000b,00000010B,00000001B,00000000B ; z17,sd,ss,st
+ 013E A5027904  	dw	z170,z17x
+ 0142 00020140  	DB	00000000b,00000010B,00000001B,01000000B ; z17,sd,ds,st
+ 0146 B6027904  	dw	z171,z17x
+ 014A 00020120  	DB	00000000b,00000010B,00000001B,00100000B ; z17,sd,ss,dt
+ 014E C7027904  	dw	z172,z17x
+ 0152 00020160  	DB	00000000b,00000010B,00000001B,01100000B ; z17,sd,ds,dt
+ 0156 D8027904  	dw	z173,z17x
+ 015A 00010210  	DB	00000000b,00000001B,00000010B,00010000B ; 5" mms,dd,ss,st
+ 015E E9020000  	dw	mms0,0
+ 0162 00010250  	DB	00000000b,00000001B,00000010B,01010000B ; 5" mms,dd,ds,st
+ 0166 FA020000  	dw	mms1,0
+ 016A 00010230  	DB	00000000b,00000001B,00000010B,00110000B ; 5" mms,dd,ss,dt
+ 016E 0B030000  	dw	mms2,0
+ 0172 00010270  	DB	00000000b,00000001B,00000010B,01110000B ; 5" mms,dd,ds,dt
+ 0176 1C030000  	dw	mms3,0
+ 017A 00080180  	DB	00000000b,00001000B,00000001B,10000000B ;  z37,sd,ss,st
+ 017E 2D030000  	dw	z370,0
+ 0182 00080190  	DB	00000000b,00001000B,00000001B,10010000B ;  z37,dd,ss,st
+ 0186 3E030000  	dw	z371,0
+ 018A 00100390  	DB	00000000b,00010000B,00000011B,10010000B ;  z37x,dd,ss,st
+ 018E 4F030000  	dw	z372,0
+ 0192 000801C1  	DB	00000000b,00001000B,00000001B,11000001B ;  z37,sd,ds,st
+ 0196 60030000  	dw	z373,0
+ 019A 000801D1  	DB	00000000b,00001000B,00000001B,11010001B ;  z37,dd,ds,st
+ 019E 71030000  	dw	z374,0
+ 01A2 001003D1  	DB	00000000b,00010000B,00000011B,11010001B ;  z37x,dd,ds,st
+ 01A6 82030000  	dw	z375,0
+ 01AA 000801A0  	DB	00000000b,00001000B,00000001B,10100000B ;  z37,sd,ss,dt
+ 01AE 93030000  	dw	z376,0
+ 01B2 000801B0  	DB	00000000b,00001000B,00000001B,10110000B ;  z37,dd,ss,dt
+ 01B6 A4030000  	dw	z377,0
+ 01BA 001003B0  	DB	00000000b,00010000B,00000011B,10110000B ;  z37x,dd,ss,dt
+ 01BE B5030000  	dw	z378,0
+ 01C2 000801E1  	DB	00000000b,00001000B,00000001B,11100001B ;  z37,sd,ds,dt
+ 01C6 C6030000  	dw	z379,0
+ 01CA 000801F1  	DB	00000000b,00001000B,00000001B,11110001B ;  z37,dd,ds,dt
+ 01CE D7030000  	dw	z37a,0
+ 01D2 001003F1  	DB	00000000b,00010000B,00000011B,11110001B ;  z37x,dd,ds,dt
+ 01D6 E8030000  	dw	z37b,0
+ 01DA 01000290  	DB	00000001b,00000000B,00000010B,10010000B ;  z100,dd,ss,st
+ 01DE F9030000  	dw	z100a,0
+ 01E2 010002D1  	DB	00000001b,00000000B,00000010B,11010001B ;  z100,dd,ds,st
+ 01E6 0A040000  	dw	z100b,0
+ 01EA 010002B0  	DB	00000001b,00000000B,00000010B,10110000B ;  z100,dd,ss,dt
+ 01EE 1B040000  	dw	z100c,0
+ 01F2 010002F1  	DB	00000001b,00000000B,00000010B,11110001B ;  z100,dd,ds,dt
+ 01F6 2C040000  	dw	z100d,0
+ 01FA FF        	DB	11111111B	;FLAG FOR END OF TABLE
+                
+                	$*MACRO 
+                
+                STD8:	calcdpb 26, 8,243, 64,2,128
+ 01FB+1A00
+ 01FD+030700
+ 0200+F2003F00
+ 0204+C000
+ 0206+10000200
+ 020A+0000
+                
+                M471:	calcdpb 64,16,300,192,2,1024
+ 020C+4000
+ 020E+040F00
+ 0211+2B01BF00
+ 0215+E000
+ 0217+30000200
+ 021B+0307
+                
+                M472:	calcdpb 64,16,608,192,2,1024
+ 021D+4000
+ 021F+040F00
+ 0222+5F02BF00
+ 0226+E000
+ 0228+30000200
+ 022C+0307
+                
+                MMS5:	calcdpb 64,16,300,192,2,512
+ 022E+4000
+ 0230+040F00
+ 0233+2B01BF00
+ 0237+E000
+ 0239+30000200
+ 023D+0203
+                
+                MMS6:	calcdpb 64,16,608,192,2,512
+ 023F+4000
+ 0241+040F00
+ 0244+5F02BF00
+ 0248+E000
+ 024A+30000200
+ 024E+0203
+                
+                Z471:	calcdpb 26,16,247,128,2,128
+ 0250+1A00
+ 0252+040F01
+ 0255+F6007F00
+ 0259+C000
+ 025B+20000200
+ 025F+0000
+                
+                Z472:	calcdpb 52,16,243,128,2,256,@
+ 0261+3400
+ 0263+040F00
+ 0266+F2007F00
+ 026A+C000
+ 026C+20000200
+ 0270+0101
+                
+                Z473:	calcdpb 52,16,494,256,2,256
+ 0272+3400
+ 0274+040F00
+ 0277+ED01FF00
+ 027B+F000
+ 027D+40000200
+ 0281+0101
+                
+                Z474:	calcdpb 64,16,300,128,2,1024
+ 0283+4000
+ 0285+040F00
+ 0288+2B017F00
+ 028C+C000
+ 028E+20000200
+ 0292+0307
+                
+                Z475:	calcdpb 64,16,608,256,2,1024
+ 0294+4000
+ 0296+040F00
+ 0299+5F02FF00
+ 029D+F000
+ 029F+40000200
+ 02A3+0307
+                
+                Z170:	calcdpb 20, 8, 92, 64,3,256
+ 02A5+1400
+ 02A7+030700
+ 02AA+5B003F00
+ 02AE+C000
+ 02B0+10000300
+ 02B4+0101
+                
+                Z171:	calcdpb 20, 8,182, 64,3,256
+ 02B6+1400
+ 02B8+030700
+ 02BB+B5003F00
+ 02BF+C000
+ 02C1+10000300
+ 02C5+0101
+                
+                Z172:	calcdpb 20,16, 96, 64,3,256
+ 02C7+1400
+ 02C9+040F01
+ 02CC+5F003F00
+ 02D0+8000
+ 02D2+10000300
+ 02D6+0101
+                
+                Z173:	calcdpb 20,16,186, 64,3,256
+ 02D8+1400
+ 02DA+040F01
+ 02DD+B9003F00
+ 02E1+8000
+ 02E3+10000300
+ 02E7+0101
+                
+                MMS0:	calcdpb 36,16, 83, 96,3,512
+ 02E9+2400
+ 02EB+040F01
+ 02EE+52005F00
+ 02F2+C000
+ 02F4+18000300
+ 02F8+0203
+                
+                MMS1:	calcdpb 36,16,173, 96,3,512
+ 02FA+2400
+ 02FC+040F01
+ 02FF+AC005F00
+ 0303+C000
+ 0305+18000300
+ 0309+0203
+                
+                MMS2:	calcdpb 36,32, 86,128,3,512
+ 030B+2400
+ 030D+051F03
+ 0310+55007F00
+ 0314+8000
+ 0316+20000300
+ 031A+0203
+                
+                MMS3:	calcdpb 36,32,176,128,3,512
+ 031C+2400
+ 031E+051F03
+ 0321+AF007F00
+ 0325+8000
+ 0327+20000300
+ 032B+0203
+                
+                Z370:	calcdpb 20, 8, 92, 64,3,256
+ 032D+1400
+ 032F+030700
+ 0332+5B003F00
+ 0336+C000
+ 0338+10000300
+ 033C+0101
+                
+                Z371:	calcdpb 32, 8,152,128,2,256
+ 033E+2000
+ 0340+030700
+ 0343+97007F00
+ 0347+F000
+ 0349+20000200
+ 034D+0101
+                
+                Z372:	calcdpb 40, 8,186,128,2,1024
+ 034F+2800
+ 0351+030700
+ 0354+B9007F00
+ 0358+F000
+ 035A+20000200
+ 035E+0307
+                
+                Z373:	calcdpb 20, 8,188,128,3,256
+ 0360+1400
+ 0362+030700
+ 0365+BB007F00
+ 0369+F000
+ 036B+20000300
+ 036F+0101
+                
+                Z374:	calcdpb 32,16,156,256,2,256,@
+ 0371+2000
+ 0373+040F00
+ 0376+9B00FF00
+ 037A+F000
+ 037C+40000200
+ 0380+0101
+                
+                Z375:	calcdpb 40,16,195,256,2,1024,@
+ 0382+2800
+ 0384+040F00
+ 0387+C200FF00
+ 038B+F000
+ 038D+40000200
+ 0391+0307
+                
+                Z376:	calcdpb 20, 8,192, 64,3,256
+ 0393+1400
+ 0395+030700
+ 0398+BF003F00
+ 039C+C000
+ 039E+10000300
+ 03A2+0101
+                
+                Z377:	calcdpb 32,16,156,128,2,256
+ 03A4+2000
+ 03A6+040F01
+ 03A9+9B007F00
+ 03AD+C000
+ 03AF+20000200
+ 03B3+0101
+                
+                Z378:	calcdpb 40,16,195,128,2,1024
+ 03B5+2800
+ 03B7+040F01
+ 03BA+C2007F00
+ 03BE+C000
+ 03C0+20000200
+ 03C4+0307
+                
+                Z379:	calcdpb 20,16,196,128,3,256
+ 03C6+1400
+ 03C8+040F01
+ 03CB+C3007F00
+ 03CF+C000
+ 03D1+20000300
+ 03D5+0101
+                
+                Z37A:	calcdpb 32,16,316,256,2,256
+ 03D7+2000
+ 03D9+040F00
+ 03DC+3B01FF00
+ 03E0+F000
+ 03E2+40000200
+ 03E6+0101
+                
+                Z37B:	calcdpb 40,16,395,256,2,1024
+ 03E8+2800
+ 03EA+040F00
+ 03ED+8A01FF00
+ 03F1+F000
+ 03F3+40000200
+ 03F7+0307
+                
+                Z100a:	calcdpb 32, 8,152,128,2,512	;; 5" disks
+ 03F9+2000
+ 03FB+030700
+ 03FE+97007F00
+ 0402+F000
+ 0404+20000200
+ 0408+0203
+                
+                Z100b:	calcdpb 32,16,156,256,2,512,@
+ 040A+2000
+ 040C+040F00
+ 040F+9B00FF00
+ 0413+F000
+ 0415+40000200
+ 0419+0203
+                
+                Z100c:	calcdpb 32,16,156,128,2,512
+ 041B+2000
+ 041D+040F01
+ 0420+9B007F00
+ 0424+C000
+ 0426+20000200
+ 042A+0203
+                
+                Z100d:	calcdpb 32,16,316,256,2,512
+ 042C+2000
+ 042E+040F00
+ 0431+3B01FF00
+ 0435+F000
+ 0437+40000200
+ 043B+0203
+                
+                ;
+                ; NOTE: skew tables are for physical sector numbers.
+                ;
+                
+ 043D 01070D1319STDX:	DB	1,7,13,19,25,5,11,17,23,3,9,15,21    ;3740 format
+ 044A 02080E141A	DB	2,8,14,20,26,6,12,18,24,4,10,16,22   ; (26-128 byte)
+                
+ 0457 010A13020BZ47X:	DB	1,10,19,2,11,20,3,12,21,4,13,22,5    ;Z47/Z67 format
+ 0464 0E17060F18	DB	14,23,6,15,24,7,16,25,8,17,26,9,18   ; (26-256 byte)
+                
+ 0471 0105020603Z47XX:	DB	1,5,2,6,3,7,4,8 		     ;Z47X/M47 format
+                						     ; (8-1024 byte)
+                
+ 0479 0105090307Z17X:	db	1,5,9,3,7,2,6,10,4,8		     ;Z17 format
+                
+ 0483           	end
+

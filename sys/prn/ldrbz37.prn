@@ -1,0 +1,253 @@
+ 2031 =         vers equ '1 ' ; July 19, 1983	9:48  mjm  "LDRBZ37.ASM"
+                
+                ; Boot module for Z37 controller, MMS formats, CP/M 3 loader
+                
+                	MACLIB Z80
+                
+                	extrn cboot,btend,loader
+                
+                ************** Select Boot mode from: *****************
+                **  0 = 5.25" DD SS ST (MMS 512 byte sectors) Drive 46
+                **  1 = 5.25" DD DS ST ( '' )                       46
+                **  2 = 5.25" DD SS DT ( '' )                       46
+                **  3 = 5.25" DD DS DT ( '' )                       46
+                *******************************************************
+                
+ 0009 =         SPT	EQU	9	; 9 (512 BYTE) SECTORS ON 5.25" DD
+ 01FF =         secmsk	equ	01ffh
+ 0009 =         secshf	equ	9
+ 002E =         drv0	equ	46
+ 0004 =         ndrv	equ	4
+                
+                ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
+                *****					      *****
+                *****  46 = FIRST Z37 5.25" DRIVE             *****
+                *****  47 = SECOND Z37 5.25" DRIVE            *****
+                *****  48 = THIRD Z37 5.25" DRIVE             *****
+                *****  49 = FOURTH Z37 5.25" DRIVE            *****
+                *****					      *****
+                ***************************************************
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+ 201F =         UIVEC	EQU	201FH		; INTERRUPT VECTORS BASE ADDRESS
+ 0078 =         Z37	EQU	078H
+ 0078 =         ICL	EQU	Z37+0		; DISK CONTROL PORT
+ 0079 =         ACL	EQU	Z37+1		; INTERFACE MUX PORT
+ 007A =         COMD	EQU	Z37+2		; 1797 COMMAND REGISTER
+ 007A =         STAT	EQU	Z37+2		; STATUS REGISTER
+ 007A =         SECT	EQU	Z37+2		; SECTOR REGISTER
+ 007B =         DATA	EQU	Z37+3		; DATA REGISTER
+                
+ 00F2 =         ?PORT	  EQU	0F2H
+                ***************************************************
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK BOOT MODULE
+                *************************************************** 
+                	aseg
+ 2280           	ORG	2280H
+ 2280 C38B22    BOOT:	JMP	AROUND
+                
+ 2283 0000      sysend: dw	btend
+ 2285 0000      systrt: dw	loader
+ 2287 2E        drive:	db	drv0		; boot drive
+ 2288 01        btmode: db	1		; default boot mode DD,DS,ST
+ 2289 2E        	db	drv0
+ 228A 04        	db	ndrv
+                
+ 228B E1        AROUND: POP	H	; ERROR ROUTINE ADDRESS
+ 228C 310024    	LXI	SP,?STACK
+ 228F E5        	PUSH	H
+                
+                ***************************************************
+                *** START OF UNIQUE ROUTINE FOR BOOTING
+                ***************************************************
+ 2290 3A8722    	LDA	DRIVE
+ 2293 D62E      	SUI	drv0		; BOOT ONLY FROM Z37 DRIVES
+ 2295 FE04      	CPI	ndrv		; MAX. 4 DRIVES ON Z37
+ 2297 D0        	RNC
+ 2298 4F        	MOV	C,A
+ 2299 3E08      	MVI	A,8
+ 229B 87        LOOP:	ADD	A
+ 229C 0D        	DCR	C
+ 229D F29B22    	JP	LOOP
+ 22A0 F60F      	ORI	00001111B	; TURN ON MOTOR, INTRQ, DRQ, DDEN
+ 22A2 D378      	OUT	ICL		; SEND TO CONTROL REGISTER
+                
+ 22A4 210000    	lxi	h,btend
+ 22A7 110000    	lxi	d,loader
+ 22AA B7        	ora	a
+                	dsbc	d
+ 22AB+ED52      	DB	0EDH,D*8+42H
+ 22AD 225023    	shld	syssiz
+ 22B0 11FF02    	lxi	d,secmsk+0100h		; include boot routine
+ 22B3 19        	dad	d
+ 22B4 3E09      	mvi	a,secshf
+                div0:	srlr	h
+ 22B6+CB3C      	DB	0CBH, 38H + H
+                	rarr	l
+ 22B8+CB1D      	DB	0CBH, 18H + L
+ 22BA 3D        	dcr	a
+                	jrnz	div0
+ 22BB+20F9      	DB	20H,DIV0-$-1
+ 22BD 55        	mov	d,l	;number of sectors to load
+                
+ 22BE 214823    	LXI	H,INTRQ
+ 22C1 222920    	SHLD	UIVEC+9+1	; SET RST4 ROUTINE.
+ 22C4 017B00    	LXI	B,DATA		; C = INPUT DATA PORT  B=0
+ 22C7 210030    	LXI	H,3000h 	;
+ 22CA 3E0B      	MVI	A,00001011B	; RESTORE HEAD TO TRACK 0
+ 22CC F3        STEP:	DI			; DO STEP BY POLLING BUSY (NOT BY INTRQ)
+ 22CD D37A      	OUT	COMD		; SEND STEP COMMAND
+ 22CF DB7A      WB:	IN	STAT		; WAIT FOR BUSY
+ 22D1 0F        	RRC
+                	JRNC	WB
+ 22D2+30FB      	DB	30H,WB-$-1
+ 22D4 DB7A      WNB:	IN	STAT		; THEN WAIT FOR NOT BUSY
+ 22D6 0F        	RRC
+                	JRC	WNB
+ 22D7+38FB      	DB	38H,WNB-$-1
+ 22D9 DB7A      	IN	STAT		; INSURE INTRQ IS CLEARED
+ 22DB FB        	EI
+ 22DC 3E01      	MVI	A,1
+ 22DE D379      	OUT	ACL		; ENABLE 1797 TRACK/SECTOR REGISTERS
+ 22E0 AF        	XRA	A
+ 22E1 D37A      	OUT	SECT		; START AT SECTOR 0 (BEFORE INCREMENT)
+ 22E3 1E09      	MVI	E,SPT		; SET COUNTER FOR SECTORS-PER-TRACK
+ 22E5 3E01      RDSEC:	MVI	A,1
+ 22E7 D379      	OUT	ACL		; ENABLE TRACK/SECTOR REGISTERS
+ 22E9 DB7A      	IN	SECT
+ 22EB 3C        	INR	A		; SECTOR # +1
+ 22EC D37A      	OUT	SECT
+ 22EE AF        	XRA	A		; SELECT COMMAND/DATA REGISTERS
+ 22EF D379      	OUT	ACL
+ 22F1 3E88      	MVI	A,10001000B	; READ RECORD, SIDE 0
+ 22F3 D37A      	OUT	COMD		; ISSUE COMMAND
+ 22F5 FB        	EI
+ 22F6 76        RDLOOP: HLT
+                	INI			; INPUT BYTE
+ 22F7+EDA2      	DB	0EDH,0A2H
+                	JR	RDLOOP		; LOOP UNTIL INTERRUPT
+ 22F9+18FB      	DB	18H,RDLOOP-$-1
+ 22FB E69F      INTRTN: ANI	10011111B	; SET PSW/Z TO INDICATE ERROR STATUS
+                	JRZ	OK		; ALL'S WELL IF ZERO
+ 22FD+2812      	DB	28H,OK-$-1
+ 22FF 3A4723    	LDA	ERRF		; SEE IF THIS IS THE SECOND TRY
+ 2302 B7        	ORA	A
+                	JRNZ	XIT
+ 2303+2008      	DB	20H,XIT-$-1
+ 2305 2F        	CMA
+ 2306 324723    	STA	ERRF		; ALLOW RETRY ONLY ONCE
+ 2309 3E4B      	MVI	A,01001011B	; STEP-IN WITHOUT UPDATE (FOR 80 TRK DRIVE)
+                	JR	STEP
+ 230B+18BF      	DB	18H,STEP-$-1
+ 230D AF        XIT:	XRA	A
+ 230E D378      	OUT	ICL		; MOTOR OFF AND DESELECT
+ 2310 C7        	RST	0		; RETURN TO MONITOR
+ 2311 2F        OK:	CMA
+ 2312 324723    	STA	ERRF		; PREVENT FURTHER RETRY ON THIS TRACK
+ 2315 15        	DCR	D		; COUNT A SECTOR READ
+                	JRZ	DONE		; STOP IF ALL SECTORS READ
+ 2316+280B      	DB	28H,DONE-$-1
+ 2318 1D        	DCR	E		; COUNT ONE SECTOR ON THIS TRACK
+                	JRNZ	RDSEC		; LOOP IF MORE ON THIS TRACK
+ 2319+20CA      	DB	20H,RDSEC-$-1
+ 231B AF        	XRA	A
+ 231C 324723    	STA	ERRF		; RESET FLAG FOR NEW TRACK
+ 231F 3E5B      	MVI	A,01011011B	; STEP-IN WITH UPDATE
+                	JR	STEP		; STEP-IN AND START NEW TRACK
+ 2321+18A9      	DB	18H,STEP-$-1
+ 2323 3E08      DONE:	MVI	A,00001000B	; DESELECT DRIVE
+ 2325 D378      	OUT	ICL   
+ 2327 F3        	di
+ 2328 214023    	LXI	H,?CODE 	; SEQUENCE TO MOVE MEMORY-MAP
+ 232B 0607      	MVI	B,?CODE$LEN	; NUMBER OF BYTES IN SEQUENCE
+ 232D 0EF2      	MVI	C,?PORT 	; I/O PORT TO SEND SEQUENCE
+                	OUTIR
+ 232F+EDB3      	DB	0EDH,0B3H
+ 2331 210031    	lxi	h,3000h+0100h
+ 2334 110000    	lxi	d,loader
+                	lbcd	syssiz
+ 2337+ED4B      	DB	0EDH,4BH
+ 2339+5023      	DW	SYSSIZ
+                	ldir
+ 233B+EDB0      	DB	0EDH,0B0H
+ 233D C30000    	JMP	CBOOT
+                
+ 2340 04        ?CODE	DB	0000$01$00B
+ 2341 0C        	DB	0000$11$00B
+ 2342 04        	DB	0000$01$00B
+ 2343 08        	DB	0000$10$00B
+ 2344 0C        	DB	0000$11$00B
+ 2345 08        	DB	0000$10$00B
+ 2346 22        	DB	0010$00$10B	; FOR "-FA" MACHINES
+ 0007 =         ?CODE$LEN	EQU	$-?CODE
+                
+ 2347 00        ERRF	DB	0	;ERROR FLAG FOR CONTROL OF 80 TRACK SITUATION:
+                ;IF A 40-TRACK DISK IS BEING BOOTED ON AN 80-TRACK DRIVE EACH TRACK
+                ;REQUIRES TWO STEPS, ONLY UPDATING TRACK REGISTER ON ONE.
+                
+ 2348 DB7A      INTRQ:	IN	STAT		; TURN OFF INTRQ
+ 234A 33        	INX	SP		; DISCARD RETURN ADDRESS
+ 234B 33        	INX	SP
+ 234C FB        	EI
+ 234D C3FB22    	JMP	INTRTN		; JUMP BACK TO READ LOOP
+                
+ 2350 0000      syssiz: dw	0
+                
+                	rept 256-($-BOOT)
+                	db	0
+                	endm
+ 2352+00        	DB	0
+ 2353+00        	DB	0
+ 2354+00        	DB	0
+ 2355+00        	DB	0
+ 2356+00        	DB	0
+ 2357+00        	DB	0
+ 2358+00        	DB	0
+ 2359+00        	DB	0
+ 235A+00        	DB	0
+ 235B+00        	DB	0
+ 235C+00        	DB	0
+ 235D+00        	DB	0
+ 235E+00        	DB	0
+ 235F+00        	DB	0
+ 2360+00        	DB	0
+ 2361+00        	DB	0
+ 2362+00        	DB	0
+ 2363+00        	DB	0
+ 2364+00        	DB	0
+ 2365+00        	DB	0
+ 2366+00        	DB	0
+ 2367+00        	DB	0
+ 2368+00        	DB	0
+ 2369+00        	DB	0
+ 236A+00        	DB	0
+ 236B+00        	DB	0
+ 236C+00        	DB	0
+ 236D+00        	DB	0
+ 236E+00        	DB	0
+ 236F+00        	DB	0
+ 2370+00        	DB	0
+ 2371+00        	DB	0
+ 2372+00        	DB	0
+ 2373+00        	DB	0
+ 2374+00        	DB	0
+ 2375+00        	DB	0
+ 2376+00        	DB	0
+ 2377+00        	DB	0
+ 2378+00        	DB	0
+ 2379+00        	DB	0
+ 237A+00        	DB	0
+ 237B+00        	DB	0
+ 237C+00        	DB	0
+ 237D+00        	DB	0
+ 237E+00        	DB	0
+ 237F+00        	DB	0
+                
+ 2400 =         ?STACK: EQU	$+128
+                
+ 2380           	END
+
