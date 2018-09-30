@@ -16,7 +16,7 @@ USBTXR	equ	00000001b	; Tx space available in FIFO
 
 ;	Slave Configuration Table
 CFGTBL:
-	ds	1		; network status byte
+	db	0		; network status byte
 	ds	1		; slave processor ID number
 	ds	2		; A:  Disk device
 	ds	2		; B:   "
@@ -61,6 +61,8 @@ senderr 	equ	0000$0001b	; unable to send message
 	page
 ;	Network Initialization
 NTWKIN:
+	call	check	; confirm h/w exists...
+	jc	initerr
 	; TODO: how to get slave ID?
 	; Send "BDOS Func 255" message to other end,
 	; Response will tell us our, and their, node ID
@@ -143,9 +145,28 @@ sendh0:
 	xra	a
 	ret
 
+check:
+	; do check for sane hardware...
+	lxi	h,0
+	mvi	e,3	; approx 4.5 sec @ 2MHz
+check0:
+	in	STSPORT	; 11
+	ani	USBTXR	; 7, also NC
+	rnz		; 5 (11)
+	dcx	h	; 6
+	mov	a,h	; 4
+	ora	l	; 4
+	jnz	check0	; 10 = 47, * 65536 = 3080192 = 1.504 sec
+	dcr	e	; 4
+	jnz	check0	; 10
+	stc
+	ret
 
 ;	Send Message on Network
 SNDMSG:			; BC = message addr
+	lda	CFGTBL	; status
+	ani	active
+	jz	initerr
 	mov	h,b
 	mov	l,c		; HL = message address
 	push	h
@@ -229,6 +250,9 @@ recvb1:
 ;	Wait for "++" sequence, discarding characters, then save message.
 ;	TODO: need timeout? Must be long timeout...
 RCVMSG:			; BC = message addr
+	lda	CFGTBL	; status
+	ani	active
+	jz	initerr
 	mov	h,b
 	mov	l,c		; HL = message address
 	push	h

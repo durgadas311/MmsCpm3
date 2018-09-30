@@ -102,6 +102,23 @@ SNDMSG:			; BC = message addr
 	mvi	a,0ffh
 	ret
 
+check:
+	; do check for sane receive time...
+	lxi	h,0
+	mvi	e,3	; approx 4.5 sec @ 2MHz
+check0:
+	inp	a	; 12
+	ani	01h	; 7	data ready
+	rnz		; 5 (11) NC from "ani"
+	dcx	h	; 6
+	mov	a,h	; 4
+	ora	l	; 4
+	jnz	check0	; 10 = 48, * 65536 = 3145728 = 1.536 sec
+	dcr	e	; 4
+	jnz	check0	; 10
+	stc
+	ret
+
 ;	Receive Message from Network
 RCVMSG:			; BC = message addr
 	mov	h,b
@@ -111,10 +128,10 @@ RCVMSG:			; BC = message addr
 	lda	ioport
 	mov	c,a
 	inr	c	; status port
-rcvwait:
-	inp	a
-	ani	01h	; data ready
-	jz	rcvwait
+	push	h	; save msg adr for inir
+	call	check
+	pop	h
+	jc	rcvto
 	dcr	c	; data port
 	mvi	b,5	; header length
 	inir
@@ -128,6 +145,7 @@ rcvwait:
 	inp	a
 	ani	04h	; rsp overrun
 	rz
+rcvto:
 	mvi	a,0ffh
 NTWKER:
 	ret
