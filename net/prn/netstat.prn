@@ -1,0 +1,250 @@
+                ; A version of CPNETSTS that minimizes output
+                
+ 0100           	org	00100h
+                
+ 0100 C3EC01    	jmp	start
+                
+ 0103 0D0A43502Fl0103h:	db	13,10,'CP/NET Status'
+ 0112 0D0A3D3D3D	db	13,10,'============='
+ 0121 0D0A24    	db	13,10,'$'
+ 0124 5265717565l012ch:	db	'Requester ID = $'
+ 0134 0D0A4E6574l013ch:	db	13,10,'Network Status Byte = $'
+ 014D 0D0A446576l0155h:	db	13,10,'Device status:'
+ 015D 0D0A24    	db	13,10,'$'
+ 0160 2020447269l016dh:	db	'  Drive $'
+ 0169 203D204472l0176h:	db	' = Drive $'
+ 0173 206F6E204El0180h:	db	' on Network Server ID = $'
+ 018C 2020436F6El01a2h:	db	'  Console Device = $'
+ 01A0 436F6E736Fl01b4h:	db	'Console #$'
+ 01AA 20204C6973l01ddh:	db	'  List Device = $'
+ 01BB 4C69737420l01ech:	db	'List #$'
+ 01C2 2020416C6Cl01hhh:	db	'  All LOCAL$'
+ 01CE 0D0A43502Fl0212h:	db	13,10,'CP/NET has not been loaded.$'
+                
+                start:
+ 01EC 210000    	lxi	h,0
+ 01EF 39        	dad	sp
+ 01F0 229503    	shld	usrstk
+ 01F3 319503    	lxi	sp,stack
+ 01F6 CD3003    	call	getver
+ 01F9 7C        	mov	a,h
+ 01FA E602      	ani	02h
+ 01FC CA1603    	jz	nocpnt
+                
+ 01FF 010301    	lxi	b,l0103h	; Intro
+ 0202 CD2803    	call	msgout
+ 0205 CD3C03    	call	getcfg
+ 0208 229903    	shld	nettbl
+ 020B 012401    	lxi	b,l012ch	; Req ID (client ID)
+ 020E CD2803    	call	msgout
+ 0211 2A9903    	lhld	nettbl
+ 0214 23        	inx	h
+ 0215 4E        	mov	c,m
+ 0216 CD4D03    	call	hexout
+ 0219 013401    	lxi	b,l013ch	; Net Sts Byte
+ 021C CD2803    	call	msgout
+ 021F CD3603    	call	getsts
+ 0222 4F        	mov	c,a
+ 0223 CD4D03    	call	hexout
+ 0226 014D01    	lxi	b,l0155h	; Disk device status:
+ 0229 CD2803    	call	msgout
+ 022C AF        	xra	a
+ 022D 329703    	sta	count
+ 0230 329803    	sta	curdrv
+                drvlup:
+ 0233 3A9803    	lda	curdrv
+ 0236 FE10      	cpi	16
+ 0238 D29602    	jnc	trycon	; Done with drives A-P...
+                
+ 023B 6F        	mov	l,a
+ 023C 2600      	mvi	h,0
+ 023E 29        	dad	h	; *2 - 2 bytes per drive
+ 023F 23        	inx	h
+ 0240 23        	inx	h	; +2 - 2 bytes before drives
+ 0241 EB        	xchg
+ 0242 2A9903    	lhld	nettbl
+ 0245 19        	dad	d
+ 0246 7E        	mov	a,m
+ 0247 E680      	ani	080h
+ 0249 CA8F02    	jz	locdrv	; drive is local...
+                
+ 024C E5        	push	h
+ 024D 3A9703    	lda	count
+ 0250 B7        	ora	a
+ 0251 C44203    	cnz	crlf
+ 0254 219703    	lxi	h,count
+ 0257 34        	inr	m
+ 0258 016001    	lxi	b,l016dh	; Drive...
+ 025B CD2803    	call	msgout
+ 025E 3A9803    	lda	curdrv
+ 0261 C641      	adi	'A'
+ 0263 4F        	mov	c,a
+ 0264 CD2103    	call	chrout
+ 0267 0E3A      	mvi	c,':'
+ 0269 CD2103    	call	chrout
+ 026C 016901    	lxi	b,l0176h	; = Drive... i.e. REMOTE
+ 026F CD2803    	call	msgout
+ 0272 E1        	pop	h
+ 0273 E5        	push	h
+ 0274 7E        	mov	a,m
+ 0275 E60F      	ani	00fh	; remote drive number
+ 0277 C641      	adi	'A'
+ 0279 4F        	mov	c,a
+ 027A CD2103    	call	chrout
+ 027D 0E3A      	mvi	c,':'
+ 027F CD2103    	call	chrout
+ 0282 017301    	lxi	b,l0180h	; on server...
+ 0285 CD2803    	call	msgout
+ 0288 E1        	pop	h
+ 0289 23        	inx	h
+ 028A 7E        	mov	a,m	; server ID
+ 028B 4F        	mov	c,a
+ 028C CD4D03    	call	hexout
+                locdrv:	; Drive is LOCAL...
+ 028F 219803    	lxi	h,curdrv
+ 0292 34        	inr	m
+ 0293 C33302    	jmp	drvlup
+                
+                trycon:
+ 0296 012200    	lxi	b,00022h
+ 0299 2A9903    	lhld	nettbl
+ 029C 09        	dad	b
+ 029D 7E        	mov	a,m
+ 029E E680      	ani	080h
+ 02A0 CACE02    	jz	trylst
+                
+ 02A3 E5        	push	h
+ 02A4 3A9703    	lda	count
+ 02A7 B7        	ora	a
+ 02A8 C44203    	cnz	crlf
+ 02AB 219703    	lxi	h,count
+ 02AE 34        	inr	m
+ 02AF 018C01    	lxi	b,l01a2h	; Console Device = ...
+ 02B2 CD2803    	call	msgout
+ 02B5 01A001    	lxi	b,l01b4h	; Console #
+ 02B8 CD2803    	call	msgout
+ 02BB E1        	pop	h
+ 02BC E5        	push	h
+ 02BD 7E        	mov	a,m
+ 02BE CD6103    	call	hexdig
+ 02C1 017301    	lxi	b,l0180h	; on Network Server ID = 
+ 02C4 CD2803    	call	msgout
+ 02C7 E1        	pop	h
+ 02C8 23        	inx	h
+ 02C9 7E        	mov	a,m
+ 02CA 4F        	mov	c,a
+ 02CB CD4D03    	call	hexout
+                
+                trylst:
+ 02CE 012400    	lxi	b,00024h
+ 02D1 2A9903    	lhld	nettbl
+ 02D4 09        	dad	b
+ 02D5 7E        	mov	a,m
+ 02D6 E680      	ani	080h
+ 02D8 CA0603    	jz	done
+                
+ 02DB E5        	push	h
+ 02DC 3A9703    	lda	count
+ 02DF B7        	ora	a
+ 02E0 C44203    	cnz	crlf
+ 02E3 219703    	lxi	h,count
+ 02E6 34        	inr	m
+ 02E7 01AA01    	lxi	b,l01ddh	; List Device = 
+ 02EA CD2803    	call	msgout
+ 02ED 01BB01    	lxi	b,l01ech	; List #
+ 02F0 CD2803    	call	msgout
+ 02F3 E1        	pop	h
+ 02F4 E5        	push	h
+ 02F5 7E        	mov	a,m
+ 02F6 CD6103    	call	hexdig
+ 02F9 017301    	lxi	b,l0180h	; on Network Server ID = 
+ 02FC CD2803    	call	msgout
+ 02FF E1        	pop	h
+ 0300 23        	inx	h
+ 0301 7E        	mov	a,m
+ 0302 4F        	mov	c,a
+ 0303 CD4D03    	call	hexout
+                done:
+ 0306 3A9703    	lda	count
+ 0309 B7        	ora	a
+ 030A C21C03    	jnz	exit
+ 030D 01C201    	lxi	b,l01hhh
+ 0310 CD2803    	call	msgout
+ 0313 C31C03    	jmp	exit
+                
+                nocpnt:
+ 0316 01CE01    	lxi	b,l0212h	; CP/NET has not been loaded
+ 0319 CD2803    	call	msgout
+                exit:
+ 031C 2A9503    	lhld	usrstk
+ 031F F9        	sphl
+ 0320 C9        	ret
+                
+                chrout:
+ 0321 59        	mov	e,c
+ 0322 0E02      	mvi	c,002h
+ 0324 CD0500    	call	00005h
+ 0327 C9        	ret
+                
+                msgout:
+ 0328 50        	mov	d,b
+ 0329 59        	mov	e,c
+ 032A 0E09      	mvi	c,009h
+ 032C CD0500    	call	00005h
+ 032F C9        	ret
+                
+                getver:
+ 0330 0E0C      	mvi	c,12
+ 0332 CD0500    	call	00005h
+ 0335 C9        	ret
+                
+                getsts:
+ 0336 0E44      	mvi	c,044h
+ 0338 CD0500    	call	00005h
+ 033B C9        	ret
+                
+                getcfg:
+ 033C 0E45      	mvi	c,045h
+ 033E CD0500    	call	00005h
+ 0341 C9        	ret
+                
+                crlf:
+ 0342 0E0D      	mvi	c,13
+ 0344 CD2103    	call	chrout
+ 0347 0E0A      	mvi	c,10
+ 0349 CD2103    	call	chrout
+ 034C C9        	ret
+                
+                hexout:
+ 034D C5        	push	b
+ 034E 79        	mov	a,c
+ 034F 0F        	rrc
+ 0350 0F        	rrc
+ 0351 0F        	rrc
+ 0352 0F        	rrc
+ 0353 CD6103    	call	hexdig
+ 0356 C1        	pop	b
+ 0357 79        	mov	a,c
+ 0358 CD6103    	call	hexdig
+ 035B 0E48      	mvi	c,'H'
+ 035D CD2103    	call	chrout
+ 0360 C9        	ret
+                
+                hexdig:
+ 0361 E60F      	ani	0fh
+ 0363 C690      	adi	90h
+ 0365 27        	daa
+ 0366 CE40      	aci	40h
+ 0368 27        	daa
+ 0369 4F        	mov	c,a
+ 036A C32103    	jmp	chrout
+                
+ 036D           	ds	40
+ 0395           stack:	ds	0
+ 0395 0000      usrstk:	dw	0
+ 0397 00        count:	db	0
+ 0398 00        curdrv:	db	0
+ 0399 0000      nettbl:	dw	0
+                
+ 039B           	end
+

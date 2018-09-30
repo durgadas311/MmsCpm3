@@ -1,0 +1,384 @@
+                	maclib z80
+                
+                	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                
+ 0005 =         BDOS	equ	0005h
+ 0080 =         CMDLN	equ	0080h
+                
+                ; BDOS functions
+ 0002 =         CONOUT	equ	2
+ 0009 =         PRINT	equ	9
+ 000C =         GETVER	equ	12
+ 0031 =         SGSCB	equ	49
+                
+                ; CP/NET NDOS functions
+ 0042 =         NSEND	equ	66
+ 0043 =         NRECV	equ	67
+                
+ 0100           	org	0100h
+ 0100 C36802    	jmp	start
+                
+ 0103 18        ioport: db	018h
+                
+ 0104 0000      vers:	dw	0
+ 0106 0000      scbadr:	dw	0
+                
+ 0108 0000026900gettime: db	0, 0, 2, 105, 0, 0
+ 010E 0102006904gottime: db	1, 2, 0, 105, 4, 0, 0, 0, 0, 0 ; just prediction of what will be received
+                
+ 0118 3A        scbpb:	db	03ah	; offset of SCB address (reserved area)
+ 0119 00        	db	0	; get word, (SCB address)
+ 011A 0000      	dw	0
+                
+                ; assume < 100
+                decout:
+ 011C 0630      	mvi	b,'0'
+                decot0:
+ 011E D60A      	sui	10
+ 0120 DA2701    	jc	decot1
+ 0123 04        	inr	b
+ 0124 C31E01    	jmp	decot0
+                decot1:
+ 0127 C60A      	adi	10
+ 0129 C630      	adi	'0'
+ 012B F5        	push	psw
+ 012C 78        	mov	a,b
+ 012D CD5B01    	call	prout
+ 0130 F1        	pop	psw
+ 0131 C35B01    	jmp	prout
+                
+                ; Keeps number in HL - caller must preserve/init
+                ; Returns CY for invalid
+                hexnum:
+ 0134 D630      	sui	'0'
+ 0136 D8        	rc
+ 0137 FE0A      	cpi	9+1
+ 0139 D24301    	jnc	hexnm1
+                hexnm2:
+ 013C 29        	dad	h
+ 013D 29        	dad	h
+ 013E 29        	dad	h
+ 013F 29        	dad	h
+ 0140 B5        	ora	l
+ 0141 6F        	mov	l,a
+ 0142 C9        	ret
+                hexnm1:
+ 0143 D608      	sui	'A'-'9'
+ 0145 D8        	rc
+ 0146 FE06      	cpi	5+1
+ 0148 3F        	cmc
+ 0149 D8        	rc
+ 014A C60A      	adi	10
+ 014C C33C01    	jmp	hexnm2
+                
+                hexout:
+ 014F F5        	push	psw
+ 0150 0F        	rrc
+ 0151 0F        	rrc
+ 0152 0F        	rrc
+ 0153 0F        	rrc
+ 0154 CD5801    	call	hexdig
+ 0157 F1        	pop	psw
+                hexdig:
+ 0158 CD6101    	call	tohex
+                prout:
+ 015B 5F        	mov	e,a
+ 015C 0E02      	mvi	c,CONOUT
+ 015E C30500    	jmp	BDOS
+                
+                tohex:
+ 0161 E60F      	ani	0fh
+ 0163 C690      	adi	90h
+ 0165 27        	daa
+ 0166 CE40      	aci	40h
+ 0168 27        	daa
+ 0169 C9        	ret
+                
+ 016A 53756E244Dwdays:	db	'Sun$Mon$Tue$Wed$Thu$Fri$Sat$'
+                
+                ; HL = CP/M Date-time field, w/o seconds
+                ; Print date and time to console.
+                prdate:
+ 0186 5E        	mov	e,m
+ 0187 23        	inx	h
+ 0188 56        	mov	d,m
+ 0189 23        	inx	h
+ 018A E5        	push	h
+ 018B D5        	push	d
+ 018C EB        	xchg
+ 018D CD1C03    	call	weekdy
+ 0190 87        	add	a
+ 0191 87        	add	a	; *4
+ 0192 4F        	mov	c,a
+ 0193 0600      	mvi	b,0
+ 0195 216A01    	lxi	h,wdays
+ 0198 09        	dad	b
+ 0199 EB        	xchg
+ 019A CD5203    	call	xitmsg
+ 019D 3E20      	mvi	a,' '
+ 019F CD5B01    	call	prout
+ 01A2 D1        	pop	d
+                ; compute year
+ 01A3 0E4E      	mvi	c,78	; base year, epoch, binary
+ 01A5 0678      	mvi	b,078h	; year, BCD
+                	; special-case date=0...
+ 01A7 7B        	mov	a,e
+ 01A8 B2        	ora	d
+ 01A9 C2AD01    	jnz	prdat0
+ 01AC 13        	inx	d
+                prdat0:
+ 01AD 216D01    	lxi	h,365
+ 01B0 79        	mov	a,c
+ 01B1 E603      	ani	03h	; Not strictly true, but works until year 2100...
+ 01B3 C2B701    	jnz	prdat1
+ 01B6 23        	inx	h
+ 01B7 E5        prdat1:	push	h
+ 01B8 B7        	ora	a
+                	dsbc	d
+ 01B9+ED52      	DB	0EDH,D*8+42H
+ 01BB E1        	pop	h
+ 01BC D2CD01    	jnc	prdat2	; done computing year...
+ 01BF EB        	xchg
+ 01C0 B7        	ora	a
+                	dsbc	d
+ 01C1+ED52      	DB	0EDH,D*8+42H
+ 01C3 EB        	xchg
+ 01C4 0C        	inr	c
+ 01C5 78        	mov	a,b
+ 01C6 C601      	adi	1
+ 01C8 27        	daa
+ 01C9 47        	mov	b,a
+ 01CA C3AD01    	jmp	prdat0
+                prdat2:	; DE = days within year 'C'
+ 01CD C5        	push	b	; save (2-digit) year, B = BCD, C = binary (until 2155)
+ 01CE 215002    	lxi	h,month0+24
+ 01D1 79        	mov	a,c
+ 01D2 E603      	ani	03h
+ 01D4 C2DA01    	jnz	prdat3
+ 01D7 216802    	lxi	h,month1+24
+                prdat3:	; compute month, DE = days in year,HL = mon-yr-days table adj for leap
+ 01DA 060C      	mvi	b,12
+                prdat4:
+ 01DC 2B        	dcx	h
+ 01DD 2B        	dcx	h
+ 01DE 05        	dcr	b
+ 01DF FAF101    	jm	prdat5	; should never happen...
+ 01E2 E5        	push	h
+ 01E3 D5        	push	d
+ 01E4 7E        	mov	a,m
+ 01E5 23        	inx	h
+ 01E6 66        	mov	h,m
+ 01E7 6F        	mov	l,a
+                		; DE = days in year, HL = ytd[month]
+ 01E8 B7        	ora	a
+                	dsbc	d
+ 01E9+ED52      	DB	0EDH,D*8+42H
+ 01EB 7D        	mov	a,l	; potential remainder (neg)
+ 01EC D1        	pop	d
+ 01ED E1        	pop	h
+ 01EE D2DC01    	jnc	prdat4
+                prdat5:	; B = month, 0-11; A = -dom
+                	neg
+ 01F1+ED44      	DB	0EDH,44H
+ 01F3 F5        	push	psw
+ 01F4 04        	inr	b
+ 01F5 78        	mov	a,b
+ 01F6 CD1C01    	call	decout
+ 01F9 1E2F      	mvi	e,'/'
+ 01FB 0E02      	mvi	c,CONOUT
+ 01FD CD0500    	call	BDOS
+ 0200 F1        	pop	psw
+ 0201 CD1C01    	call	decout
+ 0204 1E2F      	mvi	e,'/'
+ 0206 0E02      	mvi	c,CONOUT
+ 0208 CD0500    	call	BDOS
+ 020B C1        	pop	b
+ 020C 78        	mov	a,b	; already BCD
+ 020D CD4F01    	call	hexout
+ 0210 1E20      	mvi	e,' '
+ 0212 0E02      	mvi	c,CONOUT
+ 0214 CD0500    	call	BDOS
+ 0217 E1        	pop	h	; -> BCD hours
+ 0218 7E        	mov	a,m
+ 0219 23        	inx	h
+ 021A E5        	push	h
+ 021B CD4F01    	call	hexout
+ 021E 1E3A      	mvi	e,':'
+ 0220 0E02      	mvi	c,CONOUT
+ 0222 CD0500    	call	BDOS
+ 0225 E1        	pop	h	; -> BCD minutes
+ 0226 7E        	mov	a,m
+ 0227 23        	inx	h
+ 0228 E5        	push	h
+ 0229 CD4F01    	call	hexout
+ 022C 1E3A      	mvi	e,':'
+ 022E 0E02      	mvi	c,CONOUT
+ 0230 CD0500    	call	BDOS
+ 0233 E1        	pop	h	; -> BCD seconds
+ 0234 7E        	mov	a,m
+ 0235 C34F01    	jmp	hexout
+                
+                ;		J   F   M   A   M   J   J   A   S   O   N   D
+ 0238 00001F003Bmonth0:	dw	 0, 31, 59, 90,120,151,181,212,243,273,304,334
+ 0250 00001F003Cmonth1:	dw	 0, 31, 60, 91,121,152,182,213,244,274,305,335
+                
+                start:
+ 0268 0E0C      	mvi	c,GETVER
+ 026A CD0500    	call	BDOS
+ 026D 220401    	shld	vers
+ 0270 7D        	mov	a,l
+ 0271 FE1E      	cpi	30
+ 0273 DA4F03    	jc	badvers
+ 0276 218000    	lxi	h,CMDLN
+ 0279 4E        	mov	c,m
+ 027A 23        	inx	h
+                sid1:
+ 027B 7E        	mov	a,m
+ 027C FE20      	cpi	' '
+ 027E C28902    	jnz	sid0
+ 0281 23        	inx	h
+ 0282 0D        	dcr	c
+ 0283 C27B02    	jnz	sid1
+ 0286 C39D02    	jmp	start1 ; no params, use defaults
+                
+                sid0:	; scan hex number as server ID
+ 0289 EB        	xchg
+ 028A 210000    	lxi	h,0
+                sid2:
+ 028D 1A        	ldax	d
+ 028E 13        	inx	d
+ 028F CD3401    	call	hexnum
+ 0292 DA9902    	jc	sid3
+ 0295 0D        	dcr	c
+ 0296 C28D02    	jnz	sid2
+                sid3:
+ 0299 7D        	mov	a,l
+ 029A 320901    	sta	gettime+1
+                
+                start1:
+                	; TODO: handle MP/M...
+ 029D 111801    	lxi	d,scbpb
+ 02A0 0E31      	mvi	c,SGSCB
+ 02A2 CD0500    	call	BDOS
+ 02A5 220601    	shld	scbadr
+                
+ 02A8 2A0401    	lhld	vers
+ 02AB 3E02      	mvi	a,2	; bit for CP/Net
+ 02AD A4        	ana	h
+ 02AE CACC02    	jz	nocpnet
+                
+ 02B1 110801    	lxi	d,gettime
+ 02B4 0E42      	mvi	c,NSEND
+ 02B6 CD0500    	call	BDOS
+ 02B9 B7        	ora	a
+ 02BA C24303    	jnz	error
+ 02BD 110E01    	lxi	d,gottime
+ 02C0 0E43      	mvi	c,NRECV
+ 02C2 CD0500    	call	BDOS
+ 02C5 B7        	ora	a
+ 02C6 C24303    	jnz	error
+ 02C9 C3EB02    	jmp	settime
+                
+                nocpnet:
+ 02CC 3A0000    	lda	NTWKIN
+ 02CF FEC9      	cpi	0c9h	; RET
+ 02D1 CA4903    	jz	error2
+ 02D4 CD0000    	call	NTWKIN
+ 02D7 010801    	lxi	b, gettime
+ 02DA CD0000    	call	SNDMSG
+ 02DD B7        	ora	a
+ 02DE C24303    	jnz	error
+                
+ 02E1 010E01    	lxi	b, gottime
+ 02E4 CD0000    	call	RCVMSG
+ 02E7 B7        	ora	a
+ 02E8 C24303    	jnz	error
+                settime:
+                	; BDOS function 104 forces seconds to zero...
+                	; but we need to inform the BIOS that time changed...
+                	; So we set SCB fields then call BIOS function 
+ 02EB 2A0601    	lhld	scbadr
+ 02EE 115800    	lxi	d,058h	; date/time
+ 02F1 19        	dad	d
+ 02F2 EB        	xchg
+ 02F3 211301    	lxi	h,gottime+5
+ 02F6 010500    	lxi	b,5	; length of date/time
+ 02F9 F3        	di
+                	ldir
+ 02FA+EDB0      	DB	0EDH,0B0H
+ 02FC FB        	ei
+ 02FD 111403    	lxi	d,biospb
+ 0300 0E32      	mvi	c,50
+ 0302 CD0500    	call	bdos
+ 0305 115803    	lxi	d,done
+ 0308 0E09      	mvi	c,PRINT
+ 030A CD0500    	call	BDOS
+ 030D 211301    	lxi	h,gottime+5
+ 0310 CD8601    	call	prdate
+ 0313 C9        	ret
+                
+ 0314 1A        biospb:	db	26	; BIOS TIME function
+ 0315 00        	db	0	; A
+ 0316 FF00      	dw	00ffh	; BC - C=FF: SET TIME
+ 0318 0000      	dw	0	; DE
+ 031A 0000      	dw	0	; HL
+                
+                ; HL=CP/M date value (days since epoch)
+                ; From DATE.PLM: week$day = (word$value + base$day - 1) mod 7;
+                ;                base$day  lit '0',
+ 031C 2B        weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
+ 031D 11581B    	lxi	d,7000
+ 0320 B7        	ora	a
+                wd0:	dsbc	d
+ 0321+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd0
+ 0323+30FC      	DB	30H,WD0-$-1
+ 0325 19        	dad	d
+ 0326 11BC02    	lxi	d,700
+ 0329 B7        	ora	a
+                wd1:	dsbc	d
+ 032A+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd1
+ 032C+30FC      	DB	30H,WD1-$-1
+ 032E 19        	dad	d
+ 032F 114600    	lxi	d,70
+ 0332 B7        	ora	a
+                wd2:	dsbc	d
+ 0333+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd2
+ 0335+30FC      	DB	30H,WD2-$-1
+ 0337 19        	dad	d
+ 0338 110700    	lxi	d,7
+ 033B B7        	ora	a
+                wd3:	dsbc	d
+ 033C+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd3
+ 033E+30FC      	DB	30H,WD3-$-1
+ 0340 19        	dad	d
+ 0341 7D        	mov	a,l
+ 0342 C9        	ret
+                
+                error:
+ 0343 116A03    	lxi	d,errmsg
+ 0346 C35203    	jmp	xitmsg
+                
+                error2:
+ 0349 118A03    	lxi	d,errcpn
+ 034C C35203    	jmp	xitmsg
+                
+                badvers:
+ 034F 11A903    	lxi	d,vermsg
+                xitmsg:
+ 0352 0E09      	mvi	c,PRINT
+ 0354 CD0500    	call	BDOS
+ 0357 C9        	ret
+                
+ 0358 54696D6520done:	db	'Time was set to: $'
+ 036A 074572726Ferrmsg: db	7,'Error retrieving network time.$'
+ 038A 0754686973errcpn: db	7,'This program requires CP/NET.$'
+ 03A9 0754686973vermsg: db	7,'This program requires BDOS >= 3.0.$'
+                
+                ; Must be linked with an SNIOS, at least SNIOS000
+                
+ 03CD           	end
+

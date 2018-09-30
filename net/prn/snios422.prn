@@ -1,0 +1,413 @@
+ 6E30 =         VERS equ '0n' ; January 18, 1983  17:22  drm  "SNIOS.ASM"
+                
+                	maclib	Z80
+                
+                ;*****************************************************
+                ;**** CP/NET I/O module 			 *****
+                ;****  Copyright (C) 1983 Magnolia microsystems  *****
+                ;*****************************************************
+                ; Printer-Server support.  A printer server is characterized
+                ;	by a type number of 030H in Net$table (bytes 1-64)
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+ 0000 =         cpm	equ	0
+ 0005 =         bdos	equ	5
+ 000D =         intbyt	equ	13
+ 0028 =         RST5	equ	(5)*8
+                
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+ 0007 =         bell	equ	7
+                
+ 00F2 =         port	equ	0f2h
+                
+                
+                ; Relative positions of message elements
+ 0000 =         FMT	equ	0
+ 0001 =         DID	equ	1
+ 0002 =         SID	equ	2
+ 0003 =         FNC	equ	3
+ 0004 =         SIZ	equ	4
+ 0005 =         MSG	equ	5	;message starts at frame+5
+                
+                	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                
+                	cseg
+                
+                CFGTBL:
+ 0000 00        	db	0	;network status
+ 0001 00        	db	0	;network address
+ 0002 0000      	db	0,0	;A:=local A:
+ 0004 0100      	db	1,0	;B:=local B:
+ 0006 0200      	db	2,0	; ...
+ 0008 0300      	db	3,0
+ 000A 0400      	db	4,0
+ 000C 0500      	db	5,0
+ 000E 0600      	db	6,0
+ 0010 0700      	db	7,0
+ 0012 0800      	db	8,0
+ 0014 0900      	db	9,0
+ 0016 0A00      	db     10,0
+ 0018 0B00      	db     11,0
+ 001A 0C00      	db     12,0
+ 001C 0D00      	db     13,0
+ 001E 0E00      	db     14,0
+ 0020 0F00      	db     15,0	;P:=local P:
+ 0022 0000      	db	0,0	;console: local
+ 0024 0000      	db	0,0	;list: local
+ 0026 00        	db	0	;list buffer index
+ 0027 00        	db	0	;list message header
+ 0028 00        	db	0	;DID
+ 0029 00        sid1:	db	0	;SID - must be set by init.
+ 002A 05        	db	5	;FNC - always #5, list output.
+ 002B 00        	db	0	;SIZ
+ 002C 00        	db	0	; ??
+ 002D           	ds	128	;list buffer
+                Netstat:		; ;added by MMS
+ 00AD 00        maddr:	  db	0	; ;
+ 00AE 00        nstat:	  db	0	; ;
+ 00AF 00        sndsts:   db	0	; ;
+ 00B0 00        srsts:	  db	0	; ; bit0=cpflag, bit1=mailflag, 2=sndsts, 3=netsts
+ 00B1 C403      	  dw	rcmsg	; ; buffer that contains the mail.
+                Net$table:		; ;
+ 00B3           	ds	65	; ;
+                
+                CNFTBL:
+ 00F4 210000    	lxi	h,CFGTBL
+                NTWKER:		;
+ 00F7 C9        	ret
+                
+                ; When running as an RSX, we have to always setup page-0.
+                ; Something keeps clobbering our INT5 trap. Probably
+                ; need to call set$jumps in BIOS but we can't.
+                ; Need a mechanism to add/remove INT from BIOS (bank 0 page 0).
+                ; Could try to doctor bank 0 page 0 from here...
+                NTWKBT:
+ 00F8 3EC3      	mvi	a,(JMP)
+ 00FA 322800    	sta	RST5
+ 00FD 218702    	lxi	h,INT5
+ 0100 222900    	shld	RST5+1
+ 0103 C9        	ret
+                
+                NTWKIN:
+ 0104 AF        	xra	a
+ 0105 32B000    	sta	srsts
+ 0108 32AF00    	sta	sndsts
+ 010B CDF800    	call	NTWKBT
+ 010E DBF2      	in	port
+ 0110 0E7C      	mvi	c,07cH
+ 0112 E603      	ani	11b
+ 0114 FE03      	cpi	11b
+                	jrz	re0
+ 0116+280D      	DB	28H,RE0-$-1
+ 0118 0E78      	mvi	c,078h
+ 011A DBF2      	in	port
+ 011C E60C      	ani	1100b
+ 011E FE0C      	cpi	1100b
+                	jrz	re0
+ 0120+2803      	DB	28H,RE0-$-1
+ 0122 AF        	xra	a
+ 0123 3D        	dcr	a
+ 0124 C9        	ret
+                
+ 0125 79        re0:	mov	a,c
+ 0126 32B602    	sta	porta
+                
+ 0129 CD4B02    	call	runout	;clear any characters stacked up in DMA buffer.
+                
+ 012C 3ED1      	mvi	a,0d1h	;request network status
+ 012E 32B702    	sta	func
+ 0131 CD6202    	call	put
+ 0134 3E08      	mvi	a,1000b ;wait for netsts frame
+ 0136 CD6401    	call	get$frames	;get response
+ 0139 3AAD00    	lda	maddr	;node address
+ 013C 320100    	sta	CFGTBL+1
+ 013F 322900    	sta	sid1
+                ; anywhere else?
+                ; anything else?
+ 0142 AF        	xra	a
+ 0143 C9        	ret
+                
+                NTWKST:
+ 0144 CDF800    	call	NTWKBT	; always have to setup page-0
+ 0147 210000    	lxi	h,CFGTBL
+ 014A 7E        	mov	a,m
+                	res	0,m
+ 014B+CB86      	DB	0CBH,0*8+M+80H
+                	res	1,m
+ 014D+CB8E      	DB	0CBH,1*8+M+80H
+ 014F F5        nws:	push	psw
+ 0150 3ED1      	mvi	a,0d1h	;request network status
+ 0152 32B702    	sta	func
+ 0155 CD6202    	call	put
+ 0158 21B000    	lxi	h,srsts
+                	res	3,m
+ 015B+CB9E      	DB	0CBH,3*8+M+80H
+ 015D 3E08      	mvi	a,1000b ;wait for netsts
+ 015F CD6401    	call	get$frames	;get response
+ 0162 F1        	pop	psw
+ 0163 C9        	ret
+                
+                get$frames:
+ 0164 21B000    	lxi	h,srsts
+ 0167 47        	mov	b,a
+ 0168 A6        	ana	m
+ 0169 C0        	rnz		;quit if frame has been received
+ 016A C5        	push	b	;POP PSW will put mask in A again.
+ 016B CD9002    	call	get
+ 016E 3AB702    	lda	func
+ 0171 FED0      	cpi	0d0h	;status frame
+                	jrz	nsts
+ 0173+284D      	DB	28H,NSTS-$-1
+ 0175 FED6      	cpi	0d6h	;send status frame
+                	jrz	ssts
+ 0177+2831      	DB	28H,SSTS-$-1
+ 0179 FEC2      	cpi	0c2h	;unsolicited message. (does not terminate routine)
+                	jrz	mail
+ 017B+281C      	DB	28H,MAIL-$-1
+ 017D FEE0      	cpi	0e0h	;execute
+                	jrz	exec
+ 017F+2857      	DB	28H,EXEC-$-1
+ 0181 FEC0      	cpi	0c0h	;CP/NET message response
+                	jrz	cpnet
+ 0183+2803      	DB	28H,CPNET-$-1
+                ; What else could it be??
+ 0185 F1        gf0:	pop	psw
+                	jr	get$frames
+ 0186+18DC      	DB	18H,GET$FRAMES-$-1
+                
+                cpnet:	lded	rBC
+ 0188+ED5B      	DB	0EDH,5BH
+ 018A+B802      	DW	RBC
+ 018C 21BE02    	lxi	h,cpmsg
+ 018F CD9602    	call	get422
+ 0192 21B000    	lxi	h,srsts
+                	setb	0,m
+ 0195+CBC6      	DB	0CBH,0*8+M+0C0H
+                	jr	gf0
+ 0197+18EC      	DB	18H,GF0-$-1
+                
+                mail:	lded	rBC
+ 0199+ED5B      	DB	0EDH,5BH
+ 019B+B802      	DW	RBC
+ 019D 21C403    	lxi	h,rcmsg
+ 01A0 CD9602    	call	get422
+ 01A3 21B000    	lxi	h,srsts
+                	setb	1,m
+ 01A6+CBCE      	DB	0CBH,1*8+M+0C0H
+                	jr	gf0
+ 01A8+18DB      	DB	18H,GF0-$-1
+                
+ 01AA 21B000    ssts:	lxi	h,srsts
+                	setb	2,m
+ 01AD+CBD6      	DB	0CBH,2*8+M+0C0H
+ 01AF 3AB802    	lda	rBC
+ 01B2 32AF00    	sta	sndsts	;normally this overwrites an "FF"
+ 01B5 B7        	ora	a	;(to flag reception of response code)
+                	jrz	gf0
+ 01B6+28CD      	DB	28H,GF0-$-1
+ 01B8 FA8501    	jm	gf0
+ 01BB 210000    	lxi	h,CFGTBL
+                	setb	0,m
+ 01BE+CBC6      	DB	0CBH,0*8+M+0C0H
+                	jr	gf0
+ 01C0+18C3      	DB	18H,GF0-$-1
+                
+ 01C2 2AB802    nsts:	lhld	rBC
+ 01C5 22AD00    	shld	netstat
+ 01C8 21B300    	lxi	h,net$table
+ 01CB 114100    	lxi	d,65
+ 01CE CD9602    	call	get422
+ 01D1 21B000    	lxi	h,srsts
+                	setb	3,m
+ 01D4+CBDE      	DB	0CBH,3*8+M+0C0H
+                	jr	gf0
+ 01D6+18AD      	DB	18H,GF0-$-1
+                
+ 01D8 2ABC02    exec:	lhld	rHL
+ 01DB E5        	push	h
+                	lded	rBC
+ 01DC+ED5B      	DB	0EDH,5BH
+ 01DE+B802      	DW	RBC
+ 01E0 C39602    	jmp	get422
+                
+                RCVMSG:
+ 01E3 3AAE00    	lda	nstat
+ 01E6 E610      	ani	00010000b
+                	jrz	error
+ 01E8+285C      	DB	28H,ERROR-$-1
+ 01EA C5        	push	b
+ 01EB CDF800    	call	NTWKBT	; always have to setup page-0
+ 01EE 3E01      	mvi	a,0001b ;wait for cpnet message.
+ 01F0 CD6401    	call	get$frames
+ 01F3 3AC202    	lda	cpmsg+SIZ	;size of message
+ 01F6 6F        	mov	l,a
+ 01F7 2600      	mvi	h,0
+ 01F9 110600    	lxi	d,MSG+1
+ 01FC 19        	dad	d
+ 01FD 4D        	mov	c,l
+ 01FE 44        	mov	b,h
+ 01FF D1        	pop	d
+ 0200 21BE02    	lxi	h,cpmsg
+                	ldir
+ 0203+EDB0      	DB	0EDH,0B0H
+ 0205 21B000    	lxi	h,srsts
+                	res	0,m
+ 0208+CB86      	DB	0CBH,0*8+M+80H
+ 020A AF        	xra	a
+ 020B C9        	ret
+                
+                SNDMSG:
+                	sbcd	savmsg
+ 020C+ED43      	DB	0EDH,43H
+ 020E+4902      	DW	SAVMSG
+ 0210 CDF800    	call	NTWKBT	; always have to setup page-0
+ 0213 3AAE00    	lda	nstat
+ 0216 E610      	ani	00010000b
+                	jrz	error
+ 0218+282C      	DB	28H,ERROR-$-1
+ 021A 210400    	lxi	h,SIZ	;point to size field
+ 021D 09        	dad	b
+ 021E 6E        	mov	l,m
+ 021F 2600      	mvi	h,0
+ 0221 110600    	lxi	d,MSG+1 	;add 5 bytes for header, plus bias
+ 0224 19        	dad	d
+ 0225 22B802    	shld	rBC
+ 0228 E5        	push	h
+ 0229 3EC1      	mvi	a,0c1h	;cp/net message code
+ 022B 32B702    	sta	func
+ 022E C5        	push	b
+ 022F CD6202    	call	put
+ 0232 E1        	pop	h
+ 0233 D1        	pop	d
+ 0234 CD6802    	call	put422
+ 0237 21B000    	lxi	h,srsts
+                	res	2,m	;prevent false-triggering
+ 023A+CB96      	DB	0CBH,2*8+M+80H
+ 023C 3E04      	mvi	a,0100b ;wait for sndsts
+ 023E CD6401    	call	get$frames
+ 0241 3AAF00    	lda	sndsts
+ 0244 B7        	ora	a	;indicate that at least the message got to the 77422.
+ 0245 C8        	rz
+ 0246 AF        error:	xra	a
+ 0247 3D        	dcr	a
+ 0248 C9        	ret
+                
+ 0249 0000      savmsg: dw	0
+                
+ 024B 3AB602    runout: lda	porta
+ 024E 4F        	mov	c,a
+ 024F 215E02    	lxi	h,junk
+ 0252 0C        ro0:	inr	c
+                	inp	a	;
+ 0253+ED78      	DB	0EDH,A*8+40H
+ 0255 E608      	ani	1000b
+ 0257 C8        	rz		;no characters waiting
+ 0258 0D        	dcr	c
+                	inp	a
+ 0259+ED78      	DB	0EDH,A*8+40H
+ 025B C35202    	jmp	ro0
+                
+ 025E 00000000  junk:	db	0,0,0,0
+                
+ 0262 21B702    put:	lxi	h,func
+ 0265 110700    	lxi	d,7
+                ; Byte count (DE) must be greater than 1.
+ 0268 7B        put422: mov	a,e	;must handle blocks larger than 256 bytes
+ 0269 B7        	ora	a	;(Z80 OUTIR/INIR cannot)
+ 026A 5A        	mov	e,d
+ 026B CA6F02    	jz	pu3
+ 026E 1C        	inr	e
+ 026F 47        pu3:	mov	b,a
+ 0270 3AB602    	lda	porta
+ 0273 4F        	mov	c,a
+ 0274 0C        pu1:	inr	c
+                pu0:	inp	a
+ 0275+ED78      	DB	0EDH,A*8+40H
+ 0277 E604      	ani	0100b	;check channel 2 for idle
+ 0279 CA7502    	jz	pu0
+ 027C 0D        	dcr	c
+                	outi		;send first byte
+ 027D+EDA3      	DB	0EDH,0A3H
+ 027F C27402    	jnz	pu1
+ 0282 1D        	dcr	e
+ 0283 C27402    	jnz	pu1
+ 0286 C9        	ret
+                
+ 0287 0C        INT5:	inr	c
+                	outp	a	;this routine will usually terminate "get422".
+ 0288+ED79      	DB	0EDH,A*8+41H
+ 028A 0D        	dcr	c
+                	ini		;get last byte of transfer.
+ 028B+EDA2      	DB	0EDH,0A2H
+ 028D C1        	pop	b	;discard interupt return address.
+ 028E FB        	ei
+ 028F C9        	ret		;and return to caller.
+                
+                
+ 0290 21B702    get:	lxi	h,func
+ 0293 110700    	lxi	d,7
+                ; byte count (DE) must be greater than 1.
+ 0296 1B        get422: dcx	d	;count first byte,
+ 0297 7B        	mov	a,e	;must handle blocks larger than 256 bytes
+ 0298 B7        	ora	a	;(Z80 OUTIR/INIR cannot)
+ 0299 5A        	mov	e,d
+                	jrz	ge6
+ 029A+2801      	DB	28H,GE6-$-1
+ 029C 1C        	inr	e
+ 029D 47        ge6:	mov	b,a
+ 029E 3AB602    	lda	porta
+ 02A1 4F        	mov	c,a
+ 02A2 0C        ge1:	inr	c
+                ge0:	inp	a
+ 02A3+ED78      	DB	0EDH,A*8+40H
+ 02A5 E608      	ani	1000b	;check channel 3 for idle
+                	jrz	ge0
+ 02A7+28FA      	DB	28H,GE0-$-1
+ 02A9 0D        	dcr	c
+                	ini		;get the characters.
+ 02AA+EDA2      	DB	0EDH,0A2H
+ 02AC C2A202    	jnz	ge1
+ 02AF 1D        	dcr	e
+                	jrnz	ge1
+ 02B0+20F0      	DB	20H,GE1-$-1
+                ge5:	inp	a	;at this point we have all the characters we want but
+ 02B2+ED78      	DB	0EDH,A*8+40H
+                	jr	ge5	;the 77422 still has more to send (or it would have
+ 02B4+18FC      	DB	18H,GE5-$-1
+                			;interupted us before this point) so we must continue
+                			;to take characters untill it interupts us.
+                
+                
+ 02B6 00        porta:	db	0
+                
+                ;Network input header:
+                
+ 02B7 00        func:	db	0	;function code (C1 or C6)
+ 02B8 0000      rBC:	dw	0	;message size (bytes)
+ 02BA 0000      rDE:	dw	0	;
+ 02BC 0000      rHL:	dw	0	;
+                
+                
+                ; CP/NET message in:
+                
+ 02BE 00        cpmsg:	db	0	;FMT
+ 02BF 00        	db	0	;DID
+ 02C0 00        	db	0	;SID
+ 02C1 00        	db	0	;FNC
+ 02C2 00        	db	0	;SIZ
+ 02C3           	ds	257	;actual message
+                
+                ; CP/NET Mail in:
+                
+ 03C4 00        rcmsg:	db	0	;FMT
+ 03C5 00        	db	0	;DID
+ 03C6 00        	db	0	;SID
+ 03C7 00        	db	0	;FNC
+ 03C8 00        	db	0	;SIZ
+ 03C9           rmsg:	ds	257	;actual message
+                
+ 04CA           	end
+
