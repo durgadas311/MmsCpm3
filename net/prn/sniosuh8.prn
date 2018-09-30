@@ -1,0 +1,320 @@
+                ; SNIOS for Noberto's H8 USB board,
+                ; Specifically, the FT245R chip.
+                ; http://koyado.com/Heathkit/H-8_USB.html
+                ; default/presumed port at 0b0h
+                ;
+                	maclib z80
+                
+ 00B0 =         USBPORT equ	0b0h
+ 00B2 =         STSPORT equ	0b2h
+                
+ 0002 =         USBRXR	equ	00000010b	; Rx data available in FIFO
+ 0001 =         USBTXR	equ	00000001b	; Tx space available in FIFO
+                
+                	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                
+                	cseg
+                
+                ;	Slave Configuration Table
+                CFGTBL:
+ 0000 00        	db	0		; network status byte
+ 0001           	ds	1		; slave processor ID number
+ 0002           	ds	2		; A:  Disk device
+ 0004           	ds	2		; B:   "
+ 0006           	ds	2		; C:   "
+ 0008           	ds	2		; D:   "
+ 000A           	ds	2		; E:   "
+ 000C           	ds	2		; F:   "
+ 000E           	ds	2		; G:   "
+ 0010           	ds	2		; H:   "
+ 0012           	ds	2		; I:   "
+ 0014           	ds	2		; J:   "
+ 0016           	ds	2		; K:   "
+ 0018           	ds	2		; L:   "
+ 001A           	ds	2		; M:   "
+ 001C           	ds	2		; N:   "
+ 001E           	ds	2		; O:   "
+ 0020           	ds	2		; P:   "
+                
+ 0022           	ds	2		; console device
+                
+ 0024           	ds	2		; list device:
+ 0026           	ds	1		;	buffer index
+                msgbuf:
+ 0027 00        	db	0		;	FMT
+ 0028 00        	db	0		;	DID
+ 0029 FF        	db	0ffh		;	SID (CP/NOS must still initialize)
+ 002A 05        	db	5		;	FNC
+ 002B           	ds	1		;	SIZ
+ 002C           	ds	1		;	MSG(0)	List number
+ 002D           	ds	128		;	MSG(1) ... MSG(128)
+                
+ 00AD 00        hostid:	db	0
+                
+                ;	Network Status Byte Equates
+                ;
+ 0010 =         active		equ	0001$0000b	; slave logged in on network
+ 0002 =         rcverr		equ	0000$0010b	; error in received message
+ 0001 =         senderr 	equ	0000$0001b	; unable to send message
+                
+                ;	Utility Procedures
+                ;
+                	page
+                
+                ;	Network Initialization
+                NTWKIN:
+ 00AE CD3A01    	call	check	; confirm h/w exists...
+ 00B1 DA8101    	jc	initerr
+                	; TODO: how to get slave ID?
+                	; Send "BDOS Func 255" message to other end,
+                	; Response will tell us our, and their, node ID
+                	lxix	msgbuf
+ 00B4+DD21      	DB	0DDH,21H
+ 00B6+2700      	DW	MSGBUF
+                	mvix	0,+0	; FMT
+ 00B8+DD360000  	DB	0DDH,36H,+0,0
+                	mvix	0ffh,+3	; BDOS Func
+ 00BC+DD3603FF  	DB	0DDH,36H,+3,0FFH
+                	mvix	0,+4	; Size
+ 00C0+DD360400  	DB	0DDH,36H,+4,0
+ 00C4 012700    	lxi	b,msgbuf
+ 00C7 CD5001    	call	SNDMSG
+ 00CA B7        	ora	a
+ 00CB C28101    	jnz	initerr
+ 00CE 012700    	lxi	b,msgbuf
+ 00D1 CDC601    	call	RCVMSG
+ 00D4 B7        	ora	a
+ 00D5 C28101    	jnz	initerr
+                	lxix	msgbuf
+ 00D8+DD21      	DB	0DDH,21H
+ 00DA+2700      	DW	MSGBUF
+                	ldx	b,+1	; our node ID
+ 00DC+DD4601    	DB	0DDH,B*8+46H,+1
+                	ldx	c,+2	; host node ID
+ 00DF+DD4E02    	DB	0DDH,C*8+46H,+2
+                	lxix	CFGTBL
+ 00E2+DD21      	DB	0DDH,21H
+ 00E4+0000      	DW	CFGTBL
+ 00E6 3E10      	mvi	a,active
+                	stx	a,+0	; network status byte
+ 00E8+DD7700    	DB	0DDH,70H+A,+0
+                	stx	b,+1	; our slave (client) ID
+ 00EB+DD7001    	DB	0DDH,70H+B,+1
+ 00EE 79        	mov	a,c
+ 00EF 32AD00    	sta	hostid
+ 00F2 AF        	xra	a
+ 00F3 322B00    	sta	CFGTBL+36+7	; clear SIZ - discard LST output
+ 00F6 C9        	ret
+                
+                ;	Network Status
+                NTWKST:
+ 00F7 3A0000    	lda	CFGTBL+0
+ 00FA 47        	mov	b,a
+ 00FB E6FC      	ani	not (rcverr+senderr)
+ 00FD 320000    	sta	CFGTBL+0
+ 0100 78        	mov	a,b
+ 0101 C9        	ret
+                
+                ;	Return Configuration Table Address
+                CNFTBL:
+ 0102 210000    	lxi	h,CFGTBL
+ 0105 C9        	ret
+                
+                sendhex:
+ 0106 F5        	push	psw
+ 0107 0F        	rrc
+ 0108 0F        	rrc
+ 0109 0F        	rrc
+ 010A 0F        	rrc
+ 010B CD0F01    	call	senddig
+ 010E F1        	pop	psw
+                senddig:
+ 010F E60F      	ani	0fh
+ 0111 C690      	adi	90h
+ 0113 27        	daa
+ 0114 CE40      	aci	40h
+ 0116 27        	daa
+                sendbyt:
+ 0117 4F        	mov	c,a
+                sendb0:
+ 0118 DBB2      	in	STSPORT
+ 011A E601      	ani	USBTXR
+ 011C CA1801    	jz	sendb0
+ 011F 79        	mov	a,c
+ 0120 D3B0      	out	USBPORT	; probably can't ever overrun?
+ 0122 C9        	ret		; if not, should make this in-line
+                
+                ; HL = message header
+                sendhdr:
+ 0123 3E2B      	mvi	a,'+'	; start of message - SYNC
+ 0125 CD1701    	call	sendbyt
+ 0128 3E2B      	mvi	a,'+'	; two sync bytes...
+ 012A CD1701    	call	sendbyt
+ 012D 0605      	mvi	b,5
+                sendh0:
+ 012F 7E        	mov	a,m
+ 0130 CD0601    	call	sendhex
+ 0133 23        	inx	h
+ 0134 05        	dcr	b
+ 0135 C22F01    	jnz	sendh0
+ 0138 AF        	xra	a
+ 0139 C9        	ret
+                
+                check:
+                	; do check for sane hardware...
+ 013A 210000    	lxi	h,0
+ 013D 1E03      	mvi	e,3	; approx 4.5 sec @ 2MHz
+                check0:
+ 013F DBB2      	in	STSPORT	; 11
+ 0141 E601      	ani	USBTXR	; 7, also NC
+ 0143 C0        	rnz		; 5 (11)
+ 0144 2B        	dcx	h	; 6
+ 0145 7C        	mov	a,h	; 4
+ 0146 B5        	ora	l	; 4
+ 0147 C23F01    	jnz	check0	; 10 = 47, * 65536 = 3080192 = 1.504 sec
+ 014A 1D        	dcr	e	; 4
+ 014B C23F01    	jnz	check0	; 10
+ 014E 37        	stc
+ 014F C9        	ret
+                
+                ;	Send Message on Network
+                SNDMSG:			; BC = message addr
+ 0150 3A0000    	lda	CFGTBL	; status
+ 0153 E610      	ani	active
+ 0155 CA8101    	jz	initerr
+ 0158 60        	mov	h,b
+ 0159 69        	mov	l,c		; HL = message address
+ 015A E5        	push	h
+                	popix
+ 015B+DDE1      	DB	0DDH,0E1H
+ 015D 3A0100    	lda	CFGTBL+1	; our ID
+                	stx	a,+2		; ensure SID is correct
+ 0160+DD7702    	DB	0DDH,70H+A,+2
+ 0163 CD2301    	call	sendhdr
+ 0166 B7        	ora	a
+ 0167 C28101    	jnz	initerr
+                	; HL points to payload now...
+                	ldx	b,+4	; msg siz field (-1)
+ 016A+DD4604    	DB	0DDH,B*8+46H,+4
+ 016D 04        	inr	b	; might be 0, but that means 256
+ 016E CD2F01    	call	sendh0
+ 0171 B7        	ora	a
+ 0172 C28101    	jnz	initerr
+ 0175 3E2D      	mvi	a,'-'
+ 0177 CD1701    	call	sendbyt
+ 017A 3E2D      	mvi	a,'-'
+ 017C CD1701    	call	sendbyt
+ 017F AF        	xra	a
+ 0180 C9        	ret
+                initerr:
+ 0181 3EFF      	mvi	a,0ffh
+ 0183 C9        	ret
+                
+                recvhdr:
+ 0184 0605      	mvi	b,5
+                recvh0:
+ 0186 CD9101    	call	recvhex
+ 0189 D8        	rc
+ 018A 77        	mov	m,a
+ 018B 23        	inx	h
+ 018C 05        	dcr	b
+ 018D C28601    	jnz	recvh0
+ 0190 C9        	ret
+                
+                recvhex:
+ 0191 CDA001    	call	recvdig
+ 0194 D8        	rc
+ 0195 07        	rlc
+ 0196 07        	rlc
+ 0197 07        	rlc
+ 0198 07        	rlc
+ 0199 5F        	mov	e,a
+ 019A CDA001    	call	recvdig
+ 019D D8        	rc
+ 019E B3        	ora	e
+ 019F C9        	ret
+                
+                recvdig:
+ 01A0 CDB401    	call	recvbyt
+ 01A3 D8        	rc
+ 01A4 D630      	sui	'0'
+ 01A6 D8        	rc
+ 01A7 FE0A      	cpi	10
+ 01A9 D2AE01    	jnc	recvd1
+ 01AC B7        	ora	a
+ 01AD C9        	ret
+                recvd1:
+ 01AE D611      	sui	'A'-'0'
+ 01B0 D8        	rc
+ 01B1 C60A      	adi	10
+ 01B3 C9        	ret
+                
+                ; When using this, each byte must be coming soon...
+                recvbyt:
+ 01B4 0E00      	mvi	c,0
+                recvb0:
+ 01B6 DBB2      	in	STSPORT
+ 01B8 E602      	ani	USBRXR
+ 01BA C2C301    	jnz	recvb1
+ 01BD 0D        	dcr	c
+ 01BE C2B601    	jnz	recvb0
+ 01C1 37        	stc
+ 01C2 C9        	ret	; CY, plus A not '-'
+                recvb1:
+ 01C3 DBB0      	in USBPORT
+ 01C5 C9        	ret
+                
+                ;	Receive Message from Network
+                ;	Wait for "++" sequence, discarding characters, then save message.
+                ;	TODO: need timeout? Must be long timeout...
+                RCVMSG:			; BC = message addr
+ 01C6 3A0000    	lda	CFGTBL	; status
+ 01C9 E610      	ani	active
+ 01CB CA8101    	jz	initerr
+ 01CE 60        	mov	h,b
+ 01CF 69        	mov	l,c		; HL = message address
+ 01D0 E5        	push	h
+                	popix
+ 01D1+DDE1      	DB	0DDH,0E1H
+                recev1:
+ 01D3 0602      	mvi	b,2
+                recev0:
+ 01D5 DBB2      	in	STSPORT
+ 01D7 E602      	ani	USBRXR
+ 01D9 CAD501    	jz	recev0
+ 01DC DBB0      	in	USBPORT
+ 01DE FE2B      	cpi	'+'
+ 01E0 C2D301    	jnz	recev1	; reset count, too
+ 01E3 05        	dcr	b
+ 01E4 C2D501    	jnz	recev0
+                	; got SYNC "++", now just input bytes and decode - until "--"
+ 01E7 CD8401    	call	recvhdr
+ 01EA DA0902    	jc	recev2
+                	ldx	b,4 ; msg siz field (-1)
+ 01ED+DD4604    	DB	0DDH,B*8+46H,4
+ 01F0 04        	inr	b   ; might be 0, but that means 256
+ 01F1 CD8601    	call	recvh0
+ 01F4 DA0902    	jc	recev2
+                	; Now confirm we get "--" EOM
+ 01F7 CDB401    	call	recvbyt
+ 01FA FE2D      	cpi	'-'
+ 01FC C20902    	jnz	recev2
+ 01FF CDB401    	call	recvbyt
+ 0202 FE2D      	cpi	'-'
+ 0204 C20902    	jnz	recev2
+ 0207 AF        	xra	a
+ 0208 C9        	ret
+                recev2:
+ 0209 3EFF      	mvi	a,0ffh
+                NTWKER:
+ 020B C9        	ret
+                
+                ;
+                NTWKBT:
+                 
+                ;	This procedure is called each time the CCP is
+                ;	reloaded from disk.
+ 020C C9        	ret
+                
+ 020D           	end
+
