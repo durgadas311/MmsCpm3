@@ -1,0 +1,907 @@
+VERS equ '2 ' ; November 2,1982  14:19	drm  "REMEX.ASM"
+********** CP/M DISK I/O ROUTINES  **********
+** REMEX 8" ON MMS 77314 AND ZENITH Z89-47 **
+
+	DW	MODLEN,BUFLEN
+
+BASE	EQU	0000H		; ORG FOR RELOC
+
+	MACLIB Z80
+	$-MACRO
+
+***** PHYSICAL DRIVES ARE AS FOLLOWS *****
+*****				     *****
+*****  5 = 1ST REMEX DRIVE	     *****
+*****  6 = 2ND REMEX DRIVE	     *****
+*****  7 = 3RD REMEX DRIVE	     *****
+*****  8 = 4TH REMEX DRIVE	     *****
+*****				     *****
+******************************************
+**  PORTS AND CONSTANTS
+******************************************
+
+GPIO	EQU	0F2H		; SW 501
+?DATA8	EQU	05AH		; REMEX DATA PORT
+?STAT8	EQU	05BH		; REMEX STATUS PORT
+
+WRDIR	EQU	1		; WRITE-TO-DIRECTORY CODE FROM BDOS
+WRUAL	EQU	2		; WRITE TO FIRST SECTOR OF UNALLOCATED BLOCK
+WRALL	EQU	0		; WRITE TO ALLOCATED SECTOR
+				; (DE)=ABSOLUTE RECORD NUMBER FOR WRITE.
+				; REQUIRES MODIFIED BDOS
+DRIV0	EQU	5		; first drive in system
+NDRIV	EQU	4		; number of drives in system
+*****************************************
+
+*****************************************
+** LINKS TO REST OF SYSTEM
+*****************************************
+PATCH	EQU	BASE+1600H
+MBASE	EQU	BASE		; MODULE BASE
+COMBUF	EQU	BASE+0C000H	; COMMON BUFFER
+BUFFER	EQU	BASE+0F000H	; MODULE BUFFER
+*****************************************
+
+*****************************************
+** PAGE ZERO ASSIGNMENTS
+*****************************************
+	ORG	0
+?CPM		DS	3
+?DEV$STAT	DS	1
+?LOGIN$DSK	DS	1
+?BDOS		DS	3
+?RST1		DS	3
+?CLOCK		DS	2
+?INT$BYTE	DS	1
+?CTL$BYTE	DS	1
+		DS	1
+?RST2		DS	8
+?RST3		DS	8
+?RST4		DS	8
+?RST5		DS	8
+?RST6		DS	8
+?RST7		DS	8
+		DS	28
+?FCB		DS	36
+?DMA		DS	128
+?TPA		DS	0
+*****************************************
+
+*****************************************
+*** MACRO'S
+
+DATA$OUT	MACRO	; DATA OUT FROM A
+	DB	0D9H	; EXX
+	MOV	C,D	; DATA PORT
+	OUTP	A
+	DB	0D9H	; EXX
+	ENDM
+
+STAT$OUT	MACRO	; STATUS OUT FROM A
+	DB	0D9H	; EXX
+	MOV	C,E	; STAT PORT
+	OUTP	A
+	DB	0D9H	; EXX
+	ENDM
+
+
+*****************************************
+** OVERLAY MODULE INFORMATION ON BIOS
+*****************************************
+	ORG	PATCH
+	DS	51		; JUMP TABLE
+DSK$STAT	DS	1
+STEPR	DS	1		; MINI-FLOPPY STEP RATE
+SIDED	DS	3		; SIDE CONTROL FOR EACH DRIVE (0-SINGLE,1=DOUBLE)
+DENS	DS	4		; FOR EIGHT-INCH DRIVES (NOW OBSOLETE)
+MIXER	DB	5,6,7,8 	; LOGICAL-PHYSICAL DRIVE TABLE
+	DS	12
+DRIVE$BASE:
+	DB	DRIV0,DRIV0+NDRIV ; DRIVE MODULE BASE TABLE, DRIVES 5-8
+	DW	MBASE
+	DS	28
+
+TIME$OUT:	DS	3
+
+NEWBAS	DS	2
+NEWDSK	DS	1
+NEWTRK	DS	1
+NEWSEC	DS	1
+HRDTRK	DS	2
+DMAA	DS	2
+***************************************************
+
+***************************************************
+** START OF RELOCATABLE DISK I/O MODULE
+*************************************************** 
+	ORG	MBASE		; START OF MODULE
+	JMP	SEL$REMEX
+	JMP	READ$REMEX
+	JMP	WRITE$REMEX
+
+	DB	'77314/Z89-47 ',0,'REMEX Interface',0,'2.24'
+	dw	VERS
+	db	'$'
+
+DPH:	DW	0,0,0,0,DIRBUF,DPB5,CSV5,ALV5
+	DW	0,0,0,0,DIRBUF,DPB6,CSV6,ALV6
+	DW	0,0,0,0,DIRBUF,DPB7,CSV7,ALV7
+	DW	0,0,0,0,DIRBUF,DPB8,CSV8,ALV8
+
+** Extended Double Density 8" (1K byte sectors)
+DPB5:	DW	64		; SPT
+	DB	4,15,0		; BLS,BSM,EXM
+	DW	608-1,192-1	; DSM,DRM
+	DB	11100000B,0	; ALV
+	DW	48,2		; CKS,OFF
+MOD5:	DB	00100011B,01100110B,00010011B
+	DB	0,10011111B,0	; MODE AND MASK
+
+DPB6:	DW	64		; SPT
+	DB	4,15,0		; BLS,BSM,EXM
+	DW	608-1,192-1	; DSM,DRM
+	DB	11100000B,0	; ALV
+	DW	48,2		; CKS,OFF
+MOD6:	DB	00100011B,01100110B,00010011B
+	DB	0,10011111B,0	; MODE AND MASK
+
+DPB7:	DW	64		; SPT
+	DB	4,15,0		; BLS,BSM,EXM
+	DW	608-1,192-1	; DSM,DRM
+	DB	11100000B,0	; ALV
+	DW	48,2		; CKS,OFF
+MOD7:	DB	00100011B,01100110B,00010011B
+	DB	0,10011111B,0	; MODE AND MASK
+
+DPB8:	DW	64		; SPT
+	DB	4,15,0		; BLS,BSM,EXM
+	DW	608-1,192-1	; DSM,DRM
+	DB	11100000B,0	; ALV
+	DW	48,2		; CKS,OFF
+MOD8:	DB	00100011B,01100110B,00010011B
+	DB	0,10011111B,0	; MODE AND MASK
+
+DEFDPB: DW	26		; EXTRA DPB AND MODE BYTES TO BE USED
+	DB	3,7,0		; BY DRIVER WHEN ACCESSING TRACK 0
+	DW	243-1,128-1	; OF A ZENITH 8" DD DISK. TRACK 0 ON THESE
+	DB	11000000B,0	; DISKS HAS THE STANDARD SINGLE DENSITY
+	DW	16,2		; FORMAT
+	DB	00000000B,01000110B,00000001B	; MASK NOT NEEDED
+;------------------------------------------------------
+;	Sector translation tables for 8" 
+;------------------------------------------------------
+SKEW1:	DB	1,7,13,19,25,5,11,17,23,3,9,15,21	; 8" SD
+	DB	2,8,14,20,26,6,12,18,24,4,10,16,22
+
+SKEW2:	DB	1,2,19,20,37,38,3,4,21,22,39,40 	; Z47 DD
+	DB	5,6,23,24,41,42,7,8,25,26,43,44
+	DB	9,10,27,28,45,46,11,12,29,30,47,48
+	DB	13,14,31,32,49,50,15,16,33,34,51,52
+	DB	17,18,35,36
+
+SKEW3:	DB	1,2,3,4,5,6,7,8,33,34,35,36,37,38,39,40 ; M47 XD
+	DB	9,10,11,12,13,14,15,16,41,42,43,44,45,46,47,48
+	DB	17,18,19,20,21,22,23,24,49,50,51,52,53,54,55,56
+	DB	25,26,27,28,29,30,31,32,57,58,59,60,61,62,63,64
+
+SKEW4:	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+SKW$TBL DW	0	; hardware skewing
+	DW	SKEW1,SKEW2,SKEW3,SKEW4
+
+;
+
+RECORD	DW	0		; absolute record number
+CURDPB	DW	DPB5		; CURRENT DPB
+WRITDPB DW	0		; DPB for pending write
+SIZMSK	DB	0		; mask for sector division
+LOGFLAG DB	0		; flag for sector size test
+
+SEL$REMEX:
+	PUSH	B		; SAVE DRIVE #
+	MOV	A,C
+	SUI	DRIV0		; change 5,6,7,8 to 0,1,2,3
+	MOV	L,A
+	MVI	H,0
+	DAD	H
+	DAD	H
+	DAD	H
+	DAD	H		; times 16
+	LXI	D,DPH		; select DPH
+	DAD	D
+	PUSH	H		; SAVE IT
+	LXI	D,10
+	DAD	D		; point to DPB pointer
+	MOV	E,M
+	INX	H
+	MOV	D,M		; get it
+	SDED	CURDPB		; save that, too
+	LXI	H,17		; offset for skew
+	DAD	D		; POINT TO SKEW
+	MVI	A,111B		; mask for skew table
+	ANA	M		; get skew info
+	ADD	A		; double for table offset
+	LXI	H,SKW$TBL	; table
+	MOV	E,A
+	MVI	D,0
+	DAD	D
+	MOV	E,M		; GET LOW BYTE OF SKEW ADDRESS
+	INX	H
+	MOV	D,M		; HI BYTE
+	PUSH	D		; SAVE DURING LOGIN
+	CALL	LOGIN		; SET [CY] IF LOGGED IN PREVIOUSLY
+	JRC	NOTL+1		; IF LOGGED, SET FLAG TO ZERO W/ (XRA A)
+NOTL:	MVI	A,0AFH		; NON-ZERO VALUE (0AFH = (XRA A) OP CODE)
+	STA	LOG$FLAG	; SAVE ZERO OR NON-ZERO VALUE
+	POP	D		; SKEW ADDRESS
+	POP	H		; DPH pointer
+	INX	H		; install skew address in DPH
+	MOV	M,D		; hi byte
+	DCX	H
+	MOV	M,E		; lo byte, and point to DPH
+	POP	B		; RESTORE PHYSICAL DRIVE # TO C
+	POP	D		; SKIP REST OF SELDSK ROUTINE
+	RET			; RETURN DIRECTLY TO BDOS (OR USER)
+
+READ$REMEX:			; read sector
+	CALL	SETUP		; point to correct DPB, save Z80 registers
+	CALL	SEC$SIZ 	; [Z] IF PHYSICAL SECTOR SIZE IS CORRECT
+	CZ	DUMP$BUFF	; dump buffer if write is pending
+	JRNZ	QQUIT		; don't ignore error FROM SEC$SIZ OR DUMPBUFF
+;	XRA	A		; NOT NEEDED
+	STA	UNALLOC 	; READ TERMINATES UNALLOCATED WRITE
+	CALL	READ$SECTOR	; read sector
+QQUIT:	CALL	UNSAVE		; restore Z80 registers
+	JRNZ	ERROR
+;	XRA	A		; NOT NEEDED
+	RET
+
+ERROR:
+	XRA	A		; signal error to BDOS or user
+	INR	A
+	RET
+
+***********************************************
+**  W R I T E	S E C T O R   R O U T I N E  **
+**					     **
+** REQUIRES MODIFIED "BDOS":  In addition to **
+**   the DEBLOCK-CODE in register (C), the   **
+**   actual record number must be in (DE).   **
+**   This value is taken from "ARECORD" just **
+**   prior to the call to this routine.      **
+**					     **
+***********************************************
+WRITE$REMEX:
+	PUSH	B
+	PUSH	D		; SAVE IMPORTANT INFO
+	CALL	SETUP		; POINT TO DPB, SAVE Z80 REGISTERS
+	CALL	SEC$SIZ 	; SEE IF PHYSICAL SECTOR SIZE IS RIGHT
+	POP	D
+	POP	B
+	JRNZ	Q2UIT		; IF NOT RIGHT, ERROR
+;	XRA	A		; NOT NEEDED
+	STA	NOREAD		; FORCE PRE-READ
+	CMA
+	STA	WRITER		; ASSUME NOT DEFERRED WRITE
+	MOV	A,C		; DEBLOCK CODE (FROM BDOS)
+	CPI	WRDIR		; WRITE TO DIRECTORY AREA
+	JRZ	WRITX
+	CPI	WRUAL		; IF WRITE-UNALLOCATED CODE, GET RECORD#
+	JRZ	WRIT0
+	CPI	WRALL		; ALSO IF WRITE-ALLOCATED
+	JRZ	WRIT1
+WRITX:	CALL	WRITE$SECTOR	; ASSUME WRDIR FOR INVALID CODES
+Q2UIT:	CALL	UNSAVE		; RESTORE Z80 REGISTERS
+	JRNZ	ERROR
+;	XRA	A		; ALREADY ZERO
+	RET
+
+WRIT0:	SDED	RECORD		; INITIALIZE RECORD #
+	XRA	A
+	CMA
+	STA	UNALLOC 	; SET UNALLOCATED FLAG
+WRIT1:	XRA	A
+	STA	WRITER		; DELAY ACTUAL WRITE UNTIL LATER
+	LDA	UNALLOC
+	ORA	A
+	JRZ	WRITX
+	LHLD	RECORD		; SEE IF RECORD# IS EXPECTED VALUE
+	DSBC	D		; CY RESET FROM "ORA A"
+	JRZ	WRIT3		; VALUE WAS EXPECTED
+WRIT4:	XRA	A
+	STA	UNALLOC 	; NOT EXPECTED, RESET UNALLOCATED FLAG
+	JR	WRITX
+WRIT3:	XRA	A
+	CMA
+	STA	NOREAD		; DON'T PRE-READ UNALLOCTED SECTORS
+	INX	D		; PREDICT NEXT VALUE OF "RECORD"
+	LDX	A,+3		; BLOCK MASK
+	ANA	E		; SEE IF NEXT BLOCK
+	JRZ	WRIT4		; RESET UNALLOCTED IF SO
+	SDED	RECORD		; ELSE PREDICT NEXT VALUE
+	JR	WRITX
+
+LOGIN:				; ROUTINE STOLEN FROM Z17 MODULE
+	LDA	NEWDSK
+	LXI	B,17
+	LXI	H,MIXER
+	CCIR			; FIND POSITION IN LOG/PHYS TABLE
+	MVI	A,17
+	SUB	C		; LOGICAL NUMBER 1-16
+	MOV	B,A
+	LXI	H,PATCH 	; BIOS
+	LXI	D,-0D89H	; POSITION OF "GET LOGIN" FUNCTION IN BDOS
+	DAD	D
+	MOV	E,M	; PICK UP ADDRESS OF "GET LOGIN" ROUTINE
+	INX	H
+	MOV	D,M
+	XCHG
+	INX	H	; SKIP PAST OP-CODE
+	MOV	E,M	; PICK UP ADDRESS OF LOGIN VECTOR
+	INX	H
+	MOV	D,M
+	XCHG
+	MOV	E,M	; PICK UP LOGIN VECTOR
+	INX	H
+	MOV	D,M
+LG0:	RARR	D
+	RARR	E
+	DJNZ	LG0		; PUT CORRECT BIT IN CARRY
+	RET
+
+SETUP:				; PUT CORRECT DPB IN IX, CORRECT SIZMSK
+	SIXD	HOLDIX		; SAVE IX
+	LIXD	CURDPB		; POINT TO DPB
+	LDA	NEWTRK		; CHECK FOR SD TRK0 ON DD 8"
+	ORA	A
+	JRNZ	CONTIN		; IF NOT TRACK 0, CONTINUE
+	LDX	A,+16		; 2ND MODE BYTE
+	ANI	01100000B	; DENSITY BITS
+	CPI	01000000B	; TRK0 SD, OTHERS DD?
+	JRNZ	CONTIN		; IF NOT, USE REGULAR DPB
+	LXIX	DEFDPB		; IF SO, USE DEFDPB
+
+CONTIN: MVI	A,011B		; mask for sector size bytes
+	ANAX	+15		; get sec siz from mode byte
+	MOV	B,A		; 0=128, 3=1024
+	INR	B		; make non-zero for DJNZ
+	XRA	A
+BIT$LP: STC			; set bit
+	RAL			; bring in bit, 0 to carry
+	DJNZ	BIT$LP		; make mask for logical/physical size division
+	RAR			; correct for incrementing B
+	STA	SIZMSK		; save for later: 0=128,01B=256,etc
+	DB	0D9H		; EXX - now find whether it's Z47 or 77314
+	SDED	HOLDDE		; SAVE DE'
+	IN	GPIO		; read switch
+	LXI	D,7978H 	; data port in D, STAT PORT IN E
+	ANI	1100B
+	CPI	0100B		; CORRECT?
+	JRZ	GOBACK		; IF SO, USE THESE VALUES
+	IN	GPIO
+	LXI	D,7D7CH 	; other Z47 I/O location
+	ANI	11B
+	DCR	A
+	JRZ	GOBACK		; CORRECT?
+	LXI	D,5A5BH 	; MMS 77314 ports assumed, if not Z47
+GOBACK: DB	0D9H		; EXX - ports now in DE'
+	RZ			; return if Z47
+	LXI	B,SWP$LEN
+	LXI	D,DLY
+	LXI	H,OTHER
+	LDIR			; INSTALL VECTORS for 77314
+	RET
+
+
+*** ASK DRIVE FOR ACTUAL SECTOR SIZE ON DISK ***
+SEC$SIZ:
+	LDA	LOG$FLAG	; SHOULD WE ASK?
+	ORA	A
+	RZ			; DON'T ASK IF Z
+	MVI	A,2		; COMMAND FOR SIZE INFO
+	CALL	GIVE$COM
+	JRC	SOME$WAY$OUT	; ERROR EXIT
+	CALL	DLY		; 314 ROUTINE
+	LDA	NEWDSK		; DRIVE
+	SUI	DRIV0
+	RRC
+	RRC
+	RRC
+	CALL	GIVE		; TELL CONTROLLER WHICH DRIVE
+	JRC	SOME$WAY$OUT
+	MVI	A,40H		; (INP B) OP CODE
+	STA	FIX0+1		; INTO Z47 LOOP
+	EXX
+	MOV	A,D		; GET DATA PORT
+	EXX
+	MOV	C,A		; INTO C
+	CALL	GET$DAT 	; GO GET BYTE IN B
+	JRNZ	SOME$WAY$OUT
+	MOV	A,B		; GET BYTE
+	ani	0011b		; secsiz, trks 1=76: 0=128,1=256,...
+	MOV	B,A		;
+	LDX	A,+15		; GET MODE
+	ANI	11B
+	SUB	B		; SHOULD BE SAME
+	STA	LOG$FLAG	; CLEAR FLAG (OR KEEP IT SET)
+	RZ			; IF OK, PROCEED; IF NOT, ERROR
+
+SOME$WAY$OUT:			; ERROR EXIT
+	JMP	ERROR
+
+UNSAVE: 		; RESTORE USER'S Z80 REGISTERS (Z FLAG SAVED)
+	LIXD	HOLDIX		; RESTORE IX
+	EXX
+	LDED	HOLDDE		; RESTORE D'
+	EXX
+	RET			; RETURN
+
+READ$SECTOR:			; read sector into DMA address
+	CALL	READ$PSEC	; read into local buffer
+	RNZ			; error
+	LXI	H,SECTOR$BUFF	; now transfer selected 128 bytes to DMA add.
+	LDA	SIZMSK
+	MOV	B,A
+	LDA	NEWSEC
+	ANA	B		; get "sub-sector" number
+	RAR
+	MOV	B,A
+	MVI	A,0
+	RAR
+	MOV	C,A		; BC=subsector*128
+	DAD	B		; select buffer portion
+	LDED	DMAA		; get destination address
+	LXI	B,128
+	LDIR			; transfer sector
+	XRA	A
+	RET
+
+READ$PSEC:			; read physical sector if not yet in buffer
+	LXI	H,NEWTRK
+	MOV	A,M		; check if at first track of directory
+	SUBX	+13		; trk = OFF?
+	JRNZ	NOTDIR		; if not, skip
+	INX	H		; point to NEWSEC
+	CMP	M		; see if NEWSEC = 0
+	JRZ	SKIPRD		; if at first sector of directory, force read
+NOTDIR	CALL	CHK$BUFF	; else check if buffer has data we need
+	RZ			; and stop if it does
+SKIPRD	CALL	READOK		; setup buffer label for current values
+	LXI	H,SECTOR$BUFF	; buffer address
+	LXI	D,BUFDSK	; buffer label
+	LDX	A,+15		; first byte of mode
+	ANI	011B		; sector size
+	MOV	B,A
+	CALL	READ$EIGHT	; read REMEX
+	RZ			; if no error
+ERRBUF	XRA	A		; label buffer as invalid
+	DCR	A
+	STA	BUFDSK
+	RET
+
+READOK: 			; set current drive,track,sector
+	LXI	H,BUFDSK	; into buffer label
+	LDA	NEWDSK
+	MOV	M,A
+	INX	H
+	LDA	NEWTRK
+	MOV	M,A
+	INX	H
+	CALL	PHYSEC
+	MOV	M,A
+	RET
+
+CHK$BUFF:			; compare buffer label to current
+	LXI	H,BUFDSK
+	LDA	NEWDSK
+	CMP	M
+	RNZ
+	INX	H
+	LDA	NEWTRK
+	CMP	M
+	RNZ
+	INX	H
+	CALL	PHYSEC
+	CMP	M
+	RET
+
+WRITE$SECTOR:			; "write" sector
+	CALL	CHK$BUFF	; check if buffer same as current
+	JRZ	NOWRT
+	CALL	DUMP$BUFF	; dump buffer if different
+	RNZ			; NOTE: ERROR IS NOT IGNORED HERE
+NOWRT:
+	LDA	NOREAD		; check if we should pre-read
+	ORA	A
+	JRNZ	XREAD
+	CALL	READ$PSEC	; PRE-READ SECTOR
+	RNZ			; if error
+XREAD:	LXI	H,SECTOR$BUFF	; transfer data into buffer
+	LDA	SIZMSK		; get physical sector size mask
+	MOV	B,A
+	LDA	NEWSEC		; and logical sector #
+	ANA	B		; form sub-sector #
+	RAR
+	MOV	B,A
+	MVI	A,0
+	RAR
+	MOV	C,A		; BC=128*subsector
+	DAD	B		; select portion of buffer
+	XCHG
+	LHLD	DMAA		; source is DMA address
+	LXI	B,128
+	LDIR			; put record into buffer
+	CALL	READOK		; SET BUFFER LABEL
+	XRA	A
+	CMA
+	STA	PENDWR		; SET PENDING-WRITE FLAG
+	SIXD	WRIT$DPB	; and save current DPB for delayed write
+	LDA	WRITER		; check if we should write before returning
+	ORA	A
+	RZ			; if not then defer actual write
+DUMP$BUFF:			; write sector to disk
+	LDA	PENDWR
+	ORA	A
+	RZ			; don't write if no sector to write
+	PUSHIX			; SAVE DPB
+	LIXD	WRIT$DPB	; get the DPB current when PENDWR was set
+	LXI	H,SECTOR$BUFF	; setup write from buffer
+	LXI	D,BUFDSK	; drv,trk,sec
+	LDX	A,+15		; first byte of mode
+	ANI	011B		; sector size
+	MOV	B,A
+	CALL	WRITE$EIGHT	; write sector
+	POPIX			; restore DPB
+	LXI	H,PENDWR
+	MVI	M,0		; RESET PENDING-WRITE FLAG
+	RET
+
+PHYSEC: 			; convert logical sector number to physical
+	LDA	SIZMSK		; sector size mask for division
+	CMA			; complement, we want quotient, not remainder
+	MOV	B,A
+	LDA	NEWSEC		; logical number
+	ANA	B		; integer division by physical size
+	RZ			; can't normalize zero
+NORM$LP:			; normalize quotient
+	RRCR	B		; wait for significant bit to go by bit 0. .
+	RC
+	RAR			; . . dividing by two each time
+	JR	NORM$LP 	; repeat
+
+CONV1:				; convert track to physical track-side
+	MOV	C,A		; save track
+	MVI	B,0		; SAVES A BYTE LATER
+	LDX	A,+15		; get track numbering byte
+	ANI	1100B		; only those bits
+	JRZ	MMS$TK		; 0 is MMS
+	CPI	0100B		; Zenith?
+	JRZ	ZEN$TK
+	MOV	C,B		; if not MMS or Zenith, error: C=0
+	MVI	A,77		; so write to an inaccessible track
+	RET
+MMS$TK:
+	MOV	A,C		; restore track number
+	MOV	C,B		; assume side 0
+	CPI	77		; see if track number is on second side
+	RC
+	CMA
+	INR	A		; two's complement track number
+	ADI	(76+77) 	; subtract from total number of tracks
+	MVI	C,10000000B	; set side select to second side
+	RET
+ZEN$TK:
+	MOV	A,C		; restore track number
+	MOV	C,B		; clear for side info
+	RAR			; divide by two, carry is zero from "CPI"
+	RARR	C		; side bit to high bit of C
+	RET
+
+SETCOM: 			; send command,drv,trk,sec to controller
+	MOV	E,A		; save command
+	INX	H
+	MOV	A,M		; get track number
+	CALL	CONV1		; convert to physical track-side
+	MOV	B,A		; save track
+	DCX	H
+	MOV	A,M		; get drive number
+	SUI	DRIV0		; convert to 0,1,2,3
+	RRC
+	RRC
+	RRC
+	ORA	C		; merge in side select
+	MOV	C,A
+	INX	H
+	INX	H
+	MOV	A,M		; get sector number
+	INR	A		; convert 0-n to 1-m
+	MOV	D,A
+	CPI	32		; if >32 we must represent it in next byte
+	JRNC	NOT32		; if >32 leave "sector" bits as 0
+	ORA	C		; merge drive,side into sector
+	MOV	C,A
+NOT32	MOV	A,E		; issue command
+	CALL	GIVE$COM
+	RC			; for Z47
+	CALL	DLY		; for 314
+	MOV	A,B		; give track number
+	CALL	GIVE
+	RC
+	MOV	A,C		; give drive,side,(sector)
+	CALL	GIVE
+	RC
+	ANI	00011111B	; check if sector should be in next byte
+	RNZ			; return here if not
+	MOV	A,D		; else send sector number
+	JR	GIVE
+
+READ$EIGHT:			; read sector from REMEX drive
+	MVI	A,7		; READ THRU BUFFER
+	JR	RW0		; ENTER STREAM
+
+WRITE$EIGHT:			; write sector to REMEX
+	MVI	A,8		; WRITE THRU BUFFER
+RW0:	PUSH	H		; read buffer address
+	PUSH	B		; B= sector size
+	XCHG
+	CALL	SETCOM		; issue command with drv,trk,sec
+	POP	B
+	POP	H
+	JC	ERROR		; error from SETCOM?
+	EXX			; GET DATA PORT NUMBER
+	MOV	A,D		; KEEP IT HERE
+	EXX			; SEND REST BACK
+	MOV	C,A		; setup data port number
+	MOV	A,E		; GET READ/WRITE FLAG
+	SUI	7		; READ=0,WRITE=1
+	ORI	0A2H		; INI, A3=OUTI
+	STA	FX$314+1	; DYNAMIC PATCH
+	STA	FIX0+1		; IN BOTH LOCATIONS
+	RAR			; ODD(A3)=WRITE, EVEN(A2)=READ
+	JRNC	R$FORK		; IF READ, GO THERE
+	JR	W$FORK		; OTHERWISE, WRITE
+
+OTHER:	JR	DLY314-SWP$LEN		; 77314 VECTORS
+	JMP	GIVE$314COM
+	JMP	GIVE$314
+	JMP	R$314			; NOTE SPECIAL LABELS FOR
+	JMP	W$314			; RELOCATABLE RELATIVE JUMPS
+	JMP	GET$314$DAT
+
+SWP$LEN EQU	$-OTHER 		; VECTOR LENGTH
+
+DLY:		JR	DLY47		; Z47 VECTORS
+GIVE$COM:	JMP	GIVE$47COM
+GIVE:		JMP	GIVE$47
+R$FORK: 	JMP	RW$47	 
+W$FORK: 	JMP	RW$47
+GET$DAT:	JMP	RW$47
+ 
+************ HARDWARE DEPENDENT CODE STARTS HERE ************
+
+******************** SOME OF EACH ***************************
+
+; come from DLY
+DLY314: IN	?STAT8		; wait for controller to acknowledge command
+	XRI	10000000B
+	ANI	11000000B
+	JRNZ	DLY314
+DLY47	RET			; Z47 comes here
+
+******************* MMS 77314 *******************************
+
+GET$314$DAT:			; RETURN ONE BYTE IN B
+	IN	?STAT8
+	BIT	4,A
+	RNZ			; ERR
+	ANI	00100000B	; DDIN (WAIT FOR DIRECTION CHANGE)
+	JRZ	GET$314$DAT
+GETLUP: IN	?STAT8
+	ANI	01000000B
+	JRNZ	GETLUP		; wait for DRQ
+	IN	?DATA8		; get the byte
+	MOV	B,A		; put in B
+	IN	?STAT8
+	ANI	00010000B	; ERR?
+	RET
+
+REST8:				; NOT an entry to the following routine
+	OUT	?STAT8		; SET RESET LINE
+RST8	IN	?STAT8		; RESET RESET LINE
+	RAL
+	JRC	RST8		; wait for controller to settle down from RESET
+	POP	PSW		; adjust stack
+GIVE$314COM:			; entry to Give Command routine
+	PUSH	PSW		; save command
+	IN	?STAT8		; check if controller ready for command
+	ANI	11110000B
+	JRNZ	REST8		; if not then RESET controller
+	POP	PSW		; restore command
+GIVE$314:			; entry to Give byte routine
+	PUSH	PSW		; save byte (command)
+GV314	IN	?STAT8 
+	ANI	01100000B	; wait for controller ready to receive byte
+	JRNZ	GV314
+	POP	PSW
+	OUT	?DATA8		; give byte to controller
+	RET
+
+R$314:				; 77314 READ
+	IN	?STAT8		; wait for interface direction to switch
+	BIT	4,A		; monitor error bit at same time
+	RNZ			; stop here if error
+	ANI	00100000B	; check DDIN line
+	JRZ	R$314		; loop if not ready to send us data
+	CALL	SEC$314 	; READ SECTOR
+	IN	?STAT8		; final check for error
+	ANI	00010000B
+	RET
+
+W$314:				; 77314 WRITE CODE
+	CALL	SEC$314 	; WRITE SECTOR
+W8SS	IN	?STAT8 
+	RAL
+	JRC	W8SS		; wait for controller to finish write
+	ANI	00100000B	; ERROR BIT IN NEW POSITION
+	RET
+
+SEC$314:			; READ OR WRITE 314
+	MOV	A,B		; sector size to A
+	MVI	B,128		; for SD
+	ORA	A		; sector size (from mode) 128?
+	JRZ	W$ONCE		; write 128 bytes
+	MVI	B,0		; rest are multiples of 256 bytes
+	DCR	A
+	JRZ	W$ONCE		; write 256
+	DCR	A
+	CNZ	W$TWICE 	; read 512 on fall-through, or 1024 if not
+W$TWICE CALL	LUP$314 	; 512 BYTES
+W$ONCE	CALL	LUP$314 	; 256 OR 128 BYTES
+	RET			; to read or write options
+
+LUP$314 IN	?STAT8
+	ANI	01000000B
+	JRNZ	LUP$314 	; wait for DRQ
+FX$314: OUTI			; dynamically changed OUTI <> INI
+	JRNZ	LUP$314 	; loop untill all bytes sent
+	RET
+
+************* Z47 HARDWARE CODE ****************
+
+RW$47:				; Z47 READS AND WRITES HERE
+RD0	CALL	IN$STAT
+	ANI	10100001B	;DTR,DONE,ERR
+	JRZ	RD0
+	ANI	00100001B	;DONE,ERR
+	JRNZ	RD1
+FIX0:	INI		;DYNAMICALLY SWITCHED: "INI", "OUTI", "INP  B"
+	JR	RD0
+RD1	CALL	IN$STAT
+	ANI	00000001B	;ERR
+	RET
+
+RESET$47:			; RESET AFTER ERROR
+	MVI	A,2		; RESET COMMAND
+	STAT$OUT		; THEN FALL INTO READY$47
+READY$47:			; SEE IF READY FOR COMMAND
+	LXI	B,65535 	; RETRY COUNTER
+GC0	CALL	IN$STAT
+	ANI	00100000B	;DONE
+	RNZ			; RETURN NZ, FOR NO ERROR
+	DCX	B
+	MOV	A,B
+	ORA	C
+	JRNZ	GC0
+	RET			; [Z], ERROR
+
+GIVE$47$COM:
+	PUSH	PSW
+	PUSH	B
+	CALL	READY$47	; SEE IF DRIVE READY
+	CZ	RESET$47	; IF NOT, RESET AND TRY AGAIN
+	POP	B
+	JRNZ	GC1		; IF NO ERROR, PROCEED
+ERR	POP	PSW
+	STC
+	RET
+GC1	POP	PSW
+	DATA$OUT
+GC2	CALL	IN$STAT
+	ANI	00100000B	;DONE
+	JRNZ	GC2
+;	XRA	A		; NOT NEEDED
+	RET
+
+GIVE$47 PUSH	PSW
+GV8	CALL	IN$STAT
+	ANI	10100000B	;DTR,DONE
+	JRZ	GV8
+	ANI	00100000B	;DONE
+	JRNZ	ERR
+	POP	PSW
+	DATA$OUT
+	ORA	A		; CLEAR CARRY
+	RET
+
+IN$STAT:			; GET STATUS
+	EXX
+	MOV	C,E	; STAT PORT
+	INP	A
+	DB	0D9H	; EXX - too many labels if op code is used
+	RET
+
+
+PENDWR: DB	0		; .TRUE. IF BUFFER READY TO WRITE
+WRITER: DB	0		; .TRUE. FORCES WRITE BEFORE EXIT
+NOREAD: DB	0		; .TRUE. MEANS DON'T PRE-READ SECTOR
+UNALLOC: DB	0		; .TRUE. MEANS WRITING UNALLOCATED SECTORS
+
+BUFDSK: DB	0FFH		; label for buffer
+BUFTRK: DB	0
+BUFSEC: DB	0
+HOLDDE: DW	0
+HOLDIX: DW	0
+
+	REPT	100H-($ AND 0FFH)
+	DB	0
+	ENDM
+
+MODLEN	EQU	$-MBASE
+ZMODLEN EQU	MODLEN		; this will be at the end of the sym. table
+ DB 00100100B,10000000B,00000000B,00000000B,00000000B,00000000B,00000001B,01010100B
+ DB 00000001B,01010100B,00000001B,01010100B,00000001B,01010100B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000101B,01010001B,00000000B,00000000B
+ DB 01000000B,00000010B,00000000B,01000000B,00001000B,00010000B,00000001B,00100100B
+ DB 00100100B,10000000B,00010010B,00000100B,01000000B,00000000B,01001000B,00010000B
+ DB 10001001B,00000100B,00000100B,00001000B,00000001B,00001000B,00100000B,00010000B
+ DB 00000000B,00000000B,00000010B,00100100B,00000000B,00000100B,00000000B,00000100B
+ DB 00100000B,00000000B,00000000B,00000000B,00100100B,00010000B,00100001B,00100000B
+ DB 00100000B,01000000B,10000000B,00000001B,00010001B,00001000B,01000100B,10001000B
+ DB 00000000B,10000000B,00100000B,00000001B,00010010B,01000000B,00100000B,10001001B
+ DB 00001000B,01000010B,01000001B,00000100B,00100001B,00010000B,01000100B,10001000B
+ DB 00000000B,10000000B,10000100B,01001000B,01000000B,01001001B,00000000B,10000100B
+ DB 00010000B,10000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00100000B
+ DB 00000000B,00000000B,00010001B,00010000B,10000000B,00000000B,00010000B,10000000B
+ DB 00001001B,00000000B,01001001B,00100100B,00100100B,10010010B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000100B,00000100B
+ DB 00000000B,00000000B,00001001B,00100000B,00000000B,01000000B,00000000B,10000000B
+ DB 00000000B,10000000B,00000010B,01000000B,00000000B,10000000B,01000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+ DB 00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B,00000000B
+
+********************************************************
+** COMMON BUFFERS
+********************************************************
+	ORG	COMBUF
+	DS	20
+	DS	64
+	DS	2
+DIRBUF	DS	128
+********************************************************
+
+********************************************************
+** BUFFERS
+********************************************************
+	ORG	BUFFER
+SECTOR$BUFF: DS 1024
+
+CSV5	DS	48
+CSV6	DS	48
+CSV7	DS	48
+CSV8	DS	48
+
+ALV5	DS	76
+ALV6	DS	76
+ALV7	DS	76
+ALV8	DS	76
+
+**********************************************************
+BUFLEN	EQU	$-BUFFER
+	END
