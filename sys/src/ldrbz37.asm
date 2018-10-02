@@ -40,6 +40,7 @@ STAT	EQU	Z37+2		; STATUS REGISTER
 SECT	EQU	Z37+2		; SECTOR REGISTER
 DATA	EQU	Z37+3		; DATA REGISTER
 
+?H8PT	  EQU	0F0H
 ?PORT	  EQU	0F2H
 ***************************************************
 
@@ -148,6 +149,8 @@ OK:	CMA
 DONE:	MVI	A,00001000B	; DESELECT DRIVE
 	OUT	ICL   
 	di
+	mvi	a,09fh	; 2ms off, blank fp on H8
+	out	?h8pt	; H89 NMI should be innocuous
 	LXI	H,?CODE 	; SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	; NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT 	; I/O PORT TO SEND SEQUENCE

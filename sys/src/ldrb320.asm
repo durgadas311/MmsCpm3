@@ -15,6 +15,7 @@ VERS	EQU   '2 '  ; May 28, 2018 12:29 drm "ldrb320.asm"
 **  PORTS AND CONSTANTS
 ***************************************************
 
+?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
 
 BASE$PORT EQU	2150H		; PORT ADDRESS SAVE BY BOOT PROM
@@ -157,8 +158,8 @@ CHK02:	INP	A		; INPUT FROM CONTROL PORT
 	RNZ
 
 DONE:	DI
-	mvi	a,10011111b	; H8 2mS off, display blank
-	out	0f0h	; H89 NMI here should be OK
+	mvi	a,09fh	; 2ms off, blank fp on H8
+	out	?h8pt	; H89 NMI should be innocuous
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE

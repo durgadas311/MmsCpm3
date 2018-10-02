@@ -57,6 +57,7 @@ TRACK	EQU	WD1797+1
 SECTOR	EQU	WD1797+2
 DATA	EQU	WD1797+3
 
+?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
 ***************************************************
 
@@ -219,6 +220,8 @@ not$dd2 CPI	SPT8SD+1
  endif
 DONE:
 	DI
+	mvi	a,09fh	; 2ms off, blank fp on H8
+	out	?h8pt	; H89 NMI should be innocuous
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE

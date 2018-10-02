@@ -27,6 +27,7 @@ drv0	equ	0
 ***************************************************
 **  PORTS AND CONSTANTS
 ***************************************************
+?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
 
 R@XOK	EQU	205EH	;TURN OFF Z17
@@ -121,6 +122,8 @@ ERR00:	POP	B
 
 DONE:
 	DI
+	mvi	a,09fh	; 2ms off, blank fp on H8
+	out	?h8pt	; H89 NMI should be innocuous
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
