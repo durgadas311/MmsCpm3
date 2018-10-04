@@ -36,8 +36,8 @@ loader:
 	lxi d,fnfmsg	;020f 11 af 02 . . .
 	jz die		;0212 ca 84 02 . . .
 	lxi d,dmabuf	;0215 11 80 00 . . .
-	call st_dma	;0218	cd 71 02 	. q . 
-	call rd_file	; load header
+	call st$dma	;0218	cd 71 02 	. q . 
+	call rd$file	; load header
 
 	lxi h,dmabuf	;021e 21 80 00 ! . .
 	lxi d,header	;0221 11 f5 02 . . .
@@ -50,7 +50,7 @@ memcpy:
 	dcr c		;022a 0d .
 	jnz memcpy	;022b c2 26 02 . & .
 
-	call rd_file	; load message (optional)
+	call rd$file	; load message (optional)
 	mvi c,msgout	;0231 0e 09 . .
 	lxi d,dmabuf	;0233 11 80 00 . . .
 	call bdos	;0236	cd fb 02 	. . . 
@@ -84,20 +84,20 @@ nxtrec:
 	xchg 		;0261 eb .
 	push d		;0262 d5 .
 	push h		;0263 e5 .
-	call st_dma	;0264	cd 71 02 	. q . 
-	call rd_file	;0267	cd 77 02 	. w . 
+	call st$dma	;0264	cd 71 02 	. q . 
+	call rd$file	;0267	cd 77 02 	. w . 
 	pop h		;026a e1 .
 	pop d		;026b d1 .
 	dcr h		;026c 25 %
 	jnz nxtrec	;026d c2 5c 02 . \ .
 	ret		;0270	c9 	. 
 
-st_dma:
+st$dma:
 	mvi c,setdma	;0271 0e 1a . .
 	call bdos	;0273	cd fb 02 	. . . 
 	ret		;0276	c9 	. 
 
-rd_file:
+rd$file:
 	mvi c,read	;0277 0e 14 . .
 	lxi d,cpm3sys	;0279 11 8b 02 . . .
 	call bdos	;027c	cd fb 02 	. . . 

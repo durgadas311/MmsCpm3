@@ -5,7 +5,7 @@
 	extrn	bdos
 	extrn	loader
 
-	public	biodma,biores,biotrk,biosec,biodsk,biotrn,d_read
+	public	biodma,biores,biotrk,biosec,biodsk,biotrn,d?read
 	public	conout
 
 	public	wboot,cboot,dsksta,timeot,mixer,dirbuf
@@ -98,7 +98,7 @@ l0995h:
 l0999h:
 	mov a,c
 	sta newdsk
-	call d_sel
+	call d?sel
 	lda newdsk
 	mov c,a
 	ret
@@ -170,7 +170,7 @@ conout:
 	ret		;0ac7	c9 	. 
 
 driver:	ds	3	; init entry for disk driver module
-d_sel:	ds	3
-d_read:	ds	3
+d?sel:	ds	3
+d?read:	ds	3
 
 	end
