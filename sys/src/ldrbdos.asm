@@ -35,18 +35,18 @@ bdos:
 	xchg 		;0303 eb .
 	mov a,e		;0304 7b {
 	sta l08edh	;0305 32 ed 08 2 . .
-	lxi h,0		;0308 21 00 00 ! . .
+	lxi h,0		;0308 21 00 00 . . .
 	shld aret	;030b 22 2e 04 " . .
 	xra a		;030e af .
 	sta l08f4h	;030f 32 f4 08 2 . .
 	sta l08f2h	;0312 32 f2 08 2 . .
-	lxi h,l0884h	;0315 21 84 08 ! . .
+	lxi h,l0884h	;0315 21 84 08 . . .
 	push h		;0318 e5 .
 	mov a,c		;0319 79 y
 	cpi 41		;031a fe 29 . )
 	rnc 		;031c d0 .
 	mov c,e		;031d 4b K
-	lxi h,funcs	;031e 21 2e 03 ! . .
+	lxi h,funcs	;031e 21 2e 03 . . .
 	mov e,a		;0321 5f _
 	mvi d,0		;0322 16 00 . .
 	dad d		;0324 19 .
@@ -107,11 +107,11 @@ permsg:	db	'Bad Sector$'
 selmsg:	db	'Select$'
 
 pererr:
-	lxi h,permsg	;03a2 21 90 03 ! . .
+	lxi h,permsg	;03a2 21 90 03 . . .
 	jmp errflg	;03a5 c3 ab 03 . . .
 
 selerr:
-	lxi h,selmsg	;03a8 21 9b 03 ! . .
+	lxi h,selmsg	;03a8 21 9b 03 . . .
 errflg:
 	push h	;03ab e5 .
 	call crlf		;03ac	cd 07 04 	. . . 
@@ -122,7 +122,7 @@ errflg:
 	call print0		;03ba	cd 14 04 	. . . 
 	pop b	;03bd c1 .
 	call print0		;03be	cd 14 04 	. . . 
-	lxi h,-1	;03c1 21 ff ff ! . .
+	lxi h,-1	;03c1 21 ff ff . . .
 	shld aret	;03c4 22 2e 04 " . .
 	jmp retmon	;03c7 c3 a1 08 . . .
 
@@ -135,7 +135,7 @@ conout0:
 	pop b	;03d5 c1 .
 nojam:
 	mov a,c	;03d6 79 y
-	lxi h,column	;03d7 21 29 04 ! ) .
+	lxi h,column	;03d7 21 29 04 . ) .
 	cpi DEL	;03da fe 7f . 
 	rz 	;03dc c8 .
 	inr m	;03dd 34 4
@@ -238,17 +238,17 @@ sub$043ch:
 	inx h	;0458 23 #
 	xchg 	;0459 eb .
 	shld l08e8h	;045a 22 e8 08 " . .
-	lxi h,l08d1h	;045d 21 d1 08 ! . .
+	lxi h,l08d1h	;045d 21 d1 08 . . .
 	mvi c,008h	;0460 0e 08 . .
 	call memmov		;0462	cd 32 04 	. 2 . 
 	lhld l08d3h	;0465 2a d3 08 * . .
 	xchg 	;0468 eb .
-	lxi h,l08d9h	;0469 21 d9 08 ! . .
+	lxi h,l08d9h	;0469 21 d9 08 . . .
 	mvi c,00fh	;046c 0e 0f . .
 	call memmov		;046e	cd 32 04 	. 2 . 
 	lhld l08deh	;0471 2a de 08 * . .
 	mov a,h	;0474 7c |
-	lxi h,l08f1h	;0475 21 f1 08 ! . .
+	lxi h,l08f1h	;0475 21 f1 08 . . .
 	mvi m,0ffh	;0478 36 ff 6 .
 	ora a	;047a b7 .
 	jz l0480h	;047b ca 80 04 . . .
@@ -284,7 +284,7 @@ sub$049dh:
 	shld l08f9h	;04a5 22 f9 08 " . .
 	shld l0900h	;04a8 22 00 09 " . .
 sub$04abh:
-	lxi h,l08f9h	;04ab 21 f9 08 ! . .
+	lxi h,l08f9h	;04ab 21 f9 08 . . .
 	mov c,m	;04ae 4e N
 	inx h	;04af 23 #
 	mov b,m	;04b0 46 F
@@ -365,7 +365,7 @@ l04e9h:
 	jmp biosec	;0515 c3 ba 09 . . .
 
 sub$0518h:
-	lxi h,l08dbh	;0518 21 db 08 ! . .
+	lxi h,l08dbh	;0518 21 db 08 . . .
 	mov c,m	;051b 4e N
 	lda l08f7h	;051c 3a f7 08 : . .
 l051fh:
@@ -443,7 +443,7 @@ sub$0588h:
 	lxi d,0000fh	;058b 11 0f 00 . . .
 	dad d	;058e 19 .
 	xchg 	;058f eb .
-	lxi h,00011h	;0590 21 11 00 ! . .
+	lxi h,00011h	;0590 21 11 00 . . .
 	dad d	;0593 19 .
 	ret			;0594	c9 	. 
 sub$0595h:
@@ -492,7 +492,7 @@ sub$05d0h:
 	push b	;05d0 c5 .
 	lda curdsk	;05d1 3a 2b 04 : + .
 	mov c,a	;05d4 4f O
-	lxi h,00001h	;05d5 21 01 00 ! . .
+	lxi h,00001h	;05d5 21 01 00 . . .
 	call sub$05c9h		;05d8	cd c9 05 	. . . 
 	pop b	;05db c1 .
 	mov a,c	;05dc 79 y
@@ -537,17 +537,17 @@ sub$060bh:
 	call sub$0617h		;060b	cd 17 06 	. . . 
 	call sub$0495h		;060e	cd 95 04 	. . . 
 sub$0611h:
-	lxi h,l08c9h	;0611 21 c9 08 ! . .
+	lxi h,l08c9h	;0611 21 c9 08 . . .
 	jmp l061ah	;0614 c3 1a 06 . . .
 sub$0617h:
-	lxi h,l08d1h	;0617 21 d1 08 ! . .
+	lxi h,l08d1h	;0617 21 d1 08 . . .
 l061ah:
 	mov c,m	;061a 4e N
 	inx h	;061b 23 #
 	mov b,m	;061c 46 F
 	jmp biodma	;061d c3 c0 09 . . .
 sub$0620h:
-	lxi h,l08feh	;0620 21 fe 08 ! . .
+	lxi h,l08feh	;0620 21 fe 08 . . .
 	mov a,m	;0623 7e ~
 	inx h	;0624 23 #
 	cmp m	;0625 be .
@@ -555,7 +555,7 @@ sub$0620h:
 	inr a	;0627 3c <
 	ret			;0628	c9 	. 
 l0629h:
-	lxi h,0ffffh	;0629 21 ff ff ! . .
+	lxi h,0ffffh	;0629 21 ff ff . . .
 	shld l08feh	;062c 22 fe 08 " . .
 	ret			;062f	c9 	. 
 sub$0630h:
@@ -612,7 +612,7 @@ sub$0675h:
 sub$0686h:
 	mvi a,0ffh	;0686 3e ff > .
 	sta l08ech	;0688 32 ec 08 2 . .
-	lxi h,l08eeh	;068b 21 ee 08 ! . .
+	lxi h,l08eeh	;068b 21 ee 08 . . .
 	mov m,c	;068e 71 q
 	lhld param	;068f 2a 2c 04 * , .
 	shld l08efh	;0692 22 ef 08 " . .
@@ -662,7 +662,7 @@ l06e3h:
 	lda l08feh	;06e3 3a fe 08 : . .
 	ani 003h	;06e6 e6 03 . .
 	sta aret	;06e8 32 2e 04 2 . .
-	lxi h,l08ech	;06eb 21 ec 08 ! . .
+	lxi h,l08ech	;06eb 21 ec 08 . . .
 	mov a,m	;06ee 7e ~
 	ral	;06ef 17 .
 	rnc 	;06f0 d0 .
@@ -689,10 +689,10 @@ sub$0700h:
 	call memmov		;0710	cd 32 04 	. 2 . 
 	call sub$05fdh		;0713	cd fd 05 	. . . 
 	pop d	;0716 d1 .
-	lxi h,0000ch	;0717 21 0c 00 ! . .
+	lxi h,0000ch	;0717 21 0c 00 . . .
 	dad d	;071a 19 .
 	mov c,m	;071b 4e N
-	lxi h,0000fh	;071c 21 0f 00 ! . .
+	lxi h,0000fh	;071c 21 0f 00 . . .
 	dad d	;071f 19 .
 	mov b,m	;0720 46 F
 	pop h	;0721 e1 .
@@ -725,7 +725,7 @@ sub$073ah:
 	mov b,a	;074d 47 G
 	lda l08ddh	;074e 3a dd 08 : . .
 	ana b	;0751 a0 .
-	lxi h,l08eah	;0752 21 ea 08 ! . .
+	lxi h,l08eah	;0752 21 ea 08 . . .
 	ana m	;0755 a6 .
 	jz l0767h	;0756 ca 67 07 . g .
 	jmp l076dh	;0759 c3 6d 07 . m .
@@ -755,7 +755,7 @@ l077dh:
 	sta l08ebh	;077f 32 eb 08 2 . .
 	call sub$0595h		;0782	cd 95 05 	. . . 
 	lda l08f7h	;0785 3a f7 08 : . .
-	lxi h,l08f5h	;0788 21 f5 08 ! . .
+	lxi h,l08f5h	;0788 21 f5 08 . . .
 	cmp m	;078b be .
 	jc l07a2h	;078c da a2 07 . . .
 	cpi 080h	;078f fe 80 . .
@@ -800,7 +800,7 @@ l07bah:
 
 f$seldrv:
 	lda l08edh	;07de 3a ed 08 : . .
-	lxi h,curdsk	;07e1 21 2b 04 ! + .
+	lxi h,curdsk	;07e1 21 2b 04 . + .
 	cmp m	;07e4 be .
 	nop			;07e5	00 	. 
 	mov m,a	;07e6 77 w
@@ -835,11 +835,11 @@ f$getver:
 	jmp sta$ret	;0819 c3 24 04 . $ .
 
 f$reset:
-	lxi h,00000h	;081c 21 00 00 ! . .
+	lxi h,00000h	;081c 21 00 00 . . .
 	shld dlog	;081f 22 c7 08 " . .
 	xra a	;0822 af .
 	sta curdsk	;0823 32 2b 04 2 + .
-	lxi h,dmabuf	;0826 21 80 00 ! . .
+	lxi h,dmabuf	;0826 21 80 00 . . .
 	shld l08c9h	;0829 22 c9 08 " . .
 	call sub$0611h		;082c	cd 11 06 	. . . 
 	jmp l07bah	;082f c3 ba 07 . . .

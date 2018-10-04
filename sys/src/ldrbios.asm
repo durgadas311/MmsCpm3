@@ -64,7 +64,7 @@ cboot:
 	di			;0960	f3 	. 
 	mvi a,0c3h	;0961 3e c3 > .
 	sta rst1	;0963 32 08 00 2 . .
-	lxi h,tick	;0966 21 c5 09 ! . .
+	lxi h,tick	;0966 21 c5 09 . . .
 	shld rst1+1	;0969 22 09 00 " . .
 	lxi h,0
 	shld ticker	;096f 22 0b 00 " . .
@@ -92,7 +92,7 @@ biodsk:
 	cpi 0ffh	;0991 fe ff . .
 	jrnz l0999h	;0993 20 04 .
 l0995h:
-	lxi h,0		;0995 21 00 00 ! . .
+	lxi h,0		;0995 21 00 00 . . .
 	ret		;0998	c9 	. 
 
 l0999h:
@@ -169,8 +169,8 @@ conout:
 	out 0e8h	;0ac5 d3 e8 . .
 	ret		;0ac7	c9 	. 
 
-driver:	ds	3	; init entry for disk driver module
-d?sel:	ds	3
-d?read:	ds	3
+driver:	equ	$+0	; init entry for disk driver module
+d?sel:	equ	$+3
+d?read:	equ	$+6
 
 	end

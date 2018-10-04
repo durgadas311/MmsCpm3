@@ -1,0 +1,1037 @@
+                ; CPM3LDR BDOS code
+                
+                	maclib	z80
+                
+                	extrn	wboot,conout
+                	extrn	biodma,biores,biotrk,biosec,biodsk,biotrn,d?read
+                
+                	public	bdos,dlog
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0009 =         TAB	equ	9
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 007F =         DEL	equ	127
+                
+                ; locations in page-0
+ 0008 =         rst1	equ	0008h
+ 000B =         ticker	equ	000bh
+ 000D =         gpbyte	equ	000dh
+ 000E =         l000eh	equ	000eh
+ 0080 =         dmabuf	equ	0080h
+                
+ 0009 =         msgout	equ	9
+ 000D =         reset	equ	13
+ 000F =         open	equ	15
+ 0014 =         read	equ	20
+ 001A =         setdma	equ	26
+                
+                	cseg
+                bdos:
+                	sspd entsp	;02fb ed 73 30 04 . s 0 .
+ 0000+ED73      	DB	0EDH,73H
+ 0002+3501      	DW	ENTSP
+ 0004 EB        	xchg 		;02ff eb .
+ 0005 223101    	shld param	;0300 22 2c 04 " , .
+ 0008 EB        	xchg 		;0303 eb .
+ 0009 7B        	mov a,e		;0304 7b {
+ 000A 32F205    	sta l08edh	;0305 32 ed 08 2 . .
+ 000D 210000    	lxi h,0		;0308 21 00 00 . . .
+ 0010 223301    	shld aret	;030b 22 2e 04 " . .
+ 0013 AF        	xra a		;030e af .
+ 0014 32F905    	sta l08f4h	;030f 32 f4 08 2 . .
+ 0017 32F705    	sta l08f2h	;0312 32 f2 08 2 . .
+ 001A 218905    	lxi h,l0884h	;0315 21 84 08 . . .
+ 001D E5        	push h		;0318 e5 .
+ 001E 79        	mov a,c		;0319 79 y
+ 001F FE29      	cpi 41		;031a fe 29 . )
+ 0021 D0        	rnc 		;031c d0 .
+ 0022 4B        	mov c,e		;031d 4b K
+ 0023 213300    	lxi h,funcs	;031e 21 2e 03 . . .
+ 0026 5F        	mov e,a		;0321 5f _
+ 0027 1600      	mvi d,0		;0322 16 00 . .
+ 0029 19        	dad d		;0324 19 .
+ 002A 19        	dad d		;0325 19 .
+ 002B 5E        	mov e,m		;0326 5e ^
+ 002C 23        	inx h		;0327 23 #
+ 002D 56        	mov d,m		;0328 56 V
+ 002E 2A3101    	lhld param	;0329 2a 2c 04 * , .
+ 0031 EB        	xchg 		;032c eb .
+ 0032 E9        	pchl 		;032d e9 .
+                
+                funcs:
+ 0033 0000      	dw wboot	; 0
+ 0035 2C01      	dw f$null	; 1
+ 0037 F800      	dw f$cono	; 2	CONOUT
+ 0039 2C01      	dw f$null	; 3
+ 003B 2C01      	dw f$null	; 4
+ 003D 2C01      	dw f$null	; 5
+ 003F 2C01      	dw f$null	; 6
+ 0041 2C01      	dw f$null	; 7
+ 0043 2C01      	dw f$null	; 8
+ 0045 1601      	dw f$print	; 9	PRINT
+ 0047 2C01      	dw f$null	; 10
+ 0049 2C01      	dw f$null	; 11
+ 004B 1C05      	dw f$getver	; 12	VERSION
+ 004D 2105      	dw f$reset	; 13	RESET
+ 004F E304      	dw f$seldrv	; 14	SELECT
+ 0051 3705      	dw f$open	; 15	OPEN
+ 0053 2C01      	dw f$null	; 16
+ 0055 2C01      	dw f$null	; 17
+ 0057 2C01      	dw f$null	; 18
+ 0059 2C01      	dw f$null	; 19
+ 005B 4005      	dw f$read	; 20	READ
+ 005D 2C01      	dw f$null	; 21
+ 005F 2C01      	dw f$null	; 22
+ 0061 2C01      	dw f$null	; 23
+ 0063 4605      	dw f$logvec	; 24	LOGIN VEC
+ 0065 4C05      	dw f$getdrv	; 25	CUR DSK
+ 0067 5205      	dw f$setdma	; 26	SET DMA
+ 0069 2C01      	dw f$null	; 27
+ 006B 2C01      	dw f$null	; 28
+ 006D 2C01      	dw f$null	; 29
+ 006F 2C01      	dw f$null	; 30
+ 0071 5905      	dw f$getdpb	; 31	GET DPB
+ 0073 6005      	dw f$sgusr	; 32	SET/GET USER
+ 0075 2C01      	dw f$null	; 33
+ 0077 2C01      	dw f$null	; 34
+ 0079 2C01      	dw f$null	; 35
+ 007B 2C01      	dw f$null	; 36
+ 007D 7405      	dw f$resdrv	; 37	RESET DRIVE
+ 007F 2C01      	dw f$null	; 38
+ 0081 2C01      	dw f$null	; 39
+ 0083 2C01      	dw f$null	; 40
+                
+ 0085 42646F7320dskmsg:	db	'Bdos Err On '
+ 0091 203A2024  dskerr:	db	' : $'
+ 0095 4261642053permsg:	db	'Bad Sector$'
+ 00A0 53656C6563selmsg:	db	'Select$'
+                
+                pererr:
+ 00A7 219500    	lxi h,permsg	;03a2 21 90 03 . . .
+ 00AA C3B000    	jmp errflg	;03a5 c3 ab 03 . . .
+                
+                selerr:
+ 00AD 21A000    	lxi h,selmsg	;03a8 21 9b 03 . . .
+                errflg:
+ 00B0 E5        	push h	;03ab e5 .
+ 00B1 CD0C01    	call crlf		;03ac	cd 07 04 	. . . 
+ 00B4 3A3001    	lda curdsk	;03af 3a 2b 04 : + .
+ 00B7 C641      	adi 'A'		;03b2 c6 41 . A
+ 00B9 329100    	sta dskerr	;03b4 32 8c 03 2 . .
+ 00BC 018500    	lxi b,dskmsg	;03b7 01 80 03 . . .
+ 00BF CD1901    	call print0		;03ba	cd 14 04 	. . . 
+ 00C2 C1        	pop b	;03bd c1 .
+ 00C3 CD1901    	call print0		;03be	cd 14 04 	. . . 
+ 00C6 21FFFF    	lxi h,-1	;03c1 21 ff ff . . .
+ 00C9 223301    	shld aret	;03c4 22 2e 04 " . .
+ 00CC C3A605    	jmp retmon	;03c7 c3 a1 08 . . .
+                
+                conout0:
+ 00CF 3A2D01    	lda jamchr	;03ca 3a 28 04 : ( .
+ 00D2 B7        	ora a	;03cd b7 .
+ 00D3 C2DB00    	jnz nojam	;03ce c2 d6 03 . . .
+ 00D6 C5        	push b	;03d1 c5 .
+ 00D7 CD0000    	call conout		;03d2	cd bd 0a 	. . . 
+ 00DA C1        	pop b	;03d5 c1 .
+                nojam:
+ 00DB 79        	mov a,c	;03d6 79 y
+ 00DC 212E01    	lxi h,column	;03d7 21 29 04 . ) .
+ 00DF FE7F      	cpi DEL	;03da fe 7f . 
+ 00E1 C8        	rz 	;03dc c8 .
+ 00E2 34        	inr m	;03dd 34 4
+ 00E3 FE20      	cpi ' '	;03de fe 20 .
+ 00E5 D0        	rnc 	;03e0 d0 .
+ 00E6 35        	dcr m	;03e1 35 5
+ 00E7 7E        	mov a,m	;03e2 7e ~
+ 00E8 B7        	ora a	;03e3 b7 .
+ 00E9 C8        	rz 	;03e4 c8 .
+ 00EA 79        	mov a,c
+ 00EB FE08      	cpi BS
+ 00ED C2F200    	jnz notbs
+ 00F0 35        	dcr m	; --col
+ 00F1 C9        	ret
+                
+                notbs:
+ 00F2 FE0A      	cpi LF
+ 00F4 C0        	rnz
+ 00F5 3600      	mvi m,0	; clear col count
+ 00F7 C9        	ret
+                
+                f$cono:
+ 00F8 79        	mov a,c		;03f3 79 y
+ 00F9 FE09      	cpi TAB		;03f4 fe 09 . .
+ 00FB C2CF00    	jnz conout0	;03f6 c2 ca 03 . . .
+                tab0:
+ 00FE 0E20      	mvi c,' '	;03f9 0e 20 .
+ 0100 CDCF00    	call conout0		;03fb	cd ca 03 	. . . 
+ 0103 3A2E01    	lda column	;03fe 3a 29 04 : ) .
+ 0106 E607      	ani 007h	;0401 e6 07 . .
+ 0108 C2FE00    	jnz tab0	;0403 c2 f9 03 . . .
+ 010B C9        	ret			;0406	c9 	. 
+                
+                crlf:
+ 010C 0E0D      	mvi c,CR
+ 010E CDCF00    	call conout0
+ 0111 0E0A      	mvi c,LF
+ 0113 C3CF00    	jmp conout0
+                
+                f$print:
+ 0116 EB        	xchg
+ 0117 4D        	mov c,l
+ 0118 44        	mov b,h
+                print0:
+ 0119 0A        	ldax b
+ 011A FE24      	cpi '$'
+ 011C C8        	rz
+ 011D 03        	inx b
+ 011E C5        	push b
+ 011F 4F        	mov c,a
+ 0120 CDF800    	call f$cono
+ 0123 C1        	pop b
+ 0124 C31901    	jmp print0
+                
+                setlret1:
+ 0127 3E01      	mvi a,1	; error
+                sta$ret:
+ 0129 323301    	sta aret
+ 012C C9        f$null:	ret
+                
+ 012D 00        jamchr:	db	0
+ 012E 00        column:	db	0
+ 012F 00        usrcod:	db	0
+                curdsk:
+ 0130 00        	db 000h	;042b 00 .
+ 0131 0000      param:	dw	0
+ 0133 0000      aret:	dw	0	; return value from BDOS
+ 0135 0000      entsp:	dw	0
+                
+                memmov:
+ 0137 0C        	inr c	;0432 0c .
+                l0433h:
+ 0138 0D        	dcr c	;0433 0d .
+ 0139 C8        	rz 	;0434 c8 .
+ 013A 1A        	ldax d	;0435 1a .
+ 013B 77        	mov m,a	;0436 77 w
+ 013C 13        	inx d	;0437 13 .
+ 013D 23        	inx h	;0438 23 #
+ 013E C33801    	jmp l0433h	;0439 c3 33 04 . 3 .
+                
+                sub$043ch:
+ 0141 3A3001    	lda curdsk	;043c 3a 2b 04 : + .
+ 0144 4F        	mov c,a	;043f 4f O
+ 0145 CD0000    	call biodsk		;0440	cd 88 09 	. . . 
+ 0148 7C        	mov a,h	;0443 7c |
+ 0149 B5        	ora l	;0444 b5 .
+ 014A C8        	rz 	;0445 c8 .
+ 014B 5E        	mov e,m	;0446 5e ^
+ 014C 23        	inx h	;0447 23 #
+ 014D 56        	mov d,m	;0448 56 V
+ 014E 23        	inx h	;0449 23 #
+ 014F 22D005    	shld l08cbh	;044a 22 cb 08 " . .
+ 0152 23        	inx h	;044d 23 #
+ 0153 23        	inx h	;044e 23 #
+ 0154 22D205    	shld l08cdh	;044f 22 cd 08 " . .
+ 0157 23        	inx h	;0452 23 #
+ 0158 23        	inx h	;0453 23 #
+ 0159 22D405    	shld l08cfh	;0454 22 cf 08 " . .
+ 015C 23        	inx h	;0457 23 #
+ 015D 23        	inx h	;0458 23 #
+ 015E EB        	xchg 	;0459 eb .
+ 015F 22ED05    	shld l08e8h	;045a 22 e8 08 " . .
+ 0162 21D605    	lxi h,l08d1h	;045d 21 d1 08 . . .
+ 0165 0E08      	mvi c,008h	;0460 0e 08 . .
+ 0167 CD3701    	call memmov		;0462	cd 32 04 	. 2 . 
+ 016A 2AD805    	lhld l08d3h	;0465 2a d3 08 * . .
+ 016D EB        	xchg 	;0468 eb .
+ 016E 21DE05    	lxi h,l08d9h	;0469 21 d9 08 . . .
+ 0171 0E0F      	mvi c,00fh	;046c 0e 0f . .
+ 0173 CD3701    	call memmov		;046e	cd 32 04 	. 2 . 
+ 0176 2AE305    	lhld l08deh	;0471 2a de 08 * . .
+ 0179 7C        	mov a,h	;0474 7c |
+ 017A 21F605    	lxi h,l08f1h	;0475 21 f1 08 . . .
+ 017D 36FF      	mvi m,0ffh	;0478 36 ff 6 .
+ 017F B7        	ora a	;047a b7 .
+ 0180 CA8501    	jz l0480h	;047b ca 80 04 . . .
+ 0183 3600      	mvi m,000h	;047e 36 00 6 .
+                l0480h:
+ 0185 3EFF      	mvi a,0ffh	;0480 3e ff > .
+ 0187 B7        	ora a	;0482 b7 .
+ 0188 C9        	ret			;0483	c9 	. 
+                
+                sub$0484h:
+ 0189 CD0000    	call biores		;0484	cd 82 09 	. . . 
+ 018C AF        	xra a	;0487 af .
+ 018D 2AD205    	lhld l08cdh	;0488 2a cd 08 * . .
+ 0190 77        	mov m,a	;048b 77 w
+ 0191 23        	inx h	;048c 23 #
+ 0192 77        	mov m,a	;048d 77 w
+ 0193 2AD405    	lhld l08cfh	;048e 2a cf 08 * . .
+ 0196 77        	mov m,a	;0491 77 w
+ 0197 23        	inx h	;0492 23 #
+ 0198 77        	mov m,a	;0493 77 w
+ 0199 C9        	ret			;0494	c9 	. 
+                
+                sub$0495h:
+ 019A CD0000    	call d?read		;0495	cd ce 0a 	. . . 
+ 019D B7        	ora a	;0498 b7 .
+ 019E C8        	rz 	;0499 c8 .
+ 019F C3A700    	jmp pererr	;049a c3 a2 03 . . .
+                
+                sub$049dh:
+ 01A2 2A0306    	lhld l08feh	;049d 2a fe 08 * . .
+ 01A5 0E02      	mvi c,002h	;04a0 0e 02 . .
+ 01A7 CDC102    	call sub$05bch		;04a2	cd bc 05 	. . . 
+ 01AA 22FE05    	shld l08f9h	;04a5 22 f9 08 " . .
+ 01AD 220506    	shld l0900h	;04a8 22 00 09 " . .
+                sub$04abh:
+ 01B0 21FE05    	lxi h,l08f9h	;04ab 21 f9 08 . . .
+ 01B3 4E        	mov c,m	;04ae 4e N
+ 01B4 23        	inx h	;04af 23 #
+ 01B5 46        	mov b,m	;04b0 46 F
+ 01B6 2AD405    	lhld l08cfh	;04b1 2a cf 08 * . .
+ 01B9 5E        	mov e,m	;04b4 5e ^
+ 01BA 23        	inx h	;04b5 23 #
+ 01BB 56        	mov d,m	;04b6 56 V
+ 01BC 2AD205    	lhld l08cdh	;04b7 2a cd 08 * . .
+ 01BF 7E        	mov a,m	;04ba 7e ~
+ 01C0 23        	inx h	;04bb 23 #
+ 01C1 66        	mov h,m	;04bc 66 f
+ 01C2 6F        	mov l,a	;04bd 6f o
+                l04beh:
+ 01C3 79        	mov a,c	;04be 79 y
+ 01C4 93        	sub e	;04bf 93 .
+ 01C5 78        	mov a,b	;04c0 78 x
+ 01C6 9A        	sbb d	;04c1 9a .
+ 01C7 D2D901    	jnc l04d4h	;04c2 d2 d4 04 . . .
+ 01CA E5        	push h	;04c5 e5 .
+ 01CB 2ADE05    	lhld l08d9h	;04c6 2a d9 08 * . .
+ 01CE 7B        	mov a,e	;04c9 7b {
+ 01CF 95        	sub l	;04ca 95 .
+ 01D0 5F        	mov e,a	;04cb 5f _
+ 01D1 7A        	mov a,d	;04cc 7a z
+ 01D2 9C        	sbb h	;04cd 9c .
+ 01D3 57        	mov d,a	;04ce 57 W
+ 01D4 E1        	pop h	;04cf e1 .
+ 01D5 2B        	dcx h	;04d0 2b +
+ 01D6 C3C301    	jmp l04beh	;04d1 c3 be 04 . . .
+                l04d4h:
+ 01D9 E5        	push h	;04d4 e5 .
+ 01DA 2ADE05    	lhld l08d9h	;04d5 2a d9 08 * . .
+ 01DD 19        	dad d	;04d8 19 .
+ 01DE DAEE01    	jc l04e9h	;04d9 da e9 04 . . .
+ 01E1 79        	mov a,c	;04dc 79 y
+ 01E2 95        	sub l	;04dd 95 .
+ 01E3 78        	mov a,b	;04de 78 x
+ 01E4 9C        	sbb h	;04df 9c .
+ 01E5 DAEE01    	jc l04e9h	;04e0 da e9 04 . . .
+ 01E8 EB        	xchg 	;04e3 eb .
+ 01E9 E1        	pop h	;04e4 e1 .
+ 01EA 23        	inx h	;04e5 23 #
+ 01EB C3D901    	jmp l04d4h	;04e6 c3 d4 04 . . .
+                
+                l04e9h:
+ 01EE E1        	pop h	;04e9 e1 .
+ 01EF C5        	push b	;04ea c5 .
+ 01F0 D5        	push d	;04eb d5 .
+ 01F1 E5        	push h	;04ec e5 .
+ 01F2 EB        	xchg 	;04ed eb .
+ 01F3 2AEB05    	lhld l08e6h	;04ee 2a e6 08 * . .
+ 01F6 19        	dad d	;04f1 19 .
+ 01F7 44        	mov b,h	;04f2 44 D
+ 01F8 4D        	mov c,l	;04f3 4d M
+ 01F9 CD0000    	call biotrk		;04f4	cd a5 09 	. . . 
+ 01FC D1        	pop d	;04f7 d1 .
+ 01FD 2AD205    	lhld l08cdh	;04f8 2a cd 08 * . .
+ 0200 73        	mov m,e	;04fb 73 s
+ 0201 23        	inx h	;04fc 23 #
+ 0202 72        	mov m,d	;04fd 72 r
+ 0203 D1        	pop d	;04fe d1 .
+ 0204 2AD405    	lhld l08cfh	;04ff 2a cf 08 * . .
+ 0207 73        	mov m,e	;0502 73 s
+ 0208 23        	inx h	;0503 23 #
+ 0209 72        	mov m,d	;0504 72 r
+ 020A C1        	pop b	;0505 c1 .
+ 020B 79        	mov a,c	;0506 79 y
+ 020C 93        	sub e	;0507 93 .
+ 020D 4F        	mov c,a	;0508 4f O
+ 020E 78        	mov a,b	;0509 78 x
+ 020F 9A        	sbb d	;050a 9a .
+ 0210 47        	mov b,a	;050b 47 G
+ 0211 2AED05    	lhld l08e8h	;050c 2a e8 08 * . .
+ 0214 EB        	xchg 	;050f eb .
+ 0215 CD0000    	call biotrn		;0510	cd ae 09 	. . . 
+ 0218 4D        	mov c,l	;0513 4d M
+ 0219 44        	mov b,h	;0514 44 D
+ 021A C30000    	jmp biosec	;0515 c3 ba 09 . . .
+                
+                sub$0518h:
+ 021D 21E005    	lxi h,l08dbh	;0518 21 db 08 . . .
+ 0220 4E        	mov c,m	;051b 4e N
+ 0221 3AFC05    	lda l08f7h	;051c 3a f7 08 : . .
+                l051fh:
+ 0224 B7        	ora a	;051f b7 .
+ 0225 1F        	rar	;0520 1f .
+ 0226 0D        	dcr c	;0521 0d .
+ 0227 C22402    	jnz l051fh	;0522 c2 1f 05 . . .
+ 022A 47        	mov b,a	;0525 47 G
+ 022B 3E08      	mvi a,008h	;0526 3e 08 > .
+ 022D 96        	sub m	;0528 96 .
+ 022E 4F        	mov c,a	;0529 4f O
+ 022F 3AFB05    	lda l08f6h	;052a 3a f6 08 : . .
+                l052dh:
+ 0232 0D        	dcr c	;052d 0d .
+ 0233 CA3B02    	jz l0536h	;052e ca 36 05 . 6 .
+ 0236 B7        	ora a	;0531 b7 .
+ 0237 17        	ral	;0532 17 .
+ 0238 C33202    	jmp l052dh	;0533 c3 2d 05 . - .
+                l0536h:
+ 023B 80        	add b	;0536 80 .
+ 023C C9        	ret			;0537	c9 	. 
+                sub$0538h:
+ 023D 2A3101    	lhld param	;0538 2a 2c 04 * , .
+ 0240 111000    	lxi d,00010h	;053b 11 10 00 . . .
+ 0243 19        	dad d	;053e 19 .
+ 0244 09        	dad b	;053f 09 .
+ 0245 3AF605    	lda l08f1h	;0540 3a f1 08 : . .
+ 0248 B7        	ora a	;0543 b7 .
+ 0249 CA5002    	jz l054bh	;0544 ca 4b 05 . K .
+ 024C 6E        	mov l,m	;0547 6e n
+ 024D 2600      	mvi h,000h	;0548 26 00 & .
+ 024F C9        	ret			;054a	c9 	. 
+                l054bh:
+ 0250 09        	dad b	;054b 09 .
+ 0251 5E        	mov e,m	;054c 5e ^
+ 0252 23        	inx h	;054d 23 #
+ 0253 56        	mov d,m	;054e 56 V
+ 0254 EB        	xchg 	;054f eb .
+ 0255 C9        	ret			;0550	c9 	. 
+                sub$0551h:
+ 0256 CD1D02    	call sub$0518h		;0551	cd 18 05 	. . . 
+ 0259 4F        	mov c,a	;0554 4f O
+ 025A 0600      	mvi b,000h	;0555 06 00 . .
+ 025C CD3D02    	call sub$0538h		;0557	cd 38 05 	. 8 . 
+ 025F 22FE05    	shld l08f9h	;055a 22 f9 08 " . .
+ 0262 C9        	ret			;055d	c9 	. 
+                sub$055eh:
+ 0263 2AFE05    	lhld l08f9h	;055e 2a f9 08 * . .
+ 0266 7D        	mov a,l	;0561 7d }
+ 0267 B4        	ora h	;0562 b4 .
+ 0268 C9        	ret			;0563	c9 	. 
+                sub$0564h:
+ 0269 3AE005    	lda l08dbh	;0564 3a db 08 : . .
+ 026C 2AFE05    	lhld l08f9h	;0567 2a f9 08 * . .
+                l056ah:
+ 026F 29        	dad h	;056a 29 )
+ 0270 3D        	dcr a	;056b 3d =
+ 0271 C26F02    	jnz l056ah	;056c c2 6a 05 . j .
+ 0274 220006    	shld l08fbh	;056f 22 fb 08 " . .
+ 0277 3AE105    	lda l08dch	;0572 3a dc 08 : . .
+ 027A 4F        	mov c,a	;0575 4f O
+ 027B 3AFC05    	lda l08f7h	;0576 3a f7 08 : . .
+ 027E A1        	ana c	;0579 a1 .
+ 027F B5        	ora l	;057a b5 .
+ 0280 6F        	mov l,a	;057b 6f o
+ 0281 22FE05    	shld l08f9h	;057c 22 f9 08 " . .
+ 0284 C9        	ret			;057f	c9 	. 
+                sub$0580h:
+ 0285 2A3101    	lhld param	;0580 2a 2c 04 * , .
+ 0288 110C00    	lxi d,0000ch	;0583 11 0c 00 . . .
+ 028B 19        	dad d	;0586 19 .
+ 028C C9        	ret			;0587	c9 	. 
+                sub$0588h:
+ 028D 2A3101    	lhld param	;0588 2a 2c 04 * , .
+ 0290 110F00    	lxi d,0000fh	;058b 11 0f 00 . . .
+ 0293 19        	dad d	;058e 19 .
+ 0294 EB        	xchg 	;058f eb .
+ 0295 211100    	lxi h,00011h	;0590 21 11 00 . . .
+ 0298 19        	dad d	;0593 19 .
+ 0299 C9        	ret			;0594	c9 	. 
+                sub$0595h:
+ 029A CD8D02    	call sub$0588h		;0595	cd 88 05 	. . . 
+ 029D 7E        	mov a,m	;0598 7e ~
+ 029E 32FC05    	sta l08f7h	;0599 32 f7 08 2 . .
+ 02A1 EB        	xchg 	;059c eb .
+ 02A2 7E        	mov a,m	;059d 7e ~
+ 02A3 32FA05    	sta l08f5h	;059e 32 f5 08 2 . .
+ 02A6 CD8502    	call sub$0580h		;05a1	cd 80 05 	. . . 
+ 02A9 3AE205    	lda l08ddh	;05a4 3a dd 08 : . .
+ 02AC A6        	ana m	;05a7 a6 .
+ 02AD 32FB05    	sta l08f6h	;05a8 32 f6 08 2 . .
+ 02B0 C9        	ret			;05ab	c9 	. 
+                l05ach:
+ 02B1 CD8D02    	call sub$0588h		;05ac	cd 88 05 	. . . 
+ 02B4 0E01      	mvi c,001h	;05af 0e 01 . .
+ 02B6 3AFC05    	lda l08f7h	;05b1 3a f7 08 : . .
+ 02B9 81        	add c	;05b4 81 .
+ 02BA 77        	mov m,a	;05b5 77 w
+ 02BB EB        	xchg 	;05b6 eb .
+ 02BC 3AFA05    	lda l08f5h	;05b7 3a f5 08 : . .
+ 02BF 77        	mov m,a	;05ba 77 w
+ 02C0 C9        	ret			;05bb	c9 	. 
+                sub$05bch:
+ 02C1 0C        	inr c	;05bc 0c .
+                l05bdh:
+ 02C2 0D        	dcr c	;05bd 0d .
+ 02C3 C8        	rz 	;05be c8 .
+ 02C4 7C        	mov a,h	;05bf 7c |
+ 02C5 B7        	ora a	;05c0 b7 .
+ 02C6 1F        	rar	;05c1 1f .
+ 02C7 67        	mov h,a	;05c2 67 g
+ 02C8 7D        	mov a,l	;05c3 7d }
+ 02C9 1F        	rar	;05c4 1f .
+ 02CA 6F        	mov l,a	;05c5 6f o
+ 02CB C3C202    	jmp l05bdh	;05c6 c3 bd 05 . . .
+                sub$05c9h:
+ 02CE 0C        	inr c	;05c9 0c .
+                l05cah:
+ 02CF 0D        	dcr c	;05ca 0d .
+ 02D0 C8        	rz 	;05cb c8 .
+ 02D1 29        	dad h	;05cc 29 )
+ 02D2 C3CF02    	jmp l05cah	;05cd c3 ca 05 . . .
+                sub$05d0h:
+ 02D5 C5        	push b	;05d0 c5 .
+ 02D6 3A3001    	lda curdsk	;05d1 3a 2b 04 : + .
+ 02D9 4F        	mov c,a	;05d4 4f O
+ 02DA 210100    	lxi h,00001h	;05d5 21 01 00 . . .
+ 02DD CDCE02    	call sub$05c9h		;05d8	cd c9 05 	. . . 
+ 02E0 C1        	pop b	;05db c1 .
+ 02E1 79        	mov a,c	;05dc 79 y
+ 02E2 B5        	ora l	;05dd b5 .
+ 02E3 6F        	mov l,a	;05de 6f o
+ 02E4 78        	mov a,b	;05df 78 x
+ 02E5 B4        	ora h	;05e0 b4 .
+ 02E6 67        	mov h,a	;05e1 67 g
+ 02E7 C9        	ret			;05e2	c9 	. 
+                sub$05e3h:
+ 02E8 2AD605    	lhld l08d1h	;05e3 2a d1 08 * . .
+ 02EB 3A0206    	lda l08fdh	;05e6 3a fd 08 : . .
+ 02EE 85        	add l	;05e9 85 .
+ 02EF 6F        	mov l,a	;05ea 6f o
+ 02F0 D0        	rnc 	;05eb d0 .
+ 02F1 24        	inr h	;05ec 24 $
+ 02F2 C9        	ret			;05ed	c9 	. 
+                sub$05eeh:
+ 02F3 2A3101    	lhld param	;05ee 2a 2c 04 * , .
+ 02F6 110E00    	lxi d,0000eh	;05f1 11 0e 00 . . .
+ 02F9 19        	dad d	;05f4 19 .
+ 02FA 7E        	mov a,m	;05f5 7e ~
+ 02FB C9        	ret			;05f6	c9 	. 
+                sub$05f7h:
+ 02FC CDF302    	call sub$05eeh		;05f7	cd ee 05 	. . . 
+ 02FF 3600      	mvi m,000h	;05fa 36 00 6 .
+ 0301 C9        	ret			;05fc	c9 	. 
+                sub$05fdh:
+ 0302 CDF302    	call sub$05eeh		;05fd	cd ee 05 	. . . 
+ 0305 F680      	ori 080h	;0600 f6 80 . .
+ 0307 77        	mov m,a	;0602 77 w
+ 0308 C9        	ret			;0603	c9 	. 
+                sub$0604h:
+ 0309 7B        	mov a,e	;0604 7b {
+ 030A 95        	sub l	;0605 95 .
+ 030B 6F        	mov l,a	;0606 6f o
+ 030C 7A        	mov a,d	;0607 7a z
+ 030D 9C        	sbb h	;0608 9c .
+ 030E 67        	mov h,a	;0609 67 g
+ 030F C9        	ret			;060a	c9 	. 
+                sub$060bh:
+ 0310 CD1C03    	call sub$0617h		;060b	cd 17 06 	. . . 
+ 0313 CD9A01    	call sub$0495h		;060e	cd 95 04 	. . . 
+                sub$0611h:
+ 0316 21CE05    	lxi h,l08c9h	;0611 21 c9 08 . . .
+ 0319 C31F03    	jmp l061ah	;0614 c3 1a 06 . . .
+                sub$0617h:
+ 031C 21D605    	lxi h,l08d1h	;0617 21 d1 08 . . .
+                l061ah:
+ 031F 4E        	mov c,m	;061a 4e N
+ 0320 23        	inx h	;061b 23 #
+ 0321 46        	mov b,m	;061c 46 F
+ 0322 C30000    	jmp biodma	;061d c3 c0 09 . . .
+                sub$0620h:
+ 0325 210306    	lxi h,l08feh	;0620 21 fe 08 . . .
+ 0328 7E        	mov a,m	;0623 7e ~
+ 0329 23        	inx h	;0624 23 #
+ 032A BE        	cmp m	;0625 be .
+ 032B C0        	rnz 	;0626 c0 .
+ 032C 3C        	inr a	;0627 3c <
+ 032D C9        	ret			;0628	c9 	. 
+                l0629h:
+ 032E 21FFFF    	lxi h,0ffffh	;0629 21 ff ff . . .
+ 0331 220306    	shld l08feh	;062c 22 fe 08 " . .
+ 0334 C9        	ret			;062f	c9 	. 
+                sub$0630h:
+ 0335 2AE505    	lhld l08e0h	;0630 2a e0 08 * . .
+ 0338 EB        	xchg 	;0633 eb .
+ 0339 2A0306    	lhld l08feh	;0634 2a fe 08 * . .
+ 033C 23        	inx h	;0637 23 #
+ 033D 220306    	shld l08feh	;0638 22 fe 08 " . .
+ 0340 CD0903    	call sub$0604h		;063b	cd 04 06 	. . . 
+ 0343 DA2E03    	jc l0629h	;063e da 29 06 . ) .
+ 0346 3A0306    	lda l08feh	;0641 3a fe 08 : . .
+ 0349 E603      	ani 003h	;0644 e6 03 . .
+ 034B 0605      	mvi b,005h	;0646 06 05 . .
+                l0648h:
+ 034D 87        	add a	;0648 87 .
+ 034E 05        	dcr b	;0649 05 .
+ 034F C24D03    	jnz l0648h	;064a c2 48 06 . H .
+ 0352 320206    	sta l08fdh	;064d 32 fd 08 2 . .
+ 0355 B7        	ora a	;0650 b7 .
+ 0356 C0        	rnz 	;0651 c0 .
+ 0357 C5        	push b	;0652 c5 .
+ 0358 CDA201    	call sub$049dh		;0653	cd 9d 04 	. . . 
+ 035B CD1003    	call sub$060bh		;0656	cd 0b 06 	. . . 
+ 035E C1        	pop b	;0659 c1 .
+ 035F C9        	ret			;065a	c9 	. 
+                l065bh:
+ 0360 CD8901    	call sub$0484h		;065b	cd 84 04 	. . . 
+ 0363 2AD005    	lhld l08cbh	;065e 2a cb 08 * . .
+ 0366 3603      	mvi m,003h	;0661 36 03 6 .
+ 0368 23        	inx h	;0663 23 #
+ 0369 3600      	mvi m,000h	;0664 36 00 6 .
+ 036B CD2E03    	call l0629h		;0666	cd 29 06 	. ) . 
+                l0669h:
+ 036E 0EFF      	mvi c,0ffh	;0669 0e ff . .
+ 0370 CD3503    	call sub$0630h		;066b	cd 30 06 	. 0 . 
+ 0373 CD2503    	call sub$0620h		;066e	cd 20 06 	.   . 
+ 0376 C8        	rz 	;0671 c8 .
+ 0377 C36E03    	jmp l0669h	;0672 c3 69 06 . i .
+                sub$0675h:
+ 037A C5        	push b	;0675 c5 .
+ 037B F5        	push psw	;0676 f5 .
+ 037C 3AE205    	lda l08ddh	;0677 3a dd 08 : . .
+ 037F 2F        	cma	;067a 2f /
+ 0380 47        	mov b,a	;067b 47 G
+ 0381 79        	mov a,c	;067c 79 y
+ 0382 A0        	ana b	;067d a0 .
+ 0383 4F        	mov c,a	;067e 4f O
+ 0384 F1        	pop psw	;067f f1 .
+ 0385 A0        	ana b	;0680 a0 .
+ 0386 91        	sub c	;0681 91 .
+ 0387 E61F      	ani 01fh	;0682 e6 1f . .
+ 0389 C1        	pop b	;0684 c1 .
+ 038A C9        	ret			;0685	c9 	. 
+                sub$0686h:
+ 038B 3EFF      	mvi a,0ffh	;0686 3e ff > .
+ 038D 32F105    	sta l08ech	;0688 32 ec 08 2 . .
+ 0390 21F305    	lxi h,l08eeh	;068b 21 ee 08 . . .
+ 0393 71        	mov m,c	;068e 71 q
+ 0394 2A3101    	lhld param	;068f 2a 2c 04 * , .
+ 0397 22F405    	shld l08efh	;0692 22 ef 08 " . .
+ 039A CD2E03    	call l0629h		;0695	cd 29 06 	. ) . 
+ 039D CD8901    	call sub$0484h		;0698	cd 84 04 	. . . 
+                l069bh:
+ 03A0 0E00      	mvi c,000h	;069b 0e 00 . .
+ 03A2 CD3503    	call sub$0630h		;069d	cd 30 06 	. 0 . 
+ 03A5 CD2503    	call sub$0620h		;06a0	cd 20 06 	.   . 
+ 03A8 CAF903    	jz l06f4h	;06a3 ca f4 06 . . .
+ 03AB 2AF405    	lhld l08efh	;06a6 2a ef 08 * . .
+ 03AE EB        	xchg 	;06a9 eb .
+ 03AF CDE802    	call sub$05e3h		;06aa	cd e3 05 	. . . 
+ 03B2 3AF305    	lda l08eeh	;06ad 3a ee 08 : . .
+ 03B5 4F        	mov c,a	;06b0 4f O
+ 03B6 0600      	mvi b,000h	;06b1 06 00 . .
+                l06b3h:
+ 03B8 79        	mov a,c	;06b3 79 y
+ 03B9 B7        	ora a	;06b4 b7 .
+ 03BA CAE803    	jz l06e3h	;06b5 ca e3 06 . . .
+ 03BD 1A        	ldax d	;06b8 1a .
+ 03BE FE3F      	cpi 03fh	;06b9 fe 3f . ?
+ 03C0 CAE103    	jz l06dch	;06bb ca dc 06 . . .
+ 03C3 78        	mov a,b	;06be 78 x
+ 03C4 FE0D      	cpi 00dh	;06bf fe 0d . .
+ 03C6 CAE103    	jz l06dch	;06c1 ca dc 06 . . .
+ 03C9 FE0C      	cpi 00ch	;06c4 fe 0c . .
+ 03CB 1A        	ldax d	;06c6 1a .
+ 03CC CAD803    	jz l06d3h	;06c7 ca d3 06 . . .
+ 03CF 96        	sub m	;06ca 96 .
+ 03D0 E67F      	ani 07fh	;06cb e6 7f . 
+ 03D2 C2A003    	jnz l069bh	;06cd c2 9b 06 . . .
+ 03D5 C3E103    	jmp l06dch	;06d0 c3 dc 06 . . .
+                l06d3h:
+ 03D8 C5        	push b	;06d3 c5 .
+ 03D9 4E        	mov c,m	;06d4 4e N
+ 03DA CD7A03    	call sub$0675h		;06d5	cd 75 06 	. u . 
+ 03DD C1        	pop b	;06d8 c1 .
+ 03DE C2A003    	jnz l069bh	;06d9 c2 9b 06 . . .
+                l06dch:
+ 03E1 13        	inx d	;06dc 13 .
+ 03E2 23        	inx h	;06dd 23 #
+ 03E3 04        	inr b	;06de 04 .
+ 03E4 0D        	dcr c	;06df 0d .
+ 03E5 C3B803    	jmp l06b3h	;06e0 c3 b3 06 . . .
+                l06e3h:
+ 03E8 3A0306    	lda l08feh	;06e3 3a fe 08 : . .
+ 03EB E603      	ani 003h	;06e6 e6 03 . .
+ 03ED 323301    	sta aret	;06e8 32 2e 04 2 . .
+ 03F0 21F105    	lxi h,l08ech	;06eb 21 ec 08 . . .
+ 03F3 7E        	mov a,m	;06ee 7e ~
+ 03F4 17        	ral	;06ef 17 .
+ 03F5 D0        	rnc 	;06f0 d0 .
+ 03F6 AF        	xra a	;06f1 af .
+ 03F7 77        	mov m,a	;06f2 77 w
+ 03F8 C9        	ret			;06f3	c9 	. 
+                l06f4h:
+ 03F9 CD2E03    	call l0629h		;06f4	cd 29 06 	. ) . 
+ 03FC 3EFF      	mvi a,0ffh	;06f7 3e ff > .
+ 03FE C32901    	jmp sta$ret	;06f9 c3 24 04 . $ .
+                l06fch:
+ 0401 CDB005    	call sub$08abh		;06fc	cd ab 08 	. . . 
+ 0404 C8        	rz 	;06ff c8 .
+                sub$0700h:
+ 0405 CD8502    	call sub$0580h		;0700	cd 80 05 	. . . 
+ 0408 7E        	mov a,m	;0703 7e ~
+ 0409 F5        	push psw	;0704 f5 .
+ 040A E5        	push h	;0705 e5 .
+ 040B CDE802    	call sub$05e3h		;0706	cd e3 05 	. . . 
+ 040E EB        	xchg 	;0709 eb .
+ 040F 2A3101    	lhld param	;070a 2a 2c 04 * , .
+ 0412 0E20      	mvi c,020h	;070d 0e 20 .
+ 0414 D5        	push d	;070f d5 .
+ 0415 CD3701    	call memmov		;0710	cd 32 04 	. 2 . 
+ 0418 CD0203    	call sub$05fdh		;0713	cd fd 05 	. . . 
+ 041B D1        	pop d	;0716 d1 .
+ 041C 210C00    	lxi h,0000ch	;0717 21 0c 00 . . .
+ 041F 19        	dad d	;071a 19 .
+ 0420 4E        	mov c,m	;071b 4e N
+ 0421 210F00    	lxi h,0000fh	;071c 21 0f 00 . . .
+ 0424 19        	dad d	;071f 19 .
+ 0425 46        	mov b,m	;0720 46 F
+ 0426 E1        	pop h	;0721 e1 .
+ 0427 F1        	pop psw	;0722 f1 .
+ 0428 77        	mov m,a	;0723 77 w
+ 0429 79        	mov a,c	;0724 79 y
+ 042A BE        	cmp m	;0725 be .
+ 042B 78        	mov a,b	;0726 78 x
+ 042C CA3604    	jz l0731h	;0727 ca 31 07 . 1 .
+ 042F 3E00      	mvi a,000h	;072a 3e 00 > .
+ 0431 DA3604    	jc l0731h	;072c da 31 07 . 1 .
+ 0434 3E80      	mvi a,080h	;072f 3e 80 > .
+                l0731h:
+ 0436 2A3101    	lhld param	;0731 2a 2c 04 * , .
+ 0439 110F00    	lxi d,0000fh	;0734 11 0f 00 . . .
+ 043C 19        	dad d	;0737 19 .
+ 043D 77        	mov m,a	;0738 77 w
+ 043E C9        	ret			;0739	c9 	. 
+                sub$073ah:
+ 043F AF        	xra a	;073a af .
+ 0440 32EF05    	sta l08eah	;073b 32 ea 08 2 . .
+ 0443 2A3101    	lhld param	;073e 2a 2c 04 * , .
+ 0446 010C00    	lxi b,0000ch	;0741 01 0c 00 . . .
+ 0449 09        	dad b	;0744 09 .
+ 044A 7E        	mov a,m	;0745 7e ~
+ 044B 3C        	inr a	;0746 3c <
+ 044C E61F      	ani 01fh	;0747 e6 1f . .
+ 044E 77        	mov m,a	;0749 77 w
+ 044F CA6104    	jz l075ch	;074a ca 5c 07 . \ .
+ 0452 47        	mov b,a	;074d 47 G
+ 0453 3AE205    	lda l08ddh	;074e 3a dd 08 : . .
+ 0456 A0        	ana b	;0751 a0 .
+ 0457 21EF05    	lxi h,l08eah	;0752 21 ea 08 . . .
+ 045A A6        	ana m	;0755 a6 .
+ 045B CA6C04    	jz l0767h	;0756 ca 67 07 . g .
+ 045E C37204    	jmp l076dh	;0759 c3 6d 07 . m .
+                
+                l075ch:
+ 0461 010200    	lxi b,00002h	;075c 01 02 00 . . .
+ 0464 09        	dad b	;075f 09 .
+ 0465 34        	inr m	;0760 34 4
+ 0466 7E        	mov a,m	;0761 7e ~
+ 0467 E60F      	ani 00fh	;0762 e6 0f . .
+ 0469 CA7C04    	jz l0777h	;0764 ca 77 07 . w .
+                l0767h:
+ 046C CDB005    	call sub$08abh		;0767	cd ab 08 	. . . 
+ 046F CA7C04    	jz l0777h	;076a ca 77 07 . w .
+                l076dh:
+ 0472 CD0504    	call sub$0700h		;076d	cd 00 07 	. . . 
+ 0475 CD9A02    	call sub$0595h		;0770	cd 95 05 	. . . 
+ 0478 AF        	xra a	;0773 af .
+ 0479 C32901    	jmp sta$ret	;0774 c3 24 04 . $ .
+                
+                l0777h:
+ 047C CD2701    	call setlret1		;0777	cd 22 04 	. " . 
+ 047F C30203    	jmp sub$05fdh	;077a c3 fd 05 . . .
+                
+                l077dh:
+ 0482 3EFF      	mvi a,0ffh	;077d 3e ff > .
+ 0484 32F005    	sta l08ebh	;077f 32 eb 08 2 . .
+ 0487 CD9A02    	call sub$0595h		;0782	cd 95 05 	. . . 
+ 048A 3AFC05    	lda l08f7h	;0785 3a f7 08 : . .
+ 048D 21FA05    	lxi h,l08f5h	;0788 21 f5 08 . . .
+ 0490 BE        	cmp m	;078b be .
+ 0491 DAA704    	jc l07a2h	;078c da a2 07 . . .
+ 0494 FE80      	cpi 080h	;078f fe 80 . .
+ 0496 C2BC04    	jnz l07b7h	;0791 c2 b7 07 . . .
+ 0499 CD3F04    	call sub$073ah		;0794	cd 3a 07 	. : . 
+ 049C AF        	xra a	;0797 af .
+ 049D 32FC05    	sta l08f7h	;0798 32 f7 08 2 . .
+ 04A0 3A3301    	lda aret	;079b 3a 2e 04 : . .
+ 04A3 B7        	ora a	;079e b7 .
+ 04A4 C2BC04    	jnz l07b7h	;079f c2 b7 07 . . .
+                l07a2h:
+ 04A7 CD5602    	call sub$0551h		;07a2	cd 51 05 	. Q . 
+ 04AA CD6302    	call sub$055eh		;07a5	cd 5e 05 	. ^ . 
+ 04AD CABC04    	jz l07b7h	;07a8 ca b7 07 . . .
+ 04B0 CD6902    	call sub$0564h		;07ab	cd 64 05 	. d . 
+ 04B3 CDB001    	call sub$04abh		;07ae	cd ab 04 	. . . 
+ 04B6 CD9A01    	call sub$0495h		;07b1	cd 95 04 	. . . 
+ 04B9 C3B102    	jmp l05ach	;07b4 c3 ac 05 . . .
+                
+                l07b7h:
+ 04BC C32701    	jmp setlret1	;07b7 c3 22 04 . " .
+                
+                l07bah:
+ 04BF 2ACC05    	lhld dlog	;07ba 2a c7 08 * . .
+ 04C2 3A3001    	lda curdsk	;07bd 3a 2b 04 : + .
+ 04C5 4F        	mov c,a	;07c0 4f O
+ 04C6 CDC102    	call sub$05bch		;07c1	cd bc 05 	. . . 
+ 04C9 E5        	push h	;07c4 e5 .
+ 04CA EB        	xchg 	;07c5 eb .
+ 04CB CD4101    	call sub$043ch		;07c6	cd 3c 04 	. < . 
+ 04CE E1        	pop h	;07c9 e1 .
+ 04CF CAAD00    	jz selerr	;07ca ca a8 03 . . .
+ 04D2 7D        	mov a,l	;07cd 7d }
+ 04D3 1F        	rar	;07ce 1f .
+ 04D4 D8        	rc 	;07cf d8 .
+ 04D5 2ACC05    	lhld dlog	;07d0 2a c7 08 * . .
+ 04D8 4D        	mov c,l	;07d3 4d M
+ 04D9 44        	mov b,h	;07d4 44 D
+ 04DA CDD502    	call sub$05d0h		;07d5	cd d0 05 	. . . 
+ 04DD 22CC05    	shld dlog	;07d8 22 c7 08 " . .
+ 04E0 C36003    	jmp l065bh	;07db c3 5b 06 . [ .
+                
+                f$seldrv:
+ 04E3 3AF205    	lda l08edh	;07de 3a ed 08 : . .
+ 04E6 213001    	lxi h,curdsk	;07e1 21 2b 04 . + .
+ 04E9 BE        	cmp m	;07e4 be .
+ 04EA 00        	nop			;07e5	00 	. 
+ 04EB 77        	mov m,a	;07e6 77 w
+ 04EC C3BF04    	jmp l07bah	;07e7 c3 ba 07 . . .
+                
+                sub$07eah:
+ 04EF 3EFF      	mvi a,0ffh	;07ea 3e ff > .
+ 04F1 32F705    	sta l08f2h	;07ec 32 f2 08 2 . .
+ 04F4 2A3101    	lhld param	;07ef 2a 2c 04 * , .
+ 04F7 7E        	mov a,m	;07f2 7e ~
+ 04F8 E61F      	ani 01fh	;07f3 e6 1f . .
+ 04FA 3D        	dcr a	;07f5 3d =
+ 04FB 32F205    	sta l08edh	;07f6 32 ed 08 2 . .
+ 04FE FE1E      	cpi 01eh	;07f9 fe 1e . .
+ 0500 D21305    	jnc l080eh	;07fb d2 0e 08 . . .
+ 0503 3A3001    	lda curdsk	;07fe 3a 2b 04 : + .
+ 0506 32F805    	sta l08f3h	;0801 32 f3 08 2 . .
+ 0509 7E        	mov a,m	;0804 7e ~
+ 050A 32F905    	sta l08f4h	;0805 32 f4 08 2 . .
+ 050D E6E0      	ani 0e0h	;0808 e6 e0 . .
+ 050F 77        	mov m,a	;080a 77 w
+ 0510 CDE304    	call f$seldrv		;080b	cd de 07 	. . . 
+                l080eh:
+ 0513 3A2F01    	lda usrcod	;080e 3a 2a 04 : * .
+ 0516 2A3101    	lhld param	;0811 2a 2c 04 * , .
+ 0519 B6        	ora m	;0814 b6 .
+ 051A 77        	mov m,a	;0815 77 w
+ 051B C9        	ret			;0816	c9 	. 
+                
+                f$getver:
+ 051C 3E22      	mvi a,022h	;0817 3e 22 > "
+ 051E C32901    	jmp sta$ret	;0819 c3 24 04 . $ .
+                
+                f$reset:
+ 0521 210000    	lxi h,00000h	;081c 21 00 00 . . .
+ 0524 22CC05    	shld dlog	;081f 22 c7 08 " . .
+ 0527 AF        	xra a	;0822 af .
+ 0528 323001    	sta curdsk	;0823 32 2b 04 2 + .
+ 052B 218000    	lxi h,dmabuf	;0826 21 80 00 . . .
+ 052E 22CE05    	shld l08c9h	;0829 22 c9 08 " . .
+ 0531 CD1603    	call sub$0611h		;082c	cd 11 06 	. . . 
+ 0534 C3BF04    	jmp l07bah	;082f c3 ba 07 . . .
+                
+                f$open:
+ 0537 CDFC02    	call sub$05f7h		;0832	cd f7 05 	. . . 
+ 053A CDEF04    	call sub$07eah		;0835	cd ea 07 	. . . 
+ 053D C30104    	jmp l06fch	;0838 c3 fc 06 . . .
+                
+                f$read:
+ 0540 CDEF04    	call sub$07eah		;083b	cd ea 07 	. . . 
+ 0543 C38204    	jmp l077dh	;083e c3 7d 07 . } .
+                
+                f$logvec:
+ 0546 2ACC05    	lhld dlog	;0841 2a c7 08 * . .
+ 0549 C35C05    	jmp l0857h	;0844 c3 57 08 . W .
+                
+                f$getdrv:
+ 054C 3A3001    	lda curdsk	;0847 3a 2b 04 : + .
+ 054F C32901    	jmp sta$ret	;084a c3 24 04 . $ .
+                
+                f$setdma:
+ 0552 EB        	xchg 	;084d eb .
+ 0553 22CE05    	shld l08c9h	;084e 22 c9 08 " . .
+ 0556 C31603    	jmp sub$0611h	;0851 c3 11 06 . . .
+                
+                f$getdpb:
+ 0559 2AD805    	lhld l08d3h	;0854 2a d3 08 * . .
+                l0857h:
+ 055C 223301    	shld aret	;0857 22 2e 04 " . .
+ 055F C9        	ret			;085a	c9 	. 
+                
+                f$sgusr:
+ 0560 3AF205    	lda l08edh	;085b 3a ed 08 : . .
+ 0563 FEFF      	cpi 0ffh	;085e fe ff . .
+ 0565 C26E05    	jnz l0869h	;0860 c2 69 08 . i .
+ 0568 3A2F01    	lda usrcod	;0863 3a 2a 04 : * .
+ 056B C32901    	jmp sta$ret	;0866 c3 24 04 . $ .
+                
+                l0869h:
+ 056E E61F      	ani 01fh	;0869 e6 1f . .
+ 0570 322F01    	sta usrcod	;086b 32 2a 04 2 * .
+ 0573 C9        	ret			;086e	c9 	. 
+                
+                f$resdrv:
+ 0574 2A3101    	lhld param	;086f 2a 2c 04 * , .
+ 0577 7D        	mov a,l	;0872 7d }
+ 0578 2F        	cma	;0873 2f /
+ 0579 5F        	mov e,a	;0874 5f _
+ 057A 7C        	mov a,h	;0875 7c |
+ 057B 2F        	cma	;0876 2f /
+ 057C 2ACC05    	lhld dlog	;0877 2a c7 08 * . .
+ 057F A4        	ana h	;087a a4 .
+ 0580 57        	mov d,a	;087b 57 W
+ 0581 7D        	mov a,l	;087c 7d }
+ 0582 A3        	ana e	;087d a3 .
+ 0583 5F        	mov e,a	;087e 5f _
+ 0584 EB        	xchg 	;087f eb .
+ 0585 22CC05    	shld dlog	;0880 22 c7 08 " . .
+ 0588 C9        	ret			;0883	c9 	. 
+                
+                l0884h:
+ 0589 3AF705    	lda l08f2h	;0884 3a f2 08 : . .
+ 058C B7        	ora a	;0887 b7 .
+ 058D CAA605    	jz retmon	;0888 ca a1 08 . . .
+ 0590 2A3101    	lhld param	;088b 2a 2c 04 * , .
+ 0593 3600      	mvi m,000h	;088e 36 00 6 .
+ 0595 3AF905    	lda l08f4h	;0890 3a f4 08 : . .
+ 0598 B7        	ora a	;0893 b7 .
+ 0599 CAA605    	jz retmon	;0894 ca a1 08 . . .
+ 059C 77        	mov m,a	;0897 77 w
+ 059D 3AF805    	lda l08f3h	;0898 3a f3 08 : . .
+ 05A0 32F205    	sta l08edh	;089b 32 ed 08 2 . .
+ 05A3 CDE304    	call f$seldrv		;089e	cd de 07 	. . . 
+                retmon:
+                	lspd entsp	;08a1 ed 7b 30 04 . { 0 .
+ 05A6+ED7B      	DB	0EDH,07BH
+ 05A8+3501      	DW	ENTSP
+ 05AA 2A3301    	lhld aret	;08a5 2a 2e 04 * . .
+ 05AD 7D        	mov a,l		;08a8 7d }
+ 05AE 44        	mov b,h		;08a9 44 D
+ 05AF C9        	ret			;08aa	c9 	. 
+                
+                sub$08abh:
+ 05B0 0E0F      	mvi c,00fh	;08ab 0e 0f . .
+ 05B2 CD8B03    	call sub$0686h		;08ad	cd 86 06 	. . . 
+ 05B5 CD2503    	call sub$0620h		;08b0	cd 20 06 	.   . 
+ 05B8 C0        	rnz 	;08b3 c0 .
+ 05B9 2A3101    	lhld param	;08b4 2a 2c 04 * , .
+ 05BC 7E        	mov a,m	;08b7 7e ~
+ 05BD 4F        	mov c,a	;08b8 4f O
+ 05BE E6E0      	ani 0e0h	;08b9 e6 e0 . .
+ 05C0 77        	mov m,a	;08bb 77 w
+ 05C1 79        	mov a,c	;08bc 79 y
+ 05C2 E61F      	ani 01fh	;08bd e6 1f . .
+ 05C4 C2B005    	jnz sub$08abh	;08bf c2 ab 08 . . .
+ 05C7 CD1305    	call l080eh		;08c2	cd 0e 08 	. . . 
+ 05CA AF        	xra a	;08c5 af .
+ 05CB C9        	ret			;08c6	c9 	. 
+                
+ 05CC 0000      dlog:	dw	0
+                l08c9h:
+ 05CE 80        	db 080h	;08c9 80 .
+ 05CF 00        	db 000h	;08ca 00 .
+                l08cbh:
+ 05D0 00        	db 000h	;08cb 00 .
+ 05D1 00        	db 000h	;08cc 00 .
+                l08cdh:
+ 05D2 00        	db 000h	;08cd 00 .
+ 05D3 00        	db 000h	;08ce 00 .
+                l08cfh:
+ 05D4 00        	db 000h	;08cf 00 .
+ 05D5 00        	db 000h	;08d0 00 .
+                l08d1h:
+ 05D6 00        	db 000h	;08d1 00 .
+ 05D7 00        	db 000h	;08d2 00 .
+                l08d3h:
+ 05D8 00        	db 000h	;08d3 00 .
+ 05D9 00        	db 000h	;08d4 00 .
+ 05DA 00        	db 000h	;08d5 00 .
+ 05DB 00        	db 000h	;08d6 00 .
+ 05DC 00        	db 000h	;08d7 00 .
+ 05DD 00        	db 000h	;08d8 00 .
+                l08d9h:
+ 05DE 00        	db 000h	;08d9 00 .
+ 05DF 00        	db 000h	;08da 00 .
+                l08dbh:
+ 05E0 00        	db 000h	;08db 00 .
+                l08dch:
+ 05E1 00        	db 000h	;08dc 00 .
+                l08ddh:
+ 05E2 00        	db 000h	;08dd 00 .
+                l08deh:
+ 05E3 00        	db 000h	;08de 00 .
+ 05E4 00        	db 000h	;08df 00 .
+                l08e0h:
+ 05E5 00        	db 000h	;08e0 00 .
+ 05E6 00        	db 000h	;08e1 00 .
+ 05E7 00        	db 000h	;08e2 00 .
+ 05E8 00        	db 000h	;08e3 00 .
+ 05E9 00        	db 000h	;08e4 00 .
+ 05EA 00        	db 000h	;08e5 00 .
+                l08e6h:
+ 05EB 00        	db 000h	;08e6 00 .
+ 05EC 00        	db 000h	;08e7 00 .
+                l08e8h:
+ 05ED 00        	db 000h	;08e8 00 .
+ 05EE 00        	db 000h	;08e9 00 .
+                l08eah:
+ 05EF 00        	db 000h	;08ea 00 .
+                l08ebh:
+ 05F0 00        	db 000h	;08eb 00 .
+                l08ech:
+ 05F1 00        	db 000h	;08ec 00 .
+                l08edh:
+ 05F2 00        	db 000h	;08ed 00 .
+                l08eeh:
+ 05F3 00        	db 000h	;08ee 00 .
+                l08efh:
+ 05F4 00        	db 000h	;08ef 00 .
+ 05F5 00        	db 000h	;08f0 00 .
+                l08f1h:
+ 05F6 00        	db 000h	;08f1 00 .
+                l08f2h:
+ 05F7 00        	db 000h	;08f2 00 .
+                l08f3h:
+ 05F8 00        	db 000h	;08f3 00 .
+                l08f4h:
+ 05F9 00        	db 000h	;08f4 00 .
+                l08f5h:
+ 05FA 00        	db 000h	;08f5 00 .
+                l08f6h:
+ 05FB 00        	db 000h	;08f6 00 .
+                l08f7h:
+ 05FC 00        	db 000h	;08f7 00 .
+ 05FD 00        	db 000h	;08f8 00 .
+                l08f9h:
+ 05FE 00        	db 000h	;08f9 00 .
+ 05FF 00        	db 000h	;08fa 00 .
+                l08fbh:
+ 0600 00        	db 000h	;08fb 00 .
+ 0601 00        	db 000h	;08fc 00 .
+                l08fdh:
+ 0602 00        	db 000h	;08fd 00 .
+                l08feh:
+ 0603 00        	db 000h	;08fe 00 .
+ 0604 00        	db 000h	;08ff 00 .
+                l0900h:
+ 0605 00        	db 000h	;0900 00 .
+ 0606 00        	db 000h	;0901 00 .
+                
+ 0607           	end
+

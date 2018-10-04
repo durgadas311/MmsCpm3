@@ -26,6 +26,7 @@ read	equ	20
 setdma	equ	26
 
 	cseg
+	org	0100h
 loader:
 	mvi c,reset	;0200 0e 0d . .
 	call bdos	;0202	cd fb 02 	. . . 
@@ -39,7 +40,7 @@ loader:
 	call st$dma	;0218	cd 71 02 	. q . 
 	call rd$file	; load header
 
-	lxi h,dmabuf	;021e 21 80 00 ! . .
+	lxi h,dmabuf	;021e 21 80 00 . . .
 	lxi d,header	;0221 11 f5 02 . . .
 	mvi c,6		;0224 0e 06 . .
 memcpy:

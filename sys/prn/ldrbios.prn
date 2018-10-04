@@ -1,0 +1,187 @@
+                ; MMS CPM3LDR BIOS core code
+                
+                	maclib	z80
+                
+                	extrn	bdos
+                	extrn	loader
+                
+                	public	biodma,biores,biotrk,biosec,biodsk,biotrn,d?read
+                	public	conout
+                
+                	public	wboot,cboot,dsksta,timeot,mixer,dirbuf
+                	public	newdsk,newtrk,phytrk,newsec,dmaa
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0009 =         TAB	equ	9
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 007F =         DEL	equ	127
+                
+                ; locations in page-0
+ 0008 =         rst1	equ	0008h
+ 000B =         ticker	equ	000bh
+ 000D =         gpbyte	equ	000dh
+ 000E =         l000eh	equ	000eh
+ 0080 =         dmabuf	equ	0080h
+                
+ 0009 =         msgout	equ	9
+ 000D =         reset	equ	13
+ 000F =         open	equ	15
+ 0014 =         read	equ	20
+ 001A =         setdma	equ	26
+                
+                	cseg
+ 0000 00        dsksta:	db	0
+ 0001 FF        mixer:	db	-1
+                
+                ; patch space to hook into tick interrupt
+                timeot:
+ 0002 C9        	ret
+ 0003 00        	nop
+ 0004 00        	nop
+                
+ 0005 00        newdsk:	db	0
+ 0006 00        newtrk:	db	0
+ 0007 00        newsec:	db	0
+                phytrk:
+ 0008 00        	db 000h	;090a 00 .
+ 0009 00        	db 000h	;090b 00 .
+ 000A 0000      dmaa:	dw	0
+                
+                signon:
+ 000C 0D0A075A38	db	CR,LF,BEL,'Z89/Z90 Loader v2.241  (c) 1982,1983 Magnolia Microsystems'
+ 0049 0D0A24    	db	CR,LF,'$'
+                
+                cboot:
+ 004C 312501    	lxi sp,stack	;094e 31 27 0a 1 ' .
+ 004F 3E80      	mvi a,080h	;0951 3e 80 > .
+ 0051 320E00    	sta l000eh	;0953 32 0e 00 2 . .
+ 0054 D37F      	out 07fh	;0956 d3 7f . 
+ 0056 110C00    	lxi d,signon	;0958 11 0e 09 . . .
+ 0059 0E09      	mvi c,msgout	;095b 0e 09 . .
+ 005B CD0000    	call bdos		;095d	cd fb 02 	. . . 
+ 005E F3        	di			;0960	f3 	. 
+ 005F 3EC3      	mvi a,0c3h	;0961 3e c3 > .
+ 0061 320800    	sta rst1	;0963 32 08 00 2 . .
+ 0064 21C300    	lxi h,tick	;0966 21 c5 09 . . .
+ 0067 220900    	shld rst1+1	;0969 22 09 00 " . .
+ 006A 210000    	lxi h,0
+ 006D 220B00    	shld ticker	;096f 22 0b 00 " . .
+ 0070 3E22      	mvi a,022h	;0972 3e 22 > "
+ 0072 320D00    	sta gpbyte	;0974 32 0d 00 2 . .
+ 0075 D3F2      	out 0f2h	;0977 d3 f2 . .
+ 0077 FB        	ei		;0979	fb 	. 
+ 0078 CDC601    	call driver	;097a	cd c8 0a 	. . . 
+ 007B C30000    	jmp loader	;097d c3 00 02 . . .
+                
+                wboot:	; never called normally
+ 007E F3        	di		;0980	f3 	. 
+ 007F 76        	hlt		;0981 76 v
+                
+                biores:
+ 0080 010000    	lxi b,0		;0982 01 00 00 . . .
+ 0083 C3A300    	jmp biotrk	;0985 c3 a5 09 . . .
+                
+                biodsk:
+ 0086 79        	mov a,c		;0988 79 y
+ 0087 FE10      	cpi 16		;0989 fe 10 . .
+                	jrnc l0995h	;098b 30 08 0 .
+ 0089+3008      	DB	30H,L0995H-$-1
+ 008B 3A0100    	lda mixer	;098d 3a 03 09 : . .
+ 008E 4F        	mov c,a		;0990 4f O
+ 008F FEFF      	cpi 0ffh	;0991 fe ff . .
+                	jrnz l0999h	;0993 20 04 .
+ 0091+2004      	DB	20H,L0999H-$-1
+                l0995h:
+ 0093 210000    	lxi h,0		;0995 21 00 00 . . .
+ 0096 C9        	ret		;0998	c9 	. 
+                
+                l0999h:
+ 0097 79        	mov a,c
+ 0098 320500    	sta newdsk
+ 009B CDC901    	call d?sel
+ 009E 3A0500    	lda newdsk
+ 00A1 4F        	mov c,a
+ 00A2 C9        	ret
+                
+                biotrk:
+ 00A3 79        	mov a,c	;09a5 79 y
+ 00A4 320600    	sta newtrk	;09a6 32 08 09 2 . .
+                	sbcd phytrk	;09a9 ed 43 0a 09 . C . .
+ 00A7+ED43      	DB	0EDH,43H
+ 00A9+0800      	DW	PHYTRK
+ 00AB C9        	ret			;09ad	c9 	. 
+                
+                biotrn:
+ 00AC 69        	mov l,c	;09ae 69 i
+ 00AD 60        	mov h,b	;09af 60 `
+ 00AE 23        	inx h	;09b0 23 #
+ 00AF 7A        	mov a,d	;09b1 7a z
+ 00B0 B3        	ora e	;09b2 b3 .
+ 00B1 C8        	rz 	;09b3 c8 .
+ 00B2 EB        	xchg 	;09b4 eb .
+ 00B3 09        	dad b	;09b5 09 .
+ 00B4 6E        	mov l,m	;09b6 6e n
+ 00B5 2600      	mvi h,0	;09b7 26 00 & .
+ 00B7 C9        	ret			;09b9	c9 	. 
+                
+                biosec:
+ 00B8 79        	mov a,c	;09ba 79 y
+ 00B9 3D        	dcr a	;09bb 3d =
+ 00BA 320700    	sta newsec	;09bc 32 09 09 2 . .
+ 00BD C9        	ret			;09bf	c9 	. 
+                
+                biodma:
+                	sbcd dmaa	;09c0 ed 43 0c 09 . C . .
+ 00BE+ED43      	DB	0EDH,43H
+ 00C0+0A00      	DW	DMAA
+ 00C2 C9        	ret			;09c4	c9 	. 
+                
+                tick:
+                	sspd savstk	;09c5 ed 73 3b 0a . s ; .
+ 00C3+ED73      	DB	0EDH,73H
+ 00C5+3901      	DW	SAVSTK
+ 00C7 313901    	lxi sp,intstk	;09c9 31 3b 0a 1 ; .
+ 00CA F5        	push psw	;09cc f5 .
+ 00CB E5        	push h	;09cd e5 .
+ 00CC 3A0D00    	lda gpbyte	;09ce 3a 0d 00 : . .
+ 00CF D3F2      	out 0f2h	;09d1 d3 f2 . .
+ 00D1 2A0B00    	lhld ticker	;09d3 2a 0b 00 * . .
+ 00D4 23        	inx h	;09d6 23 #
+ 00D5 220B00    	shld ticker	;09d7 22 0b 00 " . .
+ 00D8 7D        	mov a,l	;09da 7d }
+ 00D9 B7        	ora a	;09db b7 .
+ 00DA CC0200    	cz timeot	;09dc cc 04 09 . . .
+ 00DD E1        	pop h	;09df e1 .
+ 00DE F1        	pop psw	;09e0 f1 .
+                	lspd savstk	;09e1 ed 7b 3b 0a . { ; .
+ 00DF+ED7B      	DB	0EDH,07BH
+ 00E1+3901      	DW	SAVSTK
+ 00E3 FB        	ei			;09e5	fb 	. 
+ 00E4 C9        	ret			;09e6	c9 	. 
+                
+ 00E5           	ds	64
+ 0125           stack:	ds	0
+                
+                
+ 0125           	ds	20
+ 0139           intstk:	ds	0
+ 0139 0000      savstk:	dw	0
+                
+ 013B           dirbuf:	ds	128
+                
+                conout:
+ 01BB DBED      	in 0edh		;0abd db ed . .
+ 01BD E620      	ani 020h	;0abf e6 20 .
+ 01BF CABB01    	jz conout	;0ac1 ca bd 0a . . .
+ 01C2 79        	mov a,c		;0ac4 79 y
+ 01C3 D3E8      	out 0e8h	;0ac5 d3 e8 . .
+ 01C5 C9        	ret		;0ac7	c9 	. 
+                
+ 01C6 =         driver:	equ	$+0	; init entry for disk driver module
+ 01C9 =         d?sel:	equ	$+3
+ 01CC =         d?read:	equ	$+6
+                
+ 01C6           	end
+
