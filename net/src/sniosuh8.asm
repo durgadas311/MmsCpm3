@@ -72,11 +72,11 @@ NTWKIN:
 	mvix	0ffh,+3	; BDOS Func
 	mvix	0,+4	; Size
 	lxi	b,msgbuf
-	call	SNDMSG
+	call	sndmsg0	; avoid active check
 	ora	a
 	jnz	initerr
 	lxi	b,msgbuf
-	call	RCVMSG
+	call	rcvmsg0	; avoid active check
 	ora	a
 	jnz	initerr
 	lxix	msgbuf
@@ -168,6 +168,7 @@ SNDMSG:			; BC = message addr
 	lda	CFGTBL	; status
 	ani	active
 	jz	initerr
+sndmsg0:
 	mov	h,b
 	mov	l,c		; HL = message address
 	push	h
@@ -254,6 +255,7 @@ RCVMSG:			; BC = message addr
 	lda	CFGTBL	; status
 	ani	active
 	jz	initerr
+rcvmsg0:
 	mov	h,b
 	mov	l,c		; HL = message address
 	push	h
