@@ -28,10 +28,10 @@ l2003h:	ds	1	; - 02003h
 l2004h:	ds	1	; - 02004h
 	ds	3
 l2008h:	ds	1	; - 02008h
-l2009h:	ds	1	; - 02009h
+ctl$F0:	ds	1	; - 02009h
 	ds	17
 ticcnt:	ds	2	; - 0201bh
-l201dh:	ds	2	; - 0201dh
+monstk:	ds	2	; - 0201dh
 intvec:
 vrst1:	ds	3	; rst1 jmp vector - 0201fh
 vrst2:	ds	3	; rst2 jmp vector - 02022h
@@ -41,32 +41,27 @@ vrst5:	ds	3	; rst5 jmp vector - 0202bh
 vrst6:	ds	3	; rst6 jmp vector - 0202eh
 vrst7:	ds	3	; rst7 jmp vector - 02031h
 l2034h:	ds	2	; - 02034h
-l2036h:	ds	1	; - 02036h GPP template/image
+ctl$F2:	ds	1	; - 02036h GPP template/image
 l2037h:	ds	2	; - 02037h
 	ds	7
 l2040h:	ds	8
-l2048h:	ds	62	; - 02048h	disk constants
-l2086h:	ds	2	; - 02086h
-	ds	44
+D$CONST: ds	88+20	; - 02048h	disk constants
 DECNT:	ds	1	; - 020b4h
 	ds	124
 AIO$UNI: ds	1	; - 02131h
-l2132h:	ds	2
-l2134h:	ds	2
-l2136h:	ds	2
-l2138h:	ds	2
+cmdbuf:	ds	6	; SASI command buffer
+resbuf:	ds	2	; SASI result buffer
 	ds	22
 cport:	ds	1	; - 02150h
 	ds	1
 SEC$CNT:	ds	1	; - 02152h
 l2153h:	ds	1
 	ds	2
-l2156h:	ds	2
-l2158h:	ds	2
-l215ah:	ds	2
+l2156h:	ds	6	; ??? for SASI?
 	ds	292
 bootbf:	ds	0	; - 02280h
 
+memtest	equ	03000h
 ramboot	equ	0c000h
 
 ; Start of ROM code
@@ -79,12 +74,15 @@ bootms:	db	'oot ',TRM
 
 rst1:	call	intsetup
 	lhld	ticcnt
-	jmp	l00b9h
+	jmp	int1$cont
+if ((high int1$cont) != 0)
+	.error "Overlapped NOP error"
+endif
 
 rst2	equ	$-1	; must be a nop...
 	call	intsetup
 	ldax	d
-	jmp	l0180h
+	jmp	int2$cont
 
 rst3:	jmp	vrst3
 
@@ -96,8 +94,8 @@ rst4:	jmp	vrst4
 	db	0,0,0,0,0
 
 rst5:	jmp	vrst5
-s002bh:
-	jmp	l0260h
+delayx:
+	jmp	delay
 
 qmsg:	db	'?',TRM
 
@@ -163,7 +161,7 @@ not$in:
 	ral		; 5' 4'3'2'1'0'_ 7'6
 	rlc		; 4' 3'2'1'0'_ 7'6 5'
 	ani	003h	; _  _ _ _ _ _ _ 6 5'
-	lxi	h,l2036h
+	lxi	h,ctl$F2
 	ora	m
 	out	0f2h ; simulate some H8 features
 nmi$xit2:
@@ -173,11 +171,11 @@ nmi$xit:
 	xthl
 	retn
 
-l00adh:
+int1$1:
 	ldax	b
 	rrc
 	cc	vrst1
-l00b2h:
+intret:
 	pop	psw
 	pop	psw
 	pop	b
@@ -187,19 +185,19 @@ nulint:
 	ei
 	ret
 
-l00b9h:
+int1$cont:
 	inx	h
 	shld	ticcnt
-	lxi	b,l2008h+1
+	lxi	b,ctl$F0
 	ldax	b
 	out	0f0h
 	ani	020h
-	jrnz	l00b2h
+	jrnz	intret
 	dcx	b
-l00c8h:
+int1$0:
 	ldax	b
 	ral
-	jrc	l00adh
+	jrc	int1$1
 	lxi	h,10
 	dad	sp
 	mov	e,m
@@ -208,18 +206,17 @@ l00c8h:
 	dcx	d
 	ldax	d
 	cpi	076h	; HLT
-	jrnz	l00adh
+	jrnz	int1$1
 	call	belout
 	mvi	a,'H'
 	call	conout
 re$entry:		; re-entry point for errors, etc.
-	lxi	h,l2008h+1
-	mvi	m,0f0h
-	lhld	l201dh
+	lxi	h,ctl$F0
+	mvi	m,0f0h	; !beep, 2mS, MON, !SI
+	lhld	monstk
 	sphl
 	call	belout
 	;jmp	start
-
 start:
 	ei
 	lxi	h,start
@@ -228,10 +225,9 @@ start:
 	call	msgout
 prloop:
 	call	coninx
-l00fbh:
-	ani	05fh ; toupper
+	ani	01011111b ; toupper
 	lxi	h,cmdtab
-	mvi	b,005h
+	mvi	b,5
 cmloop:
 	cmp	m
 	inx	h
@@ -243,6 +239,7 @@ cmloop:
 	call	xcmds
 	call	belout
 	jr	prloop
+
 docmd:
 	call	conout
 	mov	a,m
@@ -262,7 +259,9 @@ cmdtab:
 	dw	cmdboot
 	db	'M'
 	dw	cmdmt
+	db	0
 
+	; patched-out code?
 	db	000h
 	db	000h
 	db	000h
@@ -275,8 +274,7 @@ cmdtab:
 	db	000h
 	db	000h
 	db	000h
-	db	000h
-	jmp	l0419h
+	jmp	z47$dati
 
 cmdpc:
 	lxi	h,pcms
@@ -287,42 +285,43 @@ cmdpc:
 	inx	h
 	mov	d,m
 	xchg
-	call	s056dh
-	jrc	l0154h
+	call	inhexcr
+	jrc	cmdpc0
 	call	adrnl
-	call	s056dh
+	call	inhexcr
 	rnc
-l0154h:
+cmdpc0:
 	xchg
-s0155h:
-	mvi	d,00dh
+cmdpc1:
+	mvi	d,CR
 	jmp	adrin
+
 cmdgo:
 	lxi	h,goms
 	call	msgout
 	lxi	h,13
 	dad	sp
-	call	s056dh
-	cc	s0155h
+	call	inhexcr
+	cc	cmdpc1	; read HEX until CR
 	call	crlf
-	mvi	a,0d0h
-	jr	l0179h
+	mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
+	jr	cmdgo0
 	di
-	lda	l2009h
-	xri	010h
+	lda	ctl$F0
+	xri	010h	; toggle single-step
 	out	0f0h
-l0179h:
-	sta	l2009h
+cmdgo0:
+	sta	ctl$F0
 	pop	h
-	jmp	l00b2h
+	jmp	intret
 
-l0180h:
-	ori	010h
+int2$cont:
+	ori	010h	; disable single-step
 	out	0f0h
 	stax	d
-	ani	020h
-	jnz	start
-	jmp	vrst2
+	ani	020h	; MON active?
+	jnz	start	; break to monitor code
+	jmp	vrst2	; else chain to (possible) user code.
 
 take$5:
 	mvi	a,5	; 5 seconds
@@ -330,7 +329,7 @@ take$A:
 	lxi	h,timeout
 	shld	vrst1+1
 	sta	SEC$CNT
-	mvi	a,001h
+	mvi	a,1
 	sta	l2008h
 	ei
 	ret
@@ -348,8 +347,8 @@ timeout:
 	lxi	h,SEC$CNT
 	dcr	m
 	rnz
-l01aeh:
-	lhld	l201dh
+error:
+	lhld	monstk
 	sphl
 	lxi	h,qmsg
 	call	msgout
@@ -357,60 +356,68 @@ l01aeh:
 	shld	vrst1+1
 	sta	l2008h
 	in	0f2h
-	ani	003h
-	jrnz	l01c9h
+	ani	00000011b
+	jrnz	error0
 	out	07fh
-l01c9h:
+error0:
 	jmp	re$entry
 
-s01cch:
+chkauto:
 	lxi	h,l2153h	; auto-boot disable?
 	in	0f2h
 	mov	d,a
-	xri	080h
+	xri	080h	; toggle auto-boot
 	ora	m
-	rm
+	rm		; auto-boot OFF
 	mov	m,d	; ensure we only fail once... and only on power-up?
 	call	gtdfbt
 	lxi	h,autbms
 	call	msgout
 	lxi	sp,bootbf
-	jmp	l034dh
+	jmp	goboot0
 
 autbms:	db	'Auto Boot',TRM
 
+; determine device for port 078H
+; return phy drv number in D.
 gtdev1:
-	mvi	d,0
+	mvi	d,0	; Z17
 	in	0f2h
-l01f4h:
-	ani	003h
+gtdev0:
+	ani	00000011b	; port 078H device
 	rz		; Z17 (or Z37)
-	cpi	001h
+	cpi	01b
 	mvi	d,5
 	rz		; Z47
-	cpi	002h
+	cpi	10b
 	mvi	d,3
 	rz		; Z67/MMS77320
 	mvi	d,60
 	ret		; MMS77422 Network
 
+; determine device for port 078H
+; return phy drv number in D.
 gtdev2:
 	mvi	d,46	; Z37
 	in	0f2h
 	rrc
 	rrc
-	jr	l01f4h
+	jr	gtdev0	; rest are same
 
+; determine default boot device.
 gtdfbt:
 	lxi	d,0
 	in	0f2h
-	ani	070h
-	cpi	020h
+	ani	01110000b	; default boot selection
+	cpi	00100000b	; device at 07CH
 	jrz	gtdev1
-	cpi	030h
+	cpi	00110000b	; device at 078H
 	jrz	gtdev2
-	jmp	gtdvtb
+	jmp	gtdvtb		; get MMS device
 
+; Check SW501 for installed device.
+; C = desired port pattern, 00=Z17/Z37, 01=Z47, 10=Z67, 11=77422
+; returns base I/O port adr in B.
 getport:
 	mvi	b,07ch
 	in	0f2h
@@ -431,81 +438,86 @@ s501er:
 
 s501ms:	db	'SW501 wrong ',TRM
 
+; hack to support 3 drives on H17
 m$sdp:
 	mvi	a,10
 	sta	DECNT
 	lda	AIO$UNI
-	push	psw
-	adi	-2
-	aci	3
+	push	psw	; 0,1,2
+	adi	-2	;
+	aci	3	; 1,2,4
 	jmp	R$SDP+10	; hacked R.SDP for 3-drives
-s0254h:
-	ora	a
-l0255h:
+
+inport0:
+	ora	a	; NC
+; input from cport+CY
+inportx:
 	push	b
 	lda	cport
-	aci	000h
+	aci	0
 	mov	c,a
 	inp	a
 	pop	b
 	ret
-l0260h:
+
+delay:
 	push	h
 	lxi	h,ticcnt
 	add	m
-l0265h:
+delay0:
 	cmp	m
-	jrnz	l0265h
+	jrnz	delay0
 	pop	h
 	ret
-l026ah:
+
+digerr:
 	call	belout
-l026dh:
-	jr	l0275h
-l026fh:
-	call	conout
-	ani	00fh
+	jr	btdig0
+; Got a digit in boot command, parse it
+btdig:
+	call	conout	; echo digit
+	ani	00fh	; convert to binary
 	mov	d,a
-l0275h:
-	call	conin
+btdig0:
+	call	conin	; get another, until term char (C)
 	cmp	c
-	jrz	l0298h
+	jrz	gotnum
 	cpi	'0'
-	jrc	l026ah
+	jrc	digerr
 	cpi	'9'+1
-	jrnc	l026ah
+	jrnc	digerr
 	call	conout
 	ani	00fh
-	mvi	b,10
-l028ah:
+	mvi	b,10	; add 10 times, i.e. D = (D * 10) + A
+btdig1:
 	add	d
-	jc	l01aeh
-	djnz	l028ah
+	jc	error
+	djnz	btdig1
 	mov	d,a
 	cpi	200
-	jnc	l01aeh
-	jr	l0275h
-l0298h:
+	jnc	error
+	jr	btdig0
+
+gotnum:
 	mov	a,d
 	cpi	5
 	jc	goboot
 	cpi	9
 	jnc	goboot
-	adi	200
+	adi	200	; modify 5..8 to not conflict
 	mov	d,a
 	jmp	goboot
 
 cmdboot:
 	lxi	h,bootms
-	call	msgout
+	call	msgout	; complete (B)oot
 	lxi	sp,bootbf
 	call	gtdfbt
-l02b5h:
-	mvi	c,CR
-	jr	l02bch
+	mvi	c,CR	; end input on CR
+	jr	boot0
 bterr:
 	call	belout
-l02bch:
+boot0:
 	call	conin
 	cmp	c
 	jz	goboot
@@ -513,7 +525,7 @@ l02bch:
 	cpi	'0'
 	jrc	nodig
 	cpi	'9'+1
-	jrc	l026fh
+	jrc	btdig
 nodig:
 	ani	05fh ; toupper
 	cpi	'Z'+1
@@ -523,8 +535,8 @@ nodig:
 	call	conout
 	call	conout
 	cpi	'B'
-	jrc	gotit
-	lxi	h,bootb1
+	jrc	gotit	; 'A' is synonym for default
+	lxi	h,bootb1	; Heath/Zenith device letters
 	mov	b,a
 luboot:
 	mov	a,m
@@ -536,90 +548,92 @@ luboot:
 	ora	a
 	jrnz	luboot
 	mvi	d,0
-	call	s0854h
-	jc	l01aeh
+	call	mmslookup
+	jc	error
 gotit:
-	mvi	a,'-'
+	mvi	a,'-'	; next is optional unit number...
 	call	conout
-	jr	l0301h
+	jr	luboot0
 
-l02feh:
+lunerr:
 	call	belout
-l0301h:
+luboot0:
 	call	conin
 	cmp	c
 	jrz	goboot
-	cpi	'9'+1
-	jrz	l0332h
+	cpi	':'
+	jrz	colon
 	cpi	' '
-	jrz	l032dh
+	jrz	space
 	cpi	'0'
-	jrc	l02feh
+	jrc	lunerr
 	cpi	'9'+1
-	jrnc	l02feh
+	jrnc	lunerr
 	call	conout
 	sui	'0'
 	mov	e,a
-l031dh:
+luboot1:
 	call	conin
 	cmp	c
 	jrz	goboot
-	cpi	'9'+1
-	jrz	l0332h
+	cpi	':'
+	jrz	colon
 	cpi	' '
-	jrz	l032dh
-	mvi	a,7
-l032dh:
+	jrz	space
+	mvi	a,BEL
+space:
 	call	conout
-	jr	l031dh
-l0332h:	; get arbitrary string as last boot param
+	jr	luboot1
+
+colon:	; get arbitrary string as last boot param
 	mvi	b,0
 	lxi	h,bootbf
-l0337h:
+btstr0:
 	call	conout
 	call	conin
 	inr	b
 	inx	h
 	mov	m,a
 	cmp	c
-	jrnz	l0337h
+	jrnz	btstr0
 	xra	a	; TRM - string terminator
-l0344h:	; use stack as char array...
+btstr1:	; use stack as char array...
 	push	psw
 	inx	sp	; undo half of push
 	dcx	h
 	mov	a,m
-	djnz	l0344h
+	djnz	btstr1
 goboot:
 	call	crlf
-l034dh:
-	lxi	h,l01aeh
+goboot0:
+	lxi	h,error
 	push	h
-	call	s07aeh
+	call	h17init
 	mov	a,e
 	sta	AIO$UNI
 	add	d
 	sta	l2034h
 	mov	a,d
-	cpi	003h
+	cpi	3	; 0,1,2
 	jrc	bz17	; Z17 boot
+	; 3,4 not used?
 	sui	5
-	cpi	4
+	cpi	4	; 5,6,7,8
 	jrc	bz47	; Z47 boot
-	jmp	l0804h
+	jmp	exboot
 
 bz17:
 	add	e
-	cpi	003h
+	cpi	3
 	rnc	; invalid Z17 drive
 	sta	AIO$UNI
 	in	0f2h
-	ani	003h
+	ani	00000011b
 	jnz	s501er	; no Z17 installed
 	mvi	a,07ch
 	sta	cport
 	lxi	h,m$sdp
-	shld	l2086h
+	shld	D$CONST+62
 	mvi	a,10
 	mov	b,a	; B = 10, one full revolution?
 	call	take$A	; error after 10 seconds...
@@ -649,61 +663,60 @@ bz47:
 	rrc
 	inr	a
 	mov	e,a
-	mvi	c,001h
+	mvi	c,01b
 	call	getport
 	mov	a,b
 	sta	cport
 	call	take$5	; error out after 5 seconds...
-	mvi	a,002h
-	call	s040bh
-	mvi	a,002h
-	call	s03feh
+	mvi	a,2
+	call	outport0
+	mvi	a,2
+	call	z47$cmdo
 	mov	a,e
-	call	s03fah
-	call	l0419h
+	call	z47$dato
+	call	z47$dati
 	ani	00ch
 	rrc
 	rrc
 	inr	a
 	mov	b,a
-	mvi	a,001h
-l03dch:
+	mvi	a,1
+bz47$0:
 	add	a
-	djnz	l03dch
+	djnz	bz47$0
 	rar
 	mov	b,a
 	lxi	h,bootbf
 	push	b
-	call	s0422h
+	call	z47$read
 	pop	b
 	inr	e
-	call	s0422h
-	call	s0254h
+	call	z47$read
+	call	inport0
 	ani	001h
 	rnz
-l03f3h:
+hwboot:
 	xra	a
 	sta	l2008h
 	jmp	hxboot
 
-s03fah:
-	mvi	d,080h
-	jr	l0400h
-s03feh:
-	mvi	d,020h
-l0400h:
+z47$dato:
+	mvi	d,080h	; TR - date transfer request
+	jr	z47$out0
+z47$cmdo:
+	mvi	d,020h	; DONE
+z47$out0:
 	stc
 	push	psw
-l0402h:
-	call	s0254h
-l0405h:
+z47$wt0:
+	call	inport0
 	ana	d
-	jrz	l0402h
+	jrz	z47$wt0
 	pop	psw
-	jr	l040ch
-s040bh:
+	jr	z47$out1
+outport0:
 	ora	a
-l040ch:
+z47$out1:
 	push	b
 	mov	b,a
 	lda	cport
@@ -714,29 +727,29 @@ l040ch:
 	pop	b
 	ret
 
-l0419h:
-	call	s0254h
-	rlc
-	jrnc	l0419h
-	jmp	l0255h
+z47$dati:
+	call	inport0
+	rlc	; TR
+	jrnc	z47$dati
+	jmp	inportx	; CY=1, input cport+1
 
-s0422h:
-	mvi	a,007h
-	call	s03feh
+z47$read:
+	mvi	a,7	; read thru buffer command
+	call	z47$cmdo
 	xra	a
-	call	s03fah
+	call	z47$dato	; params
 	mov	a,e
-	call	s03fah
-l042fh:
-	mvi	c,080h
-l0431h:
-	call	l0419h
+	call	z47$dato	; params
+z47$rd0:
+	mvi	c,128
+z47$rd1:
+	call	z47$dati
 	mov	m,a
 	inx	h
 	dcr	c
-	jrnz	l0431h
+	jrnz	z47$rd1
 	dcr	b
-	jrnz	l042fh
+	jrnz	z47$rd0
 	ret
 
 ; Heath/Zenith device boot table
@@ -827,26 +840,26 @@ msg$die:
 rom$ok:
 	xra	a
 	sta	l2153h
-	sta	l2036h	; 2mS, Org0 OFF
+	sta	ctl$F2	; 2mS, Org0 OFF
 	mvi	a,0c9h	; RET
 	sta	l2004h
-	lxi	h,05000h
+	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
 	shld	l2008h
 	rst	1	; kick-start clock
 	lxi	h,ticcnt
 	lxi	d,0280h-440	; tuned to produce ~0x280 for 2.048MHz
 	mov	a,m
-tick:	; wait for next tick of clock...
+tick0:	; wait for next tick of clock...
 	cmp	m
-	jrz	tick
+	jrz	tick0
 	adi	5	; +10mS (actually, +8mS from new tick)
-l04d8h:
+tick1:
 	inx	d	; count CPU cycles for 8mS...
 	cmp	m	; but note: 2mS interrupt overhead,
 	cmp	m	; so count will be low.
-	jrnz	l04d8h	; each loop = 32 cycles
+	jrnz	tick1	; each loop = 32 cycles
 	mov	a,d
-	cpi	002h	; min 9984 cycles... 1.248MHz...
+	cpi	2	; min 9984 cycles... 1.248MHz...
 			; max 18144 cycles... 2.268MHz
 	jrz	intsetup
 	; Unsupported CPU speed...
@@ -863,14 +876,14 @@ intsetup:
 	dad	sp
 	push	h
 	push	d
-	lxi	d,l2009h
+	lxi	d,ctl$F0
 	ldax	d
 	cma
 	ani	030h
 	rz
 	lxi	h,2
 	dad	sp
-	shld	l201dh
+	shld	monstk
 	ret
 
 initms:	db	080h,ESC,'[?2h',ESC,'Z',TRM
@@ -878,6 +891,8 @@ initms:	db	080h,ESC,'[?2h',ESC,'Z',TRM
 
 unsupm:	db	'Unsupported CPU speed',TRM
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Substitute command
 cmdsub:
 	lxi	h,subms
 	call	msgout
@@ -885,39 +900,40 @@ cmdsub:
 	mvi	d,CR
 	call	adrin
 	xchg
-l0534h:
+cmdsub0:
 	call	adrnl
 	mov	a,m
 	call	hexout
 	call	spout
-l053eh:
+cmdsub1:
 	call	hexin
-	jrnc	l055ch
+	jrnc	cmdsub4
 	cpi	CR
-	jrz	l0553h
+	jrz	cmdsub2
 	cpi	'-'
-	jrz	l0556h
+	jrz	cmdsub3
 	cpi	'.'
 	rz
 	call	belout
-	jr	l053eh
-l0553h:
+	jr	cmdsub1
+cmdsub2:
 	inx	h
-	jr	l0534h
-l0556h:
+	jr	cmdsub0
+cmdsub3:
 	call	conout
 	dcx	h
-	jr	l0534h
-l055ch:
+	jr	cmdsub0
+cmdsub4:
 	mvi	m,000h
-l055eh:
+cmdsub5:
 	call	conout
 	call	hexbin
 	rld
-	call	s056dh
-	jrnc	l0553h
-	jr	l055eh
-s056dh:
+	call	inhexcr
+	jrnc	cmdsub2
+	jr	cmdsub5
+
+inhexcr:
 	call	conin
 	cpi	CR
 	rz
@@ -925,21 +941,24 @@ s056dh:
 	cmc
 	rc
 	call	belout
-	jr	s056dh
-l057dh:
-	call	s01cch
-	call	nulfn
+	jr	inhexcr
+
+; This loop checks for auto boot while waiting for command input.
+; Theoretically, one could flip the auto-boot dipsw at the MMS: prompt?
+coninx0:
+	call	chkauto
+	call	nulfn	; some patched-out code?
 coninx:
 	in	0edh
 	rrc
-	jrnc	l057dh
+	jrnc	coninx0
 conin:
 	in	0edh
 	rrc
 	jrnc	conin
 	in	0e8h
 	ani	07fh
-	cpi	DEL
+	cpi	DEL	; DEL key restarts from anywhere?
 	jz	re$entry
 	ret
 
@@ -1045,9 +1064,9 @@ hexdig:
 if	($ != 0613h)
 	.error "HDOS entry overrun 0613h"
 endif
-	jmp	s03fah ; Must be at 0613
+	jmp	z47$dato ; Must be at 0613
 	db	0
-	jmp	s03feh ; Must be at 0617
+	jmp	z47$cmdo ; Must be at 0617
 
 waitcr:
 	call	conin
@@ -1075,6 +1094,8 @@ cserms:	db	BEL,'Checksum error',TRM
 
 topms:	db	'Top of Memory: ',TRM
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Memory Test command
 cmdmt:
 	lxi	h,mtms
 	call	msgout
@@ -1085,9 +1106,9 @@ cmdmt:
 	dad	sp
 	mov	a,h
 	inr	a
-	jrz	l0673h
+	jrz	cmdmt0
 	sui	020h
-l0673h:
+cmdmt0:
 	mov	h,a
 	mvi	l,0
 	dcx	h
@@ -1099,17 +1120,17 @@ l0673h:
 	mvi	c,030h
 	mvi	b,000h
 	exx
-	lxi	h,l06b3h
-	lxi	d,02ff1h	; 03000h - (l06c2h-l06b3h)
-	lxi	b,s07aeh-l06b3h
+	lxi	h,mtest0
+	lxi	d,memtest - (mtest1-mtest0)
+	lxi	b,mtestZ-mtest0
 	ldir
-	lxi	d,03000h
-	lxi	h,l06c2h
-	mvi	c,s07aeh-l06c2h
+	lxi	d,memtest
+	lxi	h,mtest1
+	mvi	c,mtestZ-mtest1
 	xra	a
 	exaf
 	xra	a
-l069dh:
+cmdmt1:
 	add	m
 	exaf
 	xchg
@@ -1119,30 +1140,33 @@ l069dh:
 	inx	h
 	inx	d
 	dcr	c
-	jnz	l069dh
+	jnz	cmdmt1
 	mov	c,a
 	exaf
 	cmp	c
 	jnz	cserr
 	di
-	jmp	02ff8h	; 03000h - (l06c2h-l06bah)
+	jmp	memtest - (mtest1-mtest)
 
+;------------------------------------------------
 ; Start of relocated code...
-l06b3h:	db	04h,0ch,04h,08h,0ch,08h,20h
+; Memory Test routine, position-endependent
+;
+mtest0:	db	04h,0ch,04h,08h,0ch,08h,20h
 
-l06bah:
-	lxi	h,02ff1h	; 03000h - (l06c2h-l06b3h)
+mtest:
+	lxi	h,memtest - (mtest1-mtest0)
 	lxi	b,0700h + 0f2h	; length of unlock sequence, GPIO port
 	outir
-l06c2h:		; lands at 03000h - retained relocated code
+mtest1:		; lands at 03000h - retained relocated code
 	exx
 	mov	h,d
-	mvi	l,000h
+	mvi	l,0
 	mov	a,b
 	exx
 	mov	c,a
-	mvi	b,002h
-l06cbh:
+	mvi	b,2
+mtest2:
 	mov	a,c
 	rlc
 	rlc
@@ -1155,53 +1179,53 @@ l06cbh:
 	aci	040h
 	daa
 	out	0e8h
-l06dbh:
+mtest3:
 	in	0edh
 	ani	020h
-	jrz	l06dbh
+	jrz	mtest3
 	dcr	b
-	jrnz	l06cbh
-	mvi	a,00dh
+	jrnz	mtest2
+	mvi	a,CR
 	out	0e8h
 	exx
 	mov	a,b
-l06eah:
+mtest4:
 	mov	m,a
-	adi	001h
+	adi	1
 	daa
 	inr	l
-	jrnz	l06eah
+	jrnz	mtest4
 	inr	h
 	dcr	c
-	jrnz	l06eah
+	jrnz	mtest4
 	mov	a,h
 	sub	d
 	mov	c,a
 	mov	h,d
-	mvi	l,000h
+	mvi	l,0
 	mov	a,b
-l06fch:
+mtest5:
 	cmp	m
-	jrnz	l0745h
-	adi	001h
+	jrnz	mtest9
+	adi	1
 	daa
 	inr	l
-	jrnz	l06fch
+	jrnz	mtest5
 	inr	h
 	dcr	c
-	jrnz	l06fch
+	jrnz	mtest5
 	exx
-	lxi	h,03000h
+	lxi	h,memtest
 	lxi	d,0
-	lxi	b,s07aeh-l06c2h
+	lxi	b,mtestZ-mtest1
 	exx
 	mov	a,d
 	xri	030h
 	mov	d,a
-	jrz	l071dh
+	jrz	mtest6
 	mov	c,e
-	jr	l0727h
-l071dh:
+	jr	mtest7
+mtest6:
 	mvi	c,030h
 	mvi	a,001h
 	add	b
@@ -1210,42 +1234,42 @@ l071dh:
 	exx
 	xchg
 	exx
-l0727h:
+mtest7:
 	exx
 	ldir
 	mov	a,d
 	ani	0f0h
 	mov	h,a
-	mvi	l,000h
-	mvi	c,s07aeh-l06c2h
+	mvi	l,0
+	mvi	c,mtestZ-mtest1
 	xra	a
-l0733h:
+mtest8:
 	add	m
 	inx	h
 	dcr	c
-	jrnz	l0733h
+	jrnz	mtest8
 	mov	c,a
 	exaf
 	cmp	c
-	jrnz	l0786h
+	jrnz	mtestE
 	exaf
 	mov	a,d
 	ani	0f0h
 	mov	h,a
-	mvi	l,000h
+	mvi	l,0
 	pchl
-l0745h:
+mtest9:
 	xra	m
 	mov	d,a
-	mvi	a,00ah
+	mvi	a,LF
 	out	0e8h
-l074bh:
+mtestA:
 	in	0edh
 	ani	020h
-	jrz	l074bh
-	mvi	c,002h
-	mvi	b,004h
-l0755h:
+	jrz	mtestA
+	mvi	c,2
+	mvi	b,4
+mtestB:
 	mov	a,h
 	rlc
 	rlc
@@ -1257,64 +1281,67 @@ l0755h:
 	aci	040h
 	daa
 	out	0e8h
-l0764h:
+mtestC:
 	in	0edh
 	ani	020h
-	jrz	l0764h
+	jrz	mtestC
 	dad	h
 	dad	h
 	dad	h
 	dad	h
-	djnz	l0755h
-	mvi	a,020h
+	djnz	mtestB
+	mvi	a,' '
 	out	0e8h
-l0774h:
+mtestD:
 	in	0edh
 	ani	020h
-	jrz	l0774h
+	jrz	mtestD
 	dcr	c
 	xchg
 	mvi	b,002h
-	jrnz	l0755h
-	mvi	a,02ah
+	jrnz	mtestB
+	mvi	a,'*'
 	out	0e8h
-	jr	l079ah
-l0786h:
+	jr	mtestG
+mtestE:
 	in	0edh
 	ani	020h
-	jrz	l0786h
-	mvi	a,00ah
+	jrz	mtestE
+	mvi	a,LF
 	out	0e8h
-l0790h:
+mtestF:
 	in	0edh
 	ani	020h
-	jrz	l0790h
-	mvi	a,021h
+	jrz	mtestF
+	mvi	a,'!'
 	out	0e8h
-l079ah:
+mtestG:
 	in	0edh
 	ani	020h
-	jrz	l079ah
+	jrz	mtestG
 	xra	a
 	mvi	b,0fah
-l07a3h:
+mtestH:
 	dcr	a
-	jrnz	l07a3h
-	djnz	l07a3h
-	mvi	a,007h
+	jrnz	mtestH
+	djnz	mtestH
+	mvi	a,BEL
 	out	0e8h
-	jr	l079ah
+	jr	mtestG
 ; End of relocated code
+mtestZ	equ	$
+;------------------------------------------------
 
-s07aeh:
+; returns with interrupts disabled
+h17init:
 	di
 	xra	a
 	out	07fh
 	push	d
-	lxi	h,l2009h
-	mvi	m,0d0h
+	lxi	h,ctl$F0
+	mvi	m,0d0h	; !beep, 2mS, !mon, !SI
 	lxi	h,R$CONST
-	lxi	d,l2048h
+	lxi	d,D$CONST
 	lxi	b,88
 	ldir
 	mov	l,e
@@ -1323,17 +1350,17 @@ s07aeh:
 	mvi	c,30
 	mov	m,a
 	ldir	; fill l20a0h...
-	inr	a
+	inr	a	; A=1
 	lxi	h,intvec	; vector area
-l07cfh:
+h17ini0:
 	mvi	m,0c3h
 	inx	h
 	mvi	m,LOW (nulint-rst0)
 	inx	h
 	mvi	m,HIGH (nulint-rst0)
 	inx	h
-	add	a
-	jp	l07cfh
+	add	a	; shift left, count 7
+	jp	h17ini0
 	pop	d
 	ret
 
@@ -1353,80 +1380,79 @@ xcmds:
 	jz	prtver
 	ret
 
-l0804h:
+exboot:
 	mov	a,d
 	sui	200
-	jrc	l080ah
-	mov	d,a
-l080ah:
-	lxi	h,l0864h
-l080dh:
+	jrc	exboot0	; < 200
+	mov	d,a	; MMS 77314 REMEX (Z47)
+exboot0:
+	lxi	h,devtbl
+exboot1:
 	mov	a,d
 	sub	m
 	inx	h
 	cmp	m
-	jrc	l081bh
+	jrc	exboot2
 	mov	a,m
 	inx	h
 	inx	h
 	inx	h
 	ora	a
-	jrnz	l080dh
+	jrnz	exboot1
 	ret
-l081bh:
+
+exboot2:	; found device, jump to handler
 	inx	h
-l081ch:
 	mov	c,m
-l081dh:
 	inx	h
 	mov	h,m
 	mov	l,c
-l0820h:
 	add	e
 	pchl
 
+; Returns NZ if found, D=phy drv
 gtdvtb:
 	in	0f2h
-	ani	070h
+	ani	01110000b	; default boot device
 	rlc
 	rlc
 	rlc
 	rlc
 	lxi	h,defbt
-s082dh:
+gtdvtb0:
 	add	l
 	mov	l,a
-	mvi	a,000h
+	mvi	a,0
 	adc	h
 	mov	h,a
 	mov	a,m
 	cpi	0ffh
-	rz
+	rz	; no device
 	cpi	0feh
-	jz	l083eh
+	jz	gtdvtb1	; extended dipsw
 	mov	d,a
-l083dh:
-	ret
-l083eh:
+	ret	; NZ
+
+gtdvtb1:
 	in	05ch
-	ani	0e0h
+	ani	11100000b	; device
 	rlc
 	rlc
 	rlc
 	lxi	h,auxbt
-	call	s082dh
-l084bh:
-	rz
+	call	gtdvtb0
+	rz	; no device
 	in	05ch
-	ani	01ch
+	ani	00011100b	; LUN
 	rrc
 	rrc
-	mov	e,a
+	mov	e,a	; D=phy drv, E=LUN
 	ret
 
-s0854h:
+; lookup letter in MMS table
+mmslookup:
 	lxi	h,bootb2
-l0857h:
+mmslk0:
 	mov	a,m
 	inx	h
 	mov	d,m
@@ -1434,13 +1460,13 @@ l0857h:
 	cmp	b
 	rz
 	ora	a
-	jrnz	l0857h
-	mvi	d,000h
+	jrnz	mmslk0
+	mvi	d,0
 	stc
 	ret
 
-; disk device/drive table
-l0864h:
+; disk device/drive table by phy drv
+devtbl:
 	db	3,2
 	dw	bz67
 	db	5,4
@@ -1513,6 +1539,8 @@ bootb2:
 	db	'V',196		; SASI ctrl 7
 	db	0
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77314 Corvus boot
 bm314c:
 	mov	d,a
 	mvi	a,10
@@ -1520,7 +1548,7 @@ bm314c:
 	in	058h
 	ani	080h
 	rnz
-	mvi	b,000h
+	mvi	b,0
 	in	058h
 	mov	c,a
 	mvi	a,0ffh
@@ -1532,7 +1560,7 @@ bm314$0:
 	djnz	bm314$0
 	ret
 bm314$1:
-	mvi	b,000h
+	mvi	b,0
 bm314$2:
 	xthl
 	xthl
@@ -1547,7 +1575,7 @@ bm314$3:
 	djnz	bm314$2
 	ret
 bm314$4:
-	call	s098ch
+	call	cvs$dat
 	cpi	08fh
 	rnz
 	lxiy	bootbf
@@ -1563,7 +1591,7 @@ bm314$4:
 	lxix	bootbf
 	lxi	b,256
 	lxi	d,0
-	call	s0943h
+	call	cvs$read
 	rc
 	ldy	a,+0
 	ral
@@ -1572,72 +1600,75 @@ bm314$4:
 	ldy	d,+1
 	ldy	e,+2
 	lxix	bootbf
-	mvi	b,2
-	call	s0943h
+	mvi	b,2	; retry count?
+	call	cvs$read
 	rc
-	jmp	l03f3h
+	jmp	hwboot
 
-s0943h:
-	mvi	a,012h
-	call	s0982h
+cvs$read:
+	mvi	a,012h	; read command
+	call	cvs$cmd
 	mov	a,c
 	add	a
 	add	a
 	add	a
 	add	a
 	inr	a
-	call	s0982h
+	call	cvs$cmd	; command params
 	mov	a,e
-	call	s0982h
+	call	cvs$cmd	; command params
 	mov	a,d
-	call	s0982h
-l0959h:
+	call	cvs$cmd	; command params
+cvs$rd0:
 	in	058h
-	ani	002h
-	jrz	l0959h
-	mvi	a,008h
-l0961h:
+	ani	002h	; done
+	jrz	cvs$rd0
+	mvi	a,8
+cvs$rd1:
 	dcr	a
-	jnz	l0961h
-	call	s098ch
-	rlc
+	jnz	cvs$rd1
+	call	cvs$dat
+	rlc	; error bit
 	rc
-	mvi	l,080h
-l096ch:
-	call	s098ch
-	stx	a,+000h
+	mvi	l,128
+cvs$rd2:
+	call	cvs$dat
+	stx	a,+0
 	inxix
 	dcr	l
-	jrnz	l096ch
+	jrnz	cvs$rd2
 	inr	e
-	jrnz	l097eh
+	jrnz	cvs$rd3
 	inr	d
-	jrnz	l097eh
+	jrnz	cvs$rd3
 	inr	c
-l097eh:
-	djnz	s0943h
+cvs$rd3:
+	djnz	cvs$read
 	ora	a
 	ret
 
 ; Corvus I/O
-s0982h:
+cvs$cmd:
 	push	psw
-l0983h:
+cvs$cmd0:
 	in	058h
 	rar
-	jrc	l0983h
+	jrc	cvs$cmd0
 	pop	psw
 	out	059h
 	ret
 
-s098ch:
+cvs$dat:
 	in	058h
 	rar
-	jrc	s098ch
+	jrc	cvs$dat
 	in	059h
 	ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77316 Floppy boot
 bm316:
-	lxi	h,l0a0ch
+	lxi	h,int316
 	shld	vrst6+1
 	cpi	008h
 	rnc
@@ -1645,85 +1676,85 @@ bm316:
 	mov	d,a
 	out	038h
 	xra	a
-	out	0f2h
-	mvi	a,00bh
-	call	s0a07h
-	lxi	b,0cf08h
-l09adh:
+	out	0f2h	; 2mS intr off
+	mvi	a,00bh	; home/restore to track 0
+	call	cmd316
+	lxi	b,53000
+bm316$0:
 	in	03ch
 	rlc
-	jrnc	l09b7h
+	jrnc	bm316$1
 	dcx	b
 	mov	a,b
 	ora	c
-	jrnz	l09adh
-l09b7h:
+	jrnz	bm316$0
+bm316$1:
 	in	03ch
 	ani	099h
 	rnz
 	mvi	e,019h
-l09beh:
+bm316$2:
 	lxi	h,bootbf
 	xra	a
-l09c2h:
+bm316$3:
 	inr	a
 	out	03eh
 	lxi	b,003fh
 	mvi	a,088h
-	call	s09e5h
+	call	rd316
 	ani	0bfh
 	mov	a,d
 	out	038h
-	jz	l09dch
+	jz	bm316$4
 	xri	040h
 	mov	d,a
 	dcr	e
-	jrnz	l09beh
+	jrnz	bm316$2
 	ret
-l09dch:
+bm316$4:
 	in	03eh
 	cpi	002h
-	jrc	l09c2h
-	jmp	l03f3h
-s09e5h:
+	jrc	bm316$3
+	jmp	hwboot
+
+rd316:
 	push	psw
 	mov	a,d
 	ani	044h
-	jrnz	l09fah
+	jrnz	rd316$5
+	; 8" DD read special case
 	mov	a,d
 	ani	0dfh
 	out	038h
 	pop	psw
 	out	03ch
 	ei
-	hlt
-l09f5h:
-	ini
-	jmp	l09f5h
-l09fah:
+	hlt	; wait for first byte
+rd316$8: ini
+	jmp	rd316$8
+
+rd316$5:
 	mov	a,d
 	out	038h
 	pop	psw
 	out	03ch
-s0a00h:
-	ei
-l0a01h:
-	hlt
+hlt$ini: ei
+rd316$0: hlt
 	ini
-	jmp	l0a01h
-s0a07h:
+	jmp	rd316$0
+
+cmd316:
 	out	03ch
-s0a09h:
-	ei
-l0a0ah:
-	jr	l0a0ah
-l0a0ch:
-	pop	psw
+ei$spin: ei
+	jr	$-1	; wait for intr to break us out
+
+int316:	pop	psw
 	in	03ch
 	ei
 	ret
+
 bz37:
-	lxi	h,l0a97h
+	lxi	h,intz37
 	shld	vrst4+1
 	dcx	h
 	shld	l2037h
@@ -1731,10 +1762,10 @@ bz37:
 	rnc
 	inr	a
 	mvi	l,008h
-l0a21h:
+bz37$0:
 	dad	h
 	dcr	a
-	jrnz	l0a21h
+	jrnz	bz37$0
 	out	079h
 	in	0f2h
 	ani	00ch
@@ -1751,14 +1782,14 @@ l0a21h:
 	mvi	e,019h
 	mvi	a,5
 	call	take$A
-	lxi	b,0147bh
-l0a46h:
+	lxi	b,0147bh	; mask, port
+bz37$1:
 	in	07ah
 	xra	b
 	ani	002h
-	jrz	l0a46h
-	djnz	l0a46h
-l0a4fh:
+	jrz	bz37$1
+	djnz	bz37$1
+bz37$2:
 	lxi	h,bootbf
 	mvi	a,001h
 	out	079h
@@ -1766,18 +1797,18 @@ l0a4fh:
 	mov	a,d
 	out	078h
 	mvi	b,004h
-l0a5dh:
+bz37$3:
 	xra	a
 	out	079h
 	mvi	a,040h
 	out	07ah
-	call	s0a09h
-	djnz	l0a5dh
+	call	ei$spin
+	djnz	bz37$3
 	xra	a
 	out	079h
 	mvi	a,00bh
 	out	07ah
-	call	s0a09h
+	call	ei$spin
 	mov	a,d
 	xri	004h
 	mov	d,a
@@ -1785,27 +1816,30 @@ l0a5dh:
 	out	078h
 	mvi	a,09ch
 	out	07ah
-	call	s0a00h
+	call	hlt$ini
 	ani	0efh
-	jrnz	l0a93h
+	jrnz	bz37$4
 	mov	a,h
 	cpi	02ch
-	jrc	l0a93h
+	jrc	bz37$4
 	mvi	a,008h
 	out	078h
 	pop	h
-	jmp	l03f3h
-l0a93h:
+	jmp	hwboot
+bz37$4:
 	dcr	e
-	jrnz	l0a4fh
+	jrnz	bz37$2
 	ret
-l0a97h:
-	in	07ah
+
+intz37:	in	07ah
 	xthl
 	lhld	l2037h
 	xthl
 	ei
 	ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77317 XCOM HDD boot
 bm317:
 	ora	a
 	rnz
@@ -1821,27 +1855,28 @@ bm317:
 	out	04dh
 	inx	h
 	mvi	c,04eh
-l0ab8h:
+bm317$0:
 	mov	a,m
 	ora	a
-	jrz	l0ad0h
+	jrz	bm317$3
 	inx	h
 	mov	b,a
 	ral
-	jrc	l0ac5h
+	jrc	bm317$1
 	outir
-	jr	l0ab8h
-l0ac5h:
+	jr	bm317$0
+bm317$1:
 	ora	a
 	rar
 	mov	b,a
 	mov	a,m
 	inx	h
-l0acah:
+bm317$2:
 	out	04eh
-	djnz	l0acah
-	jr	l0ab8h
-l0ad0h:
+	djnz	bm317$2
+	jr	bm317$0
+; done with OUT "program"
+bm317$3:
 	mvi	a,041h
 	out	049h
 	mvi	a,002h
@@ -1859,14 +1894,15 @@ l0ad0h:
 	lxi	h,bootbf
 	in	04eh
 	inir
-	jmp	l03f3h
+	jmp	hwboot
+
 s0af4h:
 	mvi	d,00ah
 	mvi	a,004h
 	out	04ch
 	mvi	a,0eah
 	out	04dh
-	mvi	b,004h
+	mvi	b,4
 	xra	a
 l0b01h:
 	out	04eh
@@ -1903,7 +1939,7 @@ l0b31h:
 	ori	001h
 	ret
 s0b34h:
-	mvi	b,000h
+	mvi	b,0
 l0b36h:
 	in	048h
 	ani	004h
@@ -1919,29 +1955,33 @@ l0b36h:
 	out	048h
 	call	s0b50h
 	jmp	l0b36h
+
 s0b50h:
 	in	048h
 	ral
 	jrnc	s0b50h
 	ret
+
 s0b56h:
 	in	048h
 	ani	001h
 	xri	001h
 	ret
+
 s0b5dh:
 	xra	a
 	out	049h
 	mvi	a,041h
 	out	049h
 	ret
+
 s0b65h:
 	xra	a
 	call	s0b6bh
 	mvi	a,001h
 s0b6bh:
 	out	04ch
-	mvi	b,080h
+	mvi	b,128
 	mvi	a,00fh
 l0b71h:
 	out	04eh
@@ -1974,6 +2014,8 @@ l0b76h:
 	db	1,	00fh
 	db	0
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77320 SASI HDD boot
 bm320:
 	cpi	4 ; 4 units per controller, max
 	rnc
@@ -1998,7 +2040,7 @@ bsasi:
 	rrc
 	db 0ddh
 	mov h,a	; movxh	a	; 0xx00000 = relative drive num (LUN)
-	mvi	c,2
+	mvi	c,10b
 	call	getport
 	rnz
 	mov	a,b
@@ -2008,59 +2050,60 @@ bsasi:
 	xra	a
 	outp	a
 	lxi	h,0		; zero-out command buffer
-	shld	l2132h
-	shld	l2134h
-	shld	l2136h
+	shld	cmdbuf
+	shld	cmdbuf+2
+	shld	cmdbuf+4
 	shld	l2156h	; zero-out ...
-	shld	l2158h
-	sta	l215ah
+	shld	l2156h+2
+	sta	l2156h+4
 	mov	d,e
-	mvi	a,004h
+	mvi	a,4	; delay 8mS, also NZ
 	ora	a
 	ei
-l0be7h:
+bsasi0:
 	rz
-	call	s002bh
-	mvi	e,000h
-	call	s0c0ah
-	mvi	a,0ffh
-	jrc	l0be7h
-	mvi	e,001h
-	call	s0c0ah
+	call	delayx
+	mvi	e,0	; Test Drive Ready
+	call	sasi$cmd
+	mvi	a,255	; longer delay on retry...
+	jrc	bsasi0
+	mvi	e,1	; Recalibrate (Home)
+	call	sasi$cmd
 	rc
-	lxi	h,0800ah
-	shld	l2136h
-	mvi	e,008h
-	call	s0c0ah
+	lxi	h,0800ah	; 10 sectors, retry
+	shld	cmdbuf+4
+	mvi	e,8	; Read
+	call	sasi$cmd
 	rc
 	pop	h
-	jmp	l03f3h
+	jmp	hwboot
 
-s0c0ah:
+; send SASI read command, get results
+sasi$cmd:
 	di
-	db 0ddh
-	mov l,e	; movxl	e	; controller num
-	sixd	l2132h
-	mvi	b,000h
-	mvi	e,006h
-	lxi	h,0
-l0c18h:
+	db 0ddh	; undocumented Z80 instruction
+	mov l,e	; movxl	e	; SASI command
+	sixd	cmdbuf
+	mvi	b,0	; wait for "not BUSY" first
+	mvi	e,6	;
+	lxi	h,0	; 0x060000 loop/timeout count
+sscmd0:
 	inp	a
-	ani	008h
+	ani	00001000b
 	cmp	b
-	jrz	l0c29h
+	jrz	sscmd1
 	dcx	h
 	mov	a,l
 	ora	h
-	jrnz	l0c18h
+	jrnz	sscmd0
 	dcr	e
-	jrnz	l0c18h
+	jrnz	sscmd0
 	stc
 	ret
-l0c29h:
+sscmd1:
 	mov	a,b
-	xri	008h
-	jrz	l0c3eh
+	xri	00001000b	; wait for BUSY
+	jrz	sscmd2		; got BUSY...
 	mov	b,a
 	dcr	c
 	xra	a
@@ -2069,67 +2112,72 @@ l0c29h:
 	inr	c
 	outp	d
 	dcr	c
-	mvi	a,040h
+	mvi	a,040h	; SELECT
 	outp	a
-	jr	l0c18h
-l0c3eh:
-	mvi	a,002h
+	jr	sscmd0	; wait for BUSY now...
+
+sscmd2:
+	mvi	a,002h	; enable INTR
 	outp	a
-	lxi	h,l2132h
-l0c45h:
+	lxi	h,cmdbuf
+sscmd3:
 	inp	a
-	bit	7,a
-	jrz	l0c45h
-	bit	4,a
-	jrz	l0c59h
-	bit	6,a
-	jrz	l0c6ch
+	bit	7,a	; REQ
+	jrz	sscmd3
+	bit	4,a	; CMD
+	jrz	sscmd4
+	bit	6,a	; MSG
+	jrz	sscmd6
 	dcr	c
-	outi
+	outi		; output command byte
 	inr	c
-	jr	l0c45h
-l0c59h:
+	jr	sscmd3
+
+sscmd4:
 	lxi	h,bootbf
-l0c5ch:
+sscmd5:
 	inp	a
-	bit	7,a
-	jrz	l0c5ch
-	bit	4,a
-	jrnz	l0c6ch
+	bit	7,a	; REQ
+	jrz	sscmd5
+	bit	4,a	; CMD - indicates data done
+	jrnz	sscmd6
 	dcr	c
-	ini
+	ini		; input data byte
 	inr	c
-	jr	l0c5ch
-l0c6ch:
+	jr	sscmd5
+sscmd6:
 	inp	a
-	ani	0d0h
-	cpi	090h
-	jrnz	l0c6ch
+	ani	0d0h	; REQ, OUT, CMD
+	cpi	090h	; must be REQ, CMD
+	jrnz	sscmd6	; wait for it...
 	dcr	c
-	inp	l
+	inp	l	; result 0
 	inr	c
-l0c78h:
-	inp	h
+sscmd7:
+	inp	h	; status
 	mov	a,h
-	ani	0e0h
-	cpi	0a0h
-	jrnz	l0c78h
-	shld	l2138h
+	ani	0e0h	; REG, OUT, MSG
+	cpi	0a0h	; must be REQ, MSG
+	jrnz	sscmd7
+	shld	resbuf	; command results
 	dcr	c
-	inp	a
+	inp	a	; last data byte
 	inr	c
 	ei
 	ora	a
 	stc
+	rnz		; error
+	bit	0,l	; SASI error bit
 	rnz
-	bit	0,l
+	bit	1,l	; or other error?
 	rnz
-	bit	1,l
+	bit	1,h	; ACK
 	rnz
-	bit	1,h
-	rnz
-	xra	a
+	xra	a	; success
 	ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77314 REMEX boot
 bm314r:
 	cpi	004h
 	rnc
@@ -2152,9 +2200,9 @@ bm314$6:
 	mvi	a,007h
 	out	05ah
 	xra	a
-	call	s0d0ch
+	call	rmxout
 	mov	a,d
-	call	s0d0ch
+	call	rmxout
 bm314$7:
 	in	05bh
 	ani	080h
@@ -2189,7 +2237,8 @@ bm314$A:
 	ani	00fh
 	cpi	003h
 	jrc	bm314$6
-	jmp	l03f3h
+	jmp	hwboot
+
 bm314$B:
 	mvi	b,080h
 bm314$D:
@@ -2201,14 +2250,14 @@ bm314$D:
 	in	05bh
 	ani	010h
 	rnz
-	jmp	l03f3h
+	jmp	hwboot
 
-s0d0ch:
+rmxout:
 	push	psw
-l0d0dh:
+rmxout0:
 	in	05bh
 	ani	060h
-	jrnz	l0d0dh
+	jrnz	rmxout0
 	pop	psw
 	out	05ah
 	ret
@@ -2251,7 +2300,7 @@ bm422:
 	lxix	bootbf
 	mvix	0b1h,+0 ; Boot code = B1
 	stx	e,+4	; Unit number
-	mvi	c,3
+	mvi	c,11b
 	call	getport
 	rnz
 	mov	a,b
@@ -2319,7 +2368,7 @@ get422$0:
 ; Gobble data until we reach a sync point
 syn422:
 	lxi	d,0		; delay count
-	lxi	h,l0de6h
+	lxi	h,nowhere
 	lda	cport	; port
 	mov	c,a
 syn422$0:
@@ -2335,7 +2384,7 @@ syn422$0:
 	jnz	syn422$0
 	ret
 
-l0de6h: db	0,0,0
+nowhere: db	0,0,0
 
 snd422:
 	mov	a,e
