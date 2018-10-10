@@ -53,18 +53,17 @@
                 
                 ;	Network Status Byte Equates
                 ;
- 0010 =         active		equ	0001$0000b	; slave logged in on network
- 0002 =         rcverr		equ	0000$0010b	; error in received message
- 0001 =         senderr 	equ	0000$0001b	; unable to send message
+ 0010 =         active		equ	00010000b	; slave logged in on network
+ 0002 =         rcverr		equ	00000010b	; error in received message
+ 0001 =         senderr 	equ	00000001b	; unable to send message
                 
                 ;	Utility Procedures
                 ;
-                	page
-                
+                ;	page
                 ;	Network Initialization
                 NTWKIN:
- 00AE CD3A01    	call	check	; confirm h/w exists...
- 00B1 DA8101    	jc	initerr
+ 00AE CD6201    	call	check	; confirm h/w exists...
+ 00B1 DAB201    	jc	initerr
                 	; TODO: how to get slave ID?
                 	; Send "BDOS Func 255" message to other end,
                 	; Response will tell us our, and their, node ID
@@ -78,13 +77,13 @@
                 	mvix	0,+4	; Size
  00C0+DD360400  	DB	0DDH,36H,+4,0
  00C4 012700    	lxi	b,msgbuf
- 00C7 CD5801    	call	sndmsg0	; avoid active check
+ 00C7 CD8001    	call	sndmsg0	; avoid active check
  00CA B7        	ora	a
- 00CB C28101    	jnz	initerr
+ 00CB C2B201    	jnz	initerr
  00CE 012700    	lxi	b,msgbuf
- 00D1 CDCE01    	call	rcvmsg0	; avoid active check
+ 00D1 CD0802    	call	rcvmsg0	; avoid active check
  00D4 B7        	ora	a
- 00D5 C28101    	jnz	initerr
+ 00D5 C2B201    	jnz	initerr
                 	lxix	msgbuf
  00D8+DD21      	DB	0DDH,21H
  00DA+2700      	DW	MSGBUF
@@ -111,29 +110,32 @@
  00F7 3A0000    	lda	CFGTBL+0
  00FA 47        	mov	b,a
  00FB E6FC      	ani	not (rcverr+senderr)
- 00FD 320000    	sta	CFGTBL+0
+ 00FD 320000    	sta	CFGTBL+0
  0100 78        	mov	a,b
  0101 C9        	ret
                 
                 ;	Return Configuration Table Address
-                CNFTBL:
+                CNFTBL:
  0102 210000    	lxi	h,CFGTBL
  0105 C9        	ret
                 
+                ; Destroys E,C
                 sendhex:
- 0106 F5        	push	psw
+ 0106 5F        	mov	e,a
  0107 0F        	rrc
  0108 0F        	rrc
  0109 0F        	rrc
  010A 0F        	rrc
  010B CD0F01    	call	senddig
- 010E F1        	pop	psw
+ 010E 7B        	mov	a,e
                 senddig:
  010F E60F      	ani	0fh
  0111 C690      	adi	90h
  0113 27        	daa
  0114 CE40      	aci	40h
  0116 27        	daa
+                	; jmp sendbyt
+                ; Destroys C
                 sendbyt:
  0117 4F        	mov	c,a
                 sendb0:
@@ -144,179 +146,237 @@
  0120 D3B0      	out	USBPORT	; probably can't ever overrun?
  0122 C9        	ret		; if not, should make this in-line
                 
-                ; HL = message header
+                ; IY = message header, HL = crc
+                ; Destroys B,C,E,D
                 sendhdr:
  0123 3E2B      	mvi	a,'+'	; start of message - SYNC
- 0125 CD1701    	call	sendbyt
+ 0125 CD1701    	call	sendbyt	; destroys C
  0128 3E2B      	mvi	a,'+'	; two sync bytes...
- 012A CD1701    	call	sendbyt
- 012D 0605      	mvi	b,5
+ 012A CD1701    	call	sendbyt	; destroys C
+ 012D 21FFFF    	lxi	h,0ffffh	; init CRC
+ 0130 0605      	mvi	b,5
                 sendh0:
- 012F 7E        	mov	a,m
- 0130 CD0601    	call	sendhex
- 0133 23        	inx	h
- 0134 05        	dcr	b
- 0135 C22F01    	jnz	sendh0
- 0138 AF        	xra	a
- 0139 C9        	ret
+                	ldy	a,+0
+ 0132+FD7E00    	DB	0FDH,A*8+46H,+0
+                	inxiy
+ 0135+FD23      	DB	0FDH,23H
+ 0137 57        	mov	d,a
+ 0138 CD0601    	call	sendhex	; destroys E,C,A
+ 013B 7A        	mov	a,d
+ 013C CD4501    	call	crc	; destroys E,C,A
+ 013F 05        	dcr	b
+ 0140 C23201    	jnz	sendh0
+ 0143 AF        	xra	a
+ 0144 C9        	ret
+                
+ 8408 =         POLY	equ	8408h
+                ; HL = cumulative CRC, A = new byte (used)
+                ; Destroys C,E,A
+                crc:
+ 0145 1E08      	mvi	e,8
+ 0147 4F        crc0:	mov	c,a
+ 0148 AD        	xra	l	; clears CY
+                	rarr	h
+ 0149+CB1C      	DB	0CBH, 18H + H
+                	rarr	l
+ 014B+CB1D      	DB	0CBH, 18H + L
+ 014D E601      	ani	1
+ 014F CA5A01    	jz	crc1
+ 0152 3E08      	mvi	a,LOW POLY
+ 0154 AD        	xra	l
+ 0155 6F        	mov	l,a
+ 0156 3E84      	mvi	a,HIGH POLY
+ 0158 AC        	xra	h
+ 0159 67        	mov	h,a
+ 015A 79        crc1:	mov	a,c
+ 015B 1F        	rar	; no need to worry about CY in,
+ 015C 1D        	dcr	e
+ 015D C24701    	jnz	crc0
+ 0160 B7        	ora	a	; but must not leave CY on return
+ 0161 C9        	ret
                 
                 check:
                 	; do check for sane hardware...
- 013A 210000    	lxi	h,0
- 013D 1E03      	mvi	e,3	; approx 4.5 sec @ 2MHz
+ 0162 210000    	lxi	h,0
+ 0165 1E03      	mvi	e,3	; approx 4.5 sec @ 2MHz
                 check0:
- 013F DBB2      	in	STSPORT	; 11
- 0141 E601      	ani	USBTXR	; 7, also NC
- 0143 C0        	rnz		; 5 (11)
- 0144 2B        	dcx	h	; 6
- 0145 7C        	mov	a,h	; 4
- 0146 B5        	ora	l	; 4
- 0147 C23F01    	jnz	check0	; 10 = 47, * 65536 = 3080192 = 1.504 sec
- 014A 1D        	dcr	e	; 4
- 014B C23F01    	jnz	check0	; 10
- 014E 37        	stc
- 014F C9        	ret
+ 0167 DBB2      	in	STSPORT	; 11
+ 0169 E601      	ani	USBTXR	; 7, also NC
+ 016B C0        	rnz		; 5 (11)
+ 016C 2B        	dcx	h	; 6
+ 016D 7C        	mov	a,h	; 4
+ 016E B5        	ora	l	; 4
+ 016F C26701    	jnz	check0	; 10 = 47, * 65536 = 3080192 = 1.504 sec
+ 0172 1D        	dcr	e	; 4
+ 0173 C26701    	jnz	check0	; 10
+ 0176 37        	stc
+ 0177 C9        	ret
                 
                 ;	Send Message on Network
                 SNDMSG:			; BC = message addr
- 0150 3A0000    	lda	CFGTBL	; status
- 0153 E610      	ani	active
- 0155 CA8101    	jz	initerr
+ 0178 3A0000    	lda	CFGTBL	; status
+ 017B E610      	ani	active
+ 017D CAB201    	jz	initerr
                 sndmsg0:
- 0158 60        	mov	h,b
- 0159 69        	mov	l,c		; HL = message address
- 015A E5        	push	h
+ 0180 C5        	push	b
                 	popix
- 015B+DDE1      	DB	0DDH,0E1H
- 015D 3A0100    	lda	CFGTBL+1	; our ID
+ 0181+DDE1      	DB	0DDH,0E1H
+ 0183 C5        	push	b
+                	popiy
+ 0184+FDE1      	DB	0FDH,0E1H
+ 0186 3A0100    	lda	CFGTBL+1	; our ID
                 	stx	a,+2		; ensure SID is correct
- 0160+DD7702    	DB	0DDH,70H+A,+2
- 0163 CD2301    	call	sendhdr
- 0166 B7        	ora	a
- 0167 C28101    	jnz	initerr
+ 0189+DD7702    	DB	0DDH,70H+A,+2
+ 018C CD2301    	call	sendhdr
+ 018F B7        	ora	a
+ 0190 C2B201    	jnz	initerr
                 	; HL points to payload now...
                 	ldx	b,+4	; msg siz field (-1)
- 016A+DD4604    	DB	0DDH,B*8+46H,+4
- 016D 04        	inr	b	; might be 0, but that means 256
- 016E CD2F01    	call	sendh0
- 0171 B7        	ora	a
- 0172 C28101    	jnz	initerr
- 0175 3E2D      	mvi	a,'-'
- 0177 CD1701    	call	sendbyt
- 017A 3E2D      	mvi	a,'-'
- 017C CD1701    	call	sendbyt
- 017F AF        	xra	a
- 0180 C9        	ret
+ 0193+DD4604    	DB	0DDH,B*8+46H,+4
+ 0196 04        	inr	b	; might be 0, but that means 256
+ 0197 CD3201    	call	sendh0
+ 019A B7        	ora	a
+ 019B C2B201    	jnz	initerr
+ 019E 7D        	mov	a,l	; send CRC
+ 019F CD0601    	call	sendhex	;
+ 01A2 7C        	mov	a,h	;
+ 01A3 CD0601    	call	sendhex	;
+ 01A6 3E2D      	mvi	a,'-'
+ 01A8 CD1701    	call	sendbyt
+ 01AB 3E2D      	mvi	a,'-'
+ 01AD CD1701    	call	sendbyt
+ 01B0 AF        	xra	a
+ 01B1 C9        	ret
                 initerr:
- 0181 3EFF      	mvi	a,0ffh
- 0183 C9        	ret
+ 01B2 3EFF      	mvi	a,0ffh
+ 01B4 C9        	ret
                 
+                ; IY = recv buffer, B = len
+                ; HL = crc, destroys B,C,E
                 recvhdr:
- 0184 0605      	mvi	b,5
+ 01B5 21FFFF    	lxi	h,0ffffh	; init CRC
+ 01B8 0605      	mvi	b,5
                 recvh0:
- 0186 CD9101    	call	recvhex
- 0189 D8        	rc
- 018A 77        	mov	m,a
- 018B 23        	inx	h
- 018C 05        	dcr	b
- 018D C28601    	jnz	recvh0
- 0190 C9        	ret
+ 01BA CDCB01    	call	recvhex	; destroys E,C
+ 01BD D8        	rc
+                	sty	a,+0
+ 01BE+FD7700    	DB	0FDH,70H+A,+0
+                	inxiy
+ 01C1+FD23      	DB	0FDH,23H
+ 01C3 CD4501    	call	crc	; destroys E,C
+ 01C6 05        	dcr	b
+ 01C7 C2BA01    	jnz	recvh0
+ 01CA C9        	ret
                 
+                ; Destroys E,C
+                ; Returns Hex value in A
                 recvhex:
- 0191 CDA001    	call	recvdig
- 0194 D8        	rc
- 0195 07        	rlc
- 0196 07        	rlc
- 0197 07        	rlc
- 0198 07        	rlc
- 0199 5F        	mov	e,a
- 019A CDA001    	call	recvdig
- 019D D8        	rc
- 019E B3        	ora	e
- 019F C9        	ret
+ 01CB CDDA01    	call	recvdig ; destroys C
+ 01CE D8        	rc
+ 01CF 07        	rlc
+ 01D0 07        	rlc
+ 01D1 07        	rlc
+ 01D2 07        	rlc
+ 01D3 5F        	mov	e,a
+ 01D4 CDDA01    	call	recvdig ; destroys C
+ 01D7 D8        	rc
+ 01D8 B3        	ora	e
+ 01D9 C9        	ret
                 
                 recvdig:
- 01A0 CDB401    	call	recvbyt
- 01A3 D8        	rc
- 01A4 D630      	sui	'0'
- 01A6 D8        	rc
- 01A7 FE0A      	cpi	10
- 01A9 D2AE01    	jnc	recvd1
- 01AC B7        	ora	a
- 01AD C9        	ret
+ 01DA CDEE01    	call	recvbyt ; destroys C
+ 01DD D8        	rc
+ 01DE D630      	sui	'0'
+ 01E0 D8        	rc
+ 01E1 FE0A      	cpi	10
+ 01E3 D2E801    	jnc	recvd1
+ 01E6 B7        	ora	a
+ 01E7 C9        	ret
                 recvd1:
- 01AE D611      	sui	'A'-'0'
- 01B0 D8        	rc
- 01B1 C60A      	adi	10
- 01B3 C9        	ret
+ 01E8 D611      	sui	'A'-'0'
+ 01EA D8        	rc
+ 01EB C60A      	adi	10
+ 01ED C9        	ret
                 
                 ; When using this, each byte must be coming soon...
+                ; Destroys C
+                ; Returns character in A
                 recvbyt:
- 01B4 0E00      	mvi	c,0
+ 01EE 0E00      	mvi	c,0
                 recvb0:
- 01B6 DBB2      	in	STSPORT
- 01B8 E602      	ani	USBRXR
- 01BA C2C301    	jnz	recvb1
- 01BD 0D        	dcr	c
- 01BE C2B601    	jnz	recvb0
- 01C1 37        	stc
- 01C2 C9        	ret	; CY, plus A not '-'
+ 01F0 DBB2      	in	STSPORT
+ 01F2 E602      	ani	USBRXR
+ 01F4 C2FD01    	jnz	recvb1
+ 01F7 0D        	dcr	c
+ 01F8 C2F001    	jnz	recvb0
+ 01FB 37        	stc
+ 01FC C9        	ret	; CY, plus A not '-'
                 recvb1:
- 01C3 DBB0      	in USBPORT
- 01C5 C9        	ret
+ 01FD DBB0      	in USBPORT
+ 01FF C9        	ret
                 
                 ;	Receive Message from Network
                 ;	Wait for "++" sequence, discarding characters, then save message.
                 ;	TODO: need timeout? Must be long timeout...
                 RCVMSG:			; BC = message addr
- 01C6 3A0000    	lda	CFGTBL	; status
- 01C9 E610      	ani	active
- 01CB CA8101    	jz	initerr
+ 0200 3A0000    	lda	CFGTBL	; status
+ 0203 E610      	ani	active
+ 0205 CAB201    	jz	initerr
                 rcvmsg0:
- 01CE 60        	mov	h,b
- 01CF 69        	mov	l,c		; HL = message address
- 01D0 E5        	push	h
-                	popix
- 01D1+DDE1      	DB	0DDH,0E1H
+ 0208 C5        	push	b
+                	popix		; IX = message pointer
+ 0209+DDE1      	DB	0DDH,0E1H
+ 020B C5        	push	b
+                	popiy		; IY = message address (++)
+ 020C+FDE1      	DB	0FDH,0E1H
                 recev1:
- 01D3 0602      	mvi	b,2
+ 020E 0602      	mvi	b,2
                 recev0:
- 01D5 DBB2      	in	STSPORT
- 01D7 E602      	ani	USBRXR
- 01D9 CAD501    	jz	recev0
- 01DC DBB0      	in	USBPORT
- 01DE FE2B      	cpi	'+'
- 01E0 C2D301    	jnz	recev1	; reset count, too
- 01E3 05        	dcr	b
- 01E4 C2D501    	jnz	recev0
+ 0210 DBB2      	in	STSPORT
+ 0212 E602      	ani	USBRXR
+ 0214 CA1002    	jz	recev0
+ 0217 DBB0      	in	USBPORT
+ 0219 FE2B      	cpi	'+'
+ 021B C20E02    	jnz	recev1	; reset count, too
+ 021E 05        	dcr	b
+ 021F C21002    	jnz	recev0
                 	; got SYNC "++", now just input bytes and decode - until "--"
- 01E7 CD8401    	call	recvhdr
- 01EA DA0902    	jc	recev2
-                	ldx	b,4 ; msg siz field (-1)
- 01ED+DD4604    	DB	0DDH,B*8+46H,4
- 01F0 04        	inr	b   ; might be 0, but that means 256
- 01F1 CD8601    	call	recvh0
- 01F4 DA0902    	jc	recev2
+ 0222 CDB501    	call	recvhdr
+ 0225 DA5B02    	jc	recev2
+                	ldx	b,+4 ; msg siz field (-1)
+ 0228+DD4604    	DB	0DDH,B*8+46H,+4
+ 022B 04        	inr	b   ; might be 0, but that means 256
+ 022C CDBA01    	call	recvh0
+ 022F DA5B02    	jc	recev2
+ 0232 CDCB01    	call	recvhex	; destroys C,E
+ 0235 DA5B02    	jc	recev2
+ 0238 CD4501    	call	crc	; destroys C,E
+ 023B CDCB01    	call	recvhex	; destroys C,E
+ 023E DA5B02    	jc	recev2
+ 0241 CD4501    	call	crc	; destroys C,E
+ 0244 7C        	mov	a,h
+ 0245 B5        	ora	l
+ 0246 C25B02    	jnz	recev2
                 	; Now confirm we get "--" EOM
- 01F7 CDB401    	call	recvbyt
- 01FA FE2D      	cpi	'-'
- 01FC C20902    	jnz	recev2
- 01FF CDB401    	call	recvbyt
- 0202 FE2D      	cpi	'-'
- 0204 C20902    	jnz	recev2
- 0207 AF        	xra	a
- 0208 C9        	ret
+ 0249 CDEE01    	call	recvbyt
+ 024C FE2D      	cpi	'-'
+ 024E C25B02    	jnz	recev2
+ 0251 CDEE01    	call	recvbyt
+ 0254 FE2D      	cpi	'-'
+ 0256 C25B02    	jnz	recev2
+ 0259 AF        	xra	a
+ 025A C9        	ret
                 recev2:
- 0209 3EFF      	mvi	a,0ffh
+ 025B 3EFF      	mvi	a,0ffh
                 NTWKER:
- 020B C9        	ret
+ 025D C9        	ret
                 
                 ;
                 NTWKBT:
                  
                 ;	This procedure is called each time the CCP is
                 ;	reloaded from disk.
- 020C C9        	ret
+ 025E C9        	ret
                 
- 020D           	end
-
+ 025F           	end
+

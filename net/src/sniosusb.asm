@@ -52,13 +52,13 @@ hostid:	db	0
 
 ;	Network Status Byte Equates
 ;
-active		equ	0001$0000b	; slave logged in on network
-rcverr		equ	0000$0010b	; error in received message
-senderr 	equ	0000$0001b	; unable to send message
+active		equ	00010000b	; slave logged in on network
+rcverr		equ	00000010b	; error in received message
+senderr 	equ	00000001b	; unable to send message
 
 ;	Utility Procedures
 ;
-	page
+;	page
 ;	Network Initialization
 NTWKIN:
 	call	check	; confirm h/w exists...
@@ -105,20 +105,23 @@ CNFTBL:
 	lxi	h,CFGTBL
 	ret
 
+; Destroys E,C
 sendhex:
-	push	psw
+	mov	e,a
 	rrc
 	rrc
 	rrc
 	rrc
 	call	senddig
-	pop	psw
+	mov	a,e
 senddig:
 	ani	0fh
 	adi	90h
 	daa
 	aci	40h
 	daa
+	; jmp sendbyt
+; Destroys C
 sendbyt:
 	mov	c,a
 sendb0:
@@ -129,20 +132,49 @@ sendb0:
 	out	USBPORT	; probably can't ever overrun?
 	ret		; if not, should make this in-line
 
-; HL = message header
+; IY = message header, HL = crc
+; Destroys B,C,E,D
 sendhdr:
 	mvi	a,'+'	; start of message - SYNC
-	call	sendbyt
+	call	sendbyt	; destroys C
 	mvi	a,'+'	; two sync bytes...
-	call	sendbyt
+	call	sendbyt	; destroys C
+	lxi	h,0ffffh	; init CRC
 	mvi	b,5
 sendh0:
-	mov	a,m
-	call	sendhex
-	inx	h
+	ldy	a,+0
+	inxiy
+	mov	d,a
+	call	sendhex	; destroys E,C,A
+	mov	a,d
+	call	crc	; destroys E,C,A
 	dcr	b
 	jnz	sendh0
 	xra	a
+	ret
+
+POLY	equ	8408h
+; HL = cumulative CRC, A = new byte (used)
+; Destroys C,E,A
+crc:
+	mvi	e,8
+crc0:	mov	c,a
+	xra	l	; clears CY
+	rarr	h
+	rarr	l
+	ani	1
+	jz	crc1
+	mvi	a,LOW POLY
+	xra	l
+	mov	l,a
+	mvi	a,HIGH POLY
+	xra	h
+	mov	h,a
+crc1:	mov	a,c
+	rar	; no need to worry about CY in,
+	dcr	e
+	jnz	crc0
+	ora	a	; but must not leave CY on return
 	ret
 
 check:
@@ -168,10 +200,10 @@ SNDMSG:			; BC = message addr
 	ani	active
 	jz	initerr
 sndmsg0:
-	mov	h,b
-	mov	l,c		; HL = message address
-	push	h
+	push	b
 	popix
+	push	b
+	popiy
 	lda	CFGTBL+1	; our ID
 	stx	a,+2		; ensure SID is correct
 	call	sendhdr
@@ -183,6 +215,10 @@ sndmsg0:
 	call	sendh0
 	ora	a
 	jnz	initerr
+	mov	a,l	; send CRC
+	call	sendhex	;
+	mov	a,h	;
+	call	sendhex	;
 	mvi	a,'-'
 	call	sendbyt
 	mvi	a,'-'
@@ -193,32 +229,38 @@ initerr:
 	mvi	a,0ffh
 	ret
 
+; IY = recv buffer, B = len
+; HL = crc, destroys B,C,E
 recvhdr:
+	lxi	h,0ffffh	; init CRC
 	mvi	b,5
 recvh0:
-	call	recvhex
+	call	recvhex	; destroys E,C
 	rc
-	mov	m,a
-	inx	h
+	sty	a,+0
+	inxiy
+	call	crc	; destroys E,C
 	dcr	b
 	jnz	recvh0
 	ret
 
+; Destroys E,C
+; Returns Hex value in A
 recvhex:
-	call	recvdig
+	call	recvdig ; destroys C
 	rc
 	rlc
 	rlc
 	rlc
 	rlc
 	mov	e,a
-	call	recvdig
+	call	recvdig ; destroys C
 	rc
 	ora	e
 	ret
 
 recvdig:
-	call	recvbyt
+	call	recvbyt ; destroys C
 	rc
 	sui	'0'
 	rc
@@ -233,6 +275,8 @@ recvd1:
 	ret
 
 ; When using this, each byte must be coming soon...
+; Destroys C
+; Returns character in A
 recvbyt:
 	mvi	c,0
 recvb0:
@@ -255,10 +299,10 @@ RCVMSG:			; BC = message addr
 	ani	active
 	jz	initerr
 rcvmsg0:
-	mov	h,b
-	mov	l,c		; HL = message address
-	push	h
-	popix
+	push	b
+	popix		; IX = message pointer
+	push	b
+	popiy		; IY = message address (++)
 recev1:
 	mvi	b,2
 recev0:
@@ -273,10 +317,19 @@ recev0:
 	; got SYNC "++", now just input bytes and decode - until "--"
 	call	recvhdr
 	jc	recev2
-	ldx	b,4 ; msg siz field (-1)
+	ldx	b,+4 ; msg siz field (-1)
 	inr	b   ; might be 0, but that means 256
 	call	recvh0
 	jc	recev2
+	call	recvhex	; destroys C,E
+	jc	recev2
+	call	crc	; destroys C,E
+	call	recvhex	; destroys C,E
+	jc	recev2
+	call	crc	; destroys C,E
+	mov	a,h
+	ora	l
+	jnz	recev2
 	; Now confirm we get "--" EOM
 	call	recvbyt
 	cpi	'-'
