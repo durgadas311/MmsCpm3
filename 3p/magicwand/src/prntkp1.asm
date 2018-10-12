@@ -218,12 +218,3 @@ ds 'overflow patch'
 	org @@
 	end
 
-
-	inx	h
-	shld	tbladr
-	lda	pflag
-	dcr	a
-	sta	pflag
-	ret
-
- if $ 

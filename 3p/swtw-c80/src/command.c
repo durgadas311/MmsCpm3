@@ -67,7 +67,3 @@ static expand() {
 	}	}
 
 #include "stdlib.c"		/* Remove this if using linker and stdlib.rel */
-
-
-
-8;

@@ -225,8 +225,3 @@ char *prog,*args;
 @ARGST: DS 100
 #endasm
 }
-r RMAC */
-}
-(CP/M always terminates on 0) */
-#endif
-$A7:	MOV	A,M		/* Ski

@@ -502,12 +502,3 @@ bdos() {
 #endasm
 }
 #endif
-*/
-bdos() {
-#asm
-	POP H
-	POP D		; Get arguments into d
-	POP B		; and b.
-	PUSH B		; Restore stack.
-	PUSH D
-	PUSH 

@@ -45,6 +45,3 @@ entree(c,tree) struct tree **tree; char c[20]; {
 putstr(s) char *s; {while (*s) putchar(*s++); }
 
 #include "stdlib.c"
-
-turn *p < *q ? -1 : 1; }
-

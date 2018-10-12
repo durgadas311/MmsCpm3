@@ -1403,16 +1403,3 @@ char Q8QENDD;		/* End of library (data segment) */
 #include "clibmath.c"
 
 #endif
-
-	LXI	H,-1
-	RNZ
-	XCHG
-	SHLD	$LM
-	PUSH	B
-	POP	H
-	RET
-$LM:	DW	$END
-#endasm
-}
-
-/* Get a

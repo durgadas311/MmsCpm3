@@ -457,5 +457,3 @@ toupper(c) {
 #endasm
 }
 
-
-

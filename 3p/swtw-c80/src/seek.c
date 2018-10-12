@@ -211,6 +211,3 @@ uputc(fdes,buf,cnt) int fdes; char *buf; int cnt; {
 	else for (p = buf + 256; p > buf; *--p = EOF);	/* else erase buffer */
 	return i;
 	}
- and position to write it */
-		}
-	else for (p = bu

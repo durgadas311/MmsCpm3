@@ -235,23 +235,3 @@ static hexdig(c) {
 #define printf prnt_1(),prnt_2
 #define fprintf prnt_1(),prnt_3
 #define sprintf prnt_1(),prnt_4
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;
-}
-
-static putui(ui,radix) /* output a

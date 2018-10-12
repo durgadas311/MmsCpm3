@@ -139,4 +139,3 @@ O@H1:	MOV A,H 	;OUTPUT FROM HIGH NYBBLE OF HL
 #endasm
 	putchar();	/* To declare external */
 }
-

@@ -281,5 +281,3 @@ int s_scan()
 #define sscanf STK_pos(),s_scan
 
 /* end file SCANF.C */
- */
-C FA!  9å! å ÆAÁÁÍäŒ åÍú0ÁÍZ FA €ÍD Ú9^! " A!  9åÍ ŒåÍäŒ *FAÍÏ’å ƒÁÁÁ! .ob ! 9.nf ŒåÍR_b µÂx^ äŒåÍ°a Íã’É÷â  

@@ -3,23 +3,3 @@
 main() {
 	printf("Hi, sailor. New in town?\n");
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
