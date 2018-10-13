@@ -182,6 +182,21 @@ OP_TPC	equ	0f9h			; Tape Control Out
 OP_TPD	equ	0f8h			; Tape Data Out
 OP_CTL2	equ	0f2h			; Secondary Control port Out
 
+; Cassette Tape physical format:
+;	RS-232 ASYNC 8-bit no-parity 1-stop, modulated with 4800Hz.
+;	1200 baud is standard Heath media bit rate.
+; Cassette Tape logical format:
+;	16xSYN, STX, 81H+01H, CTH+CTL, PCH+PCL, ADH+ADL, DTA..., CSH+CSL, CSH+CSL
+; Where:
+;	SYN,STX are the ASCII control characters
+;	81H+01H bit pattern of unknown signficance (hi bit EOF (last block)?)
+;	CTH+CTL is byte count of block
+;	PCH+PCL is PC (execution entry point?)
+;	ADH+ADL is starting memory address of block
+;	CSH+CSL is CRC, computed byte-wise after STX through last DTA byte.
+;	See "CRC" routine for CRC computation.
+; Cassette Tape read scans for at least 10xSYN,STX then confirms 8101/0101.
+
 ;============================================================================
 ; Front Panel Hardware Control Bits
 ;============================================================================
@@ -324,7 +339,7 @@ Init2:	DEC	HL			; Point to last RAM address
 	CALL	C$07BE
 	PUSH	HL
 	CALL	C$07C9
-	PUSH	HL
+	PUSH	HL	; ErrorEnt or AutoB
 	XOR	A
 ; fall through
 
@@ -721,49 +736,50 @@ RMem:
 ;		To caller if OK
 ;		To Error Exit (HL) is tape errors detected
 ;============================================================================
-Load:	LD	BC,0FE00H		; Required type and #
-Load0:	CALL	SRS			; Scan for record start
-
-	LD	L,A			; (HL) = count
-	EX	DE,HL			; DE = count, HL = type and #
-	DEC	C			; - next #
-	ADD	HL,BC
+Load:	LD	BC,0FE00H	; Required type and #
+Load0:	CALL	SRS		; Scan for record start
+	; DE = leader (8101H)
+	; HL = byte count
+	LD	L,A		; (HL) = count
+	EX	DE,HL		; DE = count, HL = type and #
+	DEC	C	; - next # (0FEFFH)
+	ADD	HL,BC	; 8101+FEFF=8000, 0101+FEFF=0000
 	LD	A,H
-	PUSH	BC			; Save type and #
-	PUSH	AF			; Save type code
-	AND	7FH			; Clear end flag bit
+	PUSH	BC		; Save type and #
+	PUSH	AF		; Save type code
+	AND	7FH		; Clear end flag bit
 	OR	L
-	LD	A,2			; Assume sequence error
-	JP	NZ,TpErr		;  and go if wrong type or sequence
-	CALL	RNP			; Read address
+	LD	A,2		; Assume sequence error
+	JP	NZ,TpErr	;  and go if wrong type or sequence
+	CALL	RNP		; Read PC
 	LD	B,H
-	LD	C,A			; BC = P-Reg address
-	LD	A,24			; Offset to PC register
+	LD	C,A		; BC = P-Reg address
+	LD	A,24		; Offset to PC register
 	PUSH	DE
-	CALL	LRA_			; Locate Register address
+	CALL	LRA_		; Locate Register address
 	POP	DE
-	LD	(HL),C			; Set P-Reg in mem
+	LD	(HL),C		; Set P-Reg in mem
 	INC	HL
 	LD	(HL),B
-	CALL	RNP			; Read address
-	LD	L,A			; HL = Address, DE = count
+	CALL	RNP		; Read mem address
+	LD	L,A		; HL = Address, DE = count
  	LD	(StartRam),HL
 
-Load1:	CALL	RNB			; Read next byte
+Load1:	CALL	RNB		; Read next byte
 	LD	(HL),A
-	LD	(ABUSS),HL		; Set ABUSS for display
+	LD	(ABUSS),HL	; Set ABUSS for display
 	INC	HL
 	DEC	DE
 	LD	A,D
 	OR	E
-	JP	NZ,Load1		; Go if more remaining
+	JP	NZ,Load1	; Go if more remaining
 
-	CALL	CTC			; Check tape checksum
-	POP	AF			; File type byte
-	POP	BC			; Last type, Last #
+	CALL	CTC		; Check tape checksum
+	POP	AF		; File type byte
+	POP	BC		; Last type, Last #
 	RLCA
-	JP	C,TFT			; If done, turn off tape
-	JP	Load0			;  else read next record
+	JP	C,TFT		; If done, turn off tape
+	JP	Load0		;  else read next record
 
 ;============================================================================
 ;	Dump	Dump Memory to Mag Tape
@@ -778,25 +794,25 @@ Load1:	CALL	RNB			; Read next byte
 	.error "* Address Error @ WMem *"
 	  endif
 WMem:	LD	HL,TPABT
-	LD	(TPERRX),HL		; Set up error exit
+	LD	(TPERRX),HL	; Set up error exit
 
-	LD	A,1
-	OUT	(OP_TPC),A		; Set up tape control
-	LD	A,16H			; Sync character
-	LD	H,32			; # of sync characters
+	LD	A,1	; TxEn, no other bits
+	OUT	(OP_TPC),A	; Set up tape control
+	LD	A,16H		; Sync character
+	LD	H,32		; # of sync characters
 
-WMem1:	CALL	WNB			; Write next byte
+WMem1:	CALL	WNB		; Write next byte
 	DEC	H
-	JP	NZ,WMem1		; Loop for 32 sync chars
-	LD	A,2			; STX char
-	CALL	WNB			; Write STX
-	LD	L,H			; HL = 0
-	LD	(CRCSUM),HL		; Init checksum counter
-	LD	HL,8101h		; Write header
+	JP	NZ,WMem1	; Loop for 32 sync chars
+	LD	A,2		; STX char
+	CALL	WNB		; Write STX
+	LD	L,H		; HL = 0
+	LD	(CRCSUM),HL	; Init checksum counter
+	LD	HL,8101h	; Write header
 	CALL	WNP
 	LD	HL,(StartRam)
-	EX	DE,HL			; DE gets Start address
-	LD	HL,(ABUSS)		; HL has end address
+	EX	DE,HL		; DE gets Start address
+	LD	HL,(ABUSS)	; HL has end address
 
 ; Calculate byte count
 	INC	HL
@@ -805,21 +821,21 @@ WMem1:	CALL	WNB			; Write next byte
 	LD	L,A
 	LD	A,H
 	SBC	A,D
-	LD	H,A			; HL has byte count
-	CALL	WNP			; Write byte count
+	LD	H,A		; HL has byte count
+	CALL	WNP		; Write byte count
 
 	PUSH	HL
 	LD	A,24
 	PUSH	DE
-	CALL	LRA_			; Locate PC Reg address
+	CALL	LRA_		; Locate PC Reg address
 	LD	A,(HL)
 	INC	HL
 	LD	H,(HL)
-	LD	L,A			; HL = contents of PC
-	CALL	WNP			; Write header
-	POP	HL			; HL = Address
-	POP	DE			; DE = Count
-	CALL	WNP
+	LD	L,A		; HL = contents of PC
+	CALL	WNP		; Write header
+	POP	HL		; HL = Address
+	POP	DE		; DE = Count
+	CALL	WNP		; start address
 
 WMem2:	LD	A,(HL)
 	CALL	WNB			; Write byte
@@ -841,7 +857,7 @@ WMem2:	LD	A,(HL)
 ;
 ;  Stop the tape transport.
 ;============================================================================
-TFT:	xor	a
+TFT:	xor	a	; all off: TxEn, RxEn, DTR, RTS
 	out	(OP_TPC),a		; Turn off tape
 ; Fall through...
 
@@ -930,8 +946,8 @@ Ter1:	CALL	C,Alarm			; Alarm if proper time
 ;
 ; Entered when Loading or Dumping, and the '*' key is struck.
 ;============================================================================
-TPABT:	xor	a
-	out	(0F9H),a
+TPABT:	xor	a	; all off: RTS, DTR, TxEn, RxEn
+	out	(OP_TPC),a
 	jp	ErrorEnt
 
 	  if  ($ !=02aah)
@@ -950,7 +966,7 @@ TPABT:	xor	a
 ;============================================================================
 TpXit:	IN	A,(IP_PAD)		; Read keypad
 	CP	K_Star			; '*' character?
-	IN	A,(0F9H)		; Read tape status
+	IN	A,(IP_TPC)		; Read tape status
 	RET	NZ			; Not '*', so return with status
 	LD	HL,(TPERRX)		; Get address of error handler
 	JP	(HL)			;  and do it
@@ -997,13 +1013,13 @@ RNP:	call	RNB
 ;  RND reads the next single byte from the input device.  The CRC checksum
 ; is updated.
 ;============================================================================
-RNB:	LD	A,34H			; Turn on reader for next byte
-	OUT	(0F9H),A
-Rnb1:	call	TpXit			; Check for '*', read status
-	and	2
-	jp	z,Rnb1			; Loop if not ready
+RNB:	LD	A,34H	; Err Reset, RTS, RxEn, no DTR
+	OUT	(OP_TPC),A
+Rnb1:	call	TpXit	; Check for cancel, read status
+	and	2	; test RxR
+	jp	z,Rnb1	; Loop if not ready
 
-	IN	A,(0F8H)		; Else read data
+	IN	A,(IP_TPD)	; Else read data
 ; Fall through...
 
 ;============================================================================
@@ -1069,15 +1085,15 @@ WNP:	LD	A,H
 ;
 ; Writes next byte to cassette tape.
 ;============================================================================
-WNB:	PUSH	AF			; Save byte to send
-Wnb1:	CALL	TpXit			; Check for '*', read status
-	AND	01H			; #1, not L
-	JP	Z,Wnb1			; Loop if more
-	LD	A,11H			; Enable transmitter
-	OUT	(0F9H),A		; Turn on tape drive
-	POP	AF			; Restore byte
-	OUT	(0F8H),A		; Output it
-	JP	CRC			; Exit via CRC calc
+WNB:	PUSH	AF		; Save byte to send
+Wnb1:	CALL	TpXit		; Check for cancel, read status
+	AND	01H		; TxRdy
+	JP	Z,Wnb1		; Loop if not ready
+	LD	A,11H		; TxEn, Err reset
+	OUT	(OP_TPC),A	; Turn on tape drive
+	POP	AF		; Restore byte
+	OUT	(OP_TPD),A	; Output it
+	JP	CRC		; Exit via CRC calc
 
 ;============================================================================
 ;	Subroutine	LRA - Locate Register Address
@@ -1477,7 +1493,7 @@ ExtCmd:	ADD	A,4			; Convert keypad to numeric
 ExtTbl:	dw	UnivBoot		; '0' - Universal boot???
 	dw	PriBoot			; '1' - Primary Boot
 	dw	SecBoot			; '2' - Secondary Boot
-	dw	AutoBoot		; '3' - Auto Boot????
+	dw	AutoBoot		; '3' - Radix mode
 
 ;============================================================================
 ;	AutoB - Auto Boot
@@ -2230,11 +2246,14 @@ C$07BE:	LD	(ABUSS),HL
 ;	     Inputs  ________________________
 ;	     Outputs ________________________
 ;
-C$07C9:	LD	A,4EH	; "N"
-	OUT	(0F9H),A
+; initial setup after RESET,
+; 8251 is in "mode" state, so issue cassette mode.
+; If AUTO BOOT set, setup jump vector accordingly (HL).
+C$07C9:	LD	A,4EH	; 1stop, no parity, 8data, 16x
+	OUT	(OP_TPC),A
 	ld	hl,ErrorEnt
-	IN	A,(0F2H)
-	AND	80H
+	IN	A,(IP_CON)
+	AND	80H	; auto boot flag
 	RET	Z
 ;
 	LD	HL,AutoB
