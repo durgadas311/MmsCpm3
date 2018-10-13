@@ -158,6 +158,7 @@ CO_IER	equ	0e9h
 CO_LCR	equ	0ebh
 CO_LSR	equ	0edh
 B9600	equ	12	; DLL/DLM value for 9600 baud at 1.8432MHz
+B19200	equ	6	; DLL/DLM value for 19200 baud at 1.8432MHz
 TX_RDY	equ	00100000b	; THE
 
 ;============================================================================
@@ -3210,11 +3211,17 @@ Init3:
 ; Initialize INS8250 at port 0E8H (350Q) - the console
 ; display message "H8 is up and running"...
 IniCRT:
+	ld	hl,B9600
+	in	IP_CON
+	ani	CN_BAU
+	jp	z,inicrt2
+	ld	hl,B19200
+inicrt2:
 	ld	a,10000011b	; 8 data, 1 stop, no parity, DLAB
 	out	CO_LCR
-	ld	a,LOW B9600
+	ld	a,l
 	out	CO_DLL
-	ld	a,HIGH B9600
+	ld	a,h
 	out	CO_DLM
 	ld	a,00000011b	; 8 data, 1 stop, no parity
 	out	CO_LCR
@@ -3237,7 +3244,7 @@ inicrt1:
 	inc	hl
 	jp	inicrt0
 
-crtmsg:	db	ESC,'E',BEL,'H8 Up and Running',CR,LF,LF,0
+crtmsg:	db	ESC,'E',BEL,'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)
 ;	error	"* End of Code Address Error *"
