@@ -41,6 +41,8 @@
 tab	equ	09h
 lf	equ	0ah
 cr	equ	0dh
+bel	equ	07h
+esc	equ	1bh
 
 ;============================================================================
 ; H17 ROM Data Table / Routine Entry Point Addresses
@@ -147,6 +149,16 @@ I$2156	EQU	2156H	; ----I
 
 Stack	equ	2280h			; Top of Stack
 UsrFWA	equ	2280h			; User First Working Address
+
+; "standard" console INS8250 I/O ports
+CO_DAT	equ	0e8h
+CO_DLL	equ	0e8h
+CO_DLM	equ	0e9h
+CO_IER	equ	0e9h
+CO_LCR	equ	0ebh
+CO_LSR	equ	0edh
+B9600	equ	12	; DLL/DLM value for 9600 baud at 1.8432MHz
+TX_RDY	equ	00100000b	; THE
 
 ;============================================================================
 ; Keyset Monitor Port and Bit Definitions
@@ -324,8 +336,9 @@ Init2:	DEC	HL			; Point to last RAM address
 	LD	SP,HL			;  and set Stack pointer
 	CALL	C$07BE
 	PUSH	HL
-	CALL	C$07C9
-	PUSH	HL	; ErrorEnt or AutoB
+	jp	Init3
+	nop
+Init4:
 	XOR	A
 ; fall through
 
@@ -3187,9 +3200,48 @@ DodHex:
 	db	0ch			; E
 	db	1ch			; F
 
-	  if  ($ != 0c7ch)
-	error	"* End of Code Address Error *"
-	  endif
+; Patch to allow more init calls without disturbing code locations
+Init3:
+	CALL	C$07C9
+	PUSH	HL
+	call	IniCRT
+	jp	Init4
+
+; Initialize INS8250 at port 0E8H (350Q) - the console
+; display message "H8 is up and running"...
+IniCRT:
+	ld	a,10000011b	; 8 data, 1 stop, no parity, DLAB
+	out	CO_LCR
+	ld	a,LOW B9600
+	out	CO_DLL
+	ld	a,HIGH B9600
+	out	CO_DLM
+	ld	a,00000011b	; 8 data, 1 stop, no parity
+	out	CO_LCR
+	xor	a
+	out	CO_IER		; ensure interrupts OFF
+	in	CO_LSR		; If Tx not ready now, assume no port
+	and	a,TX_RDY
+	ret	z
+	ld	hl,crtmsg
+	; We know Tx is ready at this point...
+inicrt0:
+	ld	a,(hl)
+	or	a
+	ret	z
+	out	CO_DAT
+inicrt1:
+	in	CO_LSR
+	and	a,TX_RDY
+	jp	z,inicrt1
+	inc	hl
+	jp	inicrt0
+
+crtmsg:	db	ESC,'E',BEL,'H8 Up and Running',CR,LF,LF,0
+
+;	  if  ($ != 0c7ch)
+;	error	"* End of Code Address Error *"
+;	  endif
 
 EndOfCode	equ	$
 
