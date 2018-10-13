@@ -53,9 +53,8 @@ BootA		equ	1F5AH		; H17 Operating parameters
 BootALen	equ	88		; Length of H17 data table
 
 
-; Unknown values
-I$1406	EQU	1406H	; ----I
-J_1E3B	EQU	1E3BH	; J----
+; H17 Floppy ROM "Set Device Parameters" a.k.a. select drive
+R.SDP	EQU	1E32H
 
 ;============================================================================
 ; RAM Area Definitions, storage cells, and data bytes
@@ -144,20 +143,7 @@ BDF		equ	2151h		; Boot Device Flags
 TimOut		equ	2152h		; Boot 15 second timeout counter
 UsrClk		equ	2154h		; Boot clock interrupt routine
 
-
 I$2156	EQU	2156H	; ----I
-I_26CD	EQU	26CDH	; ----I
-I$3221	EQU	3221H	; ----I
-I$34CD	EQU	34CDH	; ----I
-
-I$5B01	EQU	5B01H	; ----I
-I$A74F	EQU	0A74FH	; ----I
-I_C9A7	EQU	0C9A7H	; ----I
-I$CD01	EQU	0CD01H	; ----I
-
-
-
-
 
 Stack	equ	2280h			; Top of Stack
 UsrFWA	equ	2280h			; User First Working Address
@@ -1842,7 +1828,7 @@ H17Boot:
 
 	XOR	A
 	OUT	(DP_DC),A
-	LD	HL,I$075B
+	LD	HL,R.SDP3
 	LD	(D$2086),HL
 J$0639:	LD	E,0AH	; 10
 J_063B:	CALL	C_0670
@@ -2002,8 +1988,8 @@ J$06F9:	PUSH	AF
 	JP	C,J$070C
 	POP	AF
 	CALL	AtoPortOff		; **************************************
-	LD	BC,I$1406
-
+	 db	1
+	mvi	b,20
 J$0707:	DEC	B
 	JR	NZ,J$0707
 	AND	A
@@ -2038,9 +2024,9 @@ C_0713:	PUSH	AF
 
 	POP	AF
 	CALL	AtoPortOff
-; One byte at top of stack
-
-	LD	BC,I_C9A7
+	 db	1
+	and	a
+	ret
 
 J$0721:	INC	SP
 	INC	SP
@@ -2125,15 +2111,20 @@ PIN:	CALL	ByteFromPortOff
 	RET
 
 
-I$075B:	LD	A,0AH	; 10
-	LD	(D$20B4),A
-	LD	A,(AIO_UNI)
-	PUSH	AF
-	CP	02H	; 2
-	JP	C,J_1E3B
-;
-	LD	A,03H	; 3
-	JP	J_1E3B
+; Hack into the H17 Floppy ROM, to support 3 drives on H17...
+R.SDP3:	LD	A,0AH	; 10	;; clone of R.SDP code
+	LD	(D$20B4),A	;; (+2)
+	LD	A,(AIO_UNI)	;; (+5)
+	PUSH	AF		;; (+8)
+				;; (+9) end clone, patch starts here...
+	CP	2		;; check if drive 0 or 1.
+	JP	C,R.SDP+9	;; drives 0, 1 handled normally
+	LD	A,3		;; setup bit pattern for third drive
+	JP	R.SDP+9		;; handle special case.
+	; drive unit + 1 is drive select port pattern:
+	;	0 = 00000001
+	;	1 = 00000010
+	;	2 = 00000100
 ;
 ;	-----------------
 ;
@@ -2734,7 +2725,7 @@ J_0A15:	 CALL	ByteFromPortOff			; ************************************
 J$0A27:	CALL	ByteToPortOff
 	 db	40h, 1			; Output data, then port offset
 
-J$0A2C:	call	0726h
+J$0A2C:	call	ByteFromPortOff
 	db	1
 	and	08H
 	JR	NZ,J$0A3B
@@ -2753,8 +2744,10 @@ J$0A3B:	CALL	ByteToPortOff
 
  	ld	hl,2132h
 
-J_0A43:	call	0726h
-	LD	BC,I$A74F
+J_0A43:	call	ByteFromPortOff
+	 db	1
+	ld	c,a
+	and	a
 	JP	P,J_0A43
 ;
 	AND	10H	; 16
