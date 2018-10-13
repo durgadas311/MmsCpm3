@@ -1329,6 +1329,9 @@ PRSROM:
 	db	0			; DsProt
 	db	0			; RegI - Show SP Register
 	db	0c9h			; Return instruction
+	 if ((low $) != 0)
+	error "* Block must end on page boundary *"
+	 endif
 
 ;============================================================================
 ;	XInit1 - Size Memory
@@ -1850,7 +1853,7 @@ J$0643:	CALL	C_0670
 	 CALL	C$2061
 ;
 	LD	DE,UsrFWA
-	LD	BC,I$0900
+	LD	BC,0900H
 	LD	HL,0
 	 CALL	C$2067
 ;
@@ -2488,7 +2491,6 @@ J$08EA:	DEC	BC
 	PUSH	AF
 	LD	A,B
 	AND	0FBH	; ~DDEN
-I$0900	EQU	$-1
 	LD	B,A
 	POP	AF
 	JR	NZ,J$090D
@@ -2691,8 +2693,8 @@ C_0A0F:	DI
 	LD	BC,0FFFFh
 	LD	D,02H	; 2
 J_0A15:	 CALL	ByteFromPortOff			; ************************************
-;
-	LD	BC,I_08E6
+	db	1
+	and	08H
 	JR	Z,J$0A27
 ;
 	DEC	BC
@@ -2711,8 +2713,8 @@ J$0A27:	CALL	ByteToPortOff
 	 db	40h, 1			; Output data, then port offset
 
 J$0A2C:	call	0726h
-
-	LD	BC,I_08E6
+	db	1
+	and	08H
 	JR	NZ,J$0A3B
 ;
 	DEC	BC
@@ -2895,21 +2897,15 @@ DevMsg:	db	0c2h, 08ch, 083h	; 'DEV' display (Device)
 
 ; ASCII data table
 
-I$0B31:	SBC	A,B
-	ADD	A,0DEH
-I_0B34:	ADD	A,E
-	SUB	0F7H
-I$0B37:	ADD	A,B
-J$0B38:	LD	B,0F2H
-	LD	B,0ADH
-	LD	A,(BC)
-	LD	(HL),L
-	ADD	HL,BC
-I$0B3F:	LD	A,B
-	LD	A,H
-	CP	B
-	CP	H
+I$0B31:	db	098h,0c6h,0deh  ; "Por"
+I_0B34:	db	083h,0d6h,0f7h  ; "Uni"
 
+I$0B37:	dw	H17BtMsg	; "H17"
+	dw	H47BtMsg	; "H47"
+	dw	H67BtMsg	; "H67"
+	dw	H37BtMsg	; "H37"
+
+I$0B3F:	db	078h,07ch,0b8h,0bch	; Port options
 
 
 ; This is the AutoBoot entry from the jump table, but it seems to only perform
@@ -3074,9 +3070,9 @@ DEH55:	RLCA				; Put high nibble in low
 	RLCA
 	PUSH	AF			; Save
 	AND	0Fh			; Mask to low nibble only
-	ADD	A,6EH
+	ADD	A,low DodHex
 	LD	E,A
-	LD	A,0CH	; 12
+	LD	A,high DodHex
 	ADC	A,0
 	LD	D,A
 	LD	A,(DE)
