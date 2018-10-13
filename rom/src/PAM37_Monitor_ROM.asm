@@ -2413,7 +2413,7 @@ H37Boot:
 	XOR	A
 	 CALL	C_07E1
 ;
-	OR	0DH	; INTEN, DDEN, MOTOR
+	OR	0CH	; DDEN, MOTOR
 	CALL	AtoPortOff
 	 db	0
 
@@ -2424,13 +2424,18 @@ H37Boot:
 	 CALL	Dly
 ;
 	LD	HL,I$08BE
-	LD	(D_2037),HL
 	CALL	ByteToPortOff
 	 db	3, 2			; RESTORE command
 
 	LD	BC,0FFFFh
 	LD	D,06H	; 6
-J_08AE:	DEC	BC
+J_08AE:	; poll for command complete
+	call	ByteFromPortOff
+	 db	2
+	bit	0,a	; BUSY
+	jnz	K_08AE
+	jp	(hl)	; terminate loop
+K_08AE:	DEC	BC
 	LD	A,B
 	OR	C
 	JR	NZ,J_08AE
@@ -2446,19 +2451,17 @@ J_08AE:	DEC	BC
 ;	-----------------
 I$08BE:	LD	E,10		; step in 10 tracks
 	LD	HL,I$08CE
-	LD	(D_2037),HL
 J$08C6:	CALL	ByteToPortOff
 	 db	43h, 2		; STEP IN command
 
 	JP	J_08AE
 ;
 ;	-----------------
-I$08CE:	LD	HL,I_08E3
+I$08CE:
 	DEC	E
 	JP	NZ,J$08C6
 ;
 	LD	HL,I_08E3
-	LD	(D_2037),HL
 	CALL	ByteToPortOff
 	 db	3, 2		; RESTORE command
 
@@ -2479,7 +2482,7 @@ J$08EA:	DEC	BC
 ;
 	POP	BC
 	LD	A,B
-	OR	02H	; DDEN
+	OR	03H	; INTEN, DDEN
 	LD	B,A
 	PUSH	BC
 	CALL	AtoPortOff
@@ -3172,7 +3175,7 @@ DodHex:
 	db	0ch			; E
 	db	1ch			; F
 
-	  if  ($ != 0c7eh)
+	  if  ($ != 0c7ch)
 	error	"* End of Code Address Error *"
 	  endif
 
