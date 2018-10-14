@@ -67,9 +67,15 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 	dad	b		;
 	mvi	b,4
 	mvi	c,mmu
-	outir
+	ldai	; P = EI state (IFF2)
+	push	psw
+	di
+	outir	; trashes P
+	pop	psw	; restore IFF2 to P
 	pop	h		;
 	pop	b		; restore register b
+	rpo	; P=0, leave interrupts off
+	ei
 	ret
 
 table:
