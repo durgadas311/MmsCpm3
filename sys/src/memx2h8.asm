@@ -73,22 +73,25 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 	ret
 
 table:
-	db	0$000$1111b	; Bank 0
-	db	0$001$0000b
-	db	0$010$0000b
-	db	0$011$0000b
-	db	0$000$1000b	; Bank 1
-	db	0$001$0111b
-	db	0$010$0000b
-	db	0$011$0000b
-	db	0$000$1000b	; Bank 2
-	db	0$001$0000b
-	db	0$010$0111b
-	db	0$011$0000b
-	db	0$000$1000b	; Bank 3
-	db	0$001$0000b
-	db	0$010$0000b
-	db	0$011$0111b
+	db	0$000$0000b	; Bank 0
+	db	0$001$1111b
+	db	0$010$1111b
+	db	0$011$1111b
+	;
+	db	0$000$0111b	; Bank 1
+	db	0$001$1000b
+	db	0$010$1111b
+	db	0$011$1111b
+	;
+	db	0$000$0111b	; Bank 2
+	db	0$001$1111b
+	db	0$010$1000b
+	db	0$011$1111b
+	;
+	db	0$000$0111b	; Bank 3
+	db	0$001$1111b
+	db	0$010$1111b
+	db	0$011$1000b
 
 ?move:	xchg		; we are passed source in DE and dest in HL
 	ldir		; use Z80 block move instruction
@@ -102,41 +105,41 @@ table:
 ; This code assumes the Bank Switch Board is set as for "bank 0" in 'table'
 ?bnkck:
 	lxi	d,40h
-	mvi	a,0$000$1110b
+	mvi	a,0$000$0001b
 	out	mmu
-	mvi	a,0$001$0001b
+	mvi	a,0$001$1110b
 	out	mmu
 	mvi	a,1
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,0$001$0000b
+	mvi	a,0$001$1111b
 	out	mmu
-	mvi	a,0$010$0001b
+	mvi	a,0$010$1110b
 	out	mmu
 	mvi	a,2
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,0$010$0000b
+	mvi	a,0$010$1111b
 	out	mmu
-	mvi	a,0$011$0001b
+	mvi	a,0$011$1110b
 	out	mmu
 	mvi	a,3
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,0$011$0000b
+	mvi	a,0$011$1111b
 	out	mmu
-	mvi	a,0$001$0001b
+	mvi	a,0$001$1110b
 	out	mmu
 	ldax	d
 	cpi	1
 	jrnz	noram
-	mvi	a,0$001$0000b
+	mvi	a,0$001$1111b
 	out	mmu
-	mvi	a,0$010$0001b
+	mvi	a,0$010$1110b
 	out	mmu
 	ldax	d
 	cpi	2
 	jrnz	noram
-	mvi	a,0$010$0000b
+	mvi	a,0$010$1111b
 	out	mmu
-	mvi	a,0$011$0001b
+	mvi	a,0$011$1110b
 	out	mmu
 	ldax	d
 	cpi	3
