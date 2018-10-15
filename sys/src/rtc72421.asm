@@ -114,8 +114,11 @@ settm0:	inr	c
 	mvi	c,rtc-1
 	mvi	b,12
 gettm0:	inr	c
-	ini
-	jrnz	gettm0
+	inp	a
+	ani	0fh
+	mov	m,a
+	inx	h
+	djnz	gettm0
 	call	unhold
 	lxi	h,regs
 	call	gtbcd
