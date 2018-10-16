@@ -79,20 +79,20 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 	ret
 
 table:
-	db	0$000$0000b	; Bank 0
-	db	0$001$1111b
+	db	0$001$1111b	; Bank 0
 	db	0$010$1111b
 	db	0$011$1111b
+	db	0$000$0000b
 	;
 	db	0$000$0111b	; Bank 1
-	db	0$001$1000b
 	db	0$010$1111b
 	db	0$011$1111b
+	db	0$001$1000b
 	;
 	db	0$000$0111b	; Bank 2
 	db	0$001$1111b
-	db	0$010$1000b
 	db	0$011$1111b
+	db	0$010$1000b
 	;
 	db	0$000$0111b	; Bank 3
 	db	0$001$1111b
