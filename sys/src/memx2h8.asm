@@ -8,6 +8,8 @@ vers equ '1 ' ; Sep 24, 2017  16:24   drm "MEMX2H8.ASM"
 true	equ -1
 false	equ not true
 
+memtest	equ	true
+
 cr	equ 13
 lf	equ 10
 bell	equ 7
@@ -110,6 +112,77 @@ table:
 ; Verify that we have banked RAM...
 ; This code assumes the Bank Switch Board is set as for "bank 0" in 'table'
 ?bnkck:
+ if memtest
+	; setup pattern buffer
+	lxi	h,4100h
+	mvi	b,136
+	mvi	a,10h
+bnkck1:
+	mov	m,a
+	inx	h
+	adi	1
+	daa
+	djnz	bnkck1
+
+	; copy diff pattern to each bank
+	lxi	h,4100h
+	lxi	d,0100h
+	lxi	b,128
+	ldir
+	mvi	a,0$000$0001b
+	out	mmu
+	mvi	a,0$001$1110b
+	out	mmu
+	lxi	h,4101h
+	lxi	d,0100h
+	lxi	b,128
+	ldir
+	mvi	a,0$001$1111b
+	out	mmu
+	mvi	a,0$010$1110b
+	out	mmu
+	lxi	h,4102h
+	lxi	d,0100h
+	lxi	b,128
+	ldir
+	mvi	a,0$010$1111b
+	out	mmu
+	mvi	a,0$011$1110b
+	out	mmu
+	lxi	h,4103h
+	lxi	d,0100h
+	lxi	b,128
+	ldir
+	; check pattern in each bank
+	mvi	a,0$011$1111b
+	out	mmu
+	mvi	a,0$000$0000b
+	out	mmu
+	lxi	h,4100h
+	call	bnkck9
+	jrnz	noram
+	mvi	a,0$000$0001b
+	out	mmu
+	mvi	a,0$001$1110b
+	out	mmu
+	lxi	h,4101h
+	call	bnkck9
+	jrnz	noram
+	mvi	a,0$001$1111b
+	out	mmu
+	mvi	a,0$010$1110b
+	out	mmu
+	lxi	h,4102h
+	call	bnkck9
+	jrnz	noram
+	mvi	a,0$010$1111b
+	out	mmu
+	mvi	a,0$011$1110b
+	out	mmu
+	lxi	h,4103h
+	call	bnkck9
+	jrnz	noram
+ else
 	lxi	d,40h
 	mvi	a,0$000$0001b
 	out	mmu
@@ -150,6 +223,7 @@ table:
 	ldax	d
 	cpi	3
 	jrnz	noram
+ endif
 	mvi	a,true
 	jr	bnkck0
 noram:	xra	a
@@ -158,5 +232,23 @@ bnkck0:	push	psw
 	call	?bnksl
 	pop	psw
 	ret
-
+ if memtest
+bnkck9:
+	push	h	; pattern
+	lxi	h,0100h
+	lxi	d,4200h
+	lxi	b,128
+	ldir
+	pop	h	; pattern
+	lxi	d,4200h
+	mvi	b,128
+bnkck8:
+	ldax	d
+	cmp	m
+	rnz
+	inx	h
+	inx	d
+	djnz	bnkck8
+	ret
+ endif
 	end
