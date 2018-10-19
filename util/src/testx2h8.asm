@@ -13,7 +13,11 @@ bell	equ 7
 cpm	equ	0000h
 bdos	equ	0005h
 cmd	equ	0080h
-ctl	equ	0007h	; TODO: where is this?
+ctl	equ	000dh
+
+; ctl port bit to twiddle...
+errbit	equ	01000000b	; H17 side select
+ctlport	equ	0f2h		;
 
 ; BDOS functions
 msgout	equ	9
@@ -259,6 +263,11 @@ bnktest:
 	ora	a
 	jnz	more1
 	stx	e,+4
+	lda	gpp
+	ori	errbit
+	out	ctlport
+	lda	gpp
+	out	ctlport
 more1:
 	call	bnkck7
 	jz	ok1
@@ -280,6 +289,11 @@ ok1:
 	mov	a,e
 	sub	LOW cpybuf
 	stx	a,+6
+	lda	gpp
+	ori	errbit
+	out	ctlport
+	lda	gpp
+	out	ctlport
 more2:
 	call	bnkck7
 	jz	ok2
