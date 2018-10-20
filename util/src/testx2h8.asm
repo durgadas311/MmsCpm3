@@ -90,6 +90,11 @@ bnkck1:
 	sta	gpp
 
 again:
+	lda	gpp
+	ori	errbit
+	out	ctlport
+	lda	gpp
+	out	ctlport
 
 	; copy diff pattern to each bank
 	lxix	banks
@@ -143,6 +148,27 @@ agn0:
 	jmp	again
 
 done:
+	; verify pattern was not corrupted...
+	mvi	a,10h
+	lxix	patcnt
+	mvi	e,0
+	lxi	h,patbuf
+	mvi	b,0	; 0 == 256
+done1:
+	cmp	m
+	jz	done2
+	inrx	+0
+	ldx	c,+1
+	inr	c
+	jnz	done2
+	stx	e,+1
+done2:
+	inx	h
+	inr	e
+	adi	1
+	daa
+	djnz	done1
+
 	; report results...
 	lxix	banks
 	mvi	b,4
@@ -172,6 +198,15 @@ done0:
 	lxi	d,16
 	dadx	d
 	djnz	done0
+	lda	patcnt
+	lxi	h,pat1
+	call	decout
+	lda	paterr
+	lxi	h,pat2
+	call	hexout
+	lxi	d,patchk
+	mvi	c,msgout
+	call	bdos
 
 	jmp	cpm
 
@@ -231,6 +266,10 @@ res2:	db	'hh copy 2: '
 res3:	db	'nnn '
 res4:	db	'hh',cr,lf,'$'
 
+patchk:	db	'Pattern Check: '
+pat1:	db	'nnn '
+pat2:	db	'hh',cr,lf,'$'
+
 bnksetup
 	ldx	a,+1
 	out	mmu
@@ -262,11 +301,6 @@ bnktest:
 	inr	a
 	jnz	more1
 	stx	e,+4
-;	lda	gpp
-;	ori	errbit
-;	out	ctlport
-;	lda	gpp
-;	out	ctlport
 more1:
 	call	bnkck7
 	jz	ok1
@@ -286,11 +320,6 @@ ok1:
 	inr	a
 	jnz	more2
 	stx	e,+6
-;	lda	gpp
-;	ori	errbit
-;	out	ctlport
-;	lda	gpp
-;	out	ctlport
 more2:
 	call	bnkck7
 	jz	ok2
@@ -331,6 +360,9 @@ banks:
 	db	3	; bank ID - bank 3
 	db	00101111b,00111110b	; bank select, assumes sequence
 	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
+
+patcnt:	db	0
+paterr:	db	0ffh
 
 patbuf:	ds	256
 cpybuf:	ds	256
