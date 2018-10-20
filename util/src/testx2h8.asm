@@ -1,10 +1,14 @@
 ;****************************************************************
 ; X/2-H8 Banked Memory Test Program		 		*
 ;****************************************************************
+rev	equ	'1'
+
 	maclib z80
 
 true	equ -1
 false	equ not true
+
+useldir	equ	true
 
 cr	equ 13
 lf	equ 10
@@ -268,7 +272,7 @@ res4:	db	'hh',cr,lf,'$'
 
 patchk:	db	'Pattern Check: '
 pat1:	db	'nnn '
-pat2:	db	'hh',cr,lf,'$'
+pat2:	db	'hh    Rev: ',rev,cr,lf,'$'
 
 bnksetup
 	ldx	a,+1
@@ -281,7 +285,11 @@ bnksetup
 	dad	d	; HL = pattern
 	lxi	d,tstbuf
 	lxi	b,128
+ if useldir
 	ldir
+ else
+	call	doldir
+ endif
 	ret
 
 bnktest:
@@ -310,7 +318,11 @@ ok1:
 	lxi	h,tstbuf
 	lxi	d,cpybuf
 	lxi	b,128
+ if useldir
 	ldir
+ else
+	call	doldir
+ endif
 	lxi	h,cpybuf
 	lxi	d,tstbuf
 	call	bnkck9
@@ -340,6 +352,20 @@ bnkck7:
 	djnz	bnkck8
 	xra	a
 	ret
+
+ if useldir
+ else
+doldir:
+	mov	a,m
+	stax	d
+	inx	h
+	inx	d
+	dcx	b
+	mov	a,b
+	ora	c
+	jnz	doldir
+	ret
+ endif
 
 banks:
 	db	0	; bank ID - bank 0
