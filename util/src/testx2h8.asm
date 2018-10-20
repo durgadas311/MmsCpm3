@@ -239,7 +239,7 @@ bnksetup
 	lhld	patptr
 	ldx	e,+0
 	mvi	d,0
-	dad	d
+	dad	d	; HL = pattern
 	lxi	d,tstbuf
 	lxi	b,128
 	ldir
@@ -253,21 +253,20 @@ bnktest:
 	lhld	patptr
 	ldx	e,+0
 	mvi	d,0
-	dad	d
-	push	h	; pattern
+	dad	d	; HL = pattern
 	lxi	d,tstbuf
 	call	bnkck9
 	jz	ok1
 	inrx	+3
 	ldx	a,+4
-	ora	a
+	inr	a
 	jnz	more1
 	stx	e,+4
-	lda	gpp
-	ori	errbit
-	out	ctlport
-	lda	gpp
-	out	ctlport
+;	lda	gpp
+;	ori	errbit
+;	out	ctlport
+;	lda	gpp
+;	out	ctlport
 more1:
 	call	bnkck7
 	jz	ok1
@@ -278,22 +277,20 @@ ok1:
 	lxi	d,cpybuf
 	lxi	b,128
 	ldir
-	pop	h	; pattern
-	lxi	d,cpybuf
+	lxi	h,cpybuf
+	lxi	d,tstbuf
 	call	bnkck9
 	jz	ok2
 	inrx	+5
 	ldx	a,+6
-	ora	a
+	inr	a
 	jnz	more2
-	mov	a,e
-	sub	LOW cpybuf
-	stx	a,+6
-	lda	gpp
-	ori	errbit
-	out	ctlport
-	lda	gpp
-	out	ctlport
+	stx	e,+6
+;	lda	gpp
+;	ori	errbit
+;	out	ctlport
+;	lda	gpp
+;	out	ctlport
 more2:
 	call	bnkck7
 	jz	ok2
@@ -312,27 +309,28 @@ bnkck7:
 	inx	h
 	inx	d
 	djnz	bnkck8
+	xra	a
 	ret
 
 banks:
 	db	0	; bank ID - bank 0
 	db	00111111b,00000000b	; bank select, assumes sequence
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
  if ($-banks) != 16
 	.error "Wrong struct length"
  endif
 
 	db	1	; bank ID - bank 1
 	db	00000001b,00011110b	; bank select, assumes sequence
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
 
 	db	2	; bank ID - bank 2
 	db	00011111b,00101110b	; bank select, assumes sequence
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
 
 	db	3	; bank ID - bank 3
 	db	00101111b,00111110b	; bank select, assumes sequence
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
 
 patbuf:	ds	256
 cpybuf:	ds	256
