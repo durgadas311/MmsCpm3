@@ -1,7 +1,7 @@
 ;****************************************************************
 ; X/2-H8 Banked Memory Test Program		 		*
 ;****************************************************************
-rev	equ	'1'
+rev	equ	'3'
 
 	maclib z80
 
@@ -9,6 +9,7 @@ true	equ -1
 false	equ not true
 
 useldir	equ	true
+delay	equ	0
 
 cr	equ 13
 lf	equ 10
@@ -90,6 +91,9 @@ bnkck1:
 	out	mmu
 	mvi	a,00000000b
 	out	mmu
+ if delay
+	call	sleep
+ endif
 	lda	ctl
 	sta	gpp
 
@@ -130,6 +134,9 @@ again:
 	out	mmu
 	ldx	a,+2
 	out	mmu
+ if delay
+	call	sleep
+ endif
 	ei
 
 	lda	cont
@@ -192,6 +199,12 @@ done0:
 	ldx	a,+6
 	lxi	h,res4
 	call	hexout
+	ldx	a,+7
+	lxi	h,res5
+	call	decout
+	ldx	a,+8
+	lxi	h,res6
+	call	hexout
 	push	b
 	pushix
 	lxi	d,result
@@ -213,6 +226,17 @@ done0:
 	call	bdos
 
 	jmp	cpm
+
+ if delay
+sleep:
+	lxi	b,delay
+slp0:
+	dcx	b
+	mov	a,b
+	ora	c
+	jnz	slp0
+	ret
+ endif
 
 ; leading zeroes blanked - must preserve B
 decout:
@@ -268,17 +292,22 @@ res0:	db	'x copy 1: '
 res1:	db	'nnn '
 res2:	db	'hh copy 2: '
 res3:	db	'nnn '
-res4:	db	'hh',cr,lf,'$'
+res4:	db	'hh xref: '
+res5:	db	'nnn '
+res6:	db	'hh',cr,lf,'$'
 
 patchk:	db	'Pattern Check: '
 pat1:	db	'nnn '
 pat2:	db	'hh    Rev: ',rev,cr,lf,'$'
 
-bnksetup
+bnksetup:
 	ldx	a,+1
 	out	mmu
 	ldx	a,+2
 	out	mmu
+ if delay
+	call	sleep
+ endif
 	lhld	patptr
 	ldx	e,+0
 	mvi	d,0
@@ -297,10 +326,14 @@ bnktest:
 	out	mmu
 	ldx	a,+2
 	out	mmu
+ if delay
+	call	sleep
+ endif
 	lhld	patptr
 	ldx	e,+0
 	mvi	d,0
 	dad	d	; HL = pattern
+	push	h
 	lxi	d,tstbuf
 	call	bnkck9
 	jz	ok1
@@ -338,6 +371,23 @@ more2:
 	inrx	+5
 	jmp	more2
 ok2:
+	pop	h
+	lxi	d,cpybuf
+	call	bnkck9
+	jz	ok3
+	inrx	+7
+	ldx	a,+8
+	inr	a
+	jnz	more3
+	mov	a,e
+	sui	LOW cpybuf
+	stx	a,+8
+more3:
+	call	bnkck7
+	jz	ok3
+	inrx	+7
+	jmp	more3
+ok3:
 	ret
 
 bnkck9:
@@ -370,22 +420,22 @@ doldir:
 banks:
 	db	0	; bank ID - bank 0
 	db	00111111b,00000000b	; bank select, assumes sequence
-	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0ffh,0,0,0,0,0,0,0 ; results
  if ($-banks) != 16
 	.error "Wrong struct length"
  endif
 
 	db	1	; bank ID - bank 1
 	db	00000001b,00011110b	; bank select, assumes sequence
-	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0ffh,0,0,0,0,0,0,0 ; results
 
 	db	2	; bank ID - bank 2
 	db	00011111b,00101110b	; bank select, assumes sequence
-	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0ffh,0,0,0,0,0,0,0 ; results
 
 	db	3	; bank ID - bank 3
 	db	00101111b,00111110b	; bank select, assumes sequence
-	db	0,0ffh,0,0ffh,0,0,0,0,0,0,0,0,0 ; results
+	db	0,0ffh,0,0ffh,0,0ffh,0,0,0,0,0,0,0 ; results
 
 patcnt:	db	0
 paterr:	db	0ffh
