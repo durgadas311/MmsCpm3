@@ -1,0 +1,1553 @@
+;
+; Hardware dependent routines for z89/z90
+;
+; Febuary 1, 1984 11:15 mjm
+;
+; Link command: LINK FORMAT=FMTMAIN,FMTZ89,FMTDISP,FMTTBL[NC,NR]
+;
+
+	MACLIB	Z80
+	$-MACRO
+
+	public	setjmp,inithd,intoff,inton,str
+	public	ctrlio,comnd,writt,rdcom,dskxit,getst
+	public	restor,stepin,writrk,rdadr
+
+	extrn	phydrv,sid,trk,mfm,stepr,modes,buffer,wdflag,vsectb
+
+false	equ	0
+true	equ	not false
+
+base	equ	0
+cpm	equ	base
+bdos	equ	base+5
+dma	equ	base+80h
+reta	equ	base+26h	; return address poke for Z37 intrq
+pass	equ	base+3Eh	; LOCATION WHERE "DISK$CTLR" ADDRESS IS PASSED
+msgout	equ	9
+@intby	equ	100
+
+; error codes
+
+initerrcd	equ	0
+setlabcd	equ	1
+wrtprocd	equ	2
+notrdycd	equ	3
+hrdsectcd	equ	4
+z17sftcd	equ	5
+notsupcd	equ	6
+badportcd	equ	7 
+dterrcd 	equ	8
+trk0ercd	equ	9 
+dserrcd 	equ	10
+drverrcd	equ	11
+wterrcd 	equ	12
+wmerrcd 	equ	13
+ 
+; MMS controller ports
+CTRL	EQU	38H
+WD1797	EQU	3CH
+STAT	EQU	WD1797+0
+TRACK	EQU	WD1797+1
+SECTOR	EQU	WD1797+2
+DATA	EQU	WD1797+3
+
+; Z37 controller ports
+ICL	EQU	78H
+ACL	EQU	79H
+Z37CS	EQU	7AH
+Z37DA	EQU	7BH
+
+; Z17 controller ports
+DSK$CTL EQU	7FH
+RCVR	EQU	7EH
+ZSTAT	EQU	7DH
+ZDATA	EQU	7CH
+
+MTR$ON	EQU	10010000B
+DRV$A	EQU	00000010B
+DRV$B	EQU	00000100B
+DRV$C	EQU	00001000B
+
+SETTLE	EQU	250	; .5 Sec FOR MOTOR-ON
+SELP	EQU	25	;50 mS SELECT PAUSE
+
+; M314 interface ports
+?STAT8	EQU	05BH
+?DATA8	EQU	05AH
+
+; Z47 and Z67 interface ports: variable, taken from switches.
+
+; Z67 (SASI) STATUS PORT BITS
+ACK	EQU	00000001B
+INT	EQU	00000010B
+PER	EQU	00000100B
+BUSY	EQU	00001000B
+CMND	EQU	00010000B
+MSG	EQU	00100000B
+POUT	EQU	01000000B
+REQ	EQU	10000000B
+
+; Z67 (SASI) CONTROL COMMANDS
+RUN	EQU	00000000B
+SWRS	EQU	00010000B
+INTE	EQU	00100000B
+SEL	EQU	01000000B
+
+PORT	EQU	0F2H		; z89 interupt control port
+
+;
+;	Machine type string, put in sign on message
+;
+
+str:	db	'Z89/Z90$'
+
+;
+;	setup jumps for type of controller - M316, Z37, etc.
+;	Called only once at the start of format.
+;	returns: [CY] on error
+  
+setjmp:
+	lhld	cpm+1		; calculate address of interrupt control byte
+	lxi	d,@intby-3
+	dad	d
+	shld	inctrl
+
+	mvi	a,false
+	sta	wdflag	;ASSUME NOT WD1797 TYPE FORMATTING
+	lda	phydrv
+	mov	c,a
+	cpi	3	;Z17 DRIVES ARE 0-2
+	jnc	notz17
+	lxi	h,z17io
+	lxi	d,vskz17
+	sded	vsectb
+	jmp	gd0
+notz17:
+	cpi	5	;DRIVES 5-8 ARE EITHER MMS-REMEX OR Z47
+	jc	drv$err
+	cpi	5+4	; (we tell them apart by the switches)
+	jnc	not314
+	lxi	h,m314io
+	lxi	d,0	; no verfiy sector table
+	sded	vsectb
+	jmp	gd0
+not314:
+	mvi	a,true
+	sta	wdflag	;FLAG FORMAT AS WD1797 TYPE
+	mov	a,c
+	lxi	h,m316io
+	cpi	29
+	jc	drv$err
+	cpi	29+8
+	jc	gd0
+	cpi	46
+	jc	drv$err
+	cpi	46+4
+	jc	gd0
+	mvi	a,false ; NOT WD1797 TYPE
+	sta	wdflag
+	mov	a,c
+	cpi	50		; 50 THRU 58 ARE Z67
+	jc	drv$err
+	cpi	50+9
+	jnc	drv$err
+	lxi	h,z67io 	; Z67 I/O ROUTINES
+	lxi	d,0		; no verify sector table
+	sded	vsectb
+gd0:	lxi	d,ctrlio
+	lxi	b,numall
+	ldir
+
+	lda	phydrv		; SEE IF IT'S Z47 OR MMS-REMEX
+	sui	5
+	cpi	4
+	jnc	not47
+	mvi	d,01b		; SW501 DEFINITION FOR Z89-47
+	call	get$port
+	jnz	not47		; NEITHER PORT Z47, MUST BE MMS-REMEX
+	lxi	h,z47io
+	lxi	d,ctrlio
+	lxi	b,numio
+	ldir			; SET Z47 I/O ROUTINES
+not47:	lda	phydrv		; SEE IF IT'S Z67
+	sui	50
+	cpi	9
+	jnc	not67
+	mvi	d,10B		; SW501 DEFINITION FOR Z89-67
+	call	get$port
+	jnz	bad$port	; bad port
+not67:	lda	phydrv
+	sui	46
+	cpi	4
+	jnc	dskok
+	lxi	h,z37io 	;SPECIAL SETUP FOR Z37 SUBSET OF M316
+	lxi	d,ctrlio
+	lxi	b,numio
+	ldir			; hardware vectors to standard location
+dskok:	lhld	pass		;GET CTL$BYTE ADDRESS
+	shld	ctla		;
+	xra	a		; returns [NC]	if no error
+	ret
+
+drv$err:
+	mvi	a,drverrcd
+	jr	err$exit
+bad$port:
+	mvi	a,badportcd
+err$exit:
+	stc
+	ret
+
+get$port:
+	in	port	;FIND OUT WHAT PORT THE Z47 OR Z67 IS ADDRESSED AT.
+	mov	b,a
+	ani	11b	;PORT 7C ?
+	cmp	d
+	mvi	c,7Ch
+	jz	gprt
+	mov	a,b
+	ani	1100b	;PORT 78 ?
+	rar
+	rar
+	cmp	d
+	rnz		; PSW/NZ IF NEITHER PORT SET
+	mvi	c,78h
+gprt:	mov	a,c
+	sta	zenport
+	ret
+
+;
+;	This routines initializes variables that need to be done for 
+;	every disk that is formated.  It is called before each disk
+;	is formated.
+;
+
+inithd:
+	xra	a
+	sta	flag?
+	ret
+
+;
+;	These routines turn off and on the serial port interrupts
+;
+
+INTOFF: lhld	inctrl		; system interrupt control byte
+	mov	a,m
+	ANI	11111101B	; 2 ms clock off
+	mov	m,a
+	OUT	PORT
+	LXI	H,SAVINT
+	MVI	C,0D0H+1
+	MVI	E,4	;FOUR PORTS; 0D0H,0D8H,0E0H,0E8H
+INF0:	INI		;GET CURRENT INTERUPT CONTROL
+	XRA	A
+	OUTP	A	;TURN INTERUPTS OFF FOR NOW
+	MVI	A,8H
+	ADD	C
+	MOV	C,A
+	DCR	E
+	JNZ	INF0
+	RET
+
+INTON:	lhld	inctrl
+	mov	a,m
+	ori	00000010b
+	mov	m,a
+	OUT	PORT
+	LXI	H,SAVINT
+	MVI	C,0D0H+1
+	MVI	E,4	;FOUR PORTS; 0D0H,0D8H,0E0H,0E8H
+INO0:	OUTI		;RESTORE INTERUPT CONTROL
+	MVI	A,8H
+	ADD	C
+	MOV	C,A
+	DCR	E
+	JNZ	INO0
+	RET
+
+IMAGE	DB	0	; ctrl port image
+inctrl	dw	0	; pointer to interrupt control byte
+SAVINT: DB	0,0,0,0 ;INTERUPT CONTROL BYTES FOR EACH SERIAL PORT
+
+;
+;	The machine dependent routines' jump vector. Setup in setjmp.
+;
+
+ctrlio: 	jmp	$-$
+comnd:		jmp	$-$
+writt:		jmp	$-$
+rdcom:		jmp	$-$
+dskxit: 	jmp	$-$
+getst:		jmp	$-$
+numio	equ	$-ctrlio
+restor: 	jmp	$-$
+stepin: 	jmp	$-$
+writrk: 	jmp	$-$
+rdadr:		jmp	$-$
+numall	equ	$-ctrlio
+
+
+M316IO: JMP	MMSSET
+	JMP	MMSCOM
+	JMP	MMSWRT
+	JMP	MMSRDC
+	ret ! nop ! nop
+	ret ! nop ! nop
+	JMP	WD$HOME
+	JMP	WD$STEPIN
+	JMP	WD$WRITT
+	JMP	WD$RDADR
+
+Z37IO:	JMP	Z37SET
+	JMP	Z37COM
+	JMP	Z37WRT
+	JMP	Z37RDC
+	jmp	z37exit
+	jmp	z37stat
+
+Z17IO:	JMP	Z17$SETUP
+	JMP	Z17$COMND
+	JMP	NULLIO
+	JMP	NULLIO
+	jmp	xitz17
+	ret ! nop ! nop
+	JMP	Z17$HOME
+	JMP	Z17$STEPIN
+	JMP	Z17$WRITT
+	JMP	Z17$RDADR
+
+Z67IO:	JMP	NULLIO
+	JMP	NULLIO
+	JMP	NULLIO
+	JMP	NULLIO
+	ret ! nop ! nop
+	ret ! nop ! nop
+	JMP	Z67$HOME
+	JMP	NULLIO
+	JMP	Z67$WRITT
+	JMP	Z67$RDADR
+
+M314IO: JMP	RMX$SETUP
+	JMP	NULLIO
+	JMP	M314$WRITT
+	JMP	M314$RDADR
+	ret ! nop ! nop
+	ret ! nop ! nop
+	JMP	NULL$HOME
+	JMP	NULLIO
+	JMP	WRITT
+	JMP	RDCOM
+
+Z47IO:	JMP	RMX$SETUP
+	JMP	NULLIO
+	JMP	Z47$WRITT
+	JMP	Z47$RDADR
+	ret ! nop ! nop
+	ret ! nop ! nop
+
+NULL$HOME:
+	mvi	a,00000100b	;indicate we're at track 0
+NULLIO: RET
+********************** Hardware Dependant Code **********************
+
+*******************************************
+********** REMEX (MMS/Z47) routines *******
+
+RMX$SETUP:
+	LDA	PHYDRV
+	SUI	5
+	RRC
+	RRC
+	RRC
+	STA	SUBYTE
+	LXIX	MODES
+	MVI	B,0CH	;SINGLE DENSITY FORMAT COMMAND
+	BITX	4,+3	;TEST FOR DD
+	JZ	RXS0
+	MVI	B,0EH	;Z47 DD FORMATS
+	BITX	3,+2	;TEST TRACK-0 DENSITY
+	JNZ	RXS0
+	MVI	B,0FH	;MMS DD FORMATS
+RXS0:	LDX	A,+2	;SECTOR SIZE
+	ANI	11B
+	LXI	H,RMXSD ;point to double density table
+	BITX	4,+3	;double density?
+	JNZ	RXS1
+	INX	H	;point to single density table
+RXS1:	ADD	L
+	MOV	L,A
+	MVI	A,0
+	ADC	H
+	MOV	H,A
+	LDA	SUBYTE
+	ORA	M	;SIDE,UNIT,SECTOR BYTE
+	STA	SUBYTE
+	MOV	A,B
+	STA	CMBYTE	;COMMAND BYTE
+	RET
+
+;Single Dens:	  -  128  256  512 (1024?)   [bytes per sector]
+RMXSD:	DB	  0,  26,  15,	 8,   4
+;Double Dens:	128  256  512  1024   -      [bytes per sector]
+
+M314$WRITT:
+	LDA	SID
+	ANI	00000001B
+	RRC
+	MOV	B,A
+	LDA	FLAG?
+	MVI	C,00000001B	;is the disk formatted ?
+	JNC	MW0
+	MVI	C,00000011B	;both sides if DS
+MW0:	ANA	C
+	CMP	C
+	JZ	MW1
+	ADD	A
+	ORI	1
+	STA	FLAG?
+	PUSH	B
+	LXI	D,FMTING
+	MVI	C,MSGOUT
+	CALL	BDOS
+	POP	B
+	LDA	CMBYTE
+	CALL	M314$COM
+	LDA	SUBYTE
+	ORA	B	;SET SIDE
+	CALL	M314$PUT
+	ANI	11111B	;CHECK FOR SPECIAL 46 SPT FORMAT
+	JNZ	MW3
+MW4:	IN	?STAT8
+	ANI	01000000B
+	JNZ	MW4
+	MVI	A,46	;SELECT 46 SECTORS PER TRACK
+	CALL	M314$PUT
+MW3:	IN	?STAT8
+	RAL
+	JC	MW3
+	IN	?STAT8
+	ANI	00010000B	;ERROR BIT
+	JZ	MWEXT
+	MVI	A,1
+	CALL	M314$CM
+	CALL	M314$GET
+MWEXT:	LXI	H,BUFFER+3000	;PREVENT "HARD-SECTOR" ERROR
+	RET
+
+MW1:	XRA	A
+	JMP	MWEXT
+
+M314$RDADR:
+	MVI	A,2	;READ AUXILLIARY STATUS
+	CALL	M314$COM
+	LDA	SUBYTE	;side 0 Aux Status will tell us if side 1 is available.
+	CALL	M314$PUT ; (and won't cause the program to hang...)
+	CALL	M314$GET
+	XRI	00010000B
+	ANI	00010000B	;[ZR] = SIDE 1 AVAILABLE.
+	RET
+
+M314$COM:
+	PUSH	PSW
+	OUT	?STAT8	;RESET DRIVE
+	POP	PSW
+M314$CM:PUSH	PSW
+MC0:	IN	?STAT8
+	RAL
+	JC	MC0	;WAIT FOR RESET TO COMPLETE
+	POP	PSW
+	CALL	M314$PUT
+	PUSH	PSW
+MC1:	IN	?STAT8
+	XRI	10000000B
+	ANI	11000000B
+	JNZ	MC1
+	POP	PSW
+	xra	a
+	RET
+
+M314$PUT:
+	PUSH	PSW
+MP0:	IN	?STAT8
+	ANI	01100000B
+	JNZ	MP0
+	POP	PSW
+	OUT	?DATA8
+	RET
+
+M314$GET:
+	IN	?STAT8
+	ANI	00100000B
+	JZ	M314$GET
+MG0:	IN	?STAT8
+	ANI	01000000B
+	JNZ	MG0
+	IN	?DATA8
+	RET
+
+****************** Z47 *********************
+Z47$WRITT:
+	LDA	SID
+	ANI	00000001B
+	RRC
+	MOV	B,A
+	LDA	FLAG?
+	MVI	C,00000001B	;is the disk formatted ?
+	JNC	ZW0
+	MVI	C,00000011B	;both sides if DS
+ZW0:	ANA	C
+	CMP	C
+	JZ	ZW1
+	ADD	A
+	ORI	1
+	STA	FLAG?
+	PUSH	B
+	LXI	D,FMTING
+	MVI	C,MSGOUT
+	CALL	BDOS
+	LDA	CMBYTE
+	CALL	Z47$COM
+	POP	B
+	JC	ZWERR
+	LDA	SUBYTE
+	ORA	B	;SET SIDE
+	CALL	Z47$PUT
+	JC	ZWERR
+	ANI	00011111B	;CHECK FOR SPECIAL 46 SPT FORMAT
+	JNZ	ZW3
+ZW4:	INP	A
+	ANI	10000000B
+	JNZ	ZW4
+	MVI	A,46	;SELECT 46 SECTORS PER TRACK
+	CALL	Z47$PUT
+	JC	ZWERR
+ZW3:	INP	A
+	ANI	00100000B
+	JZ	ZW3
+	INP	A
+	ANI	00000001B	;ERROR BIT
+	JZ	ZWEXT
+	MVI	A,1		; READ ERROR STATUS COMMAND
+	CALL	Z47$CM1
+	JC	ZWERR
+	CALL	Z47$GET 	; GET ERROR STATUS BYTE
+	JC	ZWERR
+ZWEXT:	LXI	H,BUFFER+3000	;PREVENT "HARD-SECTOR" ERROR
+	RET
+
+ZWERR:	ORA	A		; (CLEAR CARRY)
+	MVI	A,0FFH
+	JMP	ZWEXT
+
+ZW1:	XRA	A
+	JMP	ZWEXT
+
+FMTING	DB	' ...REMEX drive is formatting this side of diskette.$'
+
+Z47$RDADR:
+	MVI	A,2	;READ AUXILLIARY STATUS
+	CALL	Z47$COM
+	LDA	SUBYTE	;side 0 Aux Status will tell us if side 1 is available.
+	CALL	Z47$PUT ;(and won't cause program to hang...)
+	LDA	ZENPORT
+	MOV	C,A
+ZR0:	INP	A
+	ANI	10100001B	;WAIT FOR DTR/DONE/ERR
+	JZ	ZR0
+	ANI	00100001B	; DONE/ERR = FAULT
+	JNZ	ZR1
+	INR	C
+	INP	A
+ZR1:	XRI	00010000B
+	ANI	00010000B	;[ZR] = SIDE 1 AVAILABLE.
+	RET
+
+Z47$COM:
+	PUSH	PSW
+	LDA	ZENPORT
+	MOV	C,A
+	MVI	A,00000010B
+	OUTP	A	; reset Z47-REMEX
+	POP	PSW
+Z47$CM1:PUSH	PSW
+	PUSH	D
+	LXI	D,65535
+ZC0:	INP	A
+	ANI	00100000B
+	JNZ	ZC1
+	DCX	D
+	MOV	A,D
+	ORA	E
+	JNZ	ZC0
+	POP	D
+ZP1:	POP	PSW	;indicate error
+ZG1:	ori	1000$0000b
+	ret
+
+ZC1:	POP	D
+	POP	PSW
+	INR	C
+	OUTP	A
+	ORA	A	;reset carry (no error)
+	PUSH	PSW
+	DCR	C
+ZC2:	INP	A
+	ANI	00100000B
+	JNZ	ZC2
+	POP	PSW
+	xra	a
+	RET
+
+Z47$PUT:
+	PUSH	PSW
+	LDA	ZENPORT
+	MOV	C,A
+ZP0:	INP	A
+	ANI	10100000B
+	JZ	ZP0
+	ANI	00100000B
+	JNZ	ZP1
+	POP	PSW
+	INR	C
+	OUTP	A
+	ORA	A	;reset carry
+	DCR	C
+	RET
+
+Z47$GET:
+	LDA	ZENPORT
+	MOV	C,A
+ZG0:	INP	A		; READ CONTROL PORT
+	ANI	10100000B	; DTR AND DONE
+	JZ	ZG0
+	ANI	00100000B	; DONE
+	JNZ	ZG1
+	INR	C
+	INP	A		; READ DATA PORT
+	ORA	A		; RESET CARRY
+	RET
+
+SUBYTE: DB	0
+CMBYTE: DB	0
+FLAG?	DB	0	; THESE TWO BYTES ARE SHARED BY
+ZENPORT DB	0	;  Z67 ROUTINES
+
+******************************************
+************* Z17 routines ***************
+ctla:	 dw	0
+ctl$byt: db	0
+selflg:  db	0
+
+Z17$SETUP:
+	LDA	PHYDRV	;(A)=0,1,2
+	INR	A
+	MOV	C,A
+	MVI	A,00000010B SHR 1
+GDRIVE	ADD	A
+	DCR	C
+	JNZ	GDRIVE
+	ori	MTR$ON
+	STA	CTL$BYT ;image ready.
+	LDED	STEPR
+	MVI	D,0
+	LXI	H,STPTBL
+	DAD	D
+	MOV	A,M
+	STA	ASTEPR
+	RET
+
+Z17$COMND:	;(A)= 1797 TYPE I COMMAND
+	BIT	7,A	;0 = TYPE I COMMANDS
+	RNZ
+	BIT	6,A	;0 = RESTORE,SEEK
+	RZ	;THIS LEAVES ONLY STEP-IN AND STEP-OUT
+	XRI	00100000B	;INVERT DIRECTION BIT
+	ANI	00100000B	;STRIP OFF ALL OTHER BITS
+	MOV	B,A
+	LDA	CTL$BYT
+	ORA	B	;SET DIRECTION OF STEP
+	CALL	DISK$CTLR	;SETUP FOR STEPPING
+	ORI	01000000B	;STEP PULSE HI
+	OUT	DSK$CTL
+	ANI	10111111B	;STEP PULSE LO
+	OUT	DSK$CTL
+	MVI	A,15	;SLOW STEP RATE (30 MILLESECONDS)
+	CALL	PAUSE
+	IN	DSK$CTL
+	ANI	0010B	;TRK 00 SENSE
+	RLC		; INTO BIT 2
+	RET
+
+SFTERR: ei	; Attepted to format soft-sector media.
+	xra	a
+	stc
+	ret
+
+disk$ctlr:
+	out	dsk$ctl
+	push	psw
+	lda	selflg
+	ora	a
+	mvi	a,0ffh
+	sta	selflg
+	mvi	a,2
+	cz	pause5
+	pop	psw
+	ret
+
+Z17$WRITT:
+	LDA	SID	;0 OR 1
+	ANI	00000001B
+	RRC		;0 OR 128
+	MOV	B,A
+	RRC
+	MOV	C,A
+	lhld	inctrl
+	mov	a,m
+	ANI	10111111B	;STRIP SIDE BIT
+	ORA	C		;MERGE NEW SIDE BIT
+	mov	m,a
+	OUT	PORT		;SELECT SIDE
+	LDA	TRK
+	ORA	B	;0-79, 128-207
+	CPI	3	;TRACK 3 (SIDE 0) IS EXCHANGE POINT
+	LXI	H,SYS
+	JC	GSK	;TRACKS 0,1,2
+	LXI	H,DAT
+GSK:
+	DI
+FIND$SECTR:
+	CALL	TIME	;MEASURE DISTANCE BETWEEN TWO HOLES
+	MOV	A,D
+	CPI	7	;IF GREATER THAN 7, MUST BE SOFT-SECTORED MEDIA.
+	JNC	SFTERR	;(700H LOOPS = 27 MILLISECONDS)
+	CPI	3	;SECTOR SHOULD BE 4, INDEX 2
+	JC	FIND$SECTR	;FIND A SECTOR HOLE
+FIND$INDEX:
+	CALL	TIME
+	MOV	A,D
+	CPI	3
+	JNC	FIND$INDEX	;NOW FIND THE INDEX HOLE
+	XRA	A
+	OUT	ZSTAT	;SET FILL CHARACTER
+	LDA	CTL$BYT ;TURN WRITE-GATE ON
+	ORI	00000001B
+	OUT	DSK$CTL
+SECTOR$LOOP:
+	CALL	FIND$PE ;FIND POSITIVE EDGE OF HOLE SIGNAL
+	MVI	C,12	;PAD WITH AT LEAST 12 BYTES ZERO (PROBEBLY 13)
+N1:	XRA	A
+	CALL	OUTPUT
+	DCR	C
+	JNZ	N1
+	MVI	A,0FDH	;SYNC CHARACTER
+	MOV	D,A	;FORCE CLEARING OF CRC
+	CALL	OUTPUT	;SEND SYNC CHAR TO DISK
+	LDA	SID	;SIDE NUMBER
+	CALL	OUTPUT
+	LDA	TRK	;TRACK NUMBER
+	CALL	OUTPUT
+	MOV	A,M	;SECTOR NUMBER
+	CALL	OUTPUT
+	MOV	A,D	;SEND CRC
+	CALL	OUTPUT
+	CALL	OUTPUT
+	MVI	B,0	;256 BYTES PER SECTOR
+	MVI	C,15	;15 BYTES ZERO TO PAD
+NLOOP:	XRA	A
+	CALL	OUTPUT
+	DCR	C
+	JNZ	NLOOP
+	MVI	A,0FDH	;DATA SYNC CHARACTER
+	MOV	D,A	; AND CLEAR CRC
+	CALL	OUTPUT
+DLOOP:	MVI	A,0E5H	;DATA FILL CHARACTER
+	CALL	OUTPUT
+	DJNZ	DLOOP
+	MOV	A,D	; SEND CRC
+	CALL	OUTPUT
+	CALL	OUTPUT	;PAD WITH 3 NULLS
+	CALL	OUTPUT
+	CALL	OUTPUT
+	INX	H	;check for end of track (end of skew table)
+	XRA	A
+	CMP	M
+	JNZ	SECTOR$LOOP
+	LDA	CTL$BYT
+	OUT	DSK$CTL ;WRITE-GATE OFF...
+	LXI	H,BUFFER+3000	;PREVENT "HARD-SECTOR DISK ON SOFT-SEC CTRLR"
+	ei		;enable interrupts
+	XRA	A	; OR ANY OTHER ERRORS
+	RET
+
+Z17$RDADR:
+	MOV	B,A	;SIDE BYTE
+	ANI	1
+	RRC
+	RRC
+	MOV	C,A
+	lhld	inctrl
+	mov	a,m
+	ANI	10111111B
+	ORA	C
+	mov	m,a
+	OUT	PORT
+	MVI	H,12	;RETRY COUNTER
+ZRA0:	DI
+ZRA1:	CALL	TIME
+	MOV	A,D	
+	CPI	3
+	JC	ZRA1
+	CALL	SYNC0
+	CALL	SYNC
+	JC	ZRAERR
+	CALL	INPUT	;SIDE BYTE ON DISK
+	MOV	L,A
+	CALL	INPUT	;TRACK BYTE
+	CALL	INPUT	;SECTOR NUMBER
+	CALL	INPUT	;CHECK-SUM
+	JRNZ	ZRAERR
+	EI
+	MOV	A,B	;COMPARE REQUESTED SIDE AND SIDE ON DISK
+	SUB	L
+	RET
+
+ZRAERR: EI
+	DCR	H
+	JNZ	ZRA0
+	XRA	A
+	STC
+	RET
+ 
+Z17$STEPIN:
+	LDA	CTL$BYT
+	ORI	00100000B
+	CALL	DISK$CTLR
+	ORI	01000000B	;STEP TOWARDS TRK 80
+	OUT	DSK$CTL
+	ANI	10111111B
+	OUT	DSK$CTL
+	LDA	ASTEPR
+	JMP	PAUSE	;RETURNS ZERO IN (A)
+
+xitz17: lhld	ctla
+	mov	a,m
+	ani	11100001b
+	out	dsk$ctl
+	mov	m,a
+	inx	h
+	mvi	m,0
+	inx	h
+	mvi	m,0
+	xra	a
+	sta	selflg
+	ret
+
+; Send a byte onto diskette
+OUTPUT	MOV	E,A
+OUTP0	IN	ZSTAT
+	RAL
+	JNC	OUTP0
+	MOV	A,E
+	OUT	ZDATA
+	XRA	D
+	RLC
+	MOV	D,A
+	RET
+
+INPUT:	IN	ZSTAT
+	RAR
+	JNC	INPUT
+	IN	ZDATA
+	MOV	E,A
+	XRA	D
+	RLC
+	MOV	D,A
+	MOV	A,E
+	RET
+
+SYNC0:	XRA	A	;SYNC TO A BYTE OF "00"
+	JR	SYNCX
+SYNC:	MVI	A,0FDH	;SYNC TO STANDARD BYTE (0FDH)
+SYNCX:	MVI	D,80	;TRY 80 TIMES
+	OUT	RCVR	;SET SYNC CHARACTER
+	IN	RCVR	;RESET RECEIVER
+SY0:	IN	DSK$CTL
+	ANI	00001000B	;CHECK SYNC FOUND BIT
+	JRNZ	SY1	;SYNC FOUND
+	DCR	D
+	JRNZ	SY0
+	STC	;SYNC NOT FOUND
+	RET
+SY1:	IN	ZDATA	;RELEAVE RECEIVER OF SYNC CHARACTER
+	MVI	D,0	;RESET CHECK-SUM
+	RET	; CARRY WAS RESET BY "ANI"
+
+
+; Hard sector handling routines...
+TIME	CALL	FIND$NE
+	LXI	D,0
+TLOOP	INX	D
+	IN	DSK$CTL
+	RAR
+	JNC	TLOOP
+	RET
+
+FIND$NE CALL	FIND$EDGE
+	CPI	0
+	JNZ	FIND$NE
+	RET
+
+FIND$PE CALL	FIND$EDGE
+	CPI	1
+	JNZ	FIND$PE
+	RET
+
+FIND$EDGE:
+	IN	DSK$CTL
+	ANI	00000001B
+	MOV	C,A
+FLOOP	IN	DSK$CTL
+	ANI	00000001B
+	CMP	C
+	JZ	FLOOP
+	RET
+
+
+Z17$HOME:
+	LDA	CTL$BYT
+	CALL	DISK$CTLR
+	lhld	inctrl
+	mov	a,m
+	ANI	10111111B	;STRIP SIDE SELECT BIT OFF
+	mov	m,a 
+	OUT	PORT
+	MVI	B,255
+REC	IN	DSK$CTL
+	ANI	00000010B
+	JNZ	SETSTAT 	;ALREADY AT TRK0
+	LDA	CTL$BYT
+	ORI	01000000B	;STEP
+	OUT	DSK$CTL
+	ANI	10111111B
+	OUT	DSK$CTL
+	LDA	ASTEPR
+	CALL	PAUSE
+	DJNZ	REC
+SETSTAT:	;SET "NOT READY", "WRITE PROTECT", "TRK 00" AS PER 1797
+	IN	DSK$CTL
+	ANI	00000001B
+	MOV	E,A
+	LXI	B,0800H ;MUST SEE INDEX TRANSITION BEFORE COUNT GETS TO ZERO
+IDX	IN	DSK$CTL
+	ANI	00000001B
+	CMP	E
+	JRNZ	GOTIDX
+	DCX	B
+	MOV	A,B
+	ORA	C
+	JRNZ	IDX
+	MVI	E,0
+GOTIDX: ORA	E	;1=ready, 0=not ready
+	XRI	00000001B	;MAKE IT "NOT READY" BIT
+	rrc			;PUT IN STANDARD POSITION (1797)
+	MOV	C,A
+	IN	DSK$CTL 	;NOW GET WRITE-PROTECT STATUS
+	BIT	1,A	;TRK00
+	JRZ	GI0
+	SETB	2,C
+GI0:	BIT	2,A	;WRITE-PROTECT
+	JRZ	GI1
+	SETB	6,C
+GI1:	MOV	A,C
+	RET
+
+pause5: push	psw
+	xra	a
+	call	pause
+	pop	psw
+	dcr	a
+	jnz	pause5
+	ret
+
+; 2 millisecond pause routine (multiples of...)
+PAUSE:	PUSH	PSW
+	LXI	B,171
+PAUS:	DCX	B
+	MOV	A,B
+	ORA	C
+	JNZ	PAUS
+	POP	PSW
+	DCR	A
+	JNZ	PAUSE
+	RET
+
+STPTBL: DB	3,6,10,15	; 6mS, 12mS, 20mS, 30mS
+ASTEPR: DB	0
+
+; Format skew tables...
+SYS	DB	0,7,4,1,8,5,2,9,6,3
+DAT	DB	0,1,2,3,4,5,6,7,8,9
+	DB	0
+
+; Verify shew tables
+vskz17: db	1,4,7,10,3,6,9,2,5,8
+
+
+**************************************************
+; MMS DD Controller routines
+
+MMSSET: PUSH	PSW
+	PUSH	H
+	LDA	PHYDRV
+	SUI	29
+	ORI	01101000B	; SD, burst off, Int En
+	LHLD	MFM
+	INR	L
+	DCR	L		; test DD bit
+	JZ	MS0
+	ANI	10111111B	; set DD
+MS0:	STA	IMAGE
+	POP	H
+	POP	PSW
+	RET
+
+MMSCOM: CALL	MC
+	LXI	B,34000 	; wait (up to) .8 seconds for drive ready
+DLY1:	IN	STAT		; check for disk spinning in drive
+	RLC
+	JNC	RDY0		; break out of loop if ready
+	DCX	B		; count each loop
+	MOV	A,B
+	ORA	C
+	JNZ	DLY1		; continue waiting
+RDY0:	IN	STAT		; last chance to become ready
+	RET
+
+MC:	DI			; critical timing: ctrl port must be set after
+	OUT	STAT		; headload is set (by controller)
+	NOP			; head will load 15 microsec after command
+	NOP
+	NOP
+	NOP
+	LDA	IMAGE		; approx 12.2 microsec
+	OUT	CTRL		; +4 microsec untill data is strobed
+	EI
+	JMP	$		; wait for command to finish
+
+MMSWRT: LBCD	IMAGE
+	MOV	B,C
+	MVI	C,DATA
+	BIT	6,B		; DD bit
+	JNZ	NODD8		; if SD 8"
+	BIT	2,B		; 8" bit
+	JZ	WRT$TRK$8DD
+NODD8:	call	MMW0
+	ora	a		;clear carry
+	ret
+
+MMW0:	OUT	STAT		; issue command
+	EI
+LOOP1:	HLT			; wait for DRQ
+	OUTI			; send data to controller
+	JMP	LOOP1		; loop untill controller is finished
+
+WRT$TRK$8DD:			; write track for 8" DD
+	CALL	WT8		; (special timing requirements)
+	PUSH	PSW
+	LDA	IMAGE
+	OUT	CTRL		; BURST mode off
+	POP	PSW
+	ora	a	;clear carry bit 
+	RET
+
+WT8:	LDA	IMAGE		; setup ctrl port image for "BURST" mode
+	ANI	11011111B
+	MOV	E,A		; keep in CPU register for fast access
+	MOV	D,M		; get first data byte to output
+	INX	H
+	LDA	SID		; side number
+	ANI	00000001B
+	RLC
+	ORI	11110000B	; write track command + side bit
+	OUT	STAT		; issue command
+	EI
+	HLT			; wait for first DRQ (it comes immediatlly)
+	OUTP	D		; send first byte to controller
+	MOV	A,E
+	OUT	CTRL		; set burst mode
+	MOV	A,M		; get second data byte
+	EI
+	HLT			; wait for 2nd DRQ (after this they come fast)
+	OUTP	A		; send second byte
+	INX	H
+LP2:	OUTI			; wait line will sync. all subsequent transfers
+	JMP	LP2		; Must turn BURST off...
+
+MMSRDC: LBCD	MODES+2
+	MOV	D,C
+	MVI	C,DATA
+	BIT	7,D		;8"/5" FLAG
+	JRZ	RDC5M		; if 5", use that routine
+	BIT	4,B		; 8", test density
+	JRNZ	RDC8DD		; double densith has special routine
+RDC5M:
+	OUT	STAT
+COMRDC: EI
+	HLT
+	INP	H		; track number
+	HLT
+	INP	L		; side number
+	HLT
+	INP	D		; sector number
+	HLT
+	INP	E		; sector size code
+	HLT
+	INP	A		; discard crc-1
+	HLT
+	INP	A		; discard crc-2
+	JMP	$		; wait for termination
+
+RDC8DD: CALL	RD8DD
+	PUSH	PSW
+	LDA	IMAGE
+	OUT	CTRL
+	POP	PSW
+	RET
+
+RD8DD:	PUSH	PSW
+	LDA	IMAGE
+	ANI	11011111B
+	OUT	CTRL
+	POP	PSW
+	OUT	STAT
+	EI
+	HLT
+	INP	H		; track number
+	INP	L		; side number
+	nop ! nop ! nop
+	INP	D		; sector number
+	nop ! nop ! nop
+	INP	E		; sector size code
+	nop ! nop ! nop
+	INP	A		; discard crc-1
+	nop ! nop ! nop
+	INP	A		; discard crc-2
+	JMP	$		; wait for termination
+
+; Z37 Controller routines
+
+Z37SET: PUSH	PSW
+	PUSH	H
+	LDA	PHYDRV
+	SUI	46
+	MVI	L,00001000B
+Z31:	SLAR	L
+	DCR	A
+	JP	Z31
+	MOV	A,L
+	ORI	00001011B	; enable DRQ, INTRQ; Motor ON
+	LHLD	MFM
+	INR	L
+	DCR	L		; test DD flag
+	JZ	Z30
+	ORI	00000100B	; set DD
+Z30:	STA	IMAGE
+	XRA	A
+	OUT	ACL		; set ACL as needed for formatting
+	POP	H
+	POP	PSW
+	RET
+
+z37stat:
+	LXI	D,4E20H ;300MS
+	MVI	B,2	;FOR AND'S; FASTER THAN ANI 2
+	IN	Z37CS	;GET STATUS
+	ANA	B	;BIT 1 IS INDEX
+	MOV	C,A	;PUT INDEX AWAY
+TK0LP:	IN	Z37CS	;GET IT AGAIN
+	ANA	B	;INDEX
+	XRA	C	;CHECK FOR CHANGE
+	jrnz	z37st1	;IF CHANGE, EXIT LOOP
+	DCR	E	;COUNTER, LO BYTE
+	JRNZ	TK0LP	;STAY IN LOOP
+	DCR	D	;COUNTER, HI BYTE
+	JRNZ	TK0LP
+	mvi	a,1000$0000b	; drive not ready
+	jr	z37st2
+z37st1: 
+	in	z37cs	;get status
+z37st2: 
+	ret
+
+Z37COM:
+	PUSH	H
+	PUSH	D	;SAVE THE COUNTER
+	EXAF		;SAVE COMMAND
+	LHLD	20H	;GET DRIVER'S INTPT ROUTINE
+	LDED	22H
+	EXX		;AND STORE IT
+	MVI	A,JMP
+	STA	20H
+	LXI	H,ZCOMRET
+	SHLD	21H	;RETURN TO ZCOMRET
+	POP	D
+	POP	H
+	LDA	IMAGE
+	OUT	ICL
+	EXAF		;GET COMMAND BACK
+	OUT	Z37CS	;HEADLOAD SET BY CONTROLLER
+	EI
+	JMP	$	;WAIT FOR COMMAND TO FINISH
+ZCOMRET:
+	INX	SP
+	INX	SP	;CLEAR STACK
+	MVI	A,10	;COME HERE AFTER INTERRUPT
+ZRETLP: DCR	A
+	JRNZ	ZRETLP	;WAIT FOR LINES TO SETTLE
+	IN	Z37CS	;CLEAR interupt and get status of operation.
+	PUSH	PSW	;SAVE STATUS
+	LDA	IMAGE
+	ANI	11111100B	;DISABLE INTERRUPTS
+	OUT	ICL
+	POP	PSW	;RESTORE STATUS
+	PUSH	H	;SAVE ADDRESS FROM WRITE
+	PUSH	D	;SAVE COUNTER AGAIN
+	EXX
+	SHLD	20H	;RESTORE DRIVER'S STUFF
+	SDED	22H
+	POP	D
+	POP	H
+	EI
+	ani	0111$1111b ;clear not ready bit
+	RET
+
+Z37WRT: PUSH	H
+	PUSH	PSW
+	LHLD	20H	;GET DRIVER'S INTPT ROUTINE
+	LDED	22H
+	EXX		;AND STORE IT
+	MVI	A,JMP
+	STA	20H
+	LXI	H,ZCOMRET
+	SHLD	21H	;RETURN TO ZCOMRET
+	POP	PSW
+	POP	H
+	PUSH	PSW	;SAVE COMMAND
+	LDA	IMAGE
+	OUT	ICL	;TURN INTERRUPTS ON
+	POP	PSW
+	MVI	C,Z37DA
+	OUT	Z37CS		; issue command
+	EI
+LOOP2:	HLT			; wait for DRQ
+	OUTI			; send data to controller
+	JMP	LOOP2		; loop until controller is finished
+
+Z37RDC: PUSH	H
+	PUSH	PSW
+	LHLD	20H	;GET DRIVER'S INTPT ROUTINE
+	LDED	22H
+	EXX		;AND STORE IT
+	MVI	A,JMP
+	STA	20H
+	LXI	H,ZCOMRET
+	SHLD	21H	;RETURN TO ZCOMRET
+	POP	PSW
+	POP	H
+	PUSH	PSW	;SAVE COMMAND
+	LDA	IMAGE
+	OUT	ICL	;TURN INTERRUPTS ON
+	POP	PSW
+	MVI	C,Z37DA
+	OUT	Z37CS
+	JMP	COMRDC
+
+z37exit:		; turn off motor
+	xra	a
+	sta	image
+	out	icl
+	ret
+ 
+****************************************************
+************** Z67 ROUTINES ************************
+****************************************************
+
+Z67$HOME:
+	LHLD	MODES+2 	; GET MODE BYTES
+	XRA	A
+	BIT	6,H
+	JZ	SSIDE
+	INR	A		; CODE FOR A DOUBLE SIDED DISK
+SSIDE:	BIT	4,H
+	JZ	SDEN
+	ADI	6		; CODE FOR A DOUBLE DENSITY DISK
+SDEN:	LXI	H,FFCMD+5
+	MOV	M,A		; PUT CODE INTO COMMAND STRING
+	CALL	INIT$Z67	; SENDS 'DEFINE FLOPPY DISK TRACK FORMAT'
+	JNZ	ERREX1		;  COMMAND
+	CALL	WAKE$UP
+	LXI	H,RECMD 	; SEND RECALIBRATE COMMAND
+	CZ	OUTCOM
+	CZ	CHK$STAT
+	MVI	A,00000100B
+	RZ
+ERREX1: MVI	A,10000000B	; SET BIT FOR DRIVE NOT READY ERROR
+	RET
+
+Z67$WRITT:
+	LDA	FLAG?		; IS DISK ALREADY FORMATTED ?
+	ORA	A
+	MVI	A,0		; FLAG NO ERROR
+	JNZ	Z67EXT
+	LXI	D,FMTMSG
+	MVI	C,MSGOUT
+	CALL	BDOS
+	CALL	WAKE$UP 	; GET CONTROLLER'S ATTENTION
+	LXI	H,FORMAT	; FORMAT COMMAND
+	CZ	OUTCOM		; OUTPUT THE COMMAND STRING
+	CZ	CHK$STAT	; CHECK STATUS OF COMMAND
+	JNZ	ERREX2		;  ERROR
+	LXI	H,FLAG?
+	MVI	M,1		; FLAG DISK ALREADY FORMATTED
+Z67EXT: LXI	H,BUFFER+3000	; JUST SO PROGRAM THINKS WE WROTE FROM BUFFER
+	ANA	A		; (TO CLEAR CARRY)
+	RET
+
+ERREX2: CALL	GETCON		; SEND REQUEST SENSE COMMAND TO FIND
+	LXI	H,SENSE 	;  OUT WHAT THE ERROR WAS
+	CALL	OUTCOM
+	CALL	IN$SENSE
+	CALL	CHK$STAT
+	LDA	ERSTAT
+	ANI	00111111B
+	CPI	00010111B	; SEE IF IT'S A WRITE PROTECT ERROR
+	JNZ	NOTWP
+	MVI	A,01000000B	; CODE FOR WRITE PROTECT ERROR
+	JMP	Z67EXT
+NOTWP:	MVI	A,1		; CODE FOR GENERALIZED ERROR
+	JMP	Z67EXT
+
+Z67$RDADR:			; NO READ ADDRESS COMMAND FOR Z67, SO JUST READ
+	ORA	A		;  A SECTOR
+	JZ	ZR00
+	MVI	A,26		; SECTOR 26 IS ON SIDE 1
+ZR00:	STA	RDCMD+4
+	CALL	WAKE$UP 	; GET CONTROLLER'S ATTENTION
+	LXI	H,RDCMD
+	CZ	OUTCOM		; OUTPUT COMMAND
+	CZ	Z67$READ	; READ IN A SECTOR
+	CZ	CHK$STAT	; CHECK STATUS
+	RET
+
+WAKE$UP:CALL	GETCON
+	RZ
+	CALL	RESET
+	CALL	INIT$Z67
+	RNZ
+	CALL	GETCON
+	RET
+
+RESET:	LDA	ZENPORT
+	INR	A
+	MOV	C,A		; CONTROL PORT TO REG. C
+	MVI	A,RUN		; CLEARS ANY PREVIOUS CONTROLLER ACTIVITY
+	OUTP	A
+	MVI	A,SWRS		; RESETS CONTROLLER
+	OUTP	A
+	MVI	B,0
+	RET
+
+INIT$Z67:
+	CALL	GETCON		; GET THE CONTROLLER'S ATTENTION
+	JZ	GOTCON
+	CALL	RESET
+	CALL	GETCON
+GOTCON: LXI	H,FFCMD 	; DEFINE FLOPPY DISK TRACK FORMAT COMMAND
+	CZ	OUTCOM		; OUTPUT THE COMMAND STRING
+	CZ	CHK$STAT	; CHECK STATUS OF COMMAND
+	RET
+
+GETCON: LDA	ZENPORT
+	MOV	C,A
+	INR	C		; CONTROL PORT TO REG. C
+	MVI	B,0		; TIMER COUNTER
+GETCN1: DCR	C
+	XRA	A
+	OUTP	A		; CLEAR DATA REGISTER
+	LDA	CNUM		; GET CONTROLLER NUMBER
+	INR	C		; AND SEND IT TO THE CARD
+	INR	C		; -SENC- PORT
+	OUTP	A
+	DCR	C		; CONTROL PORT
+	INP	A		; READ CONTROL PORT
+	ANI	BUSY
+	JZ	GETCN2
+	DJNZ	GETCN1
+	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+	RET
+GETCN2: MVI	A,SEL
+	OUTP	A		; WAKE UP CONTROLLER
+	MVI	B,0
+GETCN3: INP	A
+	ANI	BUSY
+	JNZ	GETCN4
+	DJNZ	GETCN3
+	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+	RET
+GETCN4: MVI	A,RUN
+	OUTP	A
+	XRA	A		; NO ERROR
+	RET
+
+OUTCOM: MVI	B,6		; COMMAND IS 6 BYTES LONG
+	LDA	ZENPORT
+	MOV	C,A		; DATA PORT TO REG. C
+	INR	A
+	MOV	D,A		; CONTROL PORT TO REG. D
+	MVI	E,(REQ OR CMND OR POUT OR BUSY)
+OUTCM1: PUSH	B
+	MVI	B,16		; SET LOOP COUNTER
+	MOV	C,D		; CONTROL PORT ADDRESS TO REG. C
+OUTLOP: INP	A
+	ANI	(REQ OR CMND OR POUT OR BUSY)
+	CMP	E
+	JZ	OUTOK 
+	DJNZ	OUTLOP
+	DCR	B
+	POP	B
+	RET
+OUTOK:	POP	B		; RETURNS DATA PORT ADDRESS TO REG. C
+	OUTI
+	JNZ	OUTCM1
+	XRA	A
+	RET
+
+Z67$READ:
+	LDA	ZENPORT
+	MOV	C,A		; DATA PORT ADDRESS TO REG. C
+Z67R0:	INR	C		; INCREMENT TO CONTROL PORT
+Z67R1:	INP	A		; FIRST CHECK FOR DRIVE READY
+	ANI	(CMND OR BUSY OR REQ OR POUT)
+	CPI	(CMND OR BUSY OR REQ)	; IF POUT DROPS,
+	RZ				;  WE ARE INTO STATUS PHASE
+	ANI	(CMND OR BUSY OR REQ)
+	CPI	(BUSY OR REQ)	; WHEN CMND DROPS, SEEK IS COMPLETE, AND WE ARE
+	JNZ	Z67R1		;  READY FOR DATA TRANSFER
+	DCR	C
+	MVI	B,128		; 128 BYTES
+INBYTE: INP	A
+	DJNZ	INBYTE
+	JMP	Z67R0
+
+CHK$STAT:
+	LDA	ZENPORT
+	MOV	D,A		; DATA PORT ADDRESS STORED IN REG. D
+	INR	A
+	MOV	E,A		; CONTROL PORT ADDRESS STORED IN REG. E
+	JMP	CHK01
+CHKNXT: MOV	C,D		; INPUT FROM DATA PORT
+	INP	A
+	MOV	B,A		; SAVE IN REG. B
+CHK01:	MOV	C,E		; INPUT FROM CONTROL PORT
+	INP	A
+	ANI	(MSG OR REQ OR CMND OR POUT)
+	CPI	(REQ OR CMND)
+	JZ	CHKNXT
+	CPI	(MSG OR REQ OR CMND)
+	JNZ	CHK01
+	MOV	C,D		; INPUT FROM DATA PORT
+	INP	A		; GET FINAL BYTE
+	MOV	A,B		; AND THROW IT AWAY, GET STATUS
+	ANI	03		; EITHER BIT SET IS AN ERROR
+	RET
+
+IN$SENSE:
+	LXI	H,ERSTAT
+	MVI	B,4
+	LDA	ZENPORT
+	MOV	D,A		; STORE DATA PORT ADDRESS IN REG. D
+	INR	A
+	MOV	E,A		; CONTROL PORT ADDRESS TO REG. E
+INCONT: MOV	C,E		; INPUT FROM CONTROL PORT
+	INP	A
+	ANI	(REQ OR MSG OR CMND OR POUT)
+	CPI	REQ
+	JNZ	INCONT
+	MOV	C,D		; INPUT FROM DATA PORT
+	INP	A
+	MOV	M,A
+	INX	H
+	DJNZ	INCONT
+	RET
+
+CNUM:	DB	0		; CONTROLLER NUMBER
+FFCMD:	DB	0C0H,00100000B,0,0,0,0
+FORMAT: DB	4,00100000B,0,0,0,0
+RDCMD:	DB	8,00100000B,0,0,0,0
+RECMD:	DB	1,00100000B,0,0,0,0
+SENSE:	DB	3,00100000B,0,0,0,0
+ERSTAT: DB	0,0,0,0
+FMTMSG: DB	' ...Z67 drive is formatting the diskette.$'
+
+********************* END Hardware Dependent Code ***********************
+
+WD$HOME:
+	MVI	B,6		;6 STEP-IN'S FIRST
+RESTLP: PUSH	B		;SAVE COUNTER
+	CALL	STEP$IN
+	POP	B
+	DJNZ	RESTLP
+	LDA	STEPR
+	ORI	00001000B	; RESTORE command + steprate
+	JMP	COMND
+
+WD$STEPIN:			; issue a step command with direction set to IN
+	LDA	STEPR
+	ORI	01011000B	; STEP-IN command + steprate
+	JMP	COMND		; do as restore command
+
+WD$WRITT:			; write track for 8" SD and 5" DD
+	LDA	SID		; side number
+	ANI	00000001B
+	RLC
+	ORI	11110000B	; write track command + side bit
+	JMP	WRITT
+
+WD$RDADR:
+	MOV	C,A
+	MVI	B,10		; retry counter
+RA0:	PUSH	B
+	MOV	A,C
+	ANI	1		; side number
+	RLC
+	ORI	11000000B	; read-address command
+	PUSH	PSW		; save
+	lhld	inctrl
+	mov	a,m
+	ANI	11111101B	; clock off
+	mov	m,a
+	OUT	PORT
+	POP	PSW
+	CALL	RDCOM		; L register contains side number read
+	PUSH	PSW		; save status
+	lbcd	inctrl
+	ldax	b
+	ORI	10B
+	stax	b
+	OUT	PORT		; clock on
+	POP	PSW
+	POP	B
+	BIT	4,A		; rnf
+	JNZ	RA2
+	BIT	3,A		; crc
+	JZ	RA1
+	DCR	B		; retry on crc error
+	JNZ	RA0
+RA2:	XRA	A		; sets [ZR]
+	STC			; set status of [CY]
+	RET
+RA1:	MOV	A,C		; get side number
+	CMP	l		; compare to side from disk
+	RET			; [NZ] if side numbers don't match
