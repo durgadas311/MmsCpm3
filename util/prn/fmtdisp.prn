@@ -1,0 +1,278 @@
+                ; July 12, 1984 07:44 drm
+                ;
+                ; Format display dependent routines
+                ;
+                ; Link commmand: LINK FORMAT=FMTMAIN,FMTZ89, or FMT500,FMTDISP,FMTTBL[NC,NR]
+                ;  Note: FMTMAIN must be linked first and FMTTBL last.
+                ;
+                
+                	public	putchr,getchr,putlne,getlne
+                	public	clrscr,clrend,clrlne,curact,curoff,cursor,prtmsg
+                
+                	MACLIB Z80
+                	$-MACRO
+                
+ 0000 =         false	equ	000h
+ 00FF =         true	equ	0FFh
+ 00FF =         ff	equ	0ffh
+                
+ 0000 =         base	equ	0
+ 0000 =         cpm	equ	base
+ 0005 =         bdos	equ	base+5
+ 0080 =         dma	equ	base+80H
+                
+ 0002 =         const	equ	2		; BIOS function numbers
+ 0003 =         bconin	equ	3
+ 0004 =         conout	equ	4
+ 0008 =         home	equ	8
+ 0009 =         seldsk	equ	9
+ 000A =         settrk	equ	10
+ 000B =         setsec	equ	11
+ 000C =         setdma	equ	12
+ 000D =         reads	equ	13
+ 000E =         writes	equ	14
+ 0010 =         sectrn	equ	16
+ 005A =         search	equ	90	      
+                
+ 0001 =         conin	equ	1		; BDOS function number
+ 0002 =         conot	equ	2
+ 0009 =         msgout	equ	9
+ 000A =         linein	equ	10
+ 000C =         getver	equ	12	
+ 000F =         open	equ	15
+ 0010 =         close	equ	16
+ 0014 =         read	equ	20
+ 001A =         stdma	equ	26
+ 0019 =         getdsk	equ	25
+ 0025 =         restt	equ	37
+ 002D =         seterr	equ	45
+ 0032 =         cbios	equ	50
+ 0064 =         sdirlab equ	100
+ 006D =         setcmod equ	109
+                
+ 0003 =         ctrlC	equ	3
+ 001B =         esc	equ	27
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+ 0007 =         bell	equ	7
+ 0008 =         bs	equ	8
+                
+                ;
+                ;	Turns on cursor
+                ;
+                curact:
+ 0000           	exx
+ 0001           	exaf
+ 0002 110B00    	lxi	d,con
+ 0005 CD4F00    	call	putlne
+ 0008           	exx
+ 0009           	exaf
+ 000A C9        	ret
+                
+ 000B 1B793524  con:	db	esc,'y5$'
+                
+                ;
+                ;	Turns the cursor off
+                ;
+                
+                curoff:
+ 000F           	exx
+ 0010           	exaf
+ 0011 111A00    	lxi	d,coff
+ 0014 CD4F00    	call	putlne
+ 0017           	exx
+ 0018           	exaf
+ 0019 C9        	ret
+                
+ 001A 1B783524  coff: db	esc,'x5$'
+                
+                ;
+                ;	Clears screen
+                ;
+                
+                clrscr:
+ 001E           	exx
+ 001F           	exaf
+ 0020 112900    	lxi	d,cls
+ 0023 CD4F00    	call	putlne
+ 0026           	exx
+ 0027           	exaf
+ 0028 C9        	ret
+                
+ 0029 1B4524    cls:	db	esc,'E$'
+                
+                ;
+                ;	Clears to end of screen
+                ;
+                
+ 002C           clrend: exx
+ 002D           	exaf
+ 002E 113700    	lxi	d,ceop
+ 0031 CD4F00    	call	putlne
+ 0034           	exx
+ 0035           	exaf
+ 0036 C9        	ret
+                
+ 0037 1B4A24    ceop:	db	esc,'J$'
+                
+                ;
+                ;	Clears to end of line
+                ;
+                
+ 003A           clrlne: exx
+ 003B           	exaf
+ 003C 114500    	lxi	d,ceol
+ 003F CD4F00    	call	putlne
+ 0042           	exx
+ 0043           	exaf
+ 0044 C9        	ret
+                
+ 0045 1B4B24    ceol:	db	esc,'K$'
+                
+                ;
+                ;	Positions cursor in H and L and prints the string pointed by DE
+                ;
+                
+                prtmsg: 
+ 0048 CDB900    	call	cursor
+ 004B CD4F00    	call	putlne
+ 004E C9        	ret
+                
+                ;
+                ;	Prints the string pointed to by DE
+                ;
+                
+ 004F 0E09      putlne:	mvi	c,msgout
+ 0051 CD0500    	call	bdos
+ 0054 C9        	ret
+                
+                ;
+                ;	Gets a line from console - puts in buffer pointed to by DE
+                ;
+                
+                getlne:
+ 0055 1A        	ldax	d   
+ 0056 47        	mov	b,a	 ; get mx in b
+ 0057 13        	inx	d
+ 0058 D5        	push	d	 ; put address of char cnt in HL
+ 0059 E1        	pop	h
+ 005A 3600      	mvi	m,0
+ 005C 13        	inx	d
+ 005D E5        getlne1:push	h
+ 005E D5        	push	d
+ 005F C5        	push	b
+ 0060 3E03      	mvi	a,bconin
+ 0062 CDF200    	call	biosc
+ 0065 C1        	pop	b
+ 0066 D1        	pop	d
+ 0067 E1        	pop	h
+ 0068 FE08      	cpi	bs
+ 006A C28700    	jnz	getlne2 	;jump if not bs
+ 006D 7E        	mov	a,m		
+ 006E B7        	ora	a
+ 006F CA5D00    	jz	getlne1
+ 0072 1B        	dcx	d
+ 0073 04        	inr	b
+ 0074 35        	dcr	m
+ 0075 3E08      	mvi	a,bs
+ 0077 CDD100    	call	putchr
+ 007A 3E20      	mvi	a,' '
+ 007C CDD100    	call	putchr
+ 007F 3E08      	mvi	a,bs
+ 0081 CDD100    	call	putchr
+ 0084 C35D00    	jmp	getlne1
+                getlne2:
+ 0087 FE0D      	cpi	cr		; exit if cr
+ 0089 CAB800    	jz	getlne5
+ 008C FE03      	cpi	ctrlC		; test for ctrl-C
+ 008E C29D00    	jnz	getlne3
+ 0091 7E        	mov	a,m		; see if first character
+ 0092 B7        	ora	a
+ 0093 C25D00    	jnz	getlne1
+ 0096 3E03      	mvi	a,ctrlC
+ 0098 12        	stax	d		; put ^C in buffer
+ 0099 34        	inr	m
+ 009A C3B800    	jmp	getlne5 	; exit if 1st char
+                getlne3:
+ 009D FE20      	cpi	' '		; don't allow control characters in buffer
+ 009F DA5D00    	jc	getlne1
+ 00A2 05        	dcr	b		; see if line is full
+ 00A3 C2AF00    	jnz	getlne4
+ 00A6 04        	inr	b
+ 00A7 3E07      	mvi	a,bell
+ 00A9 CDD100    	call	putchr
+ 00AC C35D00    	jmp	getlne1
+                getlne4:
+ 00AF 12        	stax	d
+ 00B0 13        	inx	d
+ 00B1 34        	inr	m
+ 00B2 CDD100    	call	putchr
+ 00B5 C35D00    	jmp	getlne1
+                getlne5:
+ 00B8 C9        	ret
+                
+                ;
+                ;	Positions the cursor to the column in H and the line in L
+                ;
+                
+ 00B9 D5        cursor:	push	d
+ 00BA 112020    	lxi	d,'  '
+ 00BD 19        	dad	d
+ 00BE D1        	pop	d
+ 00BF 3E1B      	mvi	a,esc
+ 00C1 CDD100    	call	putchr
+ 00C4 3E59      	mvi	a,'Y'
+ 00C6 CDD100    	call	putchr
+ 00C9 7D        	mov	a,l
+ 00CA CDD100    	call	putchr
+ 00CD 7C        	mov	a,h
+ 00CE C3D100    	jmp	putchr
+                
+                putchr:
+ 00D1 E5        	push	h
+ 00D2 D5        	push	d
+ 00D3 C5        	push	b
+ 00D4           	pushix
+ 00D6 4F        	mov	c,a
+ 00D7 3E04      	mvi	a,conout
+ 00D9 CDF200    	call	biosc
+ 00DC           	popix
+ 00DE C1        	pop	b
+ 00DF D1        	pop	d
+ 00E0 E1        	pop	h
+ 00E1 C9        	ret
+                
+                ;
+                ;	Inputs a character from the console into A reg
+                ;
+                
+ 00E2 E5        getchr: push	h
+ 00E3 D5        	push	d
+ 00E4 C5        	push	b
+ 00E5           	pushix
+ 00E7 0E01      	mvi	c,conin
+ 00E9 CD0500    	call	bdos
+ 00EC           	popix
+ 00EE C1        	pop	b
+ 00EF D1        	pop	d
+ 00F0 E1        	pop	h
+ 00F1 C9        	ret
+                
+                ;
+                ;	Call BIOS through BDOS
+                ;
+                
+                biosc:				; setup BIOS parameter block
+ 00F2 320801    	sta	biospb		; BIOS function number
+ 00F5           	sbcd	biospb+2	; BC register
+ 00F9           	sded	biospb+4	; DE register
+ 00FD 220E01    	shld	biospb+6	; HL register
+ 0100 0E32      	mvi	c,cbios
+ 0102 110801    	lxi	d,biospb	; call BIOS through BDOS
+ 0105 C30500    	jmp	bdos
+                
+ 0108 0000      biospb: db	0,0
+ 010A 0000000000	dw	0,0,0
+                
+ 0110           	end
+

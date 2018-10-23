@@ -1,4 +1,4 @@
-vers equ '5b' ; July 3, 1984  13:40  drm  "FMTMAIN.ASM" 
+vers equ '6 ' ; Reconstructed Oct 22, 2018  21:30  drm  "FMTMAIN.ASM" 
 
 ;
 ; Format main routines
@@ -13,7 +13,7 @@ vers equ '5b' ; July 3, 1984  13:40  drm  "FMTMAIN.ASM"
 	extrn	ctrlio,comnd,writt,rdcom,dskxit,getst
 	extrn	restor,stepin,writrk,rdadr
 	extrn	std8,z47d,vskstd
-	extrn	getchr,putchr,putlne,getlne,termid,initia,deinit
+	extrn	getchr,putchr,putlne,getlne
 	extrn	clrscr,clrend,clrlne,curact,curoff,cursor,prtmsg
 
 	MACLIB Z80
@@ -113,9 +113,7 @@ signon1:
 signon2:
 	db	' v3.10'
 	dw	vers
-	db	' (c) 1983 Magnolia Microsystems ($'
-; terminal I.D. string here.
-signon3:db	')$'
+	db	' (c) 1983 Magnolia Microsystems$'
 
 vererr: lspd	save$stack
 	lxi	d,errver
@@ -130,9 +128,8 @@ start:
 	sspd	save$stack	; store stack pointer
 	lxi	sp,stack
 ;
-	call	initia		;initialize terminal dependant routines
-;
 	call	prt$signon
+;
 	mvi	c,getver
 	call	bdos
 	mov	a,h
@@ -218,8 +215,8 @@ next$dsk:
 	lxi	h,prl+1
 	call	cursor
 	call	clrend
-	call	ctrlio		; setup controller routines
 	call	inithd		; initialize hardware dependent varibles,etc.
+	call	image$t0s0	;
 	call	restor		; restore drive
 	call	getst		; check for drive ready, track zero, etc.
 	rlc			; (A) = status from 1797
@@ -470,8 +467,6 @@ exit:
 	mvi	a,seldsk
 	call	biosc
 ;
-	call	deinit		;deinitalize terminal
-;
 	jmp	cpm		; return to system
 
 
@@ -486,9 +481,6 @@ prt$signon:
 	lxi	d,str
 	call	putlne
 	lxi	d,signon2
-	call	putlne
-	call	termid	;prints terminal I.D. string
-	lxi	d,signon3
 	call	putlne
 	ret
        
@@ -1451,7 +1443,7 @@ image$trk:
 	bit	0,a
 	rnz
 	lda	modes+3
-	cpi	0000$1100b
+	ani	0000$1100b
 	jrnz	image$norm	; if trk0 side 0 or side1 was different reimage
 	ret
 
@@ -1601,6 +1593,7 @@ NOSK:	INR	A
 	MOV	M,A
 	INX	H
 	LDA	SZ0		; sector size code
+NNNN:
 	MOV	M,A
 	INX	H
 	MVI	M,0F7H		; crc flag

@@ -15,6 +15,7 @@ HELPS = commands.help \
 	endlist.help \
 	erase.help \
 	filespec.help \
+	format.help \
 	gencom.help \
 	get.help \
 	help.help \

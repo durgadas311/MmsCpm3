@@ -6,7 +6,7 @@
 ;  Note: FMTMAIN must be linked first and FMTTBL last.
 ;
 
-	public	putchr,getchr,putlne,getlne,termid,initial,deinit
+	public	putchr,getchr,putlne,getlne
 	public	clrscr,clrend,clrlne,curact,curoff,cursor,prtmsg
 
 	MACLIB Z80
@@ -58,82 +58,18 @@ bell	equ	7
 bs	equ	8
 
 ;
-; Initialize Terminal-dependant stuff
-;
-initial:
-	exx
-	exaf
-	lxi	d,termfcb
-	mvi	c,open
-	call	bdos
-	cpi	255
-	jz	notcb
-	lxi	d,termctrl
-	mvi	c,stdma
-	call	bdos
-	lxi	d,termfcb
-	mvi	c,read
-	call	bdos
-	ora	a
-	jnz	badtcb
-	lxi	d,termctrl+128
-	mvi	c,stdma
-	call	bdos
-	lxi	d,termfcb
-	mvi	c,read
-	call	bdos
-	ora	a
-	jnz	badtcb
-	lxi	d,termctrl+128+128
-	mvi	c,stdma
-	call	bdos
-	lxi	d,termfcb
-	mvi	c,read
-	call	bdos
-	ora	a
-	jnz	badtcb
-	lxi	d,tinit
-	call	putlne
-	exaf
-	exx
-	ret
-
-termfcb: db	1,'TERMINALSYS',0,0,0,0
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	db	0,0,0,0
-
-notcb:	lxi	d,ntcb
-	jmp	tcberr
-badtcb: lxi	d,btcb
-tcberr: call	putlne
-	jmp	cpm
-
-ntcb:	db	cr,lf,'Terminal control file not on drive A:',0
-btcb:	db	cr,lf,'Terminal control file incomplete',0
-
-deinit: push	d
-	lxi	d,tdeinit
-	call	putlne
-	pop	d
-	ret
-
-termid: push	d
-	lxi	d,id
-	call	putlne
-	pop	d
-	ret
-
-;
 ;	Turns on cursor
 ;
-
-curact: exx
+curact:
+	exx
 	exaf
 	lxi	d,con
 	call	putlne
 	exx
 	exaf
 	ret
+
+con:	db	esc,'y5$'
 
 ;
 ;	Turns the cursor off
@@ -147,6 +83,8 @@ curoff: exx
 	exaf
 	ret
 
+coff: db	esc,'x5$'
+
 ;
 ;	Clears screen
 ;
@@ -158,6 +96,8 @@ clrscr: exx
 	exx
 	exaf
 	ret
+
+cls:	db	esc,'E$'
 
 ;
 ;	Clears to end of screen
@@ -171,6 +111,8 @@ clrend: exx
 	exaf
 	ret
 
+ceop:	db	esc,'J$'
+
 ;
 ;	Clears to end of line
 ;
@@ -182,6 +124,8 @@ clrlne: exx
 	exx
 	exaf
 	ret
+
+ceol:	db	esc,'K$'
 
 ;
 ;	Positions cursor in H and L and prints the string pointed by DE
@@ -196,24 +140,9 @@ prtmsg:
 ;	Prints the string pointed to by DE
 ;
 
-putlne:
-	ldax	d
-	cpi	'$'
-	rz
-	ora	a
-	rz
-	inx	d
-	jp	pl0
-	ani	01111111b
-	jz	putlne
-	mov	b,a
-pl1:	xra	a
-	call	putchr
-	dcr	b
-	jnz	pl1
-	jmp	putlne
-pl0:	call	putchr
-	jmp	putlne
+putlne:	mvi	c,msgout
+	call	bdos
+	ret
 
 ;
 ;	Gets a line from console - puts in buffer pointed to by DE
@@ -284,78 +213,20 @@ getlne5:
 ;	Positions the cursor to the column in H and the line in L
 ;
 
-cursor: push	d
-	push	b
-	lxi	d,cpos
-cloop:	ldax	d
-	inx	d
-	ora	a
-	jz	cxit
-	cpi	80h
-	jc	cnrm
-	cpi	82h
-	jnc	cr0	;send nulls to terminal
-	ani	1
-	ldax	d
-	inx	d
-	jz	clne
-	mov	c,h	;column
-	jmp	ccol
-clne:	mov	c,l
-ccol:	cpi	0ffh	;ansi?
-	jz	cansi
-	add	c
-cnrm:	call	putchr
-	jmp	cloop
-
-cr0:	ani	01111111b
-	mov	b,a
-cr1:	xra	a
-	call	putchr
-	dcr	b
-	jnz	cr1
-	jmp	cloop
-
-cansi:	mov	a,c
-	mvi	b,0
-	inr	a	;ANSI uses 1-n, 0 same as 1.
-ca0:	sui	100
-	inr	b
-	jnc	ca0
-	adi	100
-	dcr	b
-	jz	ca1
-	mov	c,a
-	mov	a,b
-	adi	'0'
-	call	putchr
-	mov	a,c
-ca1:	mvi	c,0
-ca3:	sui	10
-	inr	c
-	jnc	ca3
-	adi	10
-	dcr	c
-	jnz	ca4
-	dcr	b
-	jm	ca5
-ca4:	mov	b,a
-	mov	a,c
-	adi	'0'
-	call	putchr
-	mov	a,b
-ca5:	adi	'0'
-	jmp	cnrm
-
-cxit:	pop	b
+cursor:	push	d
+	lxi	d,'  '
+	dad	d
 	pop	d
-	ret
+	mvi	a,esc
+	call	putchr
+	mvi	a,'Y'
+	call	putchr
+	mov	a,l
+	call	putchr
+	mov	a,h
+	jmp	putchr
 
-;
-;	Outputs a character in A register to the console
-;
-
-putchr: push	h
+putchr:	push	h
 	push	d
 	push	b
 	pushix
@@ -399,54 +270,5 @@ biosc:				; setup BIOS parameter block
 
 biospb: db	0,0
 	dw	0,0,0
-
-termctrl:
-id:	ds	12
-cls:	ds	8
-chome:	ds	8
-left:	ds	8
-right:	ds	8
-up:	ds	8
-down:	ds	8
-ceop:	ds	8
-ceol:	ds	8
-revvid: ds	8
-nrmvid: ds	8
-coff:	ds	8
-con:	ds	8
-cpos:	ds	12
-tinit:	ds	12
-tdeinit:ds	12
-	ds	28
-khome:	ds	4
-kleft:	ds	4
-kright: ds	4
-kup:	ds	4
-kdown:	ds	4
-f1:	ds	4
-f2:	ds	4
-f3:	ds	4
-f4:	ds	4
-f5:	ds	4
-f6:	ds	4
-f7:	ds	4
-f8:	ds	4
-f9:	ds	4
-f10:	ds	4
-f11:	ds	4
-f12:	ds	4
-f1name: ds	12
-f2name: ds	12
-f3name: ds	12
-f4name: ds	12
-f5name: ds	12
-f6name: ds	12
-f7name: ds	12
-f8name: ds	12
-f9name: ds	12
-f10name:ds	12
-f11name:ds	12
-f12name:ds	12 -1
-	db	0
 
 	end

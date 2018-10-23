@@ -1,0 +1,2414 @@
+ 2036 =         vers equ '6 ' ; Reconstructed Oct 22, 2018  21:30  drm  "FMTMAIN.ASM" 
+                
+                ;
+                ; Format main routines
+                ;
+                ; Link commmand: LINK FORMAT=FMTMAIN,FMTZ89 or FMT500,FMTDISP,FMTTBL[NC,NR]
+                ;  Note: FMTMAIN must be linked first and FMTTBL last.
+                ;
+                
+                	public	phydrv,vsectb,sid,trk,modes,mfm,stepr,wdflag,curmdl
+                
+                	extrn	setjmp,inithd,intoff,inton,table,buffer,str
+                	extrn	ctrlio,comnd,writt,rdcom,dskxit,getst
+                	extrn	restor,stepin,writrk,rdadr
+                	extrn	std8,z47d,vskstd
+                	extrn	getchr,putchr,putlne,getlne
+                	extrn	clrscr,clrend,clrlne,curact,curoff,cursor,prtmsg
+                
+                	MACLIB Z80
+                	$-MACRO
+                
+ 0000 =         false	equ	000h
+ 00FF =         true	equ	0FFh
+ 00FF =         ff	equ	0ffh
+                
+ 0000 =         base	equ	0
+ 0000 =         cpm	equ	base
+ 0005 =         bdos	equ	base+5
+ 0080 =         dma	equ	base+80H
+                
+ 0064 =         @intby	equ	100		; BIOS entry points
+ 0065 =         lptbl	equ	101
+ 0067 =         thread	equ	103
+ 0069 =         ?serdp	equ	105
+ 000C =         stroff	equ	12		; string address offset from init rout of mod
+ 0010 =         modtbl	equ	16		; mode byte table offset from init rout of mod
+                
+ 0001 =         resdsk	equ	1		; BIOS function numbers
+ 0002 =         bconst	equ	2
+ 0003 =         bconin	equ	3
+ 0004 =         conout	equ	4
+ 0008 =         home	equ	8
+ 0009 =         seldsk	equ	9
+ 000A =         settrk	equ	10
+ 000B =         setsec	equ	11
+ 000C =         setdma	equ	12
+ 000D =         reads	equ	13
+ 000E =         writes	equ	14
+ 0010 =         sectrn	equ	16
+ 005A =         search	equ	90	      
+                
+ 0001 =         conin	equ	1		; BDOS function numbers
+ 0002 =         conot	equ	2
+ 0009 =         msgout	equ	9
+ 000A =         linein	equ	10
+ 000C =         getver	equ	12
+ 0019 =         getdsk	equ	25
+ 0025 =         restt	equ	37
+ 002D =         seterr	equ	45
+ 0032 =         cbios	equ	50
+ 0064 =         sdirlab equ	100
+ 006D =         setcmod equ	109
+                
+                ; error codes
+                
+ 0000 =         initerrcd	equ	0	; can not initialize directory
+ 0001 =         setlabcd	equ	1	; can not set directory label
+ 0002 =         wrtprocd	equ	2	; write protected disk
+ 0003 =         notrdycd	equ	3	; drive not ready
+ 0004 =         hrdsectcd	equ	4	; hard sector media in soft sector controller
+ 0005 =         z17sftcd	equ	5	; soft sector media in hard sector controller
+ 0006 =         notsupcd	equ	6	; format not supported error
+ 0007 =         badportcd	equ	7	; bad port address for z67/z47
+ 0008 =         dterrcd 	equ	8	; 96/48 tpi mismatch
+ 0009 =         trk0ercd	equ	9	; can not find track zero
+ 000A =         dserrcd 	equ	10	; double sided error
+ 000B =         drverrcd	equ	11	; invalid drive
+ 000C =         wterrcd 	equ	12	; error during step/format
+ 000D =         wmerrcd 	equ	13	; can not write Zenith's marker 
+                
+ 0002 =         brl	equ	2		; base message line
+ 0003 =         drvl	equ	3		; get drive message line
+ 0004 =         crl	equ	4		; CONTROLLER ID MESSAGE LINE
+ 0003 =         drl	equ	3		; LINE OF DRIVE MESSAGE
+ 0005 =         rdl	equ	5		; LINE OF RECORDING DENSITY
+ 0006 =         sil	equ	6		; LINE FOR SIDE
+ 0007 =         tpl	equ	7		; TRACKS-PER-INCH MESSAGE LINE
+ 0008 =         srl	equ	8		; LINE FOR STEP RATE
+ 0009 =         fsl	equ	9		; FORMAT SOURCE LINE
+ 000B =         prl	equ	11		; PROMPT LINE
+ 000D =         bgl	equ	13		; FIRST LINE USED BY BAR GRAPH
+ 0013 =         erl	equ	19		; ERROR MESSAGE LINE
+ 0014 =         mfc	equ	20		; COLUMN OF MODE FORMAT DISPLAY
+                
+ 0083 =         srm0:	equ	10000011b
+ 001C =         srm1:	equ	00011100b ; search mode masks
+                
+ 001B =         esc	equ	27
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+ 0007 =         bell	equ	7
+ 0008 =         bs	equ	8
+ 0003 =         ctrlC	equ	3
+ 0004 =         ctrlD	equ	4
+                
+                	cseg
+                
+ 0000 C34600    	jmp	start
+                
+                signon1:
+ 0003 464F524D41	db	'FORMAT $'
+                ; string here, from hardware module.
+                signon2:
+ 000B 2076332E31	db	' v3.10'
+ 0011 3620      	dw	vers
+ 0013 2028632920	db	' (c) 1983 Magnolia Microsystems$'
+                
+ 0033           vererr: lspd	save$stack
+ 0037 11A413    	lxi	d,errver
+ 003A C30000    errt:	jmp	putlne
+                
+                nogetdp:
+ 003D           	lspd	save$stack
+ 0041 11C513    	lxi	d,nodper
+ 0044           	jr	errt
+                
+                start:
+ 0046           	sspd	save$stack	; store stack pointer
+ 004A 310719    	lxi	sp,stack
+                ;
+ 004D CDFD02    	call	prt$signon
+                ;
+ 0050 0E0C      	mvi	c,getver
+ 0052 CD0500    	call	bdos
+ 0055 7C        	mov	a,h
+ 0056 FE01      	cpi	1	;can't run MP/M
+ 0058 CA3300    	jz	vererr
+ 005B 7D        	mov	a,l
+ 005C FE31      	cpi	31h
+ 005E DA3300    	jc	vererr		; must be CP/M 3.1 or later.
+ 0061 2A0100    	lhld	cpm+1
+ 0064 016600    	lxi	b,?serdp-3	; Check if GETDP is linked in
+ 0067 09        	dad	b
+ 0068 CDAA03    	call	hlihl
+ 006B           	lded	cpm+1
+ 006F AF        	xra	a		; clear A and [cy]
+ 0070 5F        	mov	e,a
+ 0071           	dsbc	d
+ 0073 CA3D00    	jz	nogetdp
+ 0076 1EFF      	mvi	e,0ffh		; set error mode to return on error
+ 0078 0E2D      	mvi	c,seterr
+ 007A CD0500    	call	bdos
+ 007D 0E19      	mvi	c,getdsk	; GET DURRENTLY LOGGED IN DISK
+ 007F CD0500    	call	bdos
+ 0082 327818    	sta	logdsk
+ 0085 218000    	lxi	h,dma		; check command tail buffer for drive name
+ 0088 7E        	mov	a,m
+ 0089 B7        	ora	a
+ 008A CABB01    	jz	nodsk		; print help msg
+ 008D 228318    entry0: shld	cmdptr
+ 0090 CD1303    	call	get$drive	; check for drive name and select it
+ 0093 C2BB02    	jnz	new$drive
+ 0096 DAD501    	jc	error		; error if drive does not exist
+ 0099 CD0000    entry1: call	setjmp		; Set hardware dependent jump vector
+ 009C DAD501    	jc	error
+ 009F 21C318    	lxi	h,orgmode
+ 00A2 11BB18    	lxi	d,modes
+ 00A5 010400    	lxi	b,4
+ 00A8           	ldir
+ 00AA 3ABD18    	lda	modes+2 	; Make media tpi same as drive tpi
+ 00AD E620      	ani	0010$0000b
+ 00AF 6F        	mov	l,a
+ 00B0 3ABE18    	lda	modes+3
+ 00B3 E6DF      	ani	1101$1111b
+ 00B5 B5        	ora	l
+ 00B6 32BE18    	sta	modes+3
+ 00B9 CDB203    entry2: call	parse
+ 00BC D2C500    	jnc	parm
+ 00BF 113210    	lxi	d,invp
+ 00C2 C36701    	jmp	err$parm
+ 00C5 CD0006    parm:	call	show
+ 00C8 210B00    	lxi	h,prl
+ 00CB CD0000    	call	cursor
+ 00CE CD0000    	call	clrend
+ 00D1 210B00    	lxi	h,prl
+ 00D4 111A14    	lxi	d,askok 	; IS THIS CORRECT? (Y/N)
+ 00D7 CD0000    	call	prtmsg
+ 00DA 0E01      	mvi	c,1		; GET RESPONSE
+ 00DC CD0500    	call	bdos
+ 00DF E6DF      	ani	0DFh		; MAKE CAPITAL
+ 00E1 FE59      	cpi	'Y'
+ 00E3 CAF300    	jz	got$parm	; IF 'Y', RETURN
+ 00E6 FE0D      	cpi	cr		; DEFAULT IS 'Y'
+ 00E8 CAF300    	jz	got$parm
+ 00EB FE03      	cpi	ctrlC		; ^C
+ 00ED CAE602    	jz	exit
+ 00F0 C37801    	jmp	new$parm	; user wants to change params
+                got$parm:
+                
+                ; From this point on, any possible exit from this program must restore
+                ; the DPB and MODES to the system.
+ 00F3 CD0707    	call	start$dsk
+                err$over:
+ 00F6 CD3307    	call	setup
+ 00F9 DAD501    	jc	error 
+                next$dsk:
+ 00FC 210B00    	lxi	h,prl
+ 00FF 115613    	lxi	d,prmt
+ 0102 CD0000    	call	prtmsg		; prompt to insert a disk...
+ 0105 CD0000    	call	getchr
+ 0108 FE04      	cpi	ctrlD
+ 010A CAB502    	jz	new$fix 	; restore system DPs and prompt for new drive
+ 010D FE0D      	cpi	cr
+ 010F C2E302    	jnz	exit$fix	; anything except CR exits to CP/M
+ 0112 210C00    	lxi	h,prl+1
+ 0115 CD0000    	call	cursor
+ 0118 CD0000    	call	clrend
+ 011B CD0000    	call	inithd		; initialize hardware dependent varibles,etc.
+ 011E CDE909    	call	image$t0s0	;
+ 0121 CD0000    	call	restor		; restore drive
+ 0124 CD0000    	call	getst		; check for drive ready, track zero, etc.
+ 0127 07        	rlc			; (A) = status from 1797
+ 0128 DA1702    	jc	not$rdy 	; check for drive ready
+ 012B 07        	rlc
+ 012C DA1102    	jc	wrt$pro 	; check for write-protected disk
+ 012F E610      	ani	00010000b
+ 0131 CA2F02    	jz	trk0err 	; verify that we made it to track 0
+ 0134 CD9208    	call	testdt		; do double track test
+ 0137 DAD501    	jc	error
+                continue:			; entry from dt error if Ignore option
+ 013A CDCB08    	call	format
+ 013D DAD501    	jc	error
+ 0140 CDA30B    	call	verify
+ 0143 DAD501    	jc	error
+ 0146 CD0000    	call	curact
+ 0149 CD6D0E    	call	display$count	; display disk count
+ 014C 211600    	lxi	h,22
+ 014F 11ED12    	lxi	d,mormed
+ 0152 CD0000    	call	prtmsg		; ask if more media to format
+ 0155 CD0000    	call	getchr
+ 0158 E6DF      	ani	0DFH		; make response capital
+ 015A FE59      	cpi	'Y'
+ 015C CAFC00    	jz	next$dsk
+ 015F FE0D      	cpi	cr
+ 0161 C2E302    	jnz	exit$fix	; if not Y or CR, quit
+ 0164 C3FC00    	jmp	next$dsk	; prompt for another disk(but don't do DT test)
+                
+                ;
+                ;	Gets new parmeters and/or drive from console
+                ;	D reg = error msg to be printed
+                ;
+                
+                err$parm:
+ 0167 210B00    	lxi	h,prl
+ 016A CD0000    	call	cursor
+ 016D CD0000    	call	clrend
+ 0170 210B00    	lxi	h,prl
+ 0173 CD0000    	call	prtmsg
+ 0176           	jr	new$parm2
+                
+                new$parm:
+ 0178 210B00    	lxi	h,prl
+ 017B CD0000    	call	cursor
+ 017E CD0000    	call	clrend
+                new$parm2:
+ 0181 210C00    	lxi	h,prl+1
+ 0184 111010    	lxi	d,parprm
+ 0187 CD0000    	call	prtmsg
+ 018A 210E00    	lxi	h,prl+3
+ 018D 11CE15    	lxi	d,valid
+ 0190 CD0000    	call	prtmsg		; show valid parmeters
+ 0193 210C21    	lxi	h,256*33+PRL+1	; restore cursor
+ 0196 CD0000    	call	cursor
+ 0199 115A18    	lxi	d,line
+ 019C CD0000    	call	getlne		; linein, W/OUT ^C reboot
+ 019F 215C18    	lxi	h,line+2
+ 01A2 7E        	mov	a,m
+ 01A3 FE03      	cpi	ctrlC
+ 01A5 CAE602    	jz	exit		; exit on ctrl-C
+ 01A8 2B        	dcx	h
+ 01A9 228318    	shld	cmdptr
+ 01AC CD1303    	call	get$drive	; sets SYSDPB/ORGMODES
+ 01AF C2B900    	jnz	entry2		; if no drive in parms, use old mode bytes
+ 01B2 11A310    	lxi	d,dr$err
+ 01B5 DA6701    	jc	err$parm	; if error display message and repeat new$parm
+ 01B8 C39900    	jmp	entry1		; if a drive letter in line, copy orig modes
+                
+                ;
+                ;	Output help message and exit
+                ;
+                
+ 01BB 119314    nodsk:	lxi	d,help
+ 01BE CD0000    	call	putlne
+ 01C1 114E17    	lxi	d,thisut	; other info
+ 01C4 CD0000    	call	putlne
+ 01C7 CD0000    	call	getchr
+ 01CA FE03      	cpi	ctrlC		; ^C
+ 01CC CAE602    	jz	exit		; reboot on ^C
+ 01CF CDFD02    	call	prt$signon
+ 01D2 C3BB02    	jmp	new$drive
+                
+                ;
+                ;	Error routines -  
+                ;	 A reg contains the error code
+                ;
+                
+                error:
+ 01D5           	slar	a		;double A
+ 01D7 21E301    	lxi	h,errtbl
+ 01DA 5F        	mov	e,a
+ 01DB 1600      	mvi	d,0
+ 01DD 19        	dad	d
+ 01DE 5E        	mov	e,m
+ 01DF 23        	inx	h
+ 01E0 56        	mov	d,m
+ 01E1 EB        	xchg
+ 01E2 E9        	pchl
+                
+ 01E3 FF01      errtbl: dw	initer		;0
+ 01E5 0502      	dw	setlaber	;1
+ 01E7 1102      	dw	wrt$pro 	;2
+ 01E9 1702      	dw	not$rdy 	;3
+ 01EB 1D02      	dw	hrd$sect	;4
+ 01ED 2302      	dw	z17$sft 	;5
+ 01EF 4102      	dw	not$sup 	;6
+ 01F1 4702      	dw	bad$port	;7
+ 01F3 5302      	dw	dterr		;8
+ 01F5 2F02      	dw	trk0err 	;9 
+ 01F7 9602      	dw	dserr		;10
+ 01F9 4D02      	dw	drv$err 	;11
+ 01FB 2902      	dw	wterr0		;12
+ 01FD 0B02      	dw	wmer		;13
+                
+                initer:
+ 01FF 11B412    	lxi	d,initerr
+ 0202 C33202    	jmp	errms
+                
+                setlaber:
+ 0205 117E12    	lxi	d,slaberr
+ 0208 C33202    	jmp	errms
+                
+                wmer:
+ 020B 115C12    	lxi	d,wmerr
+ 020E C33202    	jmp	errms
+                
+                wrt$pro:
+ 0211 11B910    	lxi	d,wr$pt 	; disk is write-protected
+ 0214 C33202    	jmp	errms
+                
+                not$rdy:
+ 0217 11D710    	lxi	d,nt$rd 	; drive is not ready (disk not in drive)
+ 021A C33202    	jmp	errms
+                
+                hrd$sect:
+ 021D 117B11    	lxi	d,h$sec
+ 0220 C33202    	jmp	errms
+                
+ 0223 11B411    z17sft: lxi	d,s$z17
+ 0226 C33202    	jmp	errms
+                
+ 0229 110711    wterr0: lxi	d,wterr
+ 022C C33202    	jmp	errms
+                
+                trk0err:
+ 022F 118A10    	lxi	d,hm$err	; error: track zero not found
+                
+ 0232 CD0000    errms:	call	curact		; turn on cursor
+ 0235 211300    	lxi	h,erl
+ 0238 CD0000    	call	prtmsg
+ 023B CD0000    	call	dskxit
+ 023E C3F600    	jmp	err$over
+                
+ 0241 114011    notsup: lxi	d,nosup
+ 0244 C39902    	jmp	err$fix 	; ask for correct format
+                
+                badport:
+ 0247 115611    	lxi	d,badprt
+ 024A C3A102    	jmp	err$drive
+                
+                drv$err:
+ 024D 11A310    	lxi	d,dr$err
+ 0250 C3A102    	jmp	err$drive
+                
+                dterr:
+ 0253 2ABD18    	lhld	modes+2
+ 0256           	bit	5,h		; test track bit
+ 0258 213438    	lxi	h,'48'		; assume requested 48tpi
+ 025B 113936    	lxi	d,'96'		; but drive was 96 tpi
+ 025E           	jrz	q1
+ 0260 EB        	xchg			; if not, request was 96, etc.
+ 0261 44        q1:	mov	b,h
+ 0262 4D        	mov	c,l
+ 0263 21FC11    	lxi	h,gap1		;point to "requested" field
+ 0266 71        	mov	m,c		;put tpi in message
+ 0267 23        	inx	h
+ 0268 70        	mov	m,b
+ 0269 210812    	lxi	h,gap2		;point to "drive was" field
+ 026C 73        	mov	m,e
+ 026D 23        	inx	h
+ 026E 72        	mov	m,d		; move alternate track density
+ 026F 210B00    	lxi	h,prl
+ 0272 11ED11    	lxi	d,dter
+ 0275 CD0000    	call	prtmsg
+ 0278 CD0000    	call	clrlne		; clear rest of line
+ 027B CD0000    	call	dskxit
+ 027E CD0000    	call	getchr		; get user response
+ 0281 FE03      	cpi	ctrlC
+ 0283 CAE302    	jz	exit$fix 
+ 0286 E6DF      	ani	0DFh		; make capital
+ 0288 FE49      	cpi	'I'
+ 028A CA3A01    	jz	continue	
+ 028D CDEB0E    	call	done$dsk	; fix module
+ 0290 210D00    	lxi	h,prl+2
+ 0293 C3C702    	jmp	new$drive2
+                
+                dserr:
+ 0296 113712    	lxi	d,dser
+                
+                err$fix:			; fix module, print error and get new drive
+ 0299 D5        	push	d		 
+ 029A CD0000    	call	dskxit		; hardware disk exit
+ 029D CDEB0E    	call	done$dsk
+ 02A0 D1        	pop	d
+                err$drive:			; print error and get new drive and parms
+ 02A1 210200    	lxi	h,brl
+ 02A4 CD0000    	call	cursor
+ 02A7 CD0000    	call	clrend
+ 02AA 210200    	lxi	h,drvl-1
+ 02AD CD0000    	call	prtmsg
+ 02B0 210300    	lxi	h,drvl
+ 02B3           	jr	newdrive2
+                
+                new$fix:			; fixes module and mode bytes
+ 02B5 CD0000    	call	dskxit
+ 02B8 CDEB0E    	call	done$dsk
+                new$drive:			; get a new drive letter
+ 02BB 210200    	lxi	h,brl
+ 02BE CD0000    	call	cursor
+ 02C1 CD0000    	call	clrend
+ 02C4 210300    	lxi	h,drvl
+                new$drive2:
+ 02C7 11EA0F    	lxi	d,ndsk		; prompt for user to enter drive name
+ 02CA CD0000    	call	prtmsg
+ 02CD CD0000    	call	curact		; turn cursor on
+ 02D0 115A18    	lxi	d,line
+ 02D3 CD0000    	call	getlne
+ 02D6 215C18    	lxi	h,line+2
+ 02D9 7E        	mov	a,m
+ 02DA FE03      	cpi	ctrlC
+ 02DC CAE602    	jz	exit
+ 02DF 2B        	dcx	h
+ 02E0 C38D00    	jmp	entry0
+                
+                ;
+                ;	Exits to the program
+                ;
+                
+                exit$fix:
+ 02E3 CDEB0E    	call	done$dsk	; fix what start$dsk did
+                exit:	
+ 02E6 211600    	lxi	h,22		; position cursor to 23rd line
+ 02E9 CD0000    	call	cursor
+ 02EC CD0000    	call	curact		; turn cursor on
+ 02EF 3A7818    	lda	logdsk		; re-select LOGIN drive
+ 02F2 4F        	mov	c,a
+ 02F3 1E00      	mvi	e,0
+ 02F5 3E09      	mvi	a,seldsk
+ 02F7 CD1F0F    	call	biosc
+                ;
+ 02FA C30000    	jmp	cpm		; return to system
+                
+                
+                *******************************************************************************
+                ; Subroutines 
+                *******************************************************************************
+                
+                prt$signon:
+ 02FD CD0000    	call	clrscr
+ 0300 110300    	lxi	d,signon1
+ 0303 CD0000    	call	putlne
+ 0306 110000    	lxi	d,str
+ 0309 CD0000    	call	putlne
+ 030C 110B00    	lxi	d,signon2
+ 030F CD0000    	call	putlne
+ 0312 C9        	ret
+                       
+                ;
+                ; GET$DRIVE:  parses command line for optional drive name. returns:
+                ;    [NZ] if no drive name was specified
+                ;    [CY] if the specified drive was invalid (not in system)
+                ;
+                
+                get$drive:
+ 0313 2A8318    	lhld	cmdptr
+ 0316 46        	mov	b,m
+ 0317 23        	inx	h
+ 0318 CDF005    skp:	call	xchar		; SKIP OVER SPACES
+ 031B FAA103    	jm	nzcy
+ 031E FE20      	cpi	' '
+ 0320 CA1803    	jz	skp
+ 0323 FE41      	cpi	'A'		; ERROR IF NOT A-P
+ 0325 DAA103    	jc	nzcy
+ 0328 FE51      	cpi	'P'+1
+ 032A D2A103    	jnc	nzcy
+ 032D 4F        	mov	c,a
+ 032E CDF005    	call	xchar
+ 0331 FAA103    	jm	nzcy
+ 0334 FE3A      	cpi	':'		; ERROR IF NO ":"
+ 0336 C2A103    	jnz	nzcy
+ 0339 79        	mov	a,c
+ 033A 2B        	dcx	h
+ 033B 70        	mov	m,b
+ 033C 228318    	shld	cmdptr
+ 033F 32A618    	sta	tdrv
+ 0342 D641      	sui	'A'
+ 0344 4F        	mov	c,a
+ 0345 2A0100    	lhld	cpm+1		; LOOK UP PHYSICAL DRIVE NUMBER
+ 0348 116200    	lxi	d,lptbl-3	;  IN LOGICAL/PHYSICAL TABLE
+ 034B 19        	dad	d
+ 034C CDAA03    	call	hlihl
+ 034F 59        	mov	e,c
+ 0350 1600      	mvi	d,0
+ 0352 19        	dad	d
+ 0353 7E        	mov	a,m
+ 0354 32A518    	sta	tphy	       ; GOT PHYSICAL DRIVE NUMBER
+ 0357 FEFF      	cpi	0ffh
+ 0359 CAA503    	jz	zrcy
+ 035C 4F        	mov	c,a
+ 035D 2A0100    	lhld	cpm+1		; call search routine
+ 0360 115700    	lxi	d,search-3
+ 0363 19        	dad	d
+ 0364 CDB103    	call	icall		; returns module address
+ 0367 DAA503    	jc	zrcy		; and relative drive number
+ 036A 4F        	mov	c,a		; save reldrv in C
+ 036B E5        	push	h		; save curmdl
+ 036C 111000    	lxi	d,modtbl	 
+ 036F 19        	dad	d
+ 0370 CDAA03    	call	hlihl		; get address of mode byte table
+ 0373 87        	add	a
+ 0374 87        	add	a
+ 0375 87        	add	a
+ 0376 5F        	mov	e,a
+ 0377 1600      	mvi	d,0
+ 0379 19        	dad	d		; index relative drive
+ 037A           	bit	7,m		; check for hard disk flag
+ 037C D1        	pop	d		; restore curmdl to D
+ 037D C2A503    	jnz	zrcy
+ 0380 22AA18    	shld	modptr
+ 0383 79        	mov	a,c		; store reldrv
+ 0384 327718    	sta	reldrv		 
+ 0387           	sded	curmdl
+ 038B 3AA518    	lda	tphy
+ 038E 32A418    	sta	phydrv
+ 0391 3AA618    	lda	tdrv
+ 0394 327113    	sta	drive
+ 0397 11C318    	lxi	d,orgmode
+ 039A 010400    	lxi	b,4
+ 039D           	ldir
+ 039F AF        	xra	a 
+ 03A0 C9        	ret
+                
+ 03A1 AF        nzcy:	xra	a		; No drive specfied exit
+ 03A2 3C        	inr	a
+ 03A3 37        	stc
+ 03A4 C9        	ret
+                
+ 03A5 AF        zrcy:	xra	a		; Invalid drive exit
+ 03A6 3E0B      	mvi	a,drverrcd
+ 03A8 37        	stc
+ 03A9 C9        	ret
+                
+ 03AA F5        hlihl:	push	psw
+ 03AB 7E        	mov	a,m
+ 03AC 23        	inx	h
+ 03AD 66        	mov	h,m
+ 03AE 6F        	mov	l,a
+ 03AF F1        	pop	psw
+ 03B0 C9        	ret
+                
+ 03B1 E9        icall:	pchl
+                
+                ;
+                ; Parse command line for mode info, if present.  Enter with current mode
+                ; value in MODES, pointer to command string in CMDPTR
+                ;
+                
+                PARSE:
+ 03B2 3E00      	MVI	A,FALSE
+ 03B4 327A18    	STA	TRCK
+ 03B7 327B18    	STA	SDE
+ 03BA 327C18    	STA	DENSITY
+ 03BD 327918    	STA	CNFIG
+ 03C0 327D18    	STA	STEPRT
+ 03C3 3A7318    	LDA	VFLAG0
+ 03C6 327418    	STA	VFLAG
+ 03C9 21BB18    	LXI	H,MODES
+ 03CC 11BF18    	LXI	D,TMODE
+ 03CF 010400    	LXI	B,4
+ 03D2           	LDIR
+ 03D4 2A8318    	LHLD	CMDPTR		; number of characters input
+ 03D7 4E        	MOV	C,M
+ 03D8 23        	INX	H
+ 03D9 0600      	MVI	B,0
+ 03DB 09        	DAD	B
+ 03DC 3600      	MVI	M,0
+ 03DE 79        	MOV	A,C
+ 03DF B7        	ORA	A
+ 03E0 CA9805    	JZ	NOCOMD
+ 03E3 2A8318    	LHLD	CMDPTR
+ 03E6 23        SKPBL:	INX	H
+ 03E7 CDF605    NXOPT:	CALL	CHAR		; get a character for the loop
+ 03EA FE20      	CPI	' '
+ 03EC CAE603    	JZ	SKPBL
+ 03EF FE2C      	CPI	','
+ 03F1 CAE603    	JZ	SKPBL
+ 03F4 FE44      	CPI	'D'		; check for 'D' command
+ 03F6 CA5A04    	JZ	DPROC
+ 03F9 FE53      	CPI	'S'		; check for step rate
+ 03FB CA8B04    	JZ	STEP
+ 03FE FE4E      	CPI	'N'		; check of nv, ns, or ni options
+ 0400 CACC04    	JZ	N$opts
+ 0403 E5        	push	h	
+ 0404 CDDA05    	call	serdp	
+ 0407 E5        	push	h
+ 0408           	popix		; ix = address of format string table
+ 040A E1        	pop	h	; hl = buffer pointer
+ 040B 0E00      	MVI	C,0	; c = format bit number counter
+ 040D 0608      CONFIG: mvi	b,8	; b = length of entry in format string table
+ 040F E5        	PUSH	h
+ 0410 79        	mov	a,c
+ 0411 FE0F      	CPI	15	; if c = 15 then end of table
+ 0413 CAD505    	jz	nochg	;NMEMONIC NOT FOUND
+ 0416           fig0:	ldx	d,+0
+ 0419 CDF605    	call	char	; get char from buffer and make upper case
+ 041C BA        	CMP	d	; compare with serdp table
+ 041D C25104    	JNZ	FIG1
+ 0420 23        	INX	H
+ 0421           	inxix
+ 0423 05        	dcr	b
+ 0424 CA2F04    	jz	fig5
+ 0427           	ldx	a,+0	; see if end of format table
+ 042A FE20      	CPI	' '
+ 042C C21604    	JNZ	FIG0
+ 042F CDF605    fig5:	call	char
+ 0432 B7        	ORA	A
+ 0433 CA4004    	JZ	FIG2
+ 0436 FE2C      	CPI	','
+ 0438 CA4004    	JZ	FIG2
+ 043B FE20      	CPI	' '
+ 043D C25104    	JNZ	FIG1
+ 0440 D1        FIG2:	POP	d	;DISCARD OLD BUFFER POINTER
+ 0441 3A7918    	LDA	CNFIG
+ 0444 B7        	ORA	A	;IS THIS THE SECOND ENTRY OF THIS TYPE?
+ 0445 C2D605    	JNZ	BADCMD	;ERROR IF IT IS.
+ 0448 79        	MOV	A,C
+ 0449 C630      	ADI	'0'
+ 044B 327918    	STA	CNFIG
+ 044E C3EA04    	JMP	MORE
+                
+ 0451           FIG1:	inxix		;go to end of format string table
+ 0453           	djnz	FIG1
+ 0455 E1        FIN3:	pop	h
+ 0456 0C        	inr	c		; and increment the entry counter
+ 0457 C30D04    	jmp	config
+                
+                SPROC:	
+ 045A CDF605    DPROC:	CALL	CHAR
+ 045D 4F        	MOV	C,A
+ 045E 23        	INX	H		; save SINGLE or DOUBLE
+ 045F CDF605    	CALL	CHAR		; get the character
+ 0462 23        	INX	H
+ 0463 B7        	ORA	A
+ 0464 CAD605    	JZ	BADCMD
+ 0467 FE54      	CPI	'T'
+ 0469 CA8404    	JZ	TRK000
+ 046C FE44      	CPI	'D'
+ 046E CA7D04    	JZ	DNS
+ 0471 FE53      	CPI	'S'
+ 0473 C2D605    	JNZ	BADCMD
+ 0476 79        	MOV	A,C		; get the argument
+ 0477 327B18    	STA	SDE
+ 047A C3EA04    	JMP	MORE
+ 047D 79        DNS:	MOV	A,C		; get the argument
+ 047E 327C18    	STA	DENSITY
+ 0481 C3EA04    	JMP	MORE
+ 0484 79        TRK000: MOV	A,C
+ 0485 327A18    	STA	TRCK
+ 0488 C3EA04    	JMP	MORE
+                
+ 048B 23        STEP:	INX	H
+ 048C CDF605    	CALL	CHAR		; test next argument
+ 048F 2B        	DCX	H
+ 0490 FE30      	CPI	'0'		; must be numeric
+ 0492 DAD605    	JC	BADCMD		; ERROR IF < '0'
+ 0495 FE3A      	CPI	'9'+1
+ 0497 D25A04    	JNC	SPROC		;TRY 'SINGLE'
+ 049A 23        	INX	H
+ 049B 23        	INX	H
+ 049C D630      	SUI	'0'		; make it numeric
+ 049E 4F        	MOV	C,A		; and save it
+ 049F CDF605    	CALL	CHAR	;test next, it must be a number, a comma, or null
+ 04A2 B7        	ORA	A		; we accept spaces also
+ 04A3 CAC504    	JZ	SOK
+ 04A6 FE2C      	CPI	','
+ 04A8 CAC504    	JZ	SOK
+ 04AB FE20      	CPI	' '
+ 04AD CAC504    	JZ	SOK
+ 04B0 FE30      	CPI	'0'
+ 04B2 DAD605    	JC	BADCMD
+ 04B5 FE3A      	CPI	'9'+1
+ 04B7 D2D605    	JNC	BADCMD
+ 04BA 23        	INX	H
+ 04BB D630      	SUI	'0'		; numeric, make it binary
+ 04BD 5F        	MOV	E,A		; and save it
+ 04BE 79        	MOV	A,C		; get first number
+ 04BF 87        	ADD	A
+ 04C0 87        	ADD	A
+ 04C1 81        	ADD	C
+ 04C2 87        	ADD	A		; TIMES 10
+ 04C3 83        	ADD	E		; plus second number
+ 04C4 4F        	MOV	C,A		; expected in C
+ 04C5 79        SOK:	MOV	A,C		; get step rate
+ 04C6 327D18    	STA	STEPRT		; and save it
+ 04C9 C3EA04    	JMP	MORE
+                
+ 04CC 23        N$opts: INX	H		; FIRST CHARACTER IS 'N'
+ 04CD CDF605    	CALL	CHAR		; GET NEXT CHARACTER
+ 04D0 23        	INX	H
+ 04D1 FE49      	cpi	'I'		; turn off directory initialization
+ 04D3           	jrnz	not$I		; and set label
+ 04D5 3EFF      inoff:	mvi	a,0ffh
+ 04D7 329C18    	sta	initflg
+ 04DA           	jr	more
+ 04DC FE53      not$I:	cpi	'S'		; turn off directory initialization
+ 04DE           	jrz	inoff
+ 04E0 FE56      not$S:	CPI	'V'		; NEXT CHARACTER MUST BE A 'V'
+ 04E2 C2D605    	JNZ	BADCMD
+ 04E5 3E00      	MVI	A,FALSE 	; SET VERIFICATION FLAG TO FALSE
+ 04E7 327418    	STA	VFLAG
+                
+ 04EA CDF605    MORE:	CALL	CHAR		; point to next character and get it
+ 04ED 23        	INX	H
+ 04EE FE2C      	CPI	','		; continue if a comma
+ 04F0 CAE703    	JZ	NXOPT
+ 04F3 FE20      	CPI	' '		; or a space
+ 04F5 CAE703    	JZ	NXOPT
+ 04F8 B7        	ORA	A		; if a null, it's OK too
+ 04F9 C2D605    	JNZ	BADCMD		; if not, it's an error
+                ;
+                ;	update the present mode value
+                ;
+ 04FC           	lxix	tmode
+ 0500 3A7918    	LDA	CNFIG		; see if configuration was specified
+ 0503 B7        	ORA	A
+ 0504 CA1905    	JZ	BIT1
+ 0507 D630      	sui	'0'	;make it binary 0,1,2...
+ 0509 210100    	lxi	h,00000000$00000001b
+ 050C 3C        	inr	a
+ 050D 3D        gc1:	dcr	a
+ 050E           	jrz	gc0
+ 0510 29        	dad	h
+ 0511           	jr	gc1
+                GC0:
+ 0513           	stx	H,+0
+ 0516           	stx	L,+1
+                BIT1:
+ 0519 3A7B18    	LDA	sde		; see if side was specified
+ 051C B7        	ORA	A
+ 051D CA2F05    	JZ	BIT3
+ 0520           	resx	6,+3		; clear the side bit
+ 0524 2F        	CMA
+ 0525 E601      	ANI	1		; mask the lsb
+ 0527 0F        	RRC
+ 0528 0F        	RRC			; to bit 6
+ 0529           	orax	+3		; into the mode byte
+ 052C           	stx	a,+3		; and update the byte
+ 052F 3A7C18    BIT3:	LDA	DENSITY 	; see if density was specified
+ 0532 B7        	ORA	A
+ 0533 CA4705    	JZ	BIT4
+ 0536           	resx	4,+3		; clear density bit
+ 053A 2F        	CMA
+ 053B E601      	ANI	1
+ 053D 0F        	RRC
+ 053E 0F        	RRC
+ 053F 0F        	rrc
+ 0540 0F        	rrc			; to bit 4
+ 0541           	orax	+3		; mask the bit
+ 0544           	stx	a,+3		; and save it in memory
+ 0547 3A7A18    BIT4:	LDA	trck 
+ 054A B7        	ORA	A
+ 054B CA6405    	JZ	BIT5
+ 054E FE53      	cpi	'S'
+ 0550           	jrz	sst 
+ 0552           	setx	5,+3	;
+ 0556           	SETX	5,+2
+ 055A           	jr	bit5
+ 055C           SST:	resx	5,+3
+ 0560           	RESX	5,+2
+ 0564 3A7D18    BIT5:	LDA	STEPRT		; get the requested step rate
+ 0567 B7        	ORA	A		; see if user specified one
+ 0568 CA9805    	JZ	BIT6
+ 056B           	bitx	7,+2		; size, 5.25 or 8
+ 056F 218917    	LXI	H,STEPTB
+ 0572 110400    	LXI	D,4		; table is 4 bytes long
+ 0575 CA7905    	JZ	FIVE
+ 0578 19        	DAD	D		; add offset
+ 0579 0600      FIVE:	MVI	B,0		; initial step rate
+ 057B BE        NXRT:	CMP	M		; compare request with table
+ 057C DA8705    	JC	GSRT		; memory is greater, this is it
+ 057F 23        	INX	H
+ 0580 04        	INR	B
+ 0581 1D        	DCR	E
+ 0582 C27B05    	JNZ	NXRT
+ 0585 0603      	MVI	B,3		; in case of overflow
+ 0587 78        GSRT:	MOV	A,B		; step rate mask
+ 0588           	resx	2,+2
+ 058C           	resx	3,+2		; clear bits
+ 0590 07        	rlc
+ 0591 07        	rlc
+ 0592           	orax	+2		; and update mode value
+ 0595           	stx	a,+2
+                BIT6:	
+ 0598 CDDA05    nocomd: call	serdp
+ 059B B7        	ORA	A
+ 059C C2D605    	JNZ	badcmd		; error if non-zero (NO DPB FOUND)
+ 059F           	sbcd	sectbl		; save x-late table pointer
+ 05A3           	sded	sysdpb		; save dpb pointer
+ 05A7 2AAA18    	LHLD	MODPTR		; check if mode-mask prevent user's selection
+ 05AA 23        	INX	H
+ 05AB 23        	INX	H
+ 05AC 23        	INX	H
+ 05AD 23        	inx	h
+ 05AE EB        	XCHG			;DE = mode byte mask pointer
+ 05AF 21BF18    	LXI	H,TMODE
+ 05B2 01BB18    	LXI	B,MODES
+ 05B5 3E04      	MVI	A,4	;NUMBER OF MODE BYTES
+ 05B7 F5        ANOTHR: PUSH	PSW		; save the counter
+ 05B8 0A        	LDAX	B		; get old mode byte
+ 05B9 AE        	XRA	M		; set bit for values changed
+ 05BA EB        	XCHG
+ 05BB A6        	ANA	M		; check for changed bytes
+ 05BC EB        	XCHG
+ 05BD C2D505    	JNZ	NOCHG		; error if non zero
+ 05C0 13        	INX	D
+ 05C1 03        	INX	B
+ 05C2 23        	INX	H		; point to the next byte
+ 05C3 F1        	POP	PSW		; get counter
+ 05C4 3D        	DCR	A		; and decrement it
+ 05C5 C2B705    	JNZ	ANOTHR
+ 05C8 21BF18    	LXI	H,TMODE
+ 05CB 11BB18    	LXI	D,MODES
+ 05CE 010400    	LXI	B,4
+ 05D1           	LDIR
+ 05D3 AF        	XRA	A
+ 05D4 C9        	RET			; and return
+                
+ 05D5 F1        NOCHG:	POP	PSW
+ 05D6 AF        BADCMD: XRA	A
+ 05D7 3C        	INR	A		; set [NZ] flag
+ 05D8 37        	STC
+ 05D9 C9        	RET	;[NZ] [CY] IF ERROR
+                 
+                
+ 05DA 11BF18    serdp	LXI	D,tmode 	; MODE BYTE POINTER TO DE
+ 05DD 2A0100    	LHLD	CPM+1		; call serdp
+ 05E0 016600    	LXI	B,?SERDP-3
+ 05E3 09        	DAD	B		; POINTER TO SERDP CALL ADDRESS
+ 05E4 CDAA03    	CALL	HLIHL		; GET CALL ADDRESS
+ 05E7 E5        	push	h
+ 05E8 CDB103    	CALL	ICALL		; CALL "GETDP" TO FIND A DPB FOR THIS MODE
+ 05EB EB        	xchg			; hl <> de  table offset to de - dpb ptr to hl
+ 05EC E3        	xthl			; hl <> tos dpb ptr to tos - serdp addr to hl
+ 05ED 19        	dad	d		; format string table - add serdp addr & offset
+ 05EE D1        	pop	d		; restore de to dpb pointer
+ 05EF C9        	ret		
+                
+                ;
+                ;	Gets a character from the buffer and points to next character
+                ;
+                
+ 05F0 CDF605    xchar:	call	char
+ 05F3 23        	inx	h
+ 05F4 05        	dcr	b
+ 05F5 C9        	ret
+                
+                ;
+                ;	Gets a character from the buffer and makes upper case
+                ;
+                
+ 05F6 7E        char:	mov	a,m		; remove a character from buffer
+ 05F7 FE61      	cpi	'a'
+ 05F9 D8        	rc
+ 05FA FE7B      	cpi	'z'+1
+ 05FC D0        	rnc
+ 05FD D620      	sui	'a'-'A'
+ 05FF C9        	ret
+                
+                ;
+                ;	output the mode data to the CRT
+                ;
+                
+                SHOW:	
+ 0600 210200    	lxi	h,brl		; clear rest of screen
+ 0603 CD0000    	call	cursor
+ 0606 CD0000    	call	clrend
+ 0609 210200    	lxi	h,brl
+ 060C 113D0F    	lxi	d,basmsg	; POSITION THE MODE INFO
+ 060F CD0000    	call	prtmsg
+ 0612 3AA418    	LDA	PHYDRV		;  get physical drive number
+ 0615 010000    	LXI	B,0		;  tens counter in C and ones in B
+ 0618 0C        MORTEN: INR	C
+ 0619 D60A      	SUI	10
+ 061B CA2506    	JZ	GOTNUM
+ 061E F21806    	JP	MORTEN
+ 0621 0D        	DCR	C
+ 0622 C60A      	ADI	10
+ 0624 47        	MOV	B,A
+ 0625 213030    GOTNUM: LXI	H,'00'		;  numeric offset to ASCII
+ 0628 09        	DAD	B
+ 0629 7D        	MOV	A,L		;  tens digit
+ 062A FE30      	CPI	'0'		;  check for zero
+ 062C C23106    	JNZ	NOZE
+ 062F 3E20      	MVI	A,' '		;  if so, replace with a space
+ 0631 6F        NOZE:	MOV	L,A
+ 0632 228B14    	SHLD	DSKNM
+ 0635 3A7113    	LDA	DRIVE		;  get drive letter
+ 0638 118714    	lxi	d,dsklt
+ 063B 12        	stax	d		;  put in string
+ 063C 210314    	lxi	h,mfc*256+drl
+ 063F CD0000    	call	prtmsg
+ 0642           	LXIX	MODES
+ 0646           	BITX	7,+2		;  size, 0=5" and 1=8"
+ 064A 114014    	LXI	D,INCH5
+ 064D CA5306    	JZ	PRINCH
+ 0650 115114    	LXI	D,INCH8
+ 0653 CD0000    PRINCH: call	putlne
+ 0656 CDFC06    	call	getstr
+ 0659 210414    	lxi	h,mfc*256+crl
+ 065C CD0000    	call	prtmsg
+ 065F           	BITX	6,+3		;  check the side bit
+ 0663 CA6C06    	JZ	SS		;  single sided if zero
+ 0666 116114    	LXI	D,DSMSG 	;  double sided drive message
+ 0669 C36F06    	JMP	DDS
+ 066C 115F14    SS:	LXI	D,SSMSG 	;  single sided drive message
+ 066F 210614    DDS:	lxi	h,mfc*256+sil
+ 0672 CD0000    	call	prtmsg
+ 0675           	BITX	4,+3
+ 0679 CA8206    	JZ	SD		;  single density if zero
+ 067C 116A14    	LXI	D,DDMSG 	;  double density drive message
+ 067F C38506    	JMP	DD
+ 0682 116314    SD:	LXI	D,SDMSG 	;  single density drive message
+ 0685 210514    DD:	lxi	h,mfc*256+rdl
+ 0688 CD0000    	call	prtmsg
+ 068B           	BITX	5,+3		;  mask out track density
+ 068F CA9806    	JZ	T48		;  48 tpi if zero
+ 0692 117414    	LXI	D,T96MSG	; 96 tpi message
+ 0695 C39B06    	JMP	HTRK
+ 0698 117114    T48:	LXI	D,T48MSG	; 48 tpi message
+ 069B 210714    HTRK:	lxi	h,mfc*256+tpl
+ 069E CD0000    	call	prtmsg
+ 06A1 CDD406    	call	setcn		;  handle configuration
+ 06A4           	ldx	a,+2		;  GET STEPRATE BYTE
+ 06A7 E60C      	ani	00001100B
+ 06A9 0F        	rrc
+ 06AA 0F        	rrc			; move steprate bits down
+ 06AB           	bitx	7,+2
+ 06AF CAB406    	jz	sr5
+ 06B2 F604      	ori	00000100b	; or in 8" bit
+ 06B4 217917    sr5:	LXI	H,STRTBL	; step rate table
+ 06B7 87        	ADD	A		;  two bytes per entry
+ 06B8 5F        	MOV	E,A
+ 06B9 1600      	MVI	D,0		;  16 bit value for offset
+ 06BB 19        	DAD	D
+ 06BC 5E        	MOV	E,M		;  first byte of step rate
+ 06BD 23        	INX	H
+ 06BE 56        	MOV	D,M		;  and the second
+ 06BF EB        	XCHG
+ 06C0 227714    	SHLD	STRATE		;  save text in message
+ 06C3 117714    	LXI	D,STRATE	; step rate message
+ 06C6 1A        	LDAX	D
+ 06C7 FE20      	CPI	' '		;  skip a character if a space
+ 06C9 C2CD06    	JNZ	NSPC
+ 06CC 13        	INX	D
+ 06CD 210814    NSPC:	lxi	h,mfc*256+srl
+ 06D0 CD0000    	call	prtmsg
+ 06D3 C9        	ret
+                
+ 06D4 210914    SETCN:	lxi	h,mfc*256+fsl
+ 06D7 CD0000    	call	cursor
+ 06DA 21BB18    	lxi	h,modes 	; get pointer to format origin bytes
+ 06DD 56        	mov	d,m		; load bytes in de
+ 06DE 23        	inx	h
+ 06DF 5E        	mov	e,m
+ 06E0 D5        	push	d
+ 06E1 CDDA05    	call	serdp		; get start of format string table in hl
+ 06E4 D1        	pop	d
+ 06E5 010800    	lxi	b,8
+ 06E8 AF        	xra	a
+ 06E9           fmt1:	srlr	d
+ 06EB           	rarr	e	;shift and wait for a carry...
+ 06ED           	jrc	fmt2
+ 06EF 09        	dad	b
+ 06F0           	jr	fmt1
+ 06F2 0608      fmt2:	mvi	b,8
+ 06F4 7E        fmt3:	mov	a,m	; got format string - now print 8 characters
+ 06F5 CD0000    	call	putchr	
+ 06F8 23        	inx	h
+ 06F9           	djnz	fmt3
+ 06FB C9        	ret
+                
+                getstr: 
+ 06FC 2A7518    	lhld	curmdl
+ 06FF 110C00    	lxi	d,stroff	; address text string offset
+ 0702 19        	dad	d
+ 0703 5E        	mov	e,m		; move to de
+ 0704 23        	inx	h
+ 0705 56        	mov	d,m
+ 0706 C9        	ret
+                
+                ;
+                ;	This routine modifies the driver module so that the login function
+                ;	is not called. It also copys the new mode bytes into the system.
+                ;	Done$dsk undos what this routine did.
+                ;
+                
+                start$dsk:
+ 0707 21BB18    	lxi	h,modes
+ 070A           	lded	modptr
+ 070E 010400    	lxi	b,4
+ 0711           	ldir
+ 0713 2A7518    	lhld	curmdl		; go into driver
+ 0716 010300    	lxi	b,3
+ 0719 09        	dad	b		; POINT TO JUMP TO LOGIN ROUTINE
+ 071A 3EAF      	mvi	a,0afh		; code for "XRA A"
+ 071C 77        	mov	m,a		; overlay "JMP" instruction
+ 071D 23        	inx	h		;  so that LOGIN never gets called
+ 071E 7E        	mov	a,m		; byte to be saved
+ 071F 32A718    	sta	savbyte
+ 0722 3EC9      	mvi	a,0c9h		; code for "RET"
+ 0724 77        	mov	m,a
+ 0725 3A7113    	lda	drive
+ 0728 D641      	sui	'A'		; logical drive number
+ 072A 4F        	mov	c,a
+ 072B 1E00      	mvi	e,0		; flag drive not logged in
+ 072D 3E09      	mvi	a,seldsk	; select the disk (this will put dpb address
+ 072F CD1F0F    	call	biosc		;  into dph)
+ 0732 C9        	ret
+                
+                setup:
+ 0733 AF        	xra	a
+ 0734 329418    	sta	dsflag
+ 0737 2AAF18    	lhld	sysdpb		; get DPB address
+ 073A 7E        	mov	a,m		; get the number of sectors per track
+ 073B 328518    	sta	spt0		; must be changed if mode is changed
+ 073E 112B18    	lxi	d,dpb
+ 0741 010F00    	lxi	b,15
+ 0744           	ldir			; copy DPB into local area
+ 0746 2ABD18    	lhld	modes+2 	; get corrected mode value
+ 0749 0E00      	mvi	c,0
+ 074B           	bit	4,h	;DD BIT
+ 074D CA5207    	jz	nodd
+ 0750           	setb	1,c	;SET DOUBLE DENSITY
+ 0752           nodd:	bit	6,h	;DS BIT
+ 0754 CA5907    	jz	nods
+ 0757           	setb	0,c	;SET DOUBLE SIDED
+ 0759           nods:	bit	5,h
+ 075B CA6007    	jz	nodt
+ 075E           	setb	3,c
+ 0760           nodt:	lxix	modes
+ 0764           	bitx	0,+0		; see if z100
+ 0768           	jrz	no$z100
+ 076A 3E24      	mvi	a,00100100b	; mark as z100 (z207 controller)
+ 076C           	jr	markfmt
+ 076E           no$z100 bitx	5,+1
+ 0772           	jrz	no$z47
+ 0774 3E80      	mvi	a,10000000b	; mark as z47
+ 0776           	jr	markfmt
+ 0778           no$z47: bitx	6,+1
+ 077C           	jrz	no$z47x
+ 077E 3E84      	mvi	a,10000100b	; mark as z47x
+ 0780           	jr	markfmt
+ 0782           no$z47x bitx	7,+1
+ 0786           	jrz	no$z67
+ 0788 3EC0      	mvi	a,11000000b	; mark as z67
+ 078A           	jr	markfmt
+ 078C           no$z67: bitx	3,+1
+ 0790           	jrz	no$z37		; no valid format
+ 0792 3E60      	MVI	A,01100000B	; mark as Z37 type disk
+ 0794           	jr	markfmt
+ 0796           no$z37: bitx	4,+1		; test for z37 extended
+ 079A           	jrz	markfmt
+ 079C 3E64      	mvi	a,01100100b	; mark as z37 extended
+ 079E B1        markfmt ORA	C
+ 079F 327E18    	STA	Z37MODE
+ 07A2 7C        	MOV	A,h
+ 07A3 E640      	ANI	01000000B	; determine how many sides to format
+ 07A5 07        	RLC
+ 07A6 07        	RLC
+ 07A7 329118    	STA	SIDES
+ 07AA 7D        	MOV	A,l
+ 07AB E60C      	ANI	00001100B	; get the steprate for this drive
+ 07AD 0F        	rrc
+ 07AE 0F        	rrc
+ 07AF 32A918    	STA	STEPR
+ 07B2 3A8518    	LDA	SPT0		; convert SPT to physical, if neccessary
+ 07B5 47        	MOV	B,A
+ 07B6 7D        	MOV	A,L
+ 07B7 E603      	ANI	00000011B	; sector size code (0,1,2,3)
+ 07B9 328F18    	STA	SZ
+ 07BC 3C        	INR	A
+ 07BD 3D        ST0:	DCR	A
+ 07BE CAC607    	JZ	SD80
+ 07C1           	SRLR	B		; shift SPT down to physical equivilent.
+ 07C3 C3BD07    	JMP	ST0
+ 07C6 78        SD80:	MOV	A,B
+ 07C7 328A18    	STA	SPT
+ 07CA 114D4D    	LXI	D,(77)+(77)*256 ; determine the number of tracks on the drive.
+ 07CD           	BIT	7,l		; (E = tracks on 1st side, D = tracks on 2nd)
+ 07CF C2E807    	JNZ	GOTT		; 8" DT is not supported.
+ 07D2 112828    	LXI	D,(40)+(40)*256
+ 07D5 3ABC18    	LDA	MODES+1 	; check ORG for "Z17"
+ 07D8 FE02      	CPI	00000010B
+ 07DA C2DF07    	JNZ	NZ17
+ 07DD 1624      	MVI	D,(36)		; only 36 tracks on second side of Z17 disk
+ 07DF           NZ17:	BIT	5,L		; check DT bit
+ 07E1 CAE807    	JZ	GOTT
+ 07E4           	SLAR	E		; twice as many tracks if double track density.
+ 07E6           	SLAR	D
+ 07E8           GOTT:	SDED	TRKS
+ 07EC 3ABC18    	LDA	MODES+1
+ 07EF FE01      	CPI	00000001B	; IF IT'S AN MMS FORMAT
+ 07F1 C20A08    	JNZ	NMMS
+ 07F4           	bit	7,l
+ 07F6 CA0A08    	jz	nmms
+ 07F9           	bit	4,h
+ 07FB CA0A08    	jz	nmms
+ 07FE 3AA418    	lda	phydrv		;  THEN Z47/M47 CONTROLLER CANNOT FORMAT IT.
+ 0801 D605      	sui	5
+ 0803 FE04      	cpi	4
+ 0805 3E06      	mvi	a,notsupcd
+ 0807 DA2C08    	jc	exit$setup
+ 080A 3A9218    nmms:	lda	wd$flag
+ 080D B7        	ora	a
+ 080E CA1708    	jz	not$wd		;SKIP search IF NOT 1797-TYPE FORMATTER
+ 0811 CD2D08    	call	search$table	; searches table for 1797 track format entry
+ 0814 DA2C08    	jc	exit$setup	; jmp to exit if format not supported
+                not$wd:
+ 0817 3ABD18    	lda	modes+2
+ 081A E680      	ani	10000000B	; 8" bit
+ 081C 3EFF      	mvi	a,true
+ 081E 329418    	sta	dsflag		; allow test for DS error.
+ 0821 3A7218    	lda	dtflag0
+ 0824           	jrz	fivnch		; disallow test for DT if 8" drive
+ 0826 3E00      	mvi	a,false
+                fivnch: 
+ 0828 329518    	sta	dtflag
+ 082B B7        	ora	a		; clear [CY]
+                exit$setup:			; returns [CY] if error
+ 082C C9        	ret
+                
+                
+                ;
+                ;	Searches format table 
+                ;
+                
+                search$table:			;searches table for format and dd type
+ 082D 21BB18    	lxi	h,modes  
+ 0830 4E        	mov	c,m		;no need to mask format origin code.
+ 0831 23        	inx	h
+ 0832 46        	mov	b,m
+ 0833 23        	inx	h
+ 0834 7E        	mov	a,m		; get first mode byte
+ 0835 E683      	ani	srm0		; mask FIRST BYTE
+ 0837 5F        	mov	e,a    
+ 0838 23        	inx	h		; and point to the second
+ 0839 7E        	mov	a,m
+ 083A E61C      	ani	srm1		; mask SECOND BYTE
+ 083C 57        	mov	d,a
+ 083D 210000    	lxi	h,table 	; table lookup...
+                nxtxt:
+ 0840 7E        	mov	a,m		; format origin code.
+ 0841 23        	inx	h
+ 0842 A1        	ana	c	;compare it: if the format requested matches
+ 0843           	jrnz	got1	    ;(if the bit is set in both DPB and requested
+ 0845 7E        	mov	a,m	    ; mode ([NZ] condition) then we have a match.)
+ 0846 A0        	ana	b		;check for possible extend format origin
+ 0847           	jrz	nxd1	;...
+ 0849 23        got1:	inx	h
+ 084A 7E        	mov	a,m		; get first byte
+ 084B 23        	inx	h
+ 084C E683      	ani	srm0		;mask it also
+ 084E BB        	cmp	e		;compare to target mode
+ 084F           	jrnz	nxd3
+ 0851 7E        	mov	a,m		; and the second
+ 0852 E61C      	ani	srm1		;mask it
+ 0854 BA        	cmp	d		;compare it
+ 0855           	jrnz	nxd3
+ 0857 3ABE18    	lda	modes+3 	; we don't format double sided/single density
+ 085A E650      	ani	01010000b		     
+ 085C FE40      	cpi	01000000b
+ 085E CA8E08    	jz	errout
+ 0861           	bit	7,m		; check confg bit in table
+ 0863           	jrz	no$cfg
+ 0865 3EFF      	mvi	a,true
+ 0867           	jr	c1
+ 0869 3E00      no$cfg: mvi	a,false
+ 086B 329D18    c1:	sta	cflg
+ 086E 23        	inx	h
+ 086F 7E        	mov	a,m	;pick up format table
+ 0870 23        	inx	h
+ 0871 66        	mov	h,m
+ 0872 6F        	mov	l,a
+ 0873 227F18    	shld	xtable		
+ 0876 110600    	lxi	d,6	;pick verify sector table
+ 0879 19        	dad	d
+ 087A 7E        	mov	a,m
+ 087B 23        	inx	h
+ 087C 66        	mov	h,m
+ 087D 6F        	mov	l,a
+ 087E 22B118    	shld	vsectb
+ 0881 B7        	ora	a	;clear [CY]
+ 0882           	jr	search$exit
+ 0884 23        nxd1:	inx	h
+ 0885 23        nxd2:	inx	h
+ 0886 23        nxd3:	inx	h
+ 0887 23        	inx	h
+ 0888 23        	inx	h
+ 0889 7E        	mov	a,m
+ 088A FEFF      	cpi	11111111b
+ 088C           	jrnz	nxtxt		; loop if more entries in table
+ 088E 3E06      errout: mvi	a,notsupcd
+ 0890 37        	stc
+                search$exit:
+ 0891 C9        	ret
+                
+                ;
+                ;	Tests drives for incorrect drive/media requests tpi mismatch
+                ;	       Assumes drive has been restored already
+                ;
+                
+                testdt: 			
+ 0892 3A9518    	lda	dtflag		; if zero don't do the test
+ 0895 B7        	ora	a
+ 0896 CACA08    	jz	testdt2
+ 0899 AF        	xra	a
+ 089A 329518    	sta	dtflag		; prevent further tests until something changes
+ 089D 1E2F      	mvi	e,47		; step in 47 tracks (will only go about 45 if
+ 089F 3E4B      stin0:	mvi	a,01001011B	; drive is 48 tpi).
+ 08A1 CD0000    	call	comnd		; step-in
+ 08A4 1D        	dcr	e
+ 08A5 C29F08    	jnz	stin0
+ 08A8 1E2E      	mvi	e,46		; step out 46 tracks (on 96 tpi drive head will
+ 08AA 3E6B      stot0:	mvi	a,01101011B	; not get back to track 00).
+ 08AC CD0000    	call	comnd		; step-out
+ 08AF 1D        	dcr	e
+ 08B0 C2AA08    	jnz	stot0		; (A) = status, check TR00 bit.
+ 08B3 EE04      	xri	00000100B	; make [ZR] for 48 tpi (std DT bit)
+ 08B5 07        	rlc			; put bit in same position as system DT bit
+ 08B6 07        	rlc
+ 08B7 07        	rlc
+ 08B8 2ABD18    	lhld	modes+2
+ 08BB AD        	xra	l		; test if DT mode is diff from actual drive...
+ 08BC E620      	ani	00100000B	; ignore other bits - returns [CY] if tpi error
+ 08BE CAC608    	jz	testdt1
+ 08C1 3E08      	mvi	a,dterrcd	 
+ 08C3 37        	stc
+ 08C4           	jr	testdt2
+                testdt1:
+ 08C6 CD0000    	call	restor		; restore drive for format
+ 08C9 B7        	ora	a		; clear [CY]
+                testdt2:
+ 08CA C9        	ret
+                
+                ;
+                ;  This section the actual formatting of each track
+                ;
+                
+                format:
+ 08CB CDE909    	call	image$t0s0	; set up trk0 side 0 image & set up controller 
+ 08CE 3A8618    	lda	trks		; move base values to temp variable space
+ 08D1 329718    	sta	trks1
+ 08D4 AF        	xra	a
+ 08D5 328818    	sta	trk		; track = 0
+ 08D8 328918    	sta	sid		; side = 0
+ 08DB CD140B    	call	bargraph	; setup display of tracks formatted
+ 08DE CD720B    	call	fmtprog
+ 08E1 CD3D09    	call	sec$header	; format trk0 side 0 
+ 08E4 CD5909    	call	trk$write
+ 08E7 DA3B09    	jc	fmterr
+ 08EA 3A9118    	lda	sides
+ 08ED B7        	ora	a
+ 08EE           	jrz	fmt$ss
+ 08F0 CDB409    	call	nxt$side
+ 08F3 CDF909    	call	image$t0s1	; format trk0 side 1
+ 08F6 CD720B    	call	fmtprog
+ 08F9 CD3D09    	call	sec$header
+ 08FC CD5909    	call	trk$write
+ 08FF DA3B09    	jc	fmterr
+ 0902 3A9418    	lda	dsflag		; ds test
+ 0905 B7        	ora	a
+ 0906 CA0F09    	jz	no$dstest
+ 0909 CD850B    	call	testds
+ 090C DA3B09    	jc	fmterr
+                no$dstest:
+ 090F CDB409    	call	nxt$side
+ 0912 CDBC09    fmt$ss: call	nxt$trk
+ 0915 DA3B09    	jc	fmterr
+ 0918 CDD509    	call	image$trk	; set up buffer for rest of disk
+                trk$loop:
+ 091B CD720B    	call	fmtprog
+ 091E CD3D09    	call	sec$header
+ 0921 CD5909    	call	trk$write
+ 0924 DA3B09    	jc	fmterr
+ 0927 3A9118    	lda	sides		; if double sided switch sides and format
+ 092A B7        	ora	a
+ 092B C4B409    	cnz	nxt$side
+ 092E           	jrnz	trk$loop	; if side 1 ([Z]=0) do loop again
+ 0930 CDBC09    	call	nxt$trk
+ 0933 DA3B09    	jc	fmterr
+ 0936 CA1B09    	jz	trk$loop 
+ 0939 B7        	ora	a		; clear [CY]
+ 093A C9        	ret
+                fmterr:
+ 093B 37        	stc			; set [CY] for error
+ 093C C9        	ret
+                
+                ;
+                ;	This routine puts the sector headers in the buffer
+                ;
+                
+                sec$header:		 
+ 093D 3A9218    	lda	wd$flag
+ 0940 B7        	ora	a
+ 0941 C8        	rz
+ 0942 3A8A18    	lda	spt		; setup registers to update track-side fields
+ 0945           	lbcd	trk
+ 0949           	lded	bias 
+ 094D 2A9818    	lhld	first$trk
+                fill$num:
+ 0950 71        	mov	m,c		; put track and side number in sector header
+ 0951 23        	inx	h
+ 0952 70        	mov	m,b
+ 0953 19        	dad	d		; step to next sector field
+ 0954 3D        	dcr	a		; count sectors
+ 0955 C25009    	jnz	fill$num	; continue if more sectors to fill
+ 0958 C9        	ret
+                
+                ;
+                ;	This routines writes the buffer out
+                ;
+                
+                trk$write:
+ 0959 CD0000    	call	intoff		;TURN SPECIFIC INTERUPTS OFF
+ 095C 210000    	lxi	h,buffer	; point to track buffer for data source
+ 095F CD0000    	call	writrk		; write a track to disk
+ 0962 32A818    	sta	dskst
+ 0965 F5        	push	psw		; save CARRY bit
+ 0966 E5        	push	h		; save address of last byte written
+ 0967 CD0000    	call	inton		;TURN INTERUPTS ON AGAIN
+ 096A E1        	pop	h
+ 096B F1        	pop	psw		;restore carry bit
+ 096C DAAC09    	jc	err1		;error: soft-sector media in hard-sector ctrlr.
+ 096F 110000    	lxi	d,buffer
+ 0972 B7        	ora	a
+ 0973           	dsbc	d		; calculate number of bytes written
+ 0975 11D007    	lxi	d,2000		; compare to 2000
+ 0978 B7        	ora	a
+ 0979           	dsbc	d		; if less than 2000,
+ 097B DAB009    	jc	err2		; must be 10-sector disk on soft-sector ctrlr.
+ 097E 3E92      	mvi	a,146		; 1000 microsecond delay:
+ 0980 3D        dly:	dcr	a		; The tunnel erase is active for up
+                				; to 500 microseconds
+ 0981 C28009    	jnz	dly		; after write-gate is turned off.
+ 0984 3AA818    	lda	dskst		; check status of write-track command
+ 0987 B7        	ora	a		; clear [CY]
+ 0988 C8        	rz
+ 0989 4F        	mov	c,a
+ 098A 3A9418    	lda	dsflag		; HAS DOUBLE SIDED TEST BEEN DONE YET ?
+ 098D B7        	ora	a
+ 098E 79        	mov	a,c
+ 098F CA9809    	jz	ndserr
+ 0992 3A8918    	lda	sid		; IF IT HASN'T AND WE ARE ON SIDE 1,
+ 0995 B7        	ora	a		;  THEN TREAT AS IF NO ERROR
+ 0996 79        	mov	a,c		;  SO THAT DOUBLE SIDED TEST WILL BE DONE
+ 0997 C0        	rnz	
+ 0998 07        ndserr: rlc
+ 0999 D2A009    	jnc	noerr1		; NOT READY ERROR
+ 099C 3E03      	mvi	a,notrdycd
+ 099E           	jr	wrterr
+ 09A0 07        noerr1: rlc
+ 09A1 D2A809    	jnc	err0		; WRITE PROTECT ERROR
+ 09A4 3E02      	mvi	a,wrtprocd
+ 09A6           	jr	wrterr
+ 09A8 3E0C      err0:	mvi	a,wterrcd
+ 09AA           	jr	wrterr		; error if anything ELSE went wrong
+ 09AC 3E05      err1:	mvi	a,z17sftcd
+ 09AE           	jr	wrterr
+ 09B0 3E04      err2:	mvi	a,hrdsectcd
+ 09B2 37        wrterr: stc
+ 09B3 C9        	ret
+                
+                ;
+                ;	Increments to next side
+                ;
+                
+                nxt$side:
+ 09B4 218918    	lxi	h,sid		; update side
+ 09B7 7E        	mov	a,m 
+ 09B8 EE01      	xri	00000001B
+ 09BA 77        	mov	m,a
+ 09BB C9        	ret			; [Z] is set if side 0
+                
+                ;
+                ;	increments to next trk
+                ;
+                
+                nxt$trk:
+ 09BC 218818    	lxi	h,trk		; update track numbers
+ 09BF 34        	inr	m
+ 09C0 219718    	lxi	h,trks1
+ 09C3 35        	dcr	m		; count each track
+ 09C4 CAD109    	jz	nxt$trk1
+ 09C7 CD0000    	call	step$in 	; step head towards hub
+ 09CA E6C9      	ani	11001001B	; (A) = status from 1797, clears carry
+ 09CC C8        	rz
+ 09CD 3E0C      	mvi	a,wterrcd
+ 09CF 37        	stc			; [CY] = error
+ 09D0 C9        	ret
+                nxt$trk1:
+ 09D1 3E01      	mvi	a,1		; [NZ] = last track
+ 09D3 B7        	ora	a
+ 09D4 C9        	ret
+                
+                ;
+                ;	These routines build the image needed to write to the disk
+                ;
+                
+                image$trk:
+ 09D5 3A8818    	lda	trk
+ 09D8 FE01      	cpi	1		; if track not 1, return
+ 09DA C0        	rnz
+ 09DB 3A8918    	lda	sid		; if not side 0, return
+ 09DE           	bit	0,a
+ 09E0 C0        	rnz
+ 09E1 3ABE18    	lda	modes+3
+ 09E4 E60C      	ani	0000$1100b
+ 09E6           	jrnz	image$norm	; if trk0 side 0 or side1 was different reimage
+ 09E8 C9        	ret
+                
+                image$t0s0:
+ 09E9 3ABE18    	lda	modes+3
+ 09EC           	bit	3,a		; if dd with trk 0 side 0 dd, jump
+ 09EE           	jrz	image$norm
+ 09F0 210000    	lxi	h,std8		; select SD 8" for this track
+ 09F3 0E00      	mvi	c,0		; sector size = 128 bytes
+ 09F5 3E1A      	mvi	a,26		; 26 physical sectors per track
+ 09F7           	jr	put$image
+                
+                image$t0s1:
+ 09F9 3ABE18    	lda	modes+3
+ 09FC           	bit	2,a		; jmp if trk 0 side 1 is the z47d format (256)
+ 09FE           	jrnz	imag1
+ 0A00           	bit	3,a		; see if trk 0 side 0 was different
+ 0A02 C8        	rz			; return if it wasn't different
+ 0A03           	jr	image$norm
+ 0A05 210000    imag1:	lxi	h,z47d		; select dd trk0 side 1 on z47x
+ 0A08 0E01      	mvi	c,1		; sector size = 256
+ 0A0A 3E1A      	mvi	a,26		; 26 physical sectors per track
+ 0A0C           	jr	put$image
+                
+                image$norm:			  
+ 0A0E 2A7F18    	LHLD	XTABLE
+ 0A11 3A8F18    	LDA	SZ
+ 0A14 4F        	MOV	C,A
+ 0A15 3A8A18    	LDA	SPT
+                put$image:
+ 0A18 328B18    	STA	SPTC
+ 0A1B 79        	MOV	A,C		; sector size code
+ 0A1C 329018    	STA	SZ0		; save for later stuffing into image
+ 0A1F 014000    	LXI	B,128/2 	; B = 0, C = 128/2
+ 0A22 3C        	INR	A
+ 0A23           SI0:	SLAR	C		; mult BC by 2
+ 0A25           	RALR	B
+ 0A27 3D        	DCR	A		; do it A times
+ 0A28 C2230A    	JNZ	SI0
+ 0A2B           	SBCD	SECSIZ		; used by data-fill routine and VERIFY
+ 0A2F 3A9218    	LDA	WD$FLAG
+ 0A32 B7        	ORA	A
+ 0A33 CA0000    	jz	ctrlio
+ 0A36 5E        	MOV	E,M
+ 0A37 23        	INX	H
+ 0A38 56        	MOV	D,M
+ 0A39 23        	INX	H
+ 0A3A           	SDED	FMTBL		; table that discribes format
+ 0A3E 7E        	MOV	A,M
+ 0A3F 329318    	STA	MFM		; DD enable flag
+ 0A42 23        	INX	H
+ 0A43 23        	INX	H
+ 0A44 5E        	MOV	E,M
+ 0A45 23        	INX	H
+ 0A46 56        	MOV	D,M
+ 0A47 23        	INX	H
+ 0A48           	SDED	FMTTBL		; skew table for format
+ 0A4C 3E02      	MVI	A,2
+ 0A4E 329618    	STA	FLAG
+ 0A51 210000    	LXI	H,BUFFER
+ 0A54 AF        	XRA	A
+ 0A55 328C18    	STA	SE		; set starting sector number = 0
+ 0A58 CD6C0A    	CALL	FILL$BUFF	; build buffer image
+ 0A5B 2A9A18    	LHLD	BIAS
+ 0A5E           	LDED	FIRST$TRK
+ 0A62 B7        	ORA	A
+ 0A63           	DSBC	D		; compute length of (each) sector image
+ 0A65 2B        	DCX	H
+ 0A66 229A18    	SHLD	BIAS		; used to update track and side in track image
+ 0A69 C30000    	jmp	ctrlio		; setup controll port image
+                
+                FILL$BUFF:
+ 0A6C 54        	MOV	D,H		; DE = HL+1
+ 0A6D 5D        	MOV	E,L
+ 0A6E 13        	INX	D
+ 0A6F E5        	PUSH	H		; TOS = buffer start address
+ 0A70 2AA218    	LHLD	FMTBL		; HL = table address
+ 0A73 0600      	MVI	B,0
+                POST$INDEX:
+ 0A75 7E        	MOV	A,M
+ 0A76 23        	INX	H
+ 0A77 B7        	ORA	A
+ 0A78 CA860A    	JZ	FILL$SECT
+ 0A7B 4F        	MOV	C,A
+ 0A7C 7E        	MOV	A,M
+ 0A7D 23        	INX	H
+ 0A7E E3        	XTHL
+ 0A7F 77        	MOV	M,A
+ 0A80           	LDIR
+ 0A82 E3        	XTHL
+ 0A83 C3750A    	JMP	POST$INDEX
+                FILL$SECT:
+ 0A86 4D        	MOV	C,L
+ 0A87 44        	MOV	B,H		; BC = HL (table)
+ 0A88 E3        	XTHL			; TOS = table, HL = buffer
+ 0A89 C5        	PUSH	B		; -TOS = TOS = table
+ 0A8A 0600      	MVI	B,0
+ 0A8C E3        FILL$S: XTHL			; HL = table, TOS = buffer
+ 0A8D 7E        	MOV	A,M
+ 0A8E 23        	INX	H
+ 0A8F B7        	ORA	A
+ 0A90 CAF40A    	JZ	END$SECT
+ 0A93 4F        	MOV	C,A
+ 0A94 7E        	MOV	A,M
+ 0A95 23        	INX	H
+ 0A96 E3        	XTHL
+ 0A97 77        	MOV	M,A
+ 0A98           	LDIR
+ 0A9A FEFE      	CPI	0FEH		; ID address mark
+ 0A9C CAB30A    	JZ	SECT$ID
+ 0A9F FEFB      	CPI	0FBH		; Data address mark
+ 0AA1 C28C0A    	JNZ	FILL$S
+ 0AA4           	LBCD	SECSIZ		; fill data field of sector
+ 0AA8 36E5      	MVI	M,0E5H		; fill constant
+ 0AAA           	LDIR
+ 0AAC 36F7      	MVI	M,0F7H		; crc flag
+ 0AAE 23        	INX	H
+ 0AAF 13        	INX	D		; keep DE = HL + 1
+ 0AB0 C38C0A    	JMP	FILL$S
+                SECT$ID:			; save HL 1st time as FIRST$TRK, next as BIAS
+ 0AB3 3A9618    	LDA	FLAG
+ 0AB6 3D        	DCR	A
+ 0AB7 FAC90A    	JM	NOSAVE		; 0 = don't save buffer address
+ 0ABA 329618    	STA	FLAG
+ 0ABD CAC60A    	JZ	SAVEBIAS	; 1 = calc diff and save
+ 0AC0 229818    	SHLD	FIRST$TRK	; 2 = save first sectors ID address
+ 0AC3 C3C90A    	JMP	NOSAVE
+                SAVEBIAS:
+ 0AC6 229A18    	SHLD	BIAS		; note: BIAS must have FIRST$TRK subtracted
+ 0AC9 3600      NOSAVE: MVI	M,0		; current track number, filled in later
+ 0ACB 23        	INX	H
+ 0ACC 3600      	MVI	M,0		; side value, filled in later
+ 0ACE 23        	INX	H
+ 0ACF           	LDED	FMTTBL		; get logical-physical sector table
+ 0AD3 7B        	MOV	A,E
+ 0AD4 B2        	ORA	D
+ 0AD5 3A8C18    	LDA	SE		; do log/phy sector translation
+ 0AD8 CAE30A    	JZ	NOSK		; skip if no skew
+ 0ADB 83        	ADD	E		; index table
+ 0ADC 5F        	MOV	E,A
+ 0ADD 3E00      	MVI	A,0
+ 0ADF 8A        	ADC	D
+ 0AE0 57        	MOV	D,A
+ 0AE1 1A        	LDAX	D		; physical sector
+ 0AE2 3D        	DCR	A
+ 0AE3 3C        NOSK:	INR	A
+ 0AE4 77        	MOV	M,A
+ 0AE5 23        	INX	H
+ 0AE6 3A9018    	LDA	SZ0		; sector size code
+ 0AE9 77        	MOV	M,A
+ 0AEA 23        	INX	H
+ 0AEB 36F7      	MVI	M,0F7H		; crc flag
+ 0AED 23        	INX	H
+ 0AEE 5D        	MOV	E,L
+ 0AEF 54        	MOV	D,H
+ 0AF0 13        	INX	D		; DE = HL + 1
+ 0AF1 C38C0A    	JMP	FILL$S
+                END$SECT:
+ 0AF4 018C18    	LXI	B,SE		; sector + 1
+ 0AF7 0A        	LDAX	B
+ 0AF8 3C        	INR	A
+ 0AF9 02        	STAX	B
+ 0AFA 018B18    	LXI	B,SPTC		; sector-per-track counter
+ 0AFD 0A        	LDAX	B
+ 0AFE 3D        	DCR	A
+ 0AFF 02        	STAX	B
+ 0B00 CA0C0B    	JZ	FILL$LAST
+ 0B03 E1        	POP	H		; HL = buffer
+ 0B04 C1        	POP	B		; BC = table
+ 0B05 C5        	PUSH	B		; TOS = table
+ 0B06 C5        	PUSH	B		; -TOS = table, TOS = table
+ 0B07 0600      	MVI	B,0
+ 0B09 C38C0A    	JMP	FILL$S		; do next sector
+                FILL$LAST:
+ 0B0C 4E        	MOV	C,M
+ 0B0D 23        	INX	H
+ 0B0E 46        	MOV	B,M		; BC = fill size
+ 0B0F E1        	POP	H		; HL = buffer (DE = HL+1)
+ 0B10 F1        	POP	PSW		; discard table
+ 0B11           	LDIR			; fill last used byte to end of track
+ 0B13 C9        	RET
+                
+                
+                ;
+                ;	Prints bar graph on screen
+                ;
+                
+                bargraph:
+ 0B14 CD0000    	call	curoff
+ 0B17 210B00    	lxi	h,prl
+ 0B1A CD0000    	call	cursor
+ 0B1D CD0000    	call	clrend		; clear bottom half of screen
+ 0B20 210D00    	lxi	h,bgl
+ 0B23 11E117    	lxi	d,side0 	; print 'SIDE 0'
+ 0B26 CD0000    	call	prtmsg
+ 0B29 210F00    	lxi	h,bgl+2 	  
+ 0B2C CD0000    	call	cursor		; position display
+ 0B2F CD630B    	call	writbar 	; MAKE THE BAR
+ 0B32 3A9118    	lda	sides
+ 0B35 B7        	ora	a		; SS OR DS?
+ 0B36 C8        	rz
+ 0B37 211100    	lxi	h,bgl+4
+ 0B3A 11E817    	lxi	d,side1 	; WRITE 'SIDE 1'
+ 0B3D CD0000    	call	prtmsg
+ 0B40 2A8618    	lhld	trks		;see if any tracks on side 1 are skipped.
+ 0B43 7D        	mov	a,l
+ 0B44 BC        	cmp	h
+ 0B45 C8        	rz		
+ 0B46 2D        	dcr	l
+ 0B47 E5        	push	h
+ 0B48 11EF17    	lxi	d,tkmsg
+ 0B4B CD0000    	call	putlne
+ 0B4E E1        	pop	h
+ 0B4F 7C        	mov	a,h
+ 0B50 CDD90E    	call	decout
+ 0B53 3E2D      	mvi	a,'-'
+ 0B55 CD0000    	call	putchr
+ 0B58 7D        	mov	a,l
+ 0B59 CDD90E    	call	decout
+ 0B5C 11FB17    	lxi	d,anu
+ 0B5F CD0000    	call	putlne
+ 0B62 C9        	ret
+                
+                writbar:
+ 0B63 119117    	lxi	d,bar		; START OF BAR
+ 0B66 3A8618    	lda	trks		; HOW MANY TRACKS?
+ 0B69 47        	mov	b,a
+ 0B6A 1A        wb0:	ldax	d
+ 0B6B 13        	inx	d
+ 0B6C CD0000    	call	putchr
+ 0B6F           	djnz	wb0
+ 0B71 C9        	ret
+                
+                ;
+                ;	Prints the progress of the format on the bargraph
+                ;
+                
+                fmtprog:			; SEND NEXT 'F' TO BARGRAPH
+ 0B72 3A8918    	lda	sid		; CURRENT SIDE NUMBER
+ 0B75 87        	add	a
+ 0B76 C60E      	adi	bgl+1		; OFFSET TO DISPLAY POSITION
+ 0B78 6F        	mov	l,a
+ 0B79 3A8818    	lda	trk
+ 0B7C 67        	mov	h,a
+ 0B7D CD0000    	call	cursor
+ 0B80 3E66      	mvi	a,'f'
+ 0B82 C30000    	jmp	putchr
+                
+                ;
+                ;	Tests for single sided drive or media 
+                ;
+                
+                testds:
+ 0B85 AF        	xra	a
+ 0B86 329418    	sta	dsflag
+ 0B89 3E01      	mvi	a,1		; side 1
+ 0B8B CD0000    	call	rdadr		; try to read valid side-1 address
+ 0B8E C29F0B    	jnz	tstdserr	; [NZ] = side 1 not formatted
+ 0B91 3C        	inr	a
+ 0B92 DA9F0B    	jc	tstdserr	; crc error on side-1 indicates DS error
+ 0B95 3E00      	mvi	a,0		; side 0
+ 0B97 CD0000    	call	rdadr		; try to read valid side-0 address
+ 0B9A C29F0B    	jnz	tstdserr	; [NZ] = side 0 not formatted
+ 0B9D B7        	ora	a		; Clear [CY]
+ 0B9E C9        	ret
+                tstdserr:
+ 0B9F 3E0A      	mvi	a,dserrcd
+ 0BA1 37        	stc
+ 0BA2 C9        	ret
+                
+                ;
+                ;	Reads each sector on the disk, writes initdir data and Zenith label
+                ;
+                
+                verify: 			; formatting done, verify each sector
+ 0BA3 CD0000    	call	inton
+ 0BA6 2A8D18    	lhld	secsiz
+ 0BA9 29        	dad	h
+ 0BAA 7C        	mov	a,h
+ 0BAB 32AC18    	sta	lps
+ 0BAE CD0000    	call	restor		; put head in known position
+ 0BB1 CD0000    	call	dskxit
+ 0BB4 010000    	lxi	b,buffer	; set DMAA to a controlled location...
+ 0BB7 3E0C      	mvi	a,setdma	;
+ 0BB9 CD1F0F    	call	biosc		; (we must reserve at least 1024 bytes)
+ 0BBC 3A7113    	lda	drive
+ 0BBF D641      	sui	'A'
+ 0BC1 4F        	mov	c,a
+ 0BC2 3C        	inr	a		; setup drive for set dir label
+ 0BC3 323A18    	sta	sfcb
+ 0BC6 1E01      	mvi	e,1		; to tell bios disk is already logged in
+ 0BC8 3E09      	mvi	a,seldsk
+ 0BCA CD1F0F    	call	biosc		; select drive
+ 0BCD 3E08      	mvi	a,home
+ 0BCF CD1F0F    	call	biosc		; request track zero
+ 0BD2 010000    	lxi	b,0
+ 0BD5 3E0B      	mvi	a,setsec
+ 0BD7 CD1F0F    	call	biosc
+ 0BDA 3E0D      	mvi	a,reads
+ 0BDC CD1F0F    	call	biosc
+ 0BDF 3EFF      	mvi	a,0FFh		; FLAG DISK NOT VERIFIED
+ 0BE1 32BA18    	sta	tec
+ 0BE4 3A7418    	lda	vflag		; CHECK FOR NO VERIFICATION OPTION
+ 0BE7 B7        	ora	a
+ 0BE8 CAA60C    	jz	verify$end2
+ 0BEB           	lded	trks
+ 0BEF 7B        	mov	a,e	; number of tracks on first side
+ 0BF0 2ABD18    	lhld	modes+2
+ 0BF3           	bit	6,h	; check double-sided bit
+ 0BF5 CAFE0B    	jz	ntsd1	; 
+ 0BF8           	bit	1,h	; check for XO/GNAT track numbering. (cont)
+ 0BFA C2FE0B    	jnz	ntsd1	;
+ 0BFD 82        	add	d	; add in number of tracks on second side
+ 0BFE 6F        ntsd1:	mov	l,a
+ 0BFF 2600      	mvi	h,0
+ 0C01 22B518    	shld	vtrk		; save counter values
+ 0C04 6C        	mov	l,h		; both have zero in them
+ 0C05 22B318    	shld	vsec
+ 0C08 AF        	xra	a
+ 0C09 32BA18    	sta	tec		; init track error counter
+                verify0:
+ 0C0C CD1F0D    	call	outv		; temporarely put a "." on track display
+ 0C0F           	lbcd	vtrk
+ 0C13 3E03      	mvi	a,3
+ 0C15 B9        	cmp	c		; see if <= track 3 and z17
+ 0C16           	jrc	v1
+ 0C18 3ABC18    	lda	modes+1
+ 0C1B           	bit	1,a
+ 0C1D           	jrz	v0
+ 0C1F 3A8A18    	lda	spt
+ 0C22 210000    	lxi	h,0		; no skew on track 0 and 1 of z17 format
+ 0C25           	jr	v2
+ 0C27 0D        v0:	dcr	c
+ 0C28           	jrnz	v1		; jmp if not trk0
+ 0C2A 3ABE18    	lda	modes+3 	; see if trk0 sd
+ 0C2D           	bit	3,a
+ 0C2F           	jrz	v1
+ 0C31 3E1A      	mvi	a,26
+ 0C33 210000    	lxi	h,vskstd
+ 0C36           	jr	v2
+ 0C38 2AB118    v1:	lhld	vsectb
+ 0C3B 3A8A18    	lda	spt
+ 0C3E 32B718    v2:	sta	sptv
+ 0C41 22B818    	shld	vskew 
+                verify1:
+ 0C44           	lbcd	vtrk		; set trk #
+ 0C48 0B        	dcx	b
+ 0C49 3E0A      	mvi	a,settrk	
+ 0C4B CD1F0F    	call	biosc
+ 0C4E 2AB818    	lhld	vskew
+ 0C51           	lbcd	vsec
+ 0C55 7C        	mov	a,h
+ 0C56 B5        	ora	l
+ 0C57 CA5F0C    	jz	no$skw
+ 0C5A 09        	dad	b
+ 0C5B 4E        	mov	c,m
+ 0C5C 0600      	mvi	b,0
+ 0C5E 0B        	dcx	b
+ 0C5F 3E0B      no$skw: mvi	a,setsec
+ 0C61 CD1F0F    	call	biosc
+ 0C64 3E0D      	mvi	a,reads
+ 0C66 CD1F0F    	call	biosc
+ 0C69 B7        	ora	a		; check if system found an error
+ 0C6A C27D0C    	jnz	verify$err	; RECORD error if there was one
+ 0C6D 21B318    	lxi	h,vsec		; count to next sector
+ 0C70 3AB718    	lda	sptv
+ 0C73 34        	inr	m
+ 0C74 3D        	dcr	a
+ 0C75 BE        	cmp	m		; check for last sector on track
+ 0C76 D2440C    	jnc	verify1
+                
+ 0C79 3E76      	mvi	a,'v'
+ 0C7B           	jr	verify2
+                verify$err:
+ 0C7D 21BA18    	lxi	h,tec
+ 0C80 34        	inr	m		; INR TEC
+ 0C81 3E45      	mvi	a,'E'		; send E
+                verify2:
+ 0C83 CD0000    	call	putchr		; send whatever to display
+ 0C86 CDD70C    	call	vend		; check for Q or ^C
+ 0C89 DA990C    	jc	verify$end
+ 0C8C 210000    	lxi	h,0
+ 0C8F 22B318    	shld	vsec
+ 0C92 21B518    	lxi	h,vtrk
+ 0C95 35        	dcr	m		; step to next track number
+ 0C96 C20C0C    	jnz	verify0
+                
+                verify$end:
+ 0C99 3ABA18    	lda	tec		; check if any errors occured
+ 0C9C B7        	ora	a
+ 0C9D CAA60C    	jz	verify$end2
+ 0CA0 CDC70C    	call	disperr 	; display message if errors
+ 0CA3 C3C60C    	jmp	exit$verify
+                verify$end2:
+ 0CA6 CD010E    	call	setmark
+ 0CA9 DAC60C    	jc	exit$verify
+ 0CAC CD6B0D    	call	initdir
+ 0CAF DAC60C    	jc	exit$verify
+ 0CB2 3A9C18    	lda	initflg
+ 0CB5 B7        	ora	a		; see if to create a disk label and enable
+ 0CB6           	jrnz	exit$verify	;   time and date stamping
+ 0CB8 113A18    	lxi	d,sfcb
+ 0CBB 0E64      	mvi	c,sdirlab
+ 0CBD CD0500    	call	bdos
+ 0CC0 B7        	ora	a
+ 0CC1           	jrz	exit$verify	; jump if no error
+ 0CC3 3E01      	mvi	a,setlabcd
+ 0CC5 37        	stc
+                exit$verify:
+ 0CC6 C9        	ret
+                
+                disperr:
+ 0CC7 CD0000    	call	curact
+ 0CCA 211300    	lxi	h,erl
+ 0CCD 115110    	lxi	d,frm$err	; inform user that at least one error
+ 0CD0 CD0000    	call	prtmsg		; was encountered during verify
+ 0CD3 CD0000    	call	clrlne
+ 0CD6 C9        	ret    
+                
+                ;
+                ;	Check for error on verify.  If error, notify user that he may end
+                ;	 verification by typeing 'Q' or ctrl-C
+                ;
+                   
+                vend:
+ 0CD7 3ABA18    	lda	tec		;ERROR COUNTER
+ 0CDA B7        	ora	a
+ 0CDB           	jrz	ve0		;IF NO ERRORS, CHECK FOR ^C AND RETURN
+ 0CDD 3D        	dcr	a		;1ST ERROR?
+ 0CDE C2ED0C    	jnz	ve0
+ 0CE1 211300    	lxi	h,erl
+ 0CE4 111213    	lxi	d,vqmess
+ 0CE7 CD0000    	call	prtmsg		;IF 1ST ERROR, PRINT MESSAGE
+ 0CEA CD0000    	call	clrlne
+ 0CED CD110D    ve0:	call	conc		;CHECK FOR ^C, RETURN CHAR
+ 0CF0 CA100D    	jz	vend$exit	;NO CHAR READY
+ 0CF3 FE03      	cpi	ctrlC
+ 0CF5 CAFF0C    	jz	ve1
+ 0CF8 E6DF      	ani	0DFh		;CAPITAL
+ 0CFA FE51      	cpi	'Q'
+ 0CFC C2100D    	jnz	vend$exit	;IGNORE IF NOT 'Q'
+ 0CFF 3ABA18    ve1:	lda	tec
+ 0D02 B7        	ora	a
+ 0D03 C20F0D    	jnz	ve2		;IF ERROR, THINGS WILL BE FINE
+ 0D06 3AEC13    	lda	medcnt
+ 0D09 D601      	sui	1		;IF NO ERROR, DISPLAY$COUNT WILL INCREMENT
+ 0D0B 27        	daa			;  MEDCNT, SO WE'LL DECREMENT IT NOW.
+ 0D0C 32EC13    	sta	medcnt
+ 0D0F 37        ve2:	stc
+                vend$exit:
+ 0D10 C9        	ret
+                
+                conc:				;CHECK FOR ^C
+ 0D11 3E02      	mvi	a,bconst
+ 0D13 CD1F0F    	call	biosc
+ 0D16 B7        	ora	a
+ 0D17 C8        	rz
+ 0D18 3E03      	mvi	a,bconin
+ 0D1A CD1F0F    	call	biosc
+ 0D1D B7        	ora	a	; NOT NULL?
+ 0D1E C9        	ret		; return with character
+                
+                ;
+                ;	Prints the progress of the verify on the bargraph
+                ;
+                
+                outv:
+ 0D1F E5        	push	h
+ 0D20 2ABD18    	lhld	modes+2
+ 0D23 7C        	mov	a,h
+ 0D24 E603      	ani	00000011B	;TRACK NUMBERING CODE
+ 0D26 FE01      	cpi	00000001B	; ZENITH NUMBER SCHEME
+ 0D28 C24E0D    	jnz	notzen
+ 0D2B 3AB518    	lda	vtrk		; BIOS TRACK NUMBER
+ 0D2E 3D        	dcr	a
+ 0D2F 6F        	mov	l,a
+ 0D30 3E00      	mvi	a,0
+ 0D32           	bit	6,h		; CONVERT ZENITH TRACK ONLY IF DS
+ 0D34 CA3B0D    	jz	zen0
+ 0D37           	srlr	l		; DIVIDE BY 2 AND GET REMAINDER IN CARRY
+ 0D39 17        	ral			; GET SIDE FROM REMAINDER
+ 0D3A 87        mz0:	add	a		; MULT BY 2 (2 LINES BETWEEN SIDE DISPLAYS)
+ 0D3B C60E      zen0:	adi	bgl+1		; OFFSET BY BAR-GRAPH LINE (SIDE 0)
+ 0D3D 65        	mov	h,l
+ 0D3E 6F        	mov	l,a
+ 0D3F E5        	push	h
+ 0D40 CD0000    	call	cursor		; POSITION CURSOR
+ 0D43 3E2E      	mvi	a,'.'		; mark track as "being verified"
+ 0D45 CD0000    	call	putchr
+ 0D48 E1        	pop	h
+ 0D49 CD0000    	call	cursor		; put cursor back to previos position
+ 0D4C E1        	pop	h
+ 0D4D C9        	ret
+                notzen: 			; DO MMS TRACK-SIDE CONVERSION
+ 0D4E 3A8618    	lda	trks
+ 0D51 6F        	mov	l,a		; H = TOTAL NUMBER OF TRACKS ON A SIDE
+ 0D52 2600      	mvi	h,0		; ASSUME SIDE 0
+ 0D54 3AB518    	lda	vtrk		; BIOS TRACK NUMBER
+ 0D57 3D        	dcr	a
+ 0D58 BD        	cmp	l
+ 0D59 DA660D    	jc	mds0
+ 0D5C 2A8618    	lhld	trks
+ 0D5F 95        	sub	l	;make logical track on second side
+ 0D60           	neg
+ 0D62 84        	add	h	;reverse ( N's compliment)
+ 0D63 3D        	dcr	a	; -1 because tracks start at 0
+ 0D64 2601      	mvi	h,1		; SIDE 1
+ 0D66 6F        mds0:	mov	l,a
+ 0D67 7C        	mov	a,h
+ 0D68 C33A0D    	jmp	mz0
+                
+                ;
+                ;	Write the directory initialization entries for time and date stamping
+                ;
+                
+                initdir:
+ 0D6B 3A9C18    	lda	initflg
+ 0D6E B7        	ora	a
+ 0D6F C2000E    	jnz	initdir8
+ 0D72 110100    	lxi	d,buffer+1		; set up buffer for directory init
+ 0D75 210000    	lxi	h,buffer
+ 0D78 010004    	lxi	b,1024
+                initdir1:
+ 0D7B 79        	mov	a,c
+ 0D7C E67F      	ani	0111$1111b
+ 0D7E FE20      	cpi	20h
+ 0D80           	jrnz	initdir2
+ 0D82 3621      	mvi	m,21h
+ 0D84           	jr	initdir3
+                initdir2:
+ 0D86 36E5      	mvi	m,0e5h
+                initdir3:
+ 0D88           	ldi
+ 0D8A EA7B0D    	jpe	initdir1
+ 0D8D 010000    	lxi	b,buffer		; set dma address to point to buffer
+ 0D90 3E0C      	mvi	a,setdma
+ 0D92 CD1F0F    	call	biosc
+ 0D95           	lixd	sysdpb
+ 0D99           	ldx	h,+8			; get DRM 
+ 0D9C           	ldx	l,+7
+ 0D9F 23        	inx	h			; add one
+ 0DA0           	ldx	b,+15			; get PSH
+ 0DA3 04        	inr	b			; PSH and divide by 4
+ 0DA4 04        	inr	b 
+                initdir4:
+ 0DA5           	srlr	h			; make DRM number of physical directory
+ 0DA7           	rarr	l			;  sectors
+ 0DA9           	djnz	initdir4
+ 0DAB 45        	mov	b,l
+ 0DAC 210000    	lxi	h,0
+ 0DAF 229E18    	shld	isec			; initialize varaibles
+ 0DB2 22A018    	shld	itrk
+ 0DB5           	ldx	a,+13
+ 0DB8 32A018    	sta	itrk
+                initdir5:
+ 0DBB C5        	push	b
+ 0DBC           	lbcd	itrk
+ 0DC0 3E0A      	mvi	a,settrk		; set track number
+ 0DC2 CD1F0F    	call	biosc
+ 0DC5           	lbcd	isec
+ 0DC9           	lded	sectbl			; do sector translation
+ 0DCD 3E10      	mvi	a,sectrn
+ 0DCF CD1F0F    	call	biosc
+ 0DD2 44        	mov	b,h
+ 0DD3 4D        	mov	c,l
+ 0DD4 3E0B      	mvi	a,setsec		; set sector number
+ 0DD6 CD1F0F    	call	biosc
+ 0DD9 3E0E      	mvi	a,writes		; write sector
+ 0DDB CD1F0F    	call	biosc
+ 0DDE C1        	pop	b
+ 0DDF B7        	ora	a
+ 0DE0 CAE80D    	jz	initdir6
+ 0DE3 3E00      	mvi	a,initerrcd
+ 0DE5 37        	stc
+ 0DE6           	jr	initdir8
+                initdir6:
+ 0DE8 219E18    	lxi	h,isec
+ 0DEB 34        	inr	m
+ 0DEC 3A8A18    	lda	spt
+ 0DEF BE        	cmp	m
+ 0DF0 C2FD0D    	jnz	initdir7
+ 0DF3 21A018    	lxi	h,itrk
+ 0DF6 34        	inr	m
+ 0DF7 210000    	lxi	h,0
+ 0DFA 229E18    	shld	isec
+                initdir7:
+ 0DFD           	djnz	initdir5
+ 0DFF B7        	ora	a
+                initdir8:
+ 0E00 C9        	ret
+                
+                ;
+                ;	Writes the z37, z47, z100 sector zero label
+                ;
+                
+                setmark:
+ 0E01 3A9D18    	lda	cflg
+ 0E04 B7        	ora	a		; check if need to write configuration data
+ 0E05 CA6C0E    	jz	exit$setm
+ 0E08 210000    	lxi	h,buffer
+ 0E0B 110100    	lxi	d,buffer+1
+ 0E0E 010004    	lxi	b,1024		; 1024 is largest sector size
+ 0E11 36E5      	mvi	m,0E5H
+ 0E13           	ldir
+ 0E15 210400    	lxi	h,buffer+4
+ 0E18 3600      	mvi	m,0		; 1 byte "00" marker
+ 0E1A 23        	inx	h
+ 0E1B 3A7E18    	lda	z37mode
+ 0E1E 77        	mov	m,a		; 1 byte mode control
+ 0E1F 23        	inx	h
+ 0E20 23        	inx	h		; 1 byte "E5"
+ 0E21 3AAC18    	lda	lps
+ 0E24 77        	mov	m,a		; 1 byte "records per physical sector"
+ 0E25 23        	inx	h
+ 0E26 3A2E18    	lda	dpb+3
+ 0E29 3C        	inr	a
+ 0E2A 77        	mov	m,a		; 1 byte "records per allocation block"
+ 0E2B 23        	inx	h
+ 0E2C 23        	inx	h
+ 0E2D 23        	inx	h		; 2 bytes "E5"
+ 0E2E 3600      	mvi	m,0		; 1 byte "00"
+ 0E30 23        	inx	h
+ 0E31 23        	inx	h		; 1 byte "E5"
+ 0E32 EB        	xchg
+ 0E33 212B18    	lxi	h,dpb
+ 0E36 010F00    	lxi	b,15
+ 0E39           	ldir			; 15 bytes of DPB
+ 0E3B 210400    	lxi	h,buffer+4
+ 0E3E AF        	xra	a
+ 0E3F 0E18      	mvi	c,24		; (24 bytes to sum)
+ 0E41 86        chksum: add	m
+ 0E42 23        	inx	h
+ 0E43 0D        	dcr	c
+ 0E44 C2410E    	jnz	chksum
+ 0E47 2F        	cma
+ 0E48 12        	stax	d		; 1 byte Check-Sum
+ 0E49 010000    	lxi	b,buffer	; write the label out
+ 0E4C 3E0C      	mvi	a,setdma
+ 0E4E CD1F0F    	call	biosc
+ 0E51 010000    	lxi	b,0
+ 0E54 3E0A      	mvi	a,settrk
+ 0E56 CD1F0F    	call	biosc
+ 0E59 010000    	lxi	b,0
+ 0E5C 3E0B      	mvi	a,setsec
+ 0E5E CD1F0F    	call	biosc
+ 0E61 3E0E      	mvi	a,writes
+ 0E63 CD1F0F    	call	biosc		; write marker to disk
+ 0E66 B7        	ora	a
+ 0E67           	jrz	exit$setm	; jump if no error
+ 0E69 3E0D      	mvi	a,wmerrcd
+ 0E6B 37        	stc
+                exit$setm:			; returns [CY] if error
+ 0E6C C9        	ret
+                
+                
+                ;
+                ;	Update and display count of disks correctly formatted
+                ;
+                
+                display$count:
+ 0E6D 3AED13    	lda	fmtcnt
+ 0E70 C601      	adi	1
+ 0E72 27        	daa
+ 0E73 32ED13    	sta	fmtcnt		; COUNT OF FORMATTED DISKS
+ 0E76 3ABA18    	lda	tec		; GET ERROR COUNT FOR CURRENT DISK
+ 0E79 B7        	ora	a
+ 0E7A           	jrnz	x23		; IF <>0, NO UPDATE
+ 0E7C 3AEC13    	lda	medcnt		; GET COUNT
+ 0E7F C601      	adi	1
+ 0E81 27        	daa			; IT'S BCD
+ 0E82 32EC13    	sta	medcnt
+                x23:
+ 0E85 211400    	lxi	h,20
+ 0E88 11EE13    	lxi	d,afmtd
+ 0E8B CD0000    	call	prtmsg
+ 0E8E 3AED13    	lda	fmtcnt
+ 0E91 CDA70E    	call	bcdout		;PUT IN NUMBER ATTEMPTED
+ 0E94 111614    	lxi	d,gapmsg
+ 0E97 CD0000    	call	putlne
+ 0E9A 3AEC13    	lda	medcnt
+ 0E9D CDA70E    	call	bcdout		;PUT IN NUMBER VERIFIED
+ 0EA0 110914    	lxi	d,vrfd
+ 0EA3 CD0000    	call	putlne
+ 0EA6 C9        	ret
+                
+                bcdout:
+ 0EA7 CDBA0E    	call	outbcd
+ 0EAA F5        	push	psw
+ 0EAB 110314    	lxi	d,disk
+ 0EAE CD0000    	call	putlne
+ 0EB1 F1        	pop	psw
+ 0EB2 3D        	dcr	a
+ 0EB3 C8        	rz
+ 0EB4 3E73      	mvi	a,'s'		;FOR MORE THAN ONE
+ 0EB6 CD0000    	call	putchr
+ 0EB9 C9        	ret
+                
+ 0EBA FE10      outbcd: cpi	10h
+ 0EBC DAC80E    	jc	lobcd
+ 0EBF F5        	push	psw
+ 0EC0 07        	rlc
+ 0EC1 07        	rlc
+ 0EC2 07        	rlc
+ 0EC3 07        	rlc
+ 0EC4 CDCE0E    	call	nible
+ 0EC7 F1        	pop	psw
+ 0EC8 F5        lobcd:	push	psw
+ 0EC9 CDCE0E    	call	nible		;NOW DO LOW DIGIT
+ 0ECC F1        	pop	psw
+ 0ECD C9        	ret
+                
+ 0ECE E60F      nible:	ani	0fH
+ 0ED0 C690      	adi	90H
+ 0ED2 27        	daa
+ 0ED3 CE40      	aci	40H
+ 0ED5 27        	daa
+ 0ED6 C30000    	jmp	putchr
+                
+ 0ED9 FE64      decout: cpi	100	;CONVERT BINARY 0-99 TO BCD
+ 0EDB           	jrc	lt100
+ 0EDD 3E63      	mvi	a,99
+ 0EDF 4F        lt100:	mov	c,a
+ 0EE0 0C        	inr	c
+ 0EE1 AF        	xra	a
+ 0EE2 0D        do0:	dcr	c
+ 0EE3 CABA0E    	jz	outbcd
+ 0EE6 C601      	adi	1
+ 0EE8 27        	daa
+ 0EE9           	jr	do0
+                
+                ;
+                ;	Restores the system to original state before start$dsk
+                ;
+                
+                done$dsk:
+ 0EEB 21C318    	lxi	h,orgmode	; PUT BACK ORIGINAL MODE BYTES
+ 0EEE           	lded	modptr
+ 0EF2 010400    	lxi	b,4
+ 0EF5           	ldir
+ 0EF7 2A7518    	lhld	curmdl		; point to "JMP LOGIN" in driver
+ 0EFA 010300    	lxi	b,3		; restore bytes that were overlayed
+ 0EFD 09        	dad	b
+ 0EFE 3EC3      	mvi	a,0c3h		; code for "JMP"
+ 0F00 77        	mov	m,a
+ 0F01 23        	inx	h
+ 0F02 3AA718    	lda	savbyte 	; restore saved byte
+ 0F05 77        	mov	m,a
+ 0F06 3A7113    	lda	drive		; SETUP TO RESET DRIVE JUST FORMATTED
+ 0F09 D640      	sui	'A'-1
+ 0F0B 110100    	lxi	d,1
+ 0F0E A7        	ana	a		; (CLEAR CARRY)
+ 0F0F 3D        agn:	dcr	a
+ 0F10 CA190F    	jz	resdr
+ 0F13           	ralr	e
+ 0F15           	ralr	d
+ 0F17           	jr	agn
+ 0F19 0E25      resdr:	mvi	c,restt
+ 0F1B CD0500    	call	bdos		; RESET DRIVE
+ 0F1E C9        	ret
+                
+                ;
+                ;	Call BIOS through BDOS
+                ;
+                
+                biosc:				; setup BIOS parameter block
+ 0F1F 32350F    	sta	biospb		; BIOS function number
+ 0F22           	sbcd	biospb+2	; BC register
+ 0F26           	sded	biospb+4	; DE register
+ 0F2A 223B0F    	shld	biospb+6	; HL register
+ 0F2D 0E32      	mvi	c,cbios
+ 0F2F 11350F    	lxi	d,biospb	; call BIOS through BDOS
+ 0F32 C30500    	jmp	bdos
+                
+ 0F35 0000      biospb: db	0,0
+ 0F37 0000000000	dw	0,0,0
+                
+                basmsg: 
+ 0F3D 53656C6563	db	'Selected Configuration:',CR,LF
+ 0F56 2020202020	db	'            Drive -',CR,LF
+ 0F6B 2020202020	db	'       Controller -',CR,LF
+ 0F80 5265636F72	db	'Recording Density -',CR,LF
+ 0F95 2020202020	db	'            Sides -',CR,LF
+ 0FAA 2020547261	db	'  Tracks per Inch -',CR,LF
+ 0FBF 2020202020	db	'        Step Rate -',CR,LF
+ 0FD4 2020202020	db	'      Format Type -',CR,LF
+ 0FE9 24        	db	'$'
+                
+ 0FEA 456E746572NDSK:	DB	'Enter DRIVE-NAME: (and parameters) --$'
+ 1010 456E746572PARPRM: DB	'Enter (drive-name:) Parameters --$'
+ 1032 07496E7661INVP:	DB	BELL,'Invalid parameters or syntax!$'
+ 1051 074469736BFRM$ERR DB	BELL,'Disk did NOT format! Try again or Discard this diskette$'
+ 108A 0743616E6EHM$ERR: DB	BELL,'Cannot find track zero!$'
+ 10A3 07496D7072DR$ERR: DB	BELL,'Improper drive name!$'
+ 10B9 074469736BWR$PT:	DB	BELL,'Diskette is WRITE-PROTECTED!$'
+ 10D7 0744726976NT$RD:	DB	BELL,'Drive is NOT READY!$'
+ 10EC 0743616E6EHRDSEL: DB	BELL,'Cannot format that drive!$'
+ 1107 074572726FWTERR:	DB	BELL,'Error during Track Write/Step$'
+ 1126 074469736BFALT:	DB	BELL,'Disk Module is in Error!$'
+ 1140 07466F726DNOSUP:	DB	BELL,'Format not supported$'
+ 1156 074E6F2070BADPRT: DB	BELL,'No port selected for Z67 controller$'
+ 117B 0743616E27H$SEC:	DB	BELL,'Can''t format hard-sectored diskettes on this controller$'
+ 11B4 0743616E27S$Z17:	DB	BELL,'Can''t format soft-sectored diskettes on this controller$'
+ 11ED 0743616E6EDTER:	DB	BELL,'Cannot format '
+ 11FC 2424207470GAP1:	DB	'$$ tpi in a '
+ 1208 2424207470GAP2:	DB	'$$ tpi drive.  '
+ 1217 5072657373	DB	'Press <RETURN> to acknowledge: $'
+ 1237 0744726976DSER:	DB	BELL,'Drive or media is not double sided.$'
+ 125C 0743616E20wmerr:	db	BELL,'Can not write Zenith''s format ID$'
+ 127E 0743616E20slaberr db	BELL,'Can not write directory date and time stamping label$'
+ 12B4 0743616E20initerr db	BELL,'Can not initialize directory for date and time stamping$'
+ 12ED 446F20796Fmormed: DB	'Do you have more media to FORMAT? Y',8,'$'
+ 1312 416E206572vqmess: DB	'An error has been found. '
+ 132B 546F205175	DB	'To Quit verifying this diskette, type ''Q''.$'
+                
+ 1356 496E736572prmt:	DB	'Insert BLANK disk in drive '
+ 1371 403A2E2020drive:	DB	'@:.  Push RETURN to begin formatting, ^C to quit >$'
+                
+ 13A4 070D0A0A52errver: db	bell,cr,lf,lf,'Requires CP/M 3.1 or later',cr,lf,'$'
+ 13C5 070D0A0A47nodper: db	bell,cr,lf,lf,'GETDP.REL not linked into system',cr,lf,'$'
+                
+ 13EC 00        MEDCNT: DB	0
+ 13ED 00        FMTCNT: DB	0
+ 13EE 417474656DAFMTD:	DB	'Attempted to format $'
+ 1403 204469736BDISK:	DB	' Disk$'
+ 1409 2056657269VRFD:	DB	' Verified OK$'
+ 1416 2C202024  GAPMSG: DB	',  $'
+                
+ 141A 4973207468askok:	DB	'Is this the format you want? (Y/N) Y',8,'$'
+                
+ 1440 352E323520INCH5:	DB	'5.25 inch floppy$'
+ 1451 3820696E63INCH8:	DB	'8 inch floppy$'
+ 145F 3124      SSMSG:	DB	'1$'
+ 1461 3224      DSMSG:	DB	'2$'
+ 1463 53696E676CSDMSG:	DB	'Single$'
+ 146A 446F75626CDDMSG:	DB	'Double$'
+ 1471 343824    T48MSG: DB	'48$'
+ 1474 393624    T96MSG: DB	'96$'
+ 1477 3030206D69STRATE: DB	'00 milliseconds$'
+ 1487 413A2028  DSKLT:	DB	'A: ('
+ 148B 2020292024DSKNM:	DB	'  ) $' 	;drive size appended here
+                
+ 1490 0D0A24    CRLF:	DB	CR,LF,'$'
+                
+                HELP:
+ 1493 0D0A      	DB	CR,LF
+ 1495 5468652046	DB	'The FORMAT utility is called in one of the following ways:'
+ 14CF 0D0A0A2020	DB	CR,LF,LF,'        FORMAT',CR,LF
+ 14E2 5768696368	DB	'Which outputs HELP information',CR,LF,LF
+ 1503 2020202020	DB	'        FORMAT d:',CR,LF
+ 1516 5768696368	DB	'Which formats the specified disk according to the'
+ 1547 2070726573	DB	' present drive status',CR,LF,LF
+ 155F 2020202020	DB	'        FORMAT d:arg1,arg2,arg3',CR,LF
+ 1580 5768696368	DB	'Which temporarily updates the drive status and '
+ 15AF 666F726D61	DB	'formats the disk',CR,LF,'accordingly. '
+                
+ 15CE 56616C6964VALID:	DB	'Valid values for arguments are as follows:',CR,LF,LF
+ 15FB 2020202020	DB	'        DS or SS = double or single sided',CR,LF
+ 1626 2020202020	DB	'        DT or ST = double (96 tpi) or single (48 tpi)'
+ 165B 2074726163	DB	' track',CR,LF
+ 1663 2020202020	DB	'        DD or SD = double or single density',CR,LF
+ 1690 2020202020	DB	'        S6, S30, etc. = step rate in milliseconds',CR,LF
+ 16C3 2020202020	DB	'        MMS, Z37, Z37X etc. (media formats)'
+ 16EE 3B20746865	DB	'; the X implies extended format.',CR,LF,LF
+ 1711 496E636F72	DB	'Incorrect arguments may be changed'
+ 1733 206265666F	DB	' before formatting begins.$'
+                
+ 174E 0D0A0A5072THISUT: DB	CR,LF,LF,'Press RETURN to continue or ^C to exit.$'
+                
+                
+ 1779 2036313232STRTBL: DB	' 6122030 3 61015'	;  possible step rates, 2 bytes each
+ 1789 070D151F04STEPTB: DB	7,13,21,31,4,7,11,16
+                
+                
+                ;SETUP THE BAR GRAPH DISPLAY
+                
+ 1791 302D2D2D2DBAR:	DB	'0---------1---------2---------3---------'
+ 17B9 342D2D2D2DBAR2:	DB	'4---------5---------6---------7---------'
+ 17E1 5349444520side0:	db	'SIDE 0$'
+ 17E8 5349444520side1:	db	'SIDE 1$'
+ 17EF 2020202054TKMSG:	DB	'    Tracks $'
+ 17FB 206F6E2073ANU:	DB	' on side 1 are not used by the Operating System$'
+                
+ 182B 0000      DPB:	DW	0
+ 182D 000000    	DB	0,0,0
+ 1830 00000000  	DW	0,0
+ 1834 0000      	DB	0,0
+ 1836 00000000  	DW	0,0
+                
+ 183A 00        sfcb	db	0		; drive
+ 183B 2020202020	db	'        '	; default label
+ 1843 202020    	db	'   '
+ 1846 30        	db	0011$0000b	; enable create and update time and date
+ 1847 000000    	db	0,0,0
+ 184A 0000000000	db	0,0,0,0,0,0,0,0 ; no password
+ 1852 00000000  	db	0,0,0,0
+ 1856 00000000  	db	0,0,0,0
+                
+ 185A 14002E2E2ELINE:	DB	20,0,'....................  '  
+                
+ 1872 FF        DTFLAG0:DB	TRUE
+ 1873 FF        VFLAG0: DB	TRUE 
+ 1874 00        VFLAG:	DB	0	; verify flag
+ 1875 0000      curmdl	dw	0	; address of current module in system
+ 1877 00        reldrv	db	0	; drive number relative to drive zero
+ 1878 00        LOGDSK	DB	0	; currently logged on disk
+ 1879 00        CNFIG:	DB	0	; MMS=0,Z17=1... (ASCII DIGIT)
+ 187A 00        TRCK:	DB	0	; "D" or "S"
+ 187B 00        SDE:	DB	0	; "D" or "S"
+ 187C 00        DENSITY: DB	0	; "D" or "S"
+ 187D 00        STEPRT: DB	0	; binary number, 0-99
+                
+ 187E 00        Z37MODE: DB	0	; mode for zenith sector zero label
+ 187F 0000      XTABLE: DW	0	; sector translation table address
+ 1881 0000      FMTTBL: DW	0	; format defination table address
+ 1883 0000      CMDPTR: DW	0	; command line buffer pointer
+ 1885 00        SPT0	DB	0	; sector-per-track value for selected drive
+ 1886 00        TRKS	DB	0	; number of tracks on side 0 (physically on drive)
+ 1887 00        	DB	0	; number of tracks used on side 1 (all are formatted)
+ 1888 00        TRK	DB	0	; current track number
+ 1889 00        SID	DB	0	; number of sides (0 or 1)
+ 188A 00        SPT	DB	0	; sectors-per-track (physical value)
+ 188B 00        SPTC	DB	0	; sector-per-track counter
+ 188C 00        SE	DB	0	; current sector number
+ 188D 0000      SECSIZ	DW	0	; size of sector (bytes)
+ 188F 00        SZ	DB	0	; sector size code
+ 1890 00        SZ0:	DB	0	; temp size code, used to build track image
+ 1891 00        SIDES:	DB	0	; number of sides to format disk
+ 1892 00        WD$FLAG: DB	0	; WD179X controller type controller if true
+ 1893 00        MFM:	DB	0	; single or double density flag
+ 1894 00        DSFLAG: DB	0	; allows DS test
+ 1895 00        DTFLAG: DB	0	; allows DT test only once per drive.
+ 1896 00        FLAG:	DB	0	; flag for extraction of buffer image pointers
+ 1897 00        TRKS1:	DB	0	; track counter
+ 1898 0000      FIRST$TRK: DW	0	; address to track byte in first sector header
+ 189A 0000      BIAS:	DW	0	; number of bytes in each sector image
+ 189C 00        initflg db	0	; initialize directory flag - if non zero then don't
+ 189D 00        cflg	db	0	; config label flag  if 0FFh don't 
+ 189E 0000      isec	dw	0	; initdir sector counter
+ 18A0 0000      itrk	dw	0	; initdir track counter
+ 18A2 0000      fmtbl:	DW	0	; table discribing format
+ 18A4 00        phydrv: db	0	; physical drive number (from BIOS)
+ 18A5 00        tphy:	db	0	; temporary for "phydrv" in get$drive
+ 18A6 00        tdrv:	db	0	; temporary for "drive"  in get$drive
+ 18A7 00        savbyte db	0	; byte saved from modification for module by start$dsk
+ 18A8 00        DSKST:	DB	0	; disk controller status 
+ 18A9 00        STEPR:	DB	0	; STEPRATE from mode byte
+ 18AA 0000      MODPTR: DW	0	; address of modes in BIOS
+ 18AC 00        LPS:	DB	0	; logical/physical sector ratio
+ 18AD 0000      SECTBL: DW	0	; sector table address from BIOS
+ 18AF 0000      SYSDPB: DW	0	; system dpb address
+ 18B1 0000      vsectb: dw	0	; verify sector table address
+ 18B3 0000      vsec:	dw	0	; sector counter for verify
+ 18B5 0000      vtrk:	dw	0	; track counter
+ 18B7 00        sptv:	db	0	; temporary sector per track for verify
+ 18B8 0000      vskew:	dw	0	; temporary address of verify skew table
+ 18BA 00        TEC:	DB	0	; track error counter
+                
+ 18BB 00000000  MODES:	DB	0,0,0,0 ; mode for curently selected drive
+ 18BF 00000000  TMODE:	DB	0,0,0,0 ; temporary modes
+ 18C3 00000000  ORGMODE: DB	0,0,0,0 ; SPACE FOR ORIGINAL MODE VALUE
+                
+ 18C7           	DS	64
+ 1907           STACK:	DS	0
+                
+ 1907           SAVE$STACK	DS	2
+                
+ 1909           	END
+
