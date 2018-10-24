@@ -1,9 +1,9 @@
-vers equ '6 ' ; Reconstructed Oct 22, 2018  21:30  drm  "FMTMAIN.ASM" 
+vers equ '7 ' ; Oct 24, 2018  01:15  drm  "FMTMAIN.ASM" 
 
 ;
 ; Format main routines
 ;
-; Link commmand: LINK FORMAT=FMTMAIN,FMTZ89 or FMT500,FMTDISP,FMTTBL[NC,NR]
+; Link commmand: LINK FORMAT=FMTMAIN,FMTZ89 or FMT500,FMTDISP,FMTTBL[OC,NR]
 ;  Note: FMTMAIN must be linked first and FMTTBL last.
 ;
 
@@ -212,6 +212,7 @@ next$dsk:
 	jz	new$fix 	; restore system DPs and prompt for new drive
 	cpi	cr
 	jnz	exit$fix	; anything except CR exits to CP/M
+	call	log$off		; prepare drive for unformatted access
 	lxi	h,prl+1
 	call	cursor
 	call	clrend
@@ -230,7 +231,7 @@ next$dsk:
 continue:			; entry from dt error if Ignore option
 	call	format
 	jc	error
-	call	verify
+	call	verify		; calls log$on, *always*
 	jc	error
 	call	curact		; turn cursor back on
 	call	display$count	; display disk count
@@ -1028,10 +1029,14 @@ start$dsk:
 	lded	modptr
 	lxi	b,4
 	ldir
+	ret
+log$off:
 	lhld	curmdl		; go into driver
 	lxi	b,3
 	dad	b		; POINT TO JUMP TO LOGIN ROUTINE
 	mvi	a,0afh		; code for "XRA A"
+	cmp	m
+	rz	; don't do this twice
 	mov	m,a		; overlay "JMP" instruction
 	inx	h		;  so that LOGIN never gets called
 	mov	a,m		; byte to be saved
@@ -1846,6 +1851,7 @@ verify$end2:
 	lda	initflg
 	ora	a		; see if to create a disk label and enable
 	jrnz	exit$verify	;   time and date stamping
+	call	log$on		; prepare drive for BDOS use
 	lxi	d,sfcb
 	mvi	c,sdirlab
 	call	bdos
@@ -1854,6 +1860,7 @@ verify$end2:
 	mvi	a,setlabcd
 	stc
 exit$verify:
+	call	log$on	; should be safe to call twice
 	ret
 
 disperr:
@@ -2184,10 +2191,14 @@ done$dsk:
 	lded	modptr
 	lxi	b,4
 	ldir
+	ret
+log$on:
 	lhld	curmdl		; point to "JMP LOGIN" in driver
 	lxi	b,3		; restore bytes that were overlayed
 	dad	b
 	mvi	a,0c3h		; code for "JMP"
+	cmp	m
+	rz	; don't do this twice
 	mov	m,a
 	inx	h
 	lda	savbyte 	; restore saved byte
@@ -2336,7 +2347,7 @@ DPB:	DW	0
 sfcb	db	0		; drive
 	db	'        '	; default label
 	db	'   '
-	db	0011$0000b	; enable create and update time and date
+	db	0110$0000b	; enable access and update time and date
 	db	0,0,0
 	db	0,0,0,0,0,0,0,0 ; no password
 	db	0,0,0,0
