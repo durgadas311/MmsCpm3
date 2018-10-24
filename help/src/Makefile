@@ -1,5 +1,8 @@
 VPATH = drm cpnet mms
 
+# Also: help.raw => 0:HELP.DAT, "HELP [C]", to re-create HELP.HLP if 'makehelp'
+# doesn't produce a working HELP.HLP file.
+
 HELPS = commands.help \
 	cntrlchars.help \
 	copysys.help \

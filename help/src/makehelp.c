@@ -34,7 +34,8 @@ int main(int argc, char **argv) {
 	}
 	fstat(fd, &stb);
 	buflen = stb.st_size;
-	buf = malloc(stb.st_size + 1);
+	buflen = (buflen + 127) & ~127;
+	buf = malloc(buflen + 1);
 	if (buf == NULL) {
 		perror("malloc");
 		exit(1);
@@ -45,7 +46,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 	close(fd);
-	buf[stb.st_size] = 0;
+	memset(buf + stb.st_size, 0, (buflen + 1) - stb.st_size);
 
 	// Line endings MUST be CR-LF... always...
 	// CR-LF are considered the START of the text...
@@ -56,9 +57,9 @@ int main(int argc, char **argv) {
 		while (*s && *s != '\r') ++s;
 	}
 	// compute size of TOC... base of all offsets...
-	int ntoc = ((x + 3) & ~3);
+	int ntoc = ((x + 7) & ~7);
 	if (ntoc == x) {
-		ntoc += 4;
+		ntoc += 8;
 	}
 	int toclen = ntoc * sizeof(struct helptoc);
 	// Now go through text again, building TOC (on stdout)...
