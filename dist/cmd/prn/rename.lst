@@ -1,0 +1,659 @@
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE REN
+OBJECT MODULE PLACED IN RENAME.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 RENAME.PLM PAGEWIDTH(100) DEBUG OPTIMIZE
+
+
+
+              $ TITLE('CP/M 3.0 --- REN ')
+   1          ren:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+                Revised:
+                  19 Jan  80  by Thomas Rolander
+                  14 Sept 81  by Doug Huskey
+                  23 June 82  by John Knight
+                  29 Sept 82  by Thomas J. Mason
+                  03 Dec  82  by Bruce Skidmore
+              */
+
+   2   1      declare
+                  mpmproduct literally '01h', /* requires mp/m */
+                  cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+   3   1      declare
+                  true    literally '0FFh',
+                  false   literally '0',
+                  forever literally 'while true',
+                  lit     literally 'literally',
+                  proc    literally 'procedure',
+                  dcl     literally 'declare',
+                  addr    literally 'address',
+                  cr      literally '13',
+                  lf      literally '10',
+                  ctrlc   literally '3',
+                  ctrlx   literally '18h',
+                  bksp    literally '8',
+                  dcnt$offset    literally '45h',
+                  searcha$offset literally '47h',
+                  searchl$offset literally '49h',
+                  hash1$offset   literally '00h',
+                  hash2$offset   literally '02h',
+                  hash3$offset   literally '04h';
+               
+                      
+   4   1        declare plm label public;
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   INTERFACE          *
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   2
+
+
+                 *                                    *
+                 **************************************/
+
+
+   5   1        mon1:
+                  procedure (func,info) external;
+   6   2            declare func byte;
+   7   2            declare info address;
+   8   2          end mon1;
+
+   9   1        mon2:
+                  procedure (func,info) byte external;
+  10   2            declare func byte;
+  11   2            declare info address;
+  12   2          end mon2;
+
+  13   1        mon3:
+                  procedure (func,info) address external;
+  14   2            declare func byte;
+  15   2            declare info address;
+  16   2          end mon3;
+
+  17   1        declare cmdrv     byte    external;   /* command drive      */
+  18   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+  19   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+  20   1        declare pass0     address external;   /* 1st password ptr   */
+  21   1        declare len0      byte    external;   /* 1st passwd length  */
+  22   1        declare pass1     address external;   /* 2nd password ptr   */
+  23   1        declare len1      byte    external;   /* 2nd passwd length  */
+  24   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   Externals          *
+                 *                                    *
+                 **************************************/
+
+  25   1        read$console:
+                  procedure byte;
+  26   2            return mon2 (1,0);
+  27   2          end read$console;
+
+  28   1        conin: 
+                  procedure byte;
+  29   2          return mon2(6,0ffh);
+  30   2          end conin;
+
+  31   1        printchar:
+                  procedure (char);
+  32   2            declare char byte;
+  33   2            call mon1 (2,char);
+  34   2          end printchar;
+
+  35   1        print$buf:
+                  procedure (buffer$address);
+  36   2            declare buffer$address address;
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   3
+
+
+  37   2            call mon1 (9,buffer$address);
+  38   2          end print$buf;
+
+  39   1        read$console$buf:
+                  procedure (buffer$address,max) byte;
+  40   2            declare buffer$address address;
+  41   2            declare new$max based buffer$address byte;
+  42   2            declare max byte;
+  43   2            new$max = max;
+  44   2            call mon1 (10,buffer$address);
+  45   2            buffer$address = buffer$address + 1;
+  46   2            return new$max;   /* actually number of chars input */
+  47   2      end read$console$buf;
+
+  48   1        check$con$stat:
+                  procedure byte;
+  49   2            return mon2 (11,0);
+  50   2          end check$con$stat;
+
+  51   1        version: procedure address;
+                  /* returns current cp/m version # */
+  52   2          return mon3(12,0);
+  53   2          end version;
+
+  54   1        search$first:
+                  procedure (fcb$address) byte;
+  55   2            declare fcb$address address;
+  56   2            return mon2 (17,fcb$address);
+  57   2          end search$first;
+
+  58   1        search$next:
+                  procedure byte;
+  59   2            return mon2 (18,0);
+  60   2          end search$next;
+
+  61   1        delete$file:
+                  procedure (fcb$address);
+  62   2            declare fcb$address address;
+  63   2            call mon1 (19,fcb$address);
+  64   2          end delete$file;
+
+  65   1        rename$file:
+                  procedure (fcb$address) address;
+  66   2            declare fcb$address address;
+  67   2            return mon3 (23,fcb$address);
+  68   2          end rename$file;
+
+  69   1        setdma: procedure(dma);
+  70   2          declare dma address;
+  71   2          call mon1(26,dma);
+  72   2          end setdma;
+
+                /* 0ff => return BDOS errors */
+  73   1        return$errors:
+                  procedure(mode);
+  74   2          declare mode byte;
+  75   2            call mon1 (45,mode);  
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   4
+
+
+  76   2          end return$errors;
+
+  77   1        declare
+                  parse$fn structure (
+                    buff$adr  address,
+                    fcb$adr   address);
+
+  78   1        parse: procedure (pfcb) address external;
+  79   2          declare pfcb address;
+  80   2          end parse;
+
+  81   1        declare scbpd structure
+                  (offset byte,
+                   set    byte,
+                   value  address);
+
+  82   1        getscbbyte:
+                  procedure (offset) byte;
+  83   2            declare offset byte;
+  84   2            scbpd.offset = offset;
+  85   2            scbpd.set = 0;
+  86   2            return mon2(49,.scbpd);
+  87   2        end getscbbyte;
+               
+  88   1        getscbword:
+                  procedure (offset) address;
+  89   2          declare offset byte;
+  90   2          scbpd.offset = offset;
+  91   2          scbpd.set = 0;
+  92   2          return mon3(49,.scbpd);
+  93   2        end getscbword;
+
+  94   1        setscbword:
+                  procedure (offset,value);
+  95   2            declare offset byte;
+  96   2            declare value address;
+  97   2            scbpd.offset = offset;
+  98   2            scbpd.set = 0FEh;
+  99   2            scbpd.value = value;
+ 100   2            call mon1(49,.scbpd);
+ 101   2        end setscbword;
+
+
+                /**************************************
+                 *                                    *
+                 *         GLOBAL VARIABLES           *
+                 *                                    *
+                 **************************************/
+
+                /* Note: there are three fcbs used by
+                   this program:
+
+                       1) new$fcb: the new file name
+                          (this can be a wildcard if it
+                          has the same pattern of question
+                          marks as the old file name)
+                          Any question marks are replaced
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   5
+
+
+                          with the corresponding filename
+                          character in the old$fcb before
+                          doing the rename function.
+
+                       2) cur$fcb: the file to be renamed
+                          specified in the rename command.
+                          (any question marks must correspond
+                          to question marks in new$fcb).
+
+                       3) old$fcb: a fcb in the directory
+                          matching the cur$fcb and used in
+                          the bdos rename function.  This
+                          cannot contain any question marks.
+                */         
+
+ 102   1        declare successful lit '0FFh';
+ 103   1        declare failed       (*) byte data(cr,lf,'ERROR: Not renamed, $'),
+                        read$only    (*) byte data(cr,lf,'ERROR: Drive read only.$'),
+                        bad$wildcard (*) byte data('Invalid wildcard.$');
+ 104   1        declare passwd (8) byte;
+ 105   1        declare 
+                    new$fcb$adr address,       /* new name */
+                    new$fcb based  new$fcb$adr (32) byte;
+ 106   1        declare cur$fcb (33) byte;      /* current fcb (old name) */
+
+                /**************************************
+                 *                                    *
+                 *       S U B R O U T I N E S        *
+                 *                                    *
+                 **************************************/
+
+
+                                /* upper case character from console */
+ 107   1      crlf:   proc;
+ 108   2          call printchar(cr);
+ 109   2          call printchar(lf);
+ 110   2          end crlf;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* fill string @ s for c bytes with f */
+ 111   1      fill:   proc(s,f,c);
+ 112   2          dcl s addr,
+                      (f,c) byte,
+                      a based s byte;
+
+ 113   2              do while (c:=c-1)<>255;
+ 114   3              a = f;
+ 115   3              s = s+1;
+ 116   3              end;
+ 117   2          end fill;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* error message routine */
+ 118   1      error:   proc(code);
+ 119   2         declare
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   6
+
+
+                    code byte;
+
+ 120   2          if code = 0 then do;  
+ 122   3              call print$buf(.('ERROR:  No such file to rename.$'));
+ 123   3              call mon1(0,0);
+ 124   3              end;
+ 125   2          if code=1 then do;
+ 127   3              call print$buf(.(cr,lf,'Disk I/O.$'));
+ 128   3              call mon1(0,0);
+ 129   3              end;
+ 130   2          if code=2 then do;
+ 132   3              call print$buf(.read$only);
+ 133   3              call mon1(0,0);
+ 134   3              end;
+ 135   2          if code = 3 then
+ 136   2              call print$buf(.read$only(15));
+ 137   2          if code = 5 then      
+ 138   2              call print$buf(.('Currently Opened.$'));
+ 139   2          if code = 7 then
+ 140   2              call print$buf(.('Bad password.$'));
+ 141   2          if code = 8 then      
+ 142   2              call print$buf(.('file already exists$'));
+ 143   2          if code = 9 then do;
+ 145   3              call print$buf(.bad$wildcard);
+ 146   3              call mon1(0,0);
+ 147   3              end;
+ 148   2          end error;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                               /* print file name */
+ 149   1      print$file: procedure(fcbp);
+ 150   2              declare k byte;
+ 151   2              declare typ lit '9';        /* file type */
+ 152   2              declare fnam lit '11';        /* file type */
+ 153   2              declare
+                          fcbp   addr,
+                          fcbv   based fcbp (32) byte;
+
+ 154   2                  do k = 1 to fnam;
+ 155   3                  if k = typ then 
+ 156   3                 call printchar('.');
+ 157   3                  call printchar(fcbv(k) and 7fh);
+ 158   3                  end;
+ 159   2              end print$file;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                /* try to rename fcb at old$fcb$adr to name at new$fcb$adr 
+                          return error code if unsuccessful */
+ 160   1        rename:
+                  procedure(old$fcb$adr) byte;
+ 161   2          declare
+                     old$fcb$adr address,
+                     old$fcb based  old$fcb$adr (32) byte,
+                     error$code  address,
+                     code        byte;
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   7
+
+
+                     
+ 162   2          call move (16,new$fcb$adr,old$fcb$adr+16);
+ 163   2          call setdma(.passwd);                   /* password    */
+ 164   2          call return$errors(0FFh);        /* return bdos errors */
+ 165   2          error$code = rename$file (old$fcb$adr);
+ 166   2          call return$errors(0);           /* normal error mode  */
+ 167   2          if low(error$code) = 0FFh then do;
+ 169   3              code = high(error$code);
+ 170   3              if code < 3 then 
+ 171   3                  call error(code);
+ 172   3              return code;
+ 173   3              end;
+ 174   2          return successful;      
+ 175   2          end rename;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* upper case character from console */
+ 176   1      ucase:   proc(c) byte;
+ 177   2          dcl c byte;
+
+ 178   2          if c >= 'a' then
+ 179   2             if c < '{' then
+ 180   2                return(c-20h);
+ 181   2          return c;
+ 182   2          end ucase;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* get password and place at fcb + 16 */
+ 183   1      getpasswd:   proc;
+ 184   2          dcl (i,c) byte;
+
+ 185   2          call crlf;
+ 186   2          call print$buf(.('Enter password: ','$'));
+ 187   2      retry:
+                  call fill(.passwd,' ',8);
+ 188   2              do i = 0 to 7;
+ 189   3      nxtchr:
+                      if (c:=ucase(conin)) >= ' ' then 
+ 190   3                  passwd(i)=c;
+ 191   3              if c = cr then do;
+ 193   4                  call crlf;
+ 194   4                  go to exit;
+ 195   4                  end;
+ 196   3              if c = ctrlx then
+ 197   3                  goto retry;
+ 198   3              if c = bksp then do;
+ 200   4                  if i<1 then
+ 201   4                      goto retry;
+ 202   4                  else do;
+ 203   5                      passwd(i:=i-1)=' ';
+ 204   5                      goto nxtchr;
+ 205   5                      end;
+ 206   4                  end;
+ 207   3              if c = ctrlc then
+ 208   3                  call mon1(0,0);
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   8
+
+
+ 209   3              end;
+ 210   2      exit:
+                  c = check$con$stat;             /* clear raw I/O mode */
+ 211   2          end getpasswd;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* check for wildcard in rename command */
+ 212   1      wildcard:   proc byte;
+ 213   2          dcl (i,wild) byte;
+
+ 214   2          wild = false;
+ 215   2              do i=1 to 11;
+ 216   3              if cur$fcb(i) = '?' then
+ 217   3                  if new$fcb(i) <> '?' then do;
+ 219   4                      call print$buf(.failed);
+ 220   4                      call print$buf(.bad$wildcard);
+ 221   4                      call mon1(0,0);
+ 222   4                      end;
+                          else
+ 223   3                      wild = true;
+ 224   3              end;
+ 225   2          return wild;
+ 226   2          end wildcard;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* set up new name for rename function */
+ 227   1      set$new$fcb:   proc(old$fcb$adr);
+ 228   2          dcl old$fcb$adr address,
+                      old$fcb based old$fcb$adr (32) byte;
+ 229   2          dcl i byte;
+
+ 230   2          old$fcb(0) = cur$fcb(0);    /* set up drive */
+ 231   2              do i=1 to 11;
+ 232   3              if cur$fcb(i) = '?' then 
+ 233   3                  new$fcb(i) = old$fcb(i);
+ 234   3              end;
+ 235   2          end set$new$fcb;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* try deleting files one at a time */
+ 236   1        single$file:
+                  procedure;
+ 237   2          declare (code,dcnt) byte;
+ 238   2          declare (old$fcb$adr,savdcnt,savsearcha,savsearchl) addr;
+ 239   2          declare old$fcb based old$fcb$adr (32) byte;
+ 240   2          declare (hash1,hash2,hash3) address;
+
+ 241   2          file$err: procedure(fcba);
+ 242   3              dcl fcba address;
+ 243   3              call print$buf(.failed);
+ 244   3              call print$file(fcba);
+ 245   3              call printchar(' ');
+ 246   3              call error(code);
+ 247   3              end file$err;
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE   9
+
+
+
+ 248   2          call setdma(.tbuff);
+ 249   2          if (dcnt:=search$first(.cur$fcb)) = 0ffh then
+ 250   2              call error(0);
+
+ 251   2              do while dcnt <> 0ffh;
+ 252   3              old$fcb$adr = shl(dcnt,5) + .tbuff;
+ 253   3              savdcnt = getscbword(dcnt$offset);
+ 254   3              savsearcha = getscbword(searcha$offset);
+ 255   3              savsearchl = getscbword(searchl$offset);
+                      /* save searched fcb's hash code (5 bytes) */
+ 256   3              hash1 = getscbword(hash1$offset);
+ 257   3              hash2 = getscbword(hash2$offset);
+ 258   3              hash3 = getscbword(hash3$offset);   /* saved one extra byte */
+ 259   3              call set$new$fcb(old$fcb$adr);
+ 260   3              if (code:=rename(old$fcb$adr)) = 8 then do;
+ 262   4                  call file$err(new$fcb$adr);
+ 263   4                  call print$buf(.(', delete (Y/N)?$'));
+ 264   4                  if ucase(read$console) = 'Y' then do;
+ 266   5                      call delete$file(new$fcb$adr);
+ 267   5                      code = rename(old$fcb$adr);
+ 268   5                      end;
+                          else
+ 269   4                      go to next;
+ 270   4                  end;
+ 271   3              if code = 7 then do;
+ 273   4                  call file$err(old$fcb$adr);
+ 274   4                  call getpasswd;
+ 275   4                  code = rename(old$fcb$adr);
+ 276   4                  end;
+ 277   3              if code <> successful then 
+ 278   3                  call file$err(old$fcb$adr);
+ 279   3              else do;
+ 280   4                  call crlf;
+ 281   4                  call print$file(new$fcb$adr);
+ 282   4                  call printchar('=');
+ 283   4                  call print$file(old$fcb$adr);
+ 284   4                  end;
+ 285   3      next:
+                      call setdma(.tbuff);
+ 286   3              call setscbword(dcnt$offset,savdcnt);
+ 287   3              call setscbword(searcha$offset,savsearcha);
+ 288   3              call setscbword(searchl$offset,savsearchl);
+                      /* restore hash code */
+ 289   3              call setscbword(hash1$offset,hash1);
+ 290   3              call setscbword(hash2$offset,hash2);
+ 291   3              call setscbword(hash3$offset,hash3);
+ 292   3              if .cur$fcb <> savsearcha then  /*restore orig fcb if destroyed*/
+ 293   3                call move(16,.cur$fcb,savsearcha);
+ 294   3              dcnt = search$next;
+ 295   3              end;
+ 296   2          end single$file;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* invalid rename command */
+ 297   1      bad$entry:   proc;
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE  10
+
+
+
+ 298   2          call print$buf(.failed);
+ 299   2          call print$buf(.('ERROR:  Invalid File.',cr,lf,'$'));
+ 300   2          call mon1(0,0);
+ 301   2          end bad$entry;
+
+               
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 302   1      finish$parse: procedure;
+ 303   2        parse$fn.buff$adr = parse$fn.fcb$adr+1;   /* skip delimiter */
+ 304   2        parse$fn.fcb$adr = .cur$fcb;
+ 305   2        parse$fn.fcb$adr = parse(.parse$fn);
+ 306   2        call move(8,.cur$fcb+16,.passwd);
+ 307   2      end finish$parse;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 308   1      input$found: procedure (buffer$adr) byte;
+ 309   2        declare buffer$adr address;
+ 310   2        declare char based buffer$adr byte;
+ 311   2        do while (char = ' ') or (char = 9); /* tabs & spaces */
+ 312   3          buffer$adr = buffer$adr + 1;
+ 313   3        end;
+ 314   2        if char = 0 then  /* eoln */
+ 315   2          return false;   /* input not found */
+                else
+ 316   2          return true;    /* input found */
+ 317   2      end input$found;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               
+                /**************************************
+                 *                                    *
+                 *       M A I N  P R O G R A M       *
+                 *                                    *
+                 **************************************/
+
+ 318   1      declare ver address;
+ 319   1      declare i byte;
+ 320   1      declare no$chars byte;  /* number characters input */
+ 321   1      declare second$string$ptr address;  /* points to second filename input */
+ 322   1      declare ptr based second$string$ptr byte;
+ 323   1      declare last$dseg$byte byte
+                initial (0);
+
+ 324   1      plm:
+                ver = version;
+ 325   1        if (low(ver) < cpmversion) or (high(ver) = mpmproduct) then do;
+ 327   2          call print$buf(.('Requires CP/M 3.0','$'));
+ 328   2          call mon1(0,0);
+ 329   2        end;
+
+ 330   1        parse$fn.buff$adr = .tbuff(1);
+ 331   1        new$fcb$adr, parse$fn.fcb$adr = .fcb;
+ 332   1        if input$found(.tbuff(1)) then do;
+ 334   2          if (parse$fn.fcb$adr:=parse(.parse$fn)) <> 0FFFFh then
+PL/M-80 COMPILER    CP/M 3.0 --- REN                                                        PAGE  11
+
+
+ 335   2            call finish$parse;
+ 336   2        end;
+ 337   1        else do;
+
+                  /* prompt for files */
+ 338   2          call print$buf(.('Enter New Name: $'));
+ 339   2          no$chars = read$console$buf(.tbuff(0),40);
+ 340   2          if no$chars <= 0 then do;
+ 342   3             call print$buf(.(cr,lf,'ERROR: Incorrect file specification.',cr,lf,'$'));
+ 343   3             call mon1(0,0);
+ 344   3             end;  /* no$char check */
+
+ 345   2          tbuff(1)= ' ';  /* blank out nc field for file 1 */
+ 346   2          second$string$ptr = .tbuff(no$chars + 2);
+ 347   2          call crlf;
+
+ 348   2          call print$buf(.('Enter Old Name: $'));
+ 349   2          no$chars = read$console$buf(second$string$ptr,40);
+ 350   2          call crlf;
+ 351   2          ptr = ' ';  /* blank out mx field */
+ 352   2          second$string$ptr = second$string$ptr + 1;
+ 353   2          ptr = '=';  /* insert delimiter for parse */
+ 354   2          second$string$ptr = second$string$ptr + no$chars + 1;   /* eoln */
+ 355   2          ptr = cr;   /* put eoln delimeter in string */
+ 356   2          parse$fn.buff$adr = .tbuff(1);
+ 357   2          new$fcb$adr, parse$fn.fcb$adr = .fcb;
+ 358   2          if (parse$fn.fcb$adr := parse(.parse$fn)) <> 0FFFFh then
+ 359   2            call finish$parse;
+ 360   2        end;
+ 361   1        if parse$fn.fcb$adr = 0FFFFh then
+ 362   1          call bad$entry;
+ 363   1        if fcb(0) <> 0 then
+ 364   1          if cur$fcb(0) <> 0 then do;
+ 366   2            if fcb(0) <> cur$fcb(0) then
+ 367   2              call bad$entry;
+ 368   2            end;
+                  else
+ 369   1            cur$fcb(0) = new$fcb(0);  /* set drive */
+ 370   1        if wildcard then
+ 371   1          call singlefile;
+ 372   1        else if rename(.cur$fcb) <> successful then 
+ 373   1          call singlefile;
+                call mon1(0,0);
+ 375   1      end ren;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0865H   2149D
+     VARIABLE AREA SIZE = 0077H    119D
+     MAXIMUM STACK SIZE = 000AH     10D
+     608 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

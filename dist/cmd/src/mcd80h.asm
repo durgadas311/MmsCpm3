@@ -1,7 +1,7 @@
 $title	('COM Externals')
-	name	mcd80a
+	name	mcd80h
 	CSEG
-;	September 14, 1982
+;	October 26, 2018 - for HELP.COM, with patches
 
 offset	equ	0000h
 
@@ -10,12 +10,11 @@ offset	equ	0000h
 
 ;	EXTERNAL ENTRY POINTS
 
-boot	equ	0000h+offset
 mon1	equ	0005h+offset
 mon2	equ	0005h+offset
 mon2a	equ	0005h+offset
 mon3 	equ	0005h+offset
-	public	boot,mon1,mon2,mon2a,mon3
+	public	mon1,mon2,mon2a,mon3
 
 ;	EXTERNAL BASE PAGE DATA LOCATIONS
 
@@ -64,11 +63,13 @@ cpu	equ	0	; 0 = 8080, 1 = 8086/88, 2 = 68000
 ;	EXECUTION BEGINS HERE
 
 	lxi	sp, stack
+	lda	cmdrv
+	sta	04c7h+offset	; constant area for HELP.HLP
 	JMP 	PLM
 
 ;	PATCH AREA, DATE, VERSION & SERIAL NOS.
 
-	dw	0,0,0,0,0,0,0,0
+	dw	      0,0,0,0,0
 	dw	0,0,0,0,0,0,0,0
 	dw	0,0,0,0,0,0,0,0
 	dw	0,0,0,0,0
@@ -77,7 +78,7 @@ cpu	equ	0	; 0 = 8080, 1 = 8086/88, 2 = 68000
 	db	'COPYRIGHT 1982, '
 	db	'DIGITAL RESEARCH'
 	db	'151282'	; version date day-month-year
-	db	0,0,0,0		; patch bit map
+	db	0,0,0,7		; patch bit map
 	db	'654321'	; Serial no.
 
 	END

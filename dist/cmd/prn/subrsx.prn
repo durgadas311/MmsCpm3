@@ -1,0 +1,907 @@
+CP/M RMAC ASSEM 1.1	#001	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+                title	'GET.RSX 3.0 - CP/M 3.0 Input Redirection - August 1982'
+                ;******************************************************************
+                ;
+                ;	get  'Input Redirection Facility'  version 3.0
+                ;
+                ; 	11/30/82 - Doug Huskey
+                ;	This RSX redirects console input and status from a file.
+                ;******************************************************************
+                ;
+                ;
+ FFFF =         true		equ	0ffffh
+ 0000 =         false		equ	00000h
+                ;
+                	maclib	getrsx		;[JCE] The Get/Submit equate 
+                	maclib	makedate	;[JCE] Build date
+ 0000 =         remove$rsx	equ	false	;true if RSX removes itself
+                ;				;false if LOADER does removes
+                ;
+                ;
+                ;	generation procedure
+                ;
+                ;	rmac getrsx
+                ;	xref getrsx
+                ;	link getrsx[op]
+                ;	ERA get.RSX
+                ;	REN get.RSX=getRSX.PRL
+                ;	GENCOM $1.COM get.RSX 		($1 is either SUBMIT or GET)
+                ;
+                ;
+                ;	initialization procedure
+                ;
+                ;	GETF makes a RSX function 60 call with a sub-function of
+                ;	128.  GETRSX returns the address of a data table containing:
+                ;
+                ;	init$table:	
+                ;		dw	kill		;RSX remove flag addr in GET
+                ;		dw	bios$constat	;bios entry point in GET
+                ;		dw	bios$conin	;bios entry point in GET
+                ;
+                ;	GETF initializes the data are between movstart: and movend:
+                ;	and moves it into GET.RSX.  This means that data should not
+                ;	be reordered without also changing GETF.ASM.
+                ;
+ FFFF =         bios$functions	equ	true	;intercept BIOS console functions
+                ;
+                ;	low memory locations
+                ;
+ 0000 =         wboot	equ	0000h
+ 0005 =         bdos	equ	0005h
+ 0006 =         bdosl	equ	bdos+1
+ 0080 =         buf	equ	0080h
+                ;
+                ;	equates for non graphic characters
+                ;
+ 0003 =         ctlc	equ	03h	; control c
+ 0005 =         ctle	equ	05h	; physical eol
+CP/M RMAC ASSEM 1.1	#002	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 0008 =         ctlh	equ	08h	; backspace
+ 0010 =         ctlp	equ	10h	; prnt toggle
+ 0012 =         ctlr	equ	12h	; repeat line
+ 0013 =         ctls	equ	13h	; stop/start screen
+ 0015 =         ctlu	equ	15h	; line delete
+ 0018 =         ctlx	equ	18h	; =ctl-u
+                	if submit
+ 00FF =         ctlz	equ	0ffh
+                	else
+                ctlz	equ	1ah	; end of file
+                	endif
+ 007F =         rubout	equ	7fh	; char delete
+ 0009 =         tab	equ	09h	; tab char
+ 000D =         cr	equ	0dh	; carriage return
+ 000A =         lf	equ	0ah	; line feed
+ 005E =         ctl	equ	5eh	; up arrow
+                ;
+                ;	BDOS function equates
+                ;
+ 0001 =         cinf	equ	1	;read character
+ 0002 =         coutf	equ	2	;output character
+ 0006 =         crawf	equ	6	;raw console I/O
+ 000A =         creadf	equ	10	;read buffer
+ 000B =         cstatf	equ	11	;status
+ 0005 =         pchrf	equ	5	;print character
+ 0009 =         pbuff	equ	9	;print buffer
+ 000F =         openf	equ	15	;open file
+ 0010 =         closef	equ	16	;close file
+ 0013 =         delf	equ	19	;delete file
+ 0014 =         dreadf	equ	20	;disk read
+ 001A =         dmaf	equ	26	;set dma function
+ 0020 =         userf	equ	32	;set/get user number
+ 0031 =         scbf	equ	49	;set/get system control block word
+ 003B =         loadf	equ	59	;loader function call
+ 003C =         rsxf	equ	60	;RSX function call
+ 0080 =         ginitf	equ	128	;GET initialization sub-function no.
+ 0081 =         gkillf	equ	129	;GET delete sub-function no.
+ 0082 =         gfcbf	equ	130	;GET file display sub-function no.
+ 0084 =         pinitf	equ	132	;PUT initialization sub-funct no.
+ 0085 =         pckillf	equ	133	;PUT CON: delete sub-function no.
+ 0086 =         pcfcbf	equ	134	;return PUT CON: fcb address
+ 0089 =         plkillf	equ	137	;PUT LST: delete sub-function no.
+ 008A =         plfcbf	equ	138	;return PUT LST:fcb address
+ 008C =         gsigf	equ	140	;signal GET without [SYSTEM] option
+ 008D =         jinitf	equ	141	;JOURNAL initialization sub-funct no.
+ 008E =         jkillf	equ	142	;JOURNAL delete sub-function no.
+ 008F =         jfcbf	equ	143	;return JOURNAL fcb address
+                ;
+                ;	System Control Block definitions
+                ;
+ 003A =         scba	equ	03ah	;offset of scbadr from SCB base
+ 00B3 =         ccpflg	equ	0b3h	;offset of ccpflags word from page boundary
+ 0020 =         ccpres	equ	020h	;ccp resident flag = bit 5
+ 00FE =         bdosoff equ	0feh	;offset of BDOS address from page boundary
+ 00AC =         errflg	equ	0ach	;offset of error flag from page boundary
+ 00C8 =         pg$mode	equ	0c8h	;offset of page mode byte from pag. bound.
+CP/M RMAC ASSEM 1.1	#003	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 00C9 =         pg$def	equ	0c9h	;offset of page mode default from pag. bound.
+ 00CF =         conmode	equ	0cfh	;offset of console mode word from pag. bound.
+ 00D4 =         listcp	equ	0d4h	;offset of ^P flag from page boundary
+ 00D8 =         dmaad	equ	0d8h	;offset of DMA address from pg bnd.
+ 00E0 =         usrcode	equ	0e0h	;offset of user number from pg bnd.
+ 00E1 =         dcnt	equ	0e1h	;offset of dcnt, searcha & searchl from pg bnd.
+ 006E =         constfx	equ	06eh	;offset of constat JMP from page boundary
+ 0074 =         coninfx	equ	074h	;offset of conin JMP from page boundary
+                
+                
+                ;******************************************************************
+                ;		RSX HEADER 
+                ;******************************************************************
+                
+ 0000 0000000000serial:	db	0,0,0,0,0,0
+                
+                trapjmp:
+ 0006 C34600    	jmp	trap		;trap read buff and DMA functions
+ 0009 C30000    next:	jmp	0		;go to BDOS
+ 000C 0500      prev:	dw	bdos
+ 000E FF        kill:	db	0FFh		;0FFh => remove RSX at wstart
+ 000F 00        nbank:	db	0
+ 0010 4745542020rname:	db	'GET     '	;RSX name
+ 0018 0000      space:	dw	0
+ 001A 00        patch:	db	0
+                
+                ;******************************************************************
+                ;		START OF CODE
+                ;******************************************************************
+                
+                ;
+                ;	ABORT ROUTINE
+                ;
+                getout:
+                	;
+                if bios$functions
+                	;
+                	;restore bios jumps
+ 001B 3AF302    	lda	restore$mode		;may be FF, 7f, 80 or 0
+ 001E 3C        	inr	a	
+ 001F C8        	rz				; FF = no bios interception
+ 0020 2AF102    	lhld	biosin
+ 0023 EB        	xchg
+ 0024 2AEF02    	lhld	biosta
+ 0027 CDF402    	call	restore$bios		;restore BIOS constat & conin jmps
+ 002A F8        	rm				; 7f = RESBDOS jmps not changed
+ 002B 2AED02    	lhld	scbadr
+ 002E 2E6E      	mvi	l,constfx
+ 0030 36C3      	mvi	m,jmp
+ 0032 E8        	rpe				; 80 = conin jmp not changed
+ 0033 2E74      	mvi	l,coninfx
+ 0035 36C3      	mvi	m,jmp
+                endif
+ 0037 C9        	ret				; 0  = everything done
+                ;
+                ;	ARRIVE HERE ON EACH BIOS CONIN OR CONSTAT CALL
+CP/M RMAC ASSEM 1.1	#004	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+                ;
+                ;
+                bios$constat:
+                	;
+                if bios$functions
+                	;
+                	;enter here from BIOS constat
+ 0038 010B04    	lxi	b,4*256+cstatf	;b=offset in exit table
+ 003B C34C00    	jmp	bios$trap
+                endif
+                ;
+                bios$conin:
+                	;
+                if bios$functions
+                	;
+                	;enter here from BIOS conin
+ 003E 010606    	lxi	b,6*256+crawf	;b=offset in exit table
+ 0041 1EFD      	mvi	e,0fdh
+ 0043 C34C00    	jmp	biostrap
+                endif
+                ;
+                ;	ARRIVE HERE AT EACH BDOS CALL
+                ;
+                trap:
+                	;
+                	;
+ 0046 21B803    	lxi	h,excess
+ 0049 0600      	mvi	b,0
+ 004B 70        	mov	m,b
+                biostrap:
+                	;enter here on BIOS calls
+                
+ 004C E1        	pop	h		;return address
+ 004D E5        	push	h		;back to stack
+ 004E 3A0800    	lda	trapjmp+2	;GET.RSX page address
+ 0051 BC        	cmp	h		;high byte of return address
+ 0052 DA7E00    	jc	exit		;skip calls on bdos above here
+ 0055 79        	mov	a,c		;function number
+                	;
+                	;
+ 0056 FE0B      	cpi	cstatf		;status	
+ 0058 CADD00    	jz	intercept
+ 005B FE06      	cpi	crawf
+ 005D CADD00    	jz	intercept	;raw I/O
+ 0060 21EA02    	lxi	h,statflg	;zero conditional status flag
+ 0063 3600      	mvi	m,0
+ 0065 FE01      	cpi	cinf
+ 0067 CADD00    	jz	intercept	;read character
+ 006A FE0A      	cpi	creadf
+ 006C CADD00    	jz	intercept	;read buffer
+ 006F FE3C      	cpi	rsxf
+ 0071 CA8A00    	jz	rsxfunc		;rsx function
+ 0074 FE1A      	cpi	dmaf
+ 0076 C27E00    	jnz	exit		;skip if not setting DMA
+ 0079 EB        	xchg
+ 007A 22A703    	shld	udma		;save user's DMA address
+CP/M RMAC ASSEM 1.1	#005	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 007D EB        	xchg
+                ;
+                exit:
+                	;go to real BDOS
+                
+                if not bios$functions
+                	;
+                	jmp	next		;go to next RSX or BDOS
+                
+                else
+ 007E 78        	mov	a,b		;get type of call:
+ 007F 21EB02    	lxi	h,exit$table	;0=BDOS call, 4=BIOS CONIN, 6=BIOS CONSTAT
+ 0082 CD3D02    	call	addhla
+ 0085 46        	mov	b,m		;low byte to b
+ 0086 23        	inx	h
+ 0087 66        	mov	h,m		;high byte to h
+ 0088 68        	mov	l,b		;HL = .exit routine
+ 0089 E9        	pchl			;gone to BDOS or BIOS
+                endif
+                ;	
+                ;
+                rsxfunc:			;check for initialize or delete RSX functions
+ 008A 1A        	ldax	d		;get RSX sub-function number
+ 008B 21ED02    	lxi	h,init$table	;address of area initialized by COM file
+ 008E FE80      	cpi	ginitf
+ 0090 C8        	rz
+ 0091 3A0E00    	lda	kill
+ 0094 B7        	ora	a
+ 0095 C27E00    	jnz	exit
+ 0098 1A        	ldax	d
+ 0099 FE82      	cpi	gfcbf	
+ 009B 210303    	lxi	h,subfcb
+ 009E C8        	rz
+                cksig:
+ 009F FE8C      	cpi	gsigf
+ 00A1 C2AB00    	jnz	ckkill
+ 00A4 21A903    	lxi	h,get$active
+ 00A7 3E81      	mvi	a,gkillf
+ 00A9 96        	sub	m		;toggle get$active flag
+ 00AA 77        	mov	m,a		;gkillf->0    0->gkillf
+                
+                ckkill:
+ 00AB FE81      	cpi	gkillf		;remove this instance of GET?
+ 00AD C27E00    	jnz	exit		;jump if not
+                	
+                
+                restor:
+ 00B0 3AA903    	lda	get$active
+ 00B3 B7        	ora	a
+ 00B4 C8        	rz
+ 00B5 CD1B00    	call	getout		;bios jump fixup
+                
+                if submit
+ 00B8 0E10      	mvi	c,closef
+ 00BA CDD701    	call	subdos
+ 00BD 0E13      	mvi	c,delf
+CP/M RMAC ASSEM 1.1	#006	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 00BF CDD701    	call	subdos		;delete SYSIN??.$$$ if not
+                endif
+ 00C2 210E00    	lxi	h,kill
+ 00C5 35        	dcr	m		;set to 0ffh, so we are removed 
+ 00C6 EB        	xchg			; D = base of this RSX
+ 00C7 2AED02    	lhld	scbadr
+ 00CA 2EB4      	mvi	l,ccpflg+1	;hl = .ccp flag 2 in SCB
+ 00CC 7E        	mov	a,m
+ 00CD E6BF      	ani	0bfh
+ 00CF 77        	mov	m,a		;turn off redirection flag
+                	;we must remove this RSX if it is the lowest one
+ 00D0 3A0700    	lda	bdosl+1		;location 6 high byte
+ 00D3 BA        	cmp	d		;Does location 6 point to us
+ 00D4 C0        	RNZ			;return if not
+                if remove$rsx
+                	xchg			;D = scb page
+                	lhld	next+1
+                	shld	bdosl
+                	xchg			;H = scb page
+                	mvi	l,bdosoff	;HL = "BDOS" address in SCB
+                	mov	m,e		;put next address into SCB
+                	inx	h
+                	mov	m,d
+                	xchg
+                	mvi	l,0ch		;HL = .previous RSX field in next RSX
+                	mvi	m,7
+                	inx	h
+                	mvi	m,0		;put previous into previous
+                	ret
+                else
+                	;	CP/M 3 loader does RSX removal if DE=0
+ 00D5 0E3B      	mvi	c,loadf
+ 00D7 110000    	lxi	d,0
+ 00DA C30900    	jmp	next		;ask loader to remove me
+                endif
+                
+                ;
+                ;
+                ;	INTERCEPT EACH BDOS CONSOLE INPUT FUNCTION CALL HERE
+                ;
+                ;	enter with funct in A, info in DE
+                ;
+                intercept:
+                ;
+ 00DD 3A0E00    	lda	kill
+ 00E0 B7        	ora	a
+ 00E1 C27E00    	jnz	exit		;skip if remove flag turned on
+                	;
+                	;switch stacks
+ 00E4 210000    	lxi	h,0
+ 00E7 39        	dad	sp
+ 00E8 22B903    	shld	old$stack	
+ 00EB 314004    	lxi	sp,stack
+ 00EE C5        	push	b		;save function #
+ 00EF D5        	push	d		;save info
+                	;check redirection mode
+CP/M RMAC ASSEM 1.1	#007	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 00F0 CD2302    	call	getmode		;returns with H=SCB page
+ 00F3 FE02      	cpi	2
+ 00F5 CA7501    	jz	skip		;skip if no redirection flag on
+                	
+                if submit	
+                ;
+                ;	SUBMIT PROCESSOR
+                ;
+                	;check if CCP is calling
+ 00F8 2EC8      ckccp:	mvi	l,pg$mode
+ 00FA 74        	mov	m,H		;set to non-zero for no paging
+ 00FB 2EB4      	mvi	l,ccpflg+1	;CCP FLAG 2 in SCB
+ 00FD 7E        	mov	a,m		;ccp flag byte 2 to A
+ 00FE F640      	ori	040h
+ 0100 77        	mov	m,a		;set redirection flag on
+ 0101 E620      	ani	ccpres		;zero flag set if not CCP calling
+ 0103 3A2603    	lda	ccp$line
+ 0106 CA2F01    	jz	not$ccp
+                	;yes, CCP is calling
+ 0109 B7        	ora	a
+ 010A C23301    	jnz	redirect	;we have a CCP line
+                	;CCP & not a CCP line
+ 010D E5        	push	h
+ 010E CD9601    	call 	coninf		;throw away until next CCP line
+ 0111 21B803    	lxi	h,excess
+ 0114 7E        	mov	a,m
+ 0115 B7        	ora	a		;is this the first time?
+ 0116 36FF      	mvi	m,true
+ 0118 11BB03    	lxi	d,garbage
+ 011B 0E09      	mvi	c,pbuff
+ 011D CC0900    	cz	next		;print the warning if so
+ 0120 E1        	pop	h
+ 0121 3A0E00    	lda	kill
+ 0124 B7        	ora	a
+ 0125 CAF800    	jz	ckccp		;get next character (unless eof)
+ 0128 7E        	mov	a,m
+ 0129 E67F      	ani	7fh		;turn off disk reset (CCP) flag
+ 012B 77        	mov	m,a
+ 012C C30000    	jmp	wboot		;skip if remove flag turned on
+                ;
+                not$ccp:
+                	;no, its not the CCP
+ 012F B7        	ora	a
+ 0130 C27501    	jnz	skip		;skip if no program line
+                
+                else
+                	lda	program
+                	ora	a		;program input only?
+                	mvi	l,ccpflg+1	;CCP FLAG 2 in SCB
+                	mov	a,m		;ccp flag byte 2 to A
+                	jz	set$no$page	;jump if [system] option
+                	;check if CCP is calling
+                	ani	ccpres		;zero flag set if not CCP calling
+                	jz	redirect	;jump if not the CCP
+                	lxi	h,ccpcnt	;decrement once for each
+                	dcr	m		;time CCP active
+CP/M RMAC ASSEM 1.1	#008	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+                	cm	restor		;if 2nd CCP appearance
+                	lxi	d,cksig+1
+                	mvi	c,rsxf		;terminate any GETs waiting for
+                	call	next		;us to finish
+                	jmp	skip
+                	;
+                set$no$page:
+                	ori	40h		;A=ccpflag2, HL=.ccpflag2
+                	mov	m,a		;set redirection flag on
+                	mvi	l,pg$mode
+                	mov	m,h		;set to non-zero for no paging
+                endif
+                	;
+                	;	REDIRECTION PROCESSOR
+                	;
+                redirect:
+                	;break if control-C typed on console
+ 0133 CD6301    	call	break
+ 0136 D1        	pop	d
+ 0137 C1        	pop	b		;recover function no. & info
+ 0138 C5        	push	b		;save function
+ 0139 D5        	push	d		;save info
+ 013A 79        	mov	a,c		;function no. to A
+ 013B 218601    	lxi	h,retmon	;program return routine
+ 013E E5        	push	h		;push on stack 
+                	;
+                	;
+ 013F FE0A      	cpi	creadf
+ 0141 CA8E02    	jz	func10		;read buffer (returns to retmon)
+ 0144 FE01      	cpi	cinf
+ 0146 CA4202    	jz	func1		;read character (returns to retmon)
+ 0149 FE0B      	cpi	cstatf
+ 014B CA6402    	jz	func11		;status	(returns to retmon)
+                ;
+                func6:
+                	;direct console i/o - read if 0ffh
+                	;returns to retmon
+ 014E 7B        	mov 	a,e	
+ 014F 3C        	inr 	a
+ 0150 CA9101    	jz 	dirinp 		;0ffh in E for status/input
+ 0153 3C        	inr 	a
+ 0154 CA6402    	jz 	CONBRK		;0feh in E for status
+ 0157 21EA02    	lxi	h,statflg
+ 015A 3600      	mvi	m,0
+ 015C 3C        	inr 	a		
+ 015D CA9601    	jz	coninf		;0fdh in E for input
+                	;
+                	;direct output function
+                	;
+ 0160 C37F01    	jmp	skip1
+                	;
+                break:	;
+                	;quit if ^C typed
+ 0163 0E0B      	mvi	c,cstatf
+ 0165 CDFC02    	call	real$bdos
+ 0168 B7        	ora	a		;was ^C typed?
+CP/M RMAC ASSEM 1.1	#009	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 0169 C8        	rz
+ 016A E1        	pop	h		;throw away return address
+ 016B CDB000    	call	restor		;remove this RSX, if so
+ 016E 0E06      	mvi	c,crawf
+ 0170 1EFF      	mvi	e,0ffh
+ 0172 CD0900    	call	next		;eat ^C if not nested
+                	;
+                skip:	;
+                	;reset ^C status mode
+ 0175 CD2302    	call	getmode		;returns .conmode+1
+ 0178 2B        	dcx	h		;hl = .conmode in SCB
+ 0179 7E        	mov	a,m
+ 017A E6FE      	ani	0feh		;turn off control C status
+ 017C 77        	mov	m,a
+                	;restore the BDOS call 
+ 017D D1        	pop	d		;restore BDOS function no.
+ 017E C1        	pop	b		;restore BDOS parameter
+                	;restore the user's stack
+ 017F 2AB903    skip1:	lhld	old$stack
+ 0182 F9        	sphl
+ 0183 C37E00    	jmp	exit		;goto BDOS
+                
+                ;
+                retmon:
+                	;normal entry point, char in A
+ 0186 FEFF      	cpi	ctlz
+ 0188 CA7501    	jz	skip
+ 018B 2AB903    	lhld	old$stack
+ 018E F9        	sphl
+ 018F 6F        	mov	l,a
+ 0190 C9        	ret			;to calling program
+                
+                
+                ;******************************************************************
+                ;		BIOS FUNCTIONS (REDIRECTION ROUTINES)
+                ;******************************************************************
+                ;
+                ;	;direct console input
+                dirinp:
+ 0191 CD6402    	call	conbrk
+ 0194 B7        	ora	a
+ 0195 C8        	rz
+                ;
+                ;
+                ;	get next character from file
+                ;
+                	;
+                coninf:	
+                getc:	;return ^Z if end of file
+ 0196 AF        	xra	a
+ 0197 212403    	lxi	h,cbufp		;cbuf index
+ 019A 34        	inr	m		;next chr position
+ 019B FCD501    	cm	readf		;read a new record
+ 019E B7        	ora	a		
+ 019F 06FF      	mvi	b,ctlz		;EOF indicator
+ 01A1 C2AE01    	jnz	getc1		;jump if end of file
+CP/M RMAC ASSEM 1.1	#010	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 01A4 3A2403    	lda	cbufp
+ 01A7 212703    	lxi	h,cbuf
+ 01AA CD3D02    	call	addhla		;HL = .char
+                	;one character look ahead
+                	;new char in B, current char in nextchr
+ 01AD 46        	mov	b,m		;new character in B
+ 01AE 78        getc1:	mov	a,b
+ 01AF FEFF      	cpi	ctlz
+ 01B1 C5        	push	b
+ 01B2 CCB000    	cz	restor
+ 01B5 C1        	pop	b
+ 01B6 212503    	lxi	h,nextchr
+ 01B9 7E        	mov	a,m		;current character
+ 01BA FE0D      	cpi	cr
+ 01BC 70        	mov	m,b		;save next character
+ 01BD C0        	rnz
+ 01BE 78        	mov	a,b		;A=character after CR
+ 01BF FE0A      	cpi	lf		;is it a line feed
+ 01C1 CC9601    	cz	getc		;eat line feeds after a CR
+                				;this must return from above
+                				;rnz because nextchr = lf
+                	;
+                if submit
+                	;
+ 01C4 78        	mov	a,b		;get nextchr
+ 01C5 D63C      	sui	'<'		;program line?
+ 01C7 322603    	sta	ccp$line	;zero if so
+ 01CA CC9601    	cz	getc		;eat '<' char
+                				;this must return from above
+                				;rnz because nextchr = <
+                endif
+ 01CD 3E0D      	mvi	a,cr		;get back the cr
+ 01CF C9        	ret			;with character in a
+                ;
+                ;	set DMA address in DE
+                ;
+ 01D0 0E1A      setdma:	mvi	c,dmaf
+ 01D2 C30900    	jmp	next
+                ;
+                ;	read next record
+                ;
+ 01D5 0E14      readf:	mvi	c,dreadf	;read next record of input to cbuf
+ 01D7 C5        subdos:	push	b
+ 01D8 112703    	lxi	d,cbuf
+ 01DB CDD001    	call	setdma		;set DMA to our buffer
+ 01DE 2AED02    	lhld	scbadr
+ 01E1 11AA03    	lxi	d,sav$area	;10 byte save area
+ 01E4 C1        	pop	b		;C  = function no.
+ 01E5 E5        	push	h		;save for restore
+ 01E6 D5        	push	d		;save for restore
+ 01E7 CD3202    	call	mov7		;save hash info in save area
+ 01EA 2EE0      	mvi	l,usrcode	;HL = .dcnt in SCB
+ 01EC CD3202    	call	mov7		;save dcnt, searcha & l, user# &
+ 01EF 2B        	dcx	h		;multi-sector I/O count
+ 01F0 3601      	mvi	m,1		;set multi-sector count = 1
+ 01F2 110203    	lxi	d,subusr	;DE = .submit user #
+CP/M RMAC ASSEM 1.1	#011	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 01F5 2EE0      	mvi	l,usrcode	;HL = .BDOS user number
+ 01F7 1A        	ldax	d
+ 01F8 77        	mov	m,a
+ 01F9 13        	inx	d
+ 01FA CD0900    	call	next		;read next record
+ 01FD E1        	pop	h		;HL = .sav$area
+ 01FE D1        	pop	d		;DE = .scb
+ 01FF F5        	push	psw		;save A (non-zero if error)
+ 0200 CD3202    	call	mov7		;restore hash info
+ 0203 1EE0      	mvi	e,usrcode	;DE = .dcnt in scb
+ 0205 CD3202    	call	mov7		;restore dcnt search addr & len
+ 0208 2AA703    	lhld	udma
+ 020B EB        	xchg
+ 020C CDD001    	call	setdma		;restore DMA to program's buffer
+ 020F AF        	xra	a
+ 0210 322403    	sta	cbufp		;reset buffer position to 0
+ 0213 F1        	pop	psw
+ 0214 B7        	ora	a
+ 0215 C9        	ret			;zero flag set, if successful
+                ;
+                ;	reboot from ^C
+                ;
+                rebootx:
+                	;store 0fffeh in clp$errcode in SCB
+ 0216 2AED02    	lhld	scbadr
+ 0219 2EAC      	mvi	l,errflg
+ 021B 36FE      	mvi	m,0feh
+ 021D 23        	inx	h
+ 021E 36FF      	mvi	m,0ffh
+ 0220 C30000    	jmp	wboot
+                ;
+                ;
+                ;	get input redirection mode to A 
+                ;	turn on ^C status mode for break
+                ;	return .conmode+1 in HL
+                ;	preserve registers BC and DE
+                ;
+                getmode:
+ 0223 2AED02    	lhld	scbadr
+ 0226 2ECF      	mvi	l,conmode
+ 0228 7E        	mov	a,m
+ 0229 F601      	ori	1		;turn on ^C status
+ 022B 77        	mov	m,a
+ 022C 23        	inx	h
+ 022D 7E        	mov	a,m
+ 022E E603      	ani	3		;mask off redirection bits
+ 0230 3D        	dcr	a		;255=false, 0=conditional, 1=true,
+ 0231 C9        	ret			;  2=don't redirect input
+                ;
+                ;	move routine
+                ;
+ 0232 0607      mov7:	mvi	b,7
+                	;			HL = source
+                	;			DE = destination
+                	;	 		B = count
+ 0234 7E        move:	mov	a,m
+CP/M RMAC ASSEM 1.1	#012	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 0235 12        	stax	d
+ 0236 23        	inx	h
+ 0237 13        	inx	d
+ 0238 05        	dcr	b
+ 0239 C23402    	jnz	move
+ 023C C9        	ret
+                ;
+                ;	add a to hl
+                ;
+ 023D 85        addhla:	add	l
+ 023E 6F        	mov	l,a
+ 023F D0        	rnc
+ 0240 24        	inr	h
+ 0241 C9        	ret
+                ;
+                ;******************************************************************
+                ;		BDOS CONSOLE INPUT ROUTINES
+                ;******************************************************************
+                
+                ;
+                ;       February 3, 1981
+                ;
+                ;
+                ;	console handlers
+                
+ 0196 =         conin:	equ	coninf
+                ;
+                conech:
+                	;read character with echo
+ 0242 CD9601CD4F	call conin! call echoc! rc 	;echo character?
+                        ;character must be echoed before return
+ 0249 F5CD8302F1	push psw! call conout! pop psw
+ 024E C9        	ret 				;with character in A
+                ;
+                echoc:
+                	;are we in cooked or raw mode?
+ 024F 2100033534	lxi h,cooked! dcr m! inr m! rz	;return if raw
+                	;echo character if graphic
+                	;cr, lf, tab, or backspace
+ 0255 FE0DC8    	cpi cr! rz 		;carriage return?
+ 0258 FE0AC8    	cpi lf! rz 		;line feed?
+ 025B FE09C8    	cpi tab! rz 		;tab?
+ 025E FE08C8    	cpi ctlh! rz 		;backspace?
+ 0261 FE20C9    	cpi ' '! ret 		;carry set if not graphic
+                ;
+                conbrk:	;STATUS - check for character ready
+ 0264 21EA02    	lxi h,statflg
+ 0267 4636FF    	mov b,m! mvi m,0ffh	;set conditional status flag true
+ 026A CD2302    	call getmode		;check input redirection status mode  
+ 026D FE01C8    	cpi 1! rz		;actual status mode => return true
+ 0270 B7C8      	ora a! rz		;false status mode  => return false
+                	;conditional status mode => false unless prev func was status
+ 0272 78C9      	mov a,b! ret		; return false if statflg false
+                				; return true if statflg true
+                ;
+                ;
+CP/M RMAC ASSEM 1.1	#013	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+                ctlout:
+                	;send character in A with possible preceding up-arrow
+ 0274 CD4F02    	call echoc 		;cy if not graphic (or special case)
+ 0277 D28302    	jnc conout 		;skip if graphic, tab, cr, lf, or ctlh
+                		;send preceding up arrow
+ 027A F53E5ECD83		push psw! mvi a,ctl! call conout ;up arrow
+ 0280 F1F640    		pop psw! ori 40h 	;becomes graphic letter
+                		;(drop through to conout)
+                ;
+                ;
+                ;	send character in A to console
+                ;
+                conout:
+ 0283 5F        	mov	e,a
+ 0284 3AFF02    	lda	echo
+ 0287 B7        	ora	a
+ 0288 C8        	rz
+ 0289 0E02      	mvi	c,coutf
+ 028B C30900    	jmp	next
+                ;
+                ;
+                read:	;read to buffer address (max length, current length, buffer)
+ 028E EB        	xchg					;buffer address to HL
+ 028F 4E23E50600	mov c,m! inx h! push h! mvi b,0		;save .(current length)
+                	;B = current buffer length,
+                	;C = maximum buffer length,
+                	;HL= next to fill - 1
+                	readnx:
+                		;read next character, BC, HL active
+ 0294 C5E5      		push b! push h 				;blen, cmax, HL saved
+                		readn0:
+ 0296 CD9601    			call conin 			;next char in A
+ 0299 E1C1      			pop h! pop b 			;reactivate counters
+ 029B FEFFC2A702			cpi ctlz! jnz noteof  		;end of file?
+ 02A0 0504CAE002			dcr b! inr b! jz readen		;skip if buffer empty
+ 02A5 3E0D      			mvi a,cr			;otherwise return
+                		noteof:
+ 02A7 FE0DCAE002			cpi cr!   jz readen		;end of line?
+ 02AC FE0ACAE002			cpi lf!   jz readen		;also end of line
+ 02B1 FE10C2C602			cpi ctlp! jnz notp 		;skip if not ctlp
+                			;list toggle - change parity
+ 02B6 E5C5      			push h!	push b			;save counters
+ 02B8 2AED022ED4			lhld scbadr! mvi l,listcp	;hl =.listcp 
+ 02BD 3E0196    			mvi a,1! sub m			;True-listcp
+ 02C0 77        			mov m,a 			;listcp = not listcp
+ 02C1 C1E1C39402			pop b! pop h! jmp readnx 	;for another char
+                		notp:
+                			;not a ctlp
+                			;place into buffer
+                		rdecho:
+ 02C6 2377      			inx h! mov m,a 		;character filled to mem
+ 02C8 04        			inr b 			;blen = blen + 1
+                		rdech1:
+                			;look for a random control character
+ 02C9 C5E5      			push b! push h 		;active values saved
+ 02CB CD7402    			call ctlout 		;may be up-arrow C
+CP/M RMAC ASSEM 1.1	#014	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 02CE E1C17E    			pop h! pop b! mov a,m 	;recall char
+ 02D1 FE03      			cpi ctlc 		;set flags for reboot test
+ 02D3 78        			mov a,b 		;move length to A
+ 02D4 C2DC02    			jnz notc 		;skip if not a control c
+ 02D7 FE01      			cpi 1 			;control C, must be length 1
+ 02D9 CA1602    			jz rebootx 		;reboot if blen = 1
+                			;length not one, so skip reboot
+                		notc:
+                			;not reboot, are we at end of buffer?
+ 02DC B9DA9402  			cmp c! jc readnx 	;go for another if not
+                		readen:
+                			;end of read operation, store blen
+ 02E0 E170      			pop h! mov m,b 		;M(current len) = B
+ 02E2 F5        			push psw		;may be a ctl-z
+ 02E3 3E0DCD8302			mvi a,cr! call conout	;return carriage
+ 02E8 F1        			pop psw			;restore character
+ 02E9 C9        			ret
+                ;
+ 0242 =         func1:	equ	conech
+                	;return console character with echo
+                ;
+                ;func6:	see intercept routine at front of module
+                ;
+ 028E =         func10:	equ	read
+                	;read a buffered console line
+                ;
+ 0264 =         func11: equ	conbrk
+                	;check console status
+                ;
+                ;
+                
+                ;******************************************************************
+                ;		DATA AREA
+                ;******************************************************************
+                
+ 02EA 00        statflg:	db	0	;non-zero if prev funct was status
+                	;
+                	;	
+                
+                ;******************************************************************
+                ;	Following variables and entry points are used by GET.COM
+                ;	Their order and contents must not be changed without also
+                ;	changing GET.COM.
+                ;******************************************************************
+                	;
+                	if bios$functions
+                	;
+                exit$table:			;addresses to go to on exit
+ 02EB 0900      	dw	next		;BDOS
+                	endif
+                	;
+                movstart:
+                init$table:			;addresses used by GET.COM for 
+ 02ED 0E00      scbadr:	dw	kill		;address of System Control Block
+                	;
+                	if bios$functions	;GET.RSX initialization
+CP/M RMAC ASSEM 1.1	#015	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+                	;
+ 02EF 3800      biosta	dw	bios$constat	;set to real BIOS routine
+ 02F1 3E00      biosin	dw	bios$conin	;set to real BIOS routine
+                	;
+                				;restore only if changed when removed.
+                restore$mode
+ 02F3 00        	db	0		;if non-zero change LXI @jmpadr to JMP
+                				;when removed.
+                restore$bios:
+                	;hl = real constat routine
+                	;de = real conin routine
+ 02F4 220000    	shld	0		;address of const jmp initialized by COM
+ 02F7 EB        	xchg
+ 02F8 220000    	shld	0		;address of conin jmp initialized by COM
+ 02FB C9        	ret
+                	endif
+                	;
+                real$bdos:
+ 02FC C30500    	jmp	bdos		;address filled in by COM
+                	;
+                	;
+ 02FF 01        echo:	db	1
+ 0300 00        cooked:	db	0
+                	;
+                program:
+ 0301 00        	db	0		;true if program input only	
+ 0302 00        subusr:	db	0		;user number for redirection file
+ 0303 01        subfcb:	db	1		;a:
+ 0304 535953494E	db	'SYSIN   '
+ 030C 535542    	db	'SUB'
+ 030F 0000      	db	0,0
+ 0311 00        submod:	db	0
+ 0312           subrc:	ds	1
+ 0313           	ds	16		;map
+ 0323           subcr:	ds	1
+                	;
+                movend:
+                ;*******************************************************************
+                
+ 0324 80        cbufp	db	128		;current character position in cbuf
+ 0325 0D        nextchr	db	cr		;next character (1 char lookahead)
+                
+                	if submit
+                ccp$line:
+ 0326 00        	db	false		;nonzero if line is for CCP
+                	endif
+                
+                cbuf:				;128 byte record buffer
+                
+ 0327 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+ 0337 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+ 0347 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+ 0357 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+                
+ 0367 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+ 0377 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+CP/M RMAC ASSEM 1.1	#016	GET.RSX 3.0 - CP/M 3.0 INPUT REDIRECTION - AUGUST 1982
+
+ 0387 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+ 0397 0303030303	db	3,3,3,3, 3,3,3,3, 3,3,3,3, 3,3,3,3
+                
+ 03A7 8000      udma:	dw	buf		;user dma address
+                get$active:
+ 03A9 81        	db	gkillf
+                	;
+                sav$area:			;14 byte save area (searchn)
+ 03AA 6868686868	db	68h,68h,68h,68h,68h, 68h,68h,68h,68h,68h
+ 03B4 68686868  	db	68h,68h,68h,68h
+ 03B8 00        excess:	db	0
+                old$stack:
+ 03B9 0000      	dw	0
+                	if	submit
+                garbage:
+                ;	db	cr,lf
+ 03BB 5741524E49	db	'WARNING: PROGRAM INPUT IGNORED',cr,lf,'$'
+                	else
+                ccpcnt:	db	1
+                	endif
+                patch$area:
+ 03DC           	ds	30h
+ 040C 20        	db	' '
+                	@BDATE
+ 040D+3130313139	DB	'101198'
+ 0413 20        	db	' '
+                	@SCOPY
+ 0414+2843292039	DB	'(C) 98 CALDERA'
+ 0422 6767676767	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h
+ 042C 6767676767	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h
+ 0436 6767676767	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h
+                	;
+                stack:				;15 level stack
+ 0440           	end
+

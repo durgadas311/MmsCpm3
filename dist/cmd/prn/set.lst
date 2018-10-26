@@ -1,0 +1,2352 @@
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SET
+OBJECT MODULE PLACED IN SET.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 SET.PLM DEBUG OPTIMIZE PAGEWIDTH(132)
+
+
+
+              $ TITLE('CPM 3.0 --- SET 1.3')
+
+              /* MULTI FILE INPUT VERSION   11/11/82 */
+              /* took out call passwd in readlabel */
+              /* added test for NONBANK in password, protect and default  11/19/82 */
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                     * * *  SET  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+   1          set:
+              do;
+
+   2   1      declare
+                  mpmproduct literally '01h', /* requires mp/m */
+                  cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+   3   1      declare
+                  true        literally '1',
+                  false       literally '0',
+                  dcl         literally 'declare',
+                  lit         literally 'literally',
+                  proc        literally 'procedure',
+                  addr        literally 'address',
+                  tab         literally '9',
+                  cr          literally '13',
+                  lf          literally '10',
+                  ctrlc       literally '3h',
+                  ctrlx       literally '18h',
+                  ctrlh       literally '8h';
+
+   4   1      declare
+                      opt$access      literally '0',
+                      opt$archive     literally '1',
+                      opt$create      literally '2',
+                      opt$default     literally '3',
+                      opt$dir         literally '4',
+                      opt$f1          literally '5',
+                      opt$f2          literally '6',
+                      opt$f3          literally '7',
+                      opt$f4          literally '8',
+                      opt$name        literally '9',
+                      opt$pass        literally '10',
+                      opt$prot        literally '11',
+                      opt$ro          literally '12',
+                      opt$rw          literally '13',
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   2
+
+
+                      opt$sys         literally '14',
+                      opt$update      literally '15',
+                      opt$page        literally '16',
+                      opt$nopage      literally '17',
+
+                      PERIOD          literally '02eh',
+                      PAGE            byte initial(false);
+
+   5   1      declare plm label public;
+
+   6   1      declare copyright (*) byte data (
+                ' Copyright (c) 1982 Digital Research ');
+
+              /*
+                          Digital Research
+                          Box 579
+                          Pacific Grove, Ca
+                          93950
+              */
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   3
+
+
+              $ eject
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                 * * *  MESSAGES  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+
+   7   1              declare
+                          not$found  (*) byte data (' File not found',0),
+                          no$space   (*) byte data (' or no directory space',0),
+                          invalid    (*) byte data ('Invalid file name.',0),
+                          dirlabel   (*) byte data ('Directory Label ',0),
+                          option$set (*) byte data (' attribute set ',0),
+                          read$only  (*) byte data ('Read Only',0),
+                          ro         (*) byte data (' (RO)',0),
+                          read$write (*) byte data ('Read Write (RW)',0),
+                          comma      (*) byte data (', ',0),
+                          set$to     (*) byte data ('set to ',0),
+                          error$msg  (*) byte data ('ERROR: ',0),
+                          readmode   (*) byte data ('READ',0),
+                          writemode  (*) byte data ('WRITE',0),
+                          deletemode (*) byte data ('DELETE',0),
+                          nopasswd   (*) byte data ('NONE',0),
+                          on         (*) byte data ('    on   ',0),
+                          off        (*) byte data ('    off  ',0),
+                          label$name (*) byte data ('LABEL');
+
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                 * * *  CP/M INTERFACE * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+
+
+   8   1      declare
+                  maxb      address external,    /* addr field of jmp BDOS */
+                  fcb (33)  byte external,       /* default file control block */
+                  buff(128) byte external,       /* default buffer */
+                  buffa     literally '.buff',   /* default buffer */
+                  fcba      literally '.fcb',    /* default file control block */
+                  user$code byte;                /* current user code */
+
+
+              /*              Routines used in SET for CPM 3.0                */
+
+                  /* reset drive mask */
+   9   1          declare reset$mask (16) address data (
+                    0000000000000001b,
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   4
+
+
+                    0000000000000010b,
+                    0000000000000100b,
+                    0000000000001000b,
+                    0000000000010000b,
+                    0000000000100000b,
+                    0000000001000000b,
+                    0000000010000000b,
+                    0000000100000000b,
+                    0000001000000000b,
+                    0000010000000000b,
+                    0000100000000000b,
+                    0001000000000000b,
+                    0010000000000000b,
+                    0100000000000000b,
+                    1000000000000000b );
+
+
+  10   1      boot: procedure external;
+                  /* reboot */
+  11   2          end boot;
+
+  12   1      mon1: procedure(f,a) external;
+  13   2          declare f byte, a address;
+  14   2          end mon1;
+
+  15   1      mon2: procedure(f,a) byte external;
+  16   2          declare f byte, a address;
+  17   2          end mon2;
+
+  18   1      declare mon3 literally 'mon2a';
+
+  19   1      mon3: procedure(f,a) address external;
+  20   2          declare f byte, a address;
+  21   2          end mon3;
+
+                  /********** SYSTEM FUNCTION CALLS *********************/
+
+  22   1      printchar: procedure(char);
+  23   2          declare char byte;
+  24   2          call mon1(2,char);
+  25   2          end printchar;
+
+  26   1      printb: procedure;                      /* print blank character */
+
+  27   2          call printchar(' ');
+
+  28   2      end printb;
+
+  29   1      printx: procedure(a);
+  30   2          declare a address;
+  31   2          declare s based a byte;
+  32   2              do while s <> 0;
+  33   3              call printchar(s);
+  34   3              a = a + 1;
+  35   3              end;
+  36   2          end printx;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   5
+
+
+  37   1      check$con$stat: procedure byte;
+
+  38   2          return mon2(11,0);                  /* console ready */
+
+  39   2      end check$con$stat;
+
+
+  40   1      crlf2: procedure;
+
+  41   2              call printchar(cr);
+  42   2              call printchar(lf);
+
+  43   2      end crlf2;
+
+
+  44   1      terminate: procedure;
+  45   2          call crlf2;
+  46   2          call mon1 (0,0);
+  47   2      end terminate;
+
+
+  48   1      crlf: procedure;
+  49   2           declare charin     byte;
+
+  50   2           if PAGE then do;
+  52   3              line$out = line$out + 1;                /* output > page size ? */
+  53   3              if line$out + 2 > line$page then do;
+  55   4                      call crlf2;
+  56   4                      call crlf2;
+  57   4                      call printx(.('Press RETURN to continue.',0));
+
+  58   4                      do while not check$con$stat;
+  59   5                      end;
+
+  60   4                      charin = mon2(1,0);                /* read character */
+  61   4                      if charin = ctrlc then call terminate;
+  63   4                      line$out = 1;
+  64   4                      call crlf2;
+  65   4             end;
+  66   3           end;
+
+  67   2              call crlf2;
+
+  68   2      end crlf;
+
+  69   1      print: procedure(a);    /* print the string starting at address a until the
+                                         next 0 is encountered */
+  70   2          declare a address;
+
+  71   2          call crlf;
+  72   2          call printx(a);
+
+  73   2      end print;
+
+  74   1      get$version: procedure addr;            /* returns current cp/m version # */
+
+  75   2          return mon3(12,0);
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   6
+
+
+
+  76   2      end get$version;
+
+
+  77   1      conin: procedure byte;
+
+  78   2          return mon2(6,0fdh);
+
+  79   2      end conin;
+
+  80   1      select: procedure(d);
+  81   2          declare d byte;
+  82   2          call mon1(14,d);
+  83   2          end select;
+
+  84   1      search$first: procedure(fcb) byte;
+  85   2          declare fcb address;
+  86   2          return mon2(17,fcb);
+  87   2          end search$first;
+
+  88   1      search$next: procedure byte;
+  89   2          return mon2(18,0);
+  90   2          end search$next;
+
+  91   1      cselect: procedure byte;
+                  /* return current disk number */
+  92   2          return mon2(25,0);
+  93   2          end cselect;
+
+  94   1      setdma: procedure(dma);
+  95   2          declare dma address;
+  96   2          call mon1(26,dma);
+  97   2          end setdma;
+
+  98   1      writeprot: procedure byte;              /* write protect the current disk */
+
+  99   2          return mon2(28,0);
+
+ 100   2      end writeprot;
+
+ 101   1      getuser: procedure byte;                /* return current user number */
+
+ 102   2          return mon2(32,0ffh);
+
+ 103   2      end getuser;
+
+ 104   1      return$errors: procedure(mode);         /* 0ff => return BDOS errors */
+ 105   2          declare mode byte;
+
+ 106   2            call mon1 (45,mode);
+
+ 107   2      end return$errors;
+
+ 108   1      setind: procedure(fcb) address;             /* SFA for current fcb */
+ 109   2          dcl fcb addr;
+
+ 110   2          call setdma(.passwd);
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   7
+
+
+ 111   2          return mon3(30,fcb);
+
+ 112   2      end setind;
+
+                  /********** DISK PARAMETER BLOCK **********************/
+
+ 113   1      declare
+                      dpba            address,
+                      dpb             based dpba structure(
+                       scptrk         address,
+                       blkshf         byte,
+                       blkmsk         byte,
+                       extmsk         byte,
+                       maxall         address,
+                       dirmax         address,
+                       dirblk         address,
+                       chksiz         address,
+                       offset         address,
+                       physhf         byte,
+                       phymsk         byte);
+
+
+ 114   1      set$dpb: procedure;                     /* set disk parameter block values */
+
+ 115   2          dpba = mon3(31,0);                  /* base of dpb */
+
+ 116   2      end set$dpb;
+
+                  /******************************************************/
+
+ 117   1      wrlbl: procedure(fcb) address;
+ 118   2          declare fcb address;
+
+ 119   2          call setdma(.passwd);       /* set dma=password */
+ 120   2          return mon3(100,fcb);
+
+ 121   2      end wrlbl;
+
+ 122   1      getlbl: procedure(d) byte;
+ 123   2          declare d byte;
+
+ 124   2          return mon2(101,d);
+
+ 125   2      end getlbl;
+
+ 126   1      readxfcb: procedure(fcb) address;
+ 127   2          declare fcb address;
+
+ 128   2          call setdma(.passwd);       /* set dma=password */
+ 129   2          return mon3(102,fcb);
+
+ 130   2      end readxfcb;
+
+ 131   1      wrxfcb: procedure(fcb) address;
+ 132   2          declare fcb address;
+
+ 133   2          call setdma(.passwd);
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   8
+
+
+ 134   2          return mon3(103,fcb);
+
+ 135   2      end wrxfcb;
+
+
+ 136   1      reset$drv: procedure(drv) byte;
+ 137   2          dcl drv byte;
+
+ 138   2          return mon2(37,reset$mask(drv));
+ 139   2          end reset$drv;
+
+ 140   1      parse: procedure(pfcb) address external;
+ 141   2              declare pfcb address;
+
+ 142   2      end parse;
+
+ 143   1      delete: procedure(fcb) byte;
+ 144   2              declare fcb     address;
+
+ 145   2              return mon2(19,fcb);
+
+ 146   2      end delete;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE   9
+
+
+              $ eject
+
+
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                               * * *  GLOBAL DATA  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+ 147   1              declare
+                          fnam     literally '11',
+                          ftyp     literally '9',
+                          rofile   literally '9',     /* read/only file */
+                          sysfile  literally '10',    /* system file */
+                          archiv   literally '11',    /* archived  file */
+                          attrb1   literally  '1',    /* attribute F1'  */
+                          attrb2   literally  '2',    /* attribute F2'  */
+                          attrb3   literally  '3',    /* attribute F3'  */
+                          attrb4   literally  '4';    /* attribute F4'  */
+                  
+ 148   1              declare
+                              pwmask$on       literally '80h',
+                              pwmask$off      literally '7fh',
+                              acmask$on       literally '40h',
+                              acmask$off      literally '0bfh',
+                              upmask$on       literally '20h',
+                              upmask$off      literally '0dfh',
+                              crmask$on       literally '10h',
+                              crmask$off      literally '0efh',
+                              dlmask$on       literally '1h',
+                              dlmask$off      literally '0feh';
+
+ 149   1              declare
+                          fcbp     address,
+                          fcbv     based fcbp (32) byte,
+                          fext     literally 'fcbv(12)';
+
+ 150   1              declare
+                          xfcb     (32) byte,
+                          xfcbmode byte at (.xfcb(12));  /* password mode */
+
+ 151   1              declare                          /* command buffer */
+                          cmd (27) byte initial(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),
+                          passwd (17) byte;           /* password buffer */
+
+ 152   1              declare
+                              sfacmd   byte   initial(false), /* file attributes */
+                              fileref  byte   initial(false), /* file reference  */
+                              lblcmd   byte   initial(false), /* label attribute */
+                              xfcbcmd  byte   initial(false), /* xfcb  attribute */
+                              wild     byte   initial(false), /* file = a wildcard */
+                              optdel   byte   initial(false), /* delimiter = option */
+                              multi    byte   initial(false),
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  10
+
+
+                              newpass  byte   initial(false),
+                              passmsg  byte   initial(false),
+                              NONBANK  byte   initial(false),
+                              passmode byte,
+                              password byte   initial(false); /* file has password */
+
+ 153   1              declare                         /* parsing */
+                          more  byte initial(true),   /* more to parse */
+                          ibp        addr;            /* input buffer ptr */
+
+ 154   1              declare            
+                          (sav$dcnt, sav$searcha)     addr,
+                          sav$searchl  byte,
+                          dirbuf (128) byte;          /* used for searches */
+
+ 155   1              declare
+                          cdisk     byte,             /* current disk */
+                          ver       addr;             /* version checking */
+
+ 156   1              declare
+                          error$code addr;            /* for bdos returned
+                                                         errors */
+ 157   1              declare
+                          parse$fn structure (
+                              buff$adr  addr,
+                              fcb$adr   addr),
+                          last$buff$adr addr;         /* used for parsing */
+
+ 158   1              declare
+                              err$nofile(*)   byte data('Option requires a file reference',0),
+
+                              err$driveonly(*) byte data('Option only for drives.',0),
+                              errWASSPASS(*)  byte data('Assign passwords to input files.',0),
+
+                              errASSPASS(*)   byte data('Assign a password to this file.',0),
+                              errFORMAT(*)    byte data(
+                              'Directory needs to be re-formatted for time/date stamps.',cr,
+                              lf,'       Please see INITDIR.',0),
+                              errNOPROT(*)    byte data('Protection not enabled for disk.',0),
+
+                              errUNREC(*)     byte data('Unrecognized option.',0),
+                              errNOMOD(*)     byte data
+                                              ('There are no modifiers for this option.',0),
+                              errUNRECM(*)    byte data
+                                              ('Modifier missing or unrecognizable.',0),
+                              errVALM(*)      byte data
+                                              ('Not a valid modifier for this option.',0),
+                              errOPTMOD(*)    byte data('This option needs a modifier.',0),
+                              errBIGDEF(*)    byte data
+                              ('Only first 8 characters of default password used.',0),
+                              errBIGNAME(*)   byte data
+                              ('Only first 11 characters of label name used.',0),
+                              errBIGPASS(*)   byte data
+                              ('Only first 8 characters of password used.',0),
+                              errCRAC(*)      byte data
+                                      ('Cannot have both create and access time stamps.',0),
+                              errSYSDIR(*)    byte data('Cannot set both sys and dir.',0),
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  11
+
+
+                              errRORW(*)      byte data('Cannot set RO and RW.',0),
+                              errNOPT(*)      byte data('No options specified.',0),
+                              errPAGE(*)      byte data('Page and nopage option selected.',
+                                              '   Nopage in effect.',0),
+                              errGLOBAL(*)    byte data
+                                              ('Cannot set local options for file.',0),
+                              errDrvProt(*)   byte data
+                              ('Protection modifier is only ON/OFF for drives.',0),
+                              errNBANK(*)     byte data
+                              ('Password protection is not supported in NON-BANKED SYS.',0),
+                              errVERS(*)      byte data('Requires CP/M 3 or higher.',0);
+
+              $include (sopt.dcl)
+          =
+ 159   1  =           declare 
+          =                   opt$mod(19) structure(modifier(8) byte)
+          =                      data(1,1,1,0,0,0,0,0,                /* 0 access */
+          =                           1,1,1,0,0,0,0,0,                /* 1 archive */
+          =                           1,1,1,0,0,0,0,0,                /* 2 create */
+          =                           1,0,0,0,0,0,0,1,                /* 3 default */
+          =                           0,0,0,0,0,0,0,0,                /* 4 directory */
+          =                           1,1,1,0,0,0,0,0,                /* 5 f1 */
+          =                           1,1,1,0,0,0,0,0,
+          =                           1,1,1,0,0,0,0,0,
+          =                           1,1,1,0,0,0,0,0,
+          =                           1,0,0,0,0,0,0,1,                /* 9 name */
+          =                           1,0,0,0,0,0,0,1,                /* 10 password */
+          =                           1,1,1,1,1,1,1,0,                /* 11 protect */
+          =                           0,0,0,0,0,0,0,0,                /* 12 ro        */
+          =                           0,0,0,0,0,0,0,0,                /* 13 rw        */
+          =                           0,0,0,0,0,0,0,0,                /* 14 sys       */
+          =                           1,1,1,0,0,0,0,0,                /* 15 update */
+          =                           0,0,0,0,0,0,0,0,                /* 16 page */
+          =                           0,0,0,0,0,0,0,0),               /* 17 nopage */
+          =
+          =                   options(*) byte
+          =                           data('ACCESS0ARCHIVE0CREATE0DEFAULT0DIR0F10F20F30F40',
+          =                                'NAME0PASSWORD0PROTECT0RO0RW0SYS',
+          =                                '0UPDATE0PAGE0NOPAGE',0ffh),
+          =                   off$opt(20) byte data(0,7,15,22,30,34,37,40,43,46,51,60,68,71,
+          =                                         74,78,85,90,96),
+          =                   mods(*) byte
+          =                           data('OFF0ON0READ0WRITE0DELETE0NONE',0ffh),
+          =                   off$mods(7) byte data(0,4,7,12,18,25,29),
+          =
+          =                   end$list        byte data (0ffh),
+          =                   end$of$string   byte data(0),
+          =
+          =                   delimiters(*) byte data (0,'[]=, :;<>%\|"()/#!@&+-*?',0,0ffh),
+          =                   SPACE         byte data (5),    /* index in delim to space */
+          =                   RBRACKET      byte data(2),     /* ] in delim */
+          =                   ENDFF         byte data(25),
+          =                   EQUAL         byte data (3),
+          =                   LBRACKET      byte data (1),
+          =
+          =                   option$map(19)  byte,
+          =                   mods$map(19)    byte;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  12
+
+
+          =
+ 160   1  =           declare
+          =                   sfamsg          byte initial(false),
+          =                   drvmsg          byte initial(false),
+          =                   j               byte initial(0),
+          =                   string$ptr      address,
+          =                   defpass         address,
+          =                   labname         address,
+          =                   passname        address,
+          =                   lendef          byte,
+          =                   lenpass         byte,
+          =                   lenlab          byte,
+          =                   buf$ptr         address,
+          =                   index           byte,
+          =                   endbuf          byte,
+          =                   mindex          byte,
+          =                   delimiter       byte;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  13
+
+
+          =   $ eject
+          =
+
+ 161   1              declare 
+                              scbpd   structure(
+                               offs           byte,
+                               set            byte,
+                               value          address);
+
+ 162   1              declare
+                              line$page       byte,
+                              line$out        byte,
+                              savefcb(16)     byte,
+                              save$dcnt       address,
+                              save$searcha    address,
+                              save$searchl    address,
+                              save$hash1      address,
+                              save$hash2      address,
+                              save$hash3      address,
+
+                              COMbase         literally       '05dh',
+                              page$off        literally       '01ch',
+                              searcha$off     literally       '47h',
+                              searchl$off     literally       '49h',
+                              dcnt$off        literally       '45h',
+                              hash1$off       literally       '00h',
+                              hash2$off       literally       '02h',
+                              hash3$off       literally       '04h';
+
+                                              /* get the scb word */
+ 163   1      getscbword: procedure(off) address;
+ 164   2              declare off     byte;
+
+ 165   2              scbpd.offs = off;
+ 166   2              scbpd.set = 0;
+ 167   2              return mon3(49,.scbpd);
+
+ 168   2      end getscbword;
+
+ 169   1      setscb: procedure(off,value);
+ 170   2              declare off     byte,
+                              value   address;
+
+ 171   2              scbpd.offs = off;
+ 172   2              scbpd.set = 0feh;
+ 173   2              scbpd.value = value;
+ 174   2              call mon1(49,.scbpd);
+
+ 175   2      end setscb;
+
+ 176   1      getpage: procedure byte;
+
+ 177   2              scbpd.offs = page$off;
+ 178   2              scbpd.set = 0;
+ 179   2              return mon2(49,.scbpd);
+
+ 180   2      end getpage;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  14
+
+
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  15
+
+
+              $eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                               * * *  BASIC ROUTINES  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+                                       /* invalid command error */
+ 181   1      perror: proc;
+
+ 182   2          call print(.error$msg);
+ 183   2          if ibp = 0 then call printx(parse$fn.buff$adr);
+ 185   2          else call printx(last$buff$adr);
+
+ 186   2          call printx(.(' ?',0));
+ 187   2          call print(.invalid);
+ 188   2          call terminate;
+ 189   2      end perror;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                      /* parse the next lexical item in the command line 
+                         parse$fn must filled in with input parameters */
+ 190   1      parser: procedure address;
+ 191   2          declare p address;
+ 192   2          declare c based p byte;
+
+ 193   2              p = parse(.parse$fn);
+ 194   2              if p = 0FFFFh then call perror;
+ 196   2              else if p <> 0 then do;
+ 198   3                      if c = '[' then optdel = true;
+ 200   3                      else if c = ']' then optdel = false;
+                              p = p + 1;
+ 203   3              end;
+ 204   2              else optdel = false;
+
+ 205   2              return p;
+
+ 206   2      end parser;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 207   1      fill:   proc(s,f,c);            /* fill string @ s for c bytes with f */
+ 208   2          dcl s addr,
+                      (f,c) byte,
+                      a based s byte;
+
+ 209   2              do while (c:=c-1)<>255;
+ 210   3              a = f;
+ 211   3              s = s+1;
+ 212   3              end;
+ 213   2          end fill;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  16
+
+
+
+
+ 214   1      copy:   proc(s,d,c);            /* copy c bytes from s to d */
+ 215   2          dcl (s,d) addr, c byte;
+ 216   2          dcl a based s byte, b based d byte;
+
+ 217   2              do while (c:=c-1)<>255;
+ 218   3                 b=a; s=s+1; d=d+1;
+ 221   3              end;
+ 222   2      end copy;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 223   1      ucase:   proc byte;             /* upper case character from console */
+ 224   2          dcl c byte;
+
+ 225   2          if (c:=conin) >= 'a' then
+ 226   2             if c < '{' then
+ 227   2                return(c-20h);
+ 228   2          return c;
+ 229   2      end ucase;
+
+ 230   1      errprint: procedure(msg);
+ 231   2              declare msg     address;
+
+ 232   2              call print(.errormsg);
+ 233   2              call printx(msg);
+ 234   2              call crlf;
+
+ 235   2      end errprint;
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* get password and place in passwd */
+ 236   1      getpasswd:   proc;
+ 237   2          dcl (i,c) byte;
+
+ 238   2              call print(.('Password ? ',0));
+
+ 239   2      retry:
+                      call fill(.passwd,' ',8);
+ 240   2              do i = 0 to 7;
+
+ 241   3      nxtchr:
+                              if (c:=ucase) >= ' ' then passwd(i)=c;
+                              else
+ 243   3                      if c = cr then go to exit;
+
+                              if c = ctrlx then goto retry;
+ 247   3                      if c = ctrlh then do;
+
+ 249   4                              if i<1 then goto retry;
+ 251   4                              else do;
+ 252   5                                      passwd(i:=i-1)=' ';
+ 253   5                                      goto nxtchr;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  17
+
+
+ 254   5                              end;
+ 255   4                      end;
+
+ 256   3                      if c = ctrlc then call terminate;       /* end of program */
+ 258   3              end;
+
+ 259   2      exit:
+                      c = check$con$stat;             /* clear raw I/O mode */
+
+ 260   2      end getpasswd;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                                      /* print drive name */
+ 261   1      printdrv: procedure;
+
+ 262   2              call printchar(cdisk+'A');
+ 263   2              call printchar(':');
+
+ 264   2      end printdrv;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                                       /* print file name */
+ 265   1      printfn: procedure;
+ 266   2              declare k byte;
+
+ 267   2              call printdrv;
+
+ 268   2              do k = 1 to fnam;
+ 269   3                      if k = ftyp then call printchar('.');
+ 271   3                      call printchar(fcbv(k) and 7fh);
+ 272   3              end;
+
+ 273   2      end printfn;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 274   1      bdos$error:   procedure;                /* error message routine */
+ 275   2         declare
+                    code byte;
+
+ 276   2              call print(.error$msg);
+ 277   2              if (code:=high(error$code)) < 3 then do;
+ 279   3                      call print(.error$msg);
+ 280   3                      call printdrv;
+ 281   3                      call printb;
+
+ 282   3                      if code = 1 then call printx(.('Disk I/O',0));
+ 284   3                      if code=2 then do;
+ 286   4                          call printx(.('Drive ',0));
+ 287   4                          call printx(.read$only);
+ 288   4                      end;
+ 289   3                      call terminate;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  18
+
+
+ 290   3          end;
+
+ 291   2              if code = 3 then call printx(.read$only);
+ 293   2              if code = 4 then call printx(.('Invalid Drive.',0));
+ 295   2              if code = 7 then call printx(.('Wrong Password',0));
+ 297   2              if code = 9 then call printx(.('? in filespec.',0));
+
+ 299   2      end bdos$error;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 300   1      set$search: procedure(dcnt);
+ 301   2              declare dcnt    byte;
+
+ 302   2              call setdma(.dirbuf);
+ 303   2              dcnt = search$first(.('?'));
+
+ 304   2      end set$search;
+
+
+                                               /* get address of FCB in dirbuf */
+ 305   1      set$up$file: procedure(dir$index);
+ 306   2          dcl dir$index byte;
+
+ 307   2          if dir$index <> 0ffh then do;
+ 309   3              fcbp = shl(dir$index,5) + .dirbuf;
+ 310   3              fcbv(0) = fcb(0);                 /* set drive byte */
+ 311   3          end;
+
+ 312   2      end set$up$file;
+
+ 313   1      getnext: procedure byte;
+                                                      /* get the next fcb that matches fcb */
+
+ 314   2              declare (dcnt,i)        byte;
+
+ 315   2              xfcbcmd,sfacmd = false;
+
+
+ 316   2              call setdma(.dirbuf);
+
+                                                      /* restore saved search parameters */
+ 317   2              call setscb(dcnt$off,save$dcnt);
+ 318   2              call setscb(searcha$off,save$searcha);
+ 319   2              call setscb(searchl$off,save$searchl);
+ 320   2              call setscb(hash1$off,save$hash1);
+ 321   2              call setscb(hash2$off,save$hash2);
+ 322   2              call setscb(hash3$off,save$hash3);
+ 323   2              call copy(.savefcb,save$searcha,16);
+
+ 324   2              if (dcnt := search$next) = 0ffh then return(false);
+ 326   2              call set$up$file(dcnt);
+ 327   2              return(true);
+
+ 328   2      end getnext;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  19
+
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                               /* print boolean option value */
+ 329   1      pbool: procedure(value);
+ 330   2              declare
+                         value byte;
+
+ 331   2              call printx(.option$set);
+ 332   2              if value then call printx(.('ON',0));
+ 334   2              else call printx(.('OFF',0));
+
+ 335   2      end pbool;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+              /*******************************************************
+
+                            F I L E   A T T R I B U T E S
+
+              ********************************************************/
+
+
+
+ 336   1      printatt: procedure;            /* print attribute set */
+
+ 337   2        attribute: procedure(i) byte; /* test if attribute fcbv(i) is on */
+ 338   3             declare i byte;
+
+ 339   3             if rol(fcbv(i),1) then return true;
+ 341   3             return false;
+ 342   3        end attribute;
+
+                                              /* display attributes: sys,ro,a,f1-f4 */
+
+ 343   2              call printx(.set$to);
+ 344   2              if attribute(sysfile) then call printx(.('system (SYS)',0));
+ 346   2              else call printx(.('directory (DIR)',0));
+
+ 347   2              call printx(.(', ',0));
+ 348   2              if attribute(rofile) then do;
+ 350   3                      call printx(.read$only);
+ 351   3                      call printx(.ro);
+ 352   3              end;
+ 353   2              else call printx(.read$write);
+
+ 354   2              call printchar(tab);
+ 355   2              if attribute(archiv) then call printchar('A');
+ 357   2              if attribute( attrb1 ) then call printchar('1');
+ 359   2              if attribute( attrb2 ) then call printchar('2');
+ 361   2              if attribute( attrb3 ) then call printchar('3');
+ 363   2              if attribute( attrb4 ) then call printchar('4');
+
+ 365   2      end print$att;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  20
+
+
+
+
+                                                      /* read current file attributes */
+ 366   1      rd$attributes: procedure;
+
+ 367   2          if not sfacmd then                  /* have read the FCB yet? */
+ 368   2              if not wild then do;
+ 370   3                  call setdma(.dirbuf);
+ 371   3                  call set$up$file(search$first(.fcb));
+ 372   3              end;
+
+ 373   2      end rd$attributes;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+              /*******************************************************
+
+                           D R I V E   A T T R I B U T E S
+
+              ********************************************************/
+
+
+ 374   1      setdrvstatus: procedure(func);          /* set drive attributes */
+
+ 375   2              declare
+                              code    byte,
+                              func    byte;
+
+                                                                      /* set the drive */
+ 376   2          if func = opt$ro then code = writeprot;             /* read only */ 
+                  else
+ 378   2              code = reset$drv(cdisk);                /* read/write */
+
+                                                              /* display */
+ 379   2          if code <> 0ffh then do;
+ 381   3              call print(.('Drive ',0));
+ 382   3              call printdrv;
+ 383   3              call printb;
+ 384   3              call printx(.set$to);
+ 385   3              if func = opt$ro then do;
+ 387   4                  call printx(.read$only);
+ 388   4                  call printx(.ro);
+ 389   4              end;
+                      else
+ 390   3                  call printx(.read$write);
+ 391   3          end;
+
+ 392   2      end setdrvstatus;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /*******************************************************
+
+                           L A B E L   A T T R I B U T E S
+
+              ********************************************************/
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  21
+
+
+
+
+                                               /* read the directory label before
+                                                  writing the label to preserve the
+                                                  name, type, and stamps */
+ 393   1      readlabel: procedure;
+ 394   2          dcl (mode, dcnt) byte;
+                      
+              /*--------------------------------------------------------------*/
+ 395   2      readlbl: proc;
+ 396   3          dcl d byte data('?');
+                  
+ 397   3          call setdma(.dirbuf);
+ 398   3          dcnt = search$first(.d);            /* position to first dcnt in dir */
+ 399   3          do while dcnt <> 0ffh;              /* read entire directory */
+                                                      /* is the user# a label = 20h */
+ 400   4              if dirbuf(ror(dcnt,3) and 110$0000b)=20H then return;
+ 402   4              dcnt = search$next;
+ 403   4          end;
+
+ 404   3      end readlbl;
+
+              /*---------------------------------------------------------------*/
+
+ 405   2          if lblcmd then return;  
+
+ 407   2          mode = getlbl(cdisk);               /* get the dir label data byte */
+ 408   2          password = false;
+ 409   2          if mode > 0 then do;                /* if ok then ...*/
+ 411   3              call readlbl;                   /* get label */
+ 412   3              fcbp = shl(dcnt,5) + .dirbuf;
+ 413   3              fext = fext and 11110000b;      /* turn off set passwd */
+ 414   3              if fcbv(16) <> ' ' then
+ 415   3                  if fcbv(16) <> 0 then
+ 416   3                      password = true;
+ 417   3          end;
+
+ 418   2          else do;                            /* no dir label */
+ 419   3              fcbp = .fcb;
+ 420   3              call copy(.label$name,.fcb(1),length(label$name));
+ 421   3          end;
+
+              /*    if password then call getpasswd;*/   /* does the user have the password*/
+ 422   2          lblcmd = true;
+
+ 423   2      end readlabel;
+
+
+              /**************************************************************************/
+
+
+ 424   1      put$file: procedure;                    /* display the file or xfcb */
+
+ 425   2          call crlf;
+ 426   2          call printfn;
+ 427   2          call printb;
+ 428   2          call printb;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  22
+
+
+
+ 429   2      end put$file;
+
+
+              /*******************************************************
+
+                           S F C B     A T T R I B U T E S
+
+              ********************************************************/
+
+
+
+ 430   1      set$up$xfcb: procedure;                 /* read xfcb into xfcb buffer */
+
+ 431   2              if not xfcbcmd then do;
+ 433   3                      xfcbcmd = true;
+ 434   3                      call copy(.fcbv,.xfcb,12);
+ 435   3                      password,passmode = 0;
+
+ 436   3                      if low(errorcode := readxfcb(.xfcb)) = 0ffh then do;
+ 438   4                              if high(errorcode) <> 0 then call bdos$error;
+ 440   4                              else do;
+ 441   5                                      call errprint(.not$found);
+ 442   5                                      call put$file;
+ 443   5                              end;
+ 444   4                              return;
+ 445   4                      end;
+
+ 446   3                      passmode = xfcb(12);
+ 447   3                      if passmode <> 0 then password = true;  /* must have a pass if
+                                                                         mode ~= NONE */
+ 449   3              end;
+
+ 450   2      end set$up$xfcb;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+              /*******************************************************
+
+                       PASSWORD  AND  PASSWORD  MODE  ROUTINES
+
+              ********************************************************/
+
+
+ 451   1      defaultpass: procedure;
+
+ 452   2              if NONBANK then do;
+ 454   3                      call errprint(.errNBANK);
+ 455   3                      return;
+ 456   3              end;
+
+ 457   2              call fill(.passwd(0),' ',8);
+ 458   2              call copy(defpass,.passwd(0),lendef);
+ 459   2              call mon1(106,.passwd);
+ 460   2              call print(.('Default password = ',0));
+ 461   2              passwd(8) = 0;
+ 462   2              call printx(.passwd);
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  23
+
+
+
+ 463   2      end defaultpass;
+
+
+ 464   1      set$password: procedure;
+
+ 465   2              if fileref then do;
+
+ 467   3                      if NONBANK then do;
+ 469   4                              call errprint(.errNBANK);
+ 470   4                              return;
+ 471   4                      end;
+
+ 472   3                      call set$up$xfcb;
+ 473   3                      passmode = passmode or 1;       /* turn on password bit */
+ 474   3              end;
+ 475   2              else do;
+ 476   3                      call readlabel;
+ 477   3                      fext = fext or 1;
+ 478   3              end;
+
+ 479   2              call fill(.passwd(8),' ',8);            /* clear passwd */
+
+ 480   2              if lenpass = 0 then do;
+ 482   3                      passmode = 1;
+ 483   3                      return;
+ 484   3              end;
+
+ 485   2              newpass = true;
+ 486   2              call copy(passname,.passwd(8),lenpass);  /* copy it to fcb */
+
+ 487   2      end set$password;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+              /*******************************************************
+
+                              LABEL  ATTRIBUTE  ROUTINES
+
+              ********************************************************/
+
+ 488   1      lname: procedure;                       /* sets the label name */
+ 489   2              declare i       byte,
+                              ln      based labname (1) byte;
+
+ 490   2              if drvmsg then return;
+
+ 492   2              if fileref then do;
+ 494   3                 call errprint(.err$driveonly);
+ 495   3                 drvmsg = true;
+ 496   3                 return;
+ 497   3              end;
+
+ 498   2              call readlabel;
+
+ 499   2              call fill(.fcbv(1),' ',11);             /* clear name */
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  24
+
+
+
+ 500   2              if lenlab > 0 then do;
+ 502   3                 do i = 0 to lenlab-1;
+ 503   4                      if ln(i) = PERIOD then do;
+ 505   5                              call copy(labname,.fcbv(1),i);
+ 506   5                              call copy(labname+i+1,.fcbv(9),3);
+ 507   5                              return;
+ 508   5                      end;
+ 509   4                 end;
+
+ 510   3                 call copy(labname,.fcbv(1),lenlab);   /* copy label name */
+
+ 511   3              end;
+
+ 512   2      end lname;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 513   1      set$extent: procedure(function,maskon,maskoff);
+ 514   2              declare
+                              function        byte,
+                              maskon          byte,
+                              maskoff         byte;
+
+ 515   2              if drvmsg then return;
+
+ 517   2              if fileref then do;
+ 519   3                      drvmsg = true;
+ 520   3                      call errprint(.err$driveonly);
+ 521   3                      return;
+ 522   3              end;
+
+ 523   2              call readlabel;
+ 524   2              if mods$map(function) then fext = fext or maskon;   /* turn stamp on */
+ 526   2              else fext = fext and maskoff;                      /* turn stamp off */
+
+ 527   2              return;
+
+ 528   2      end set$extent;
+
+
+ 529   1      protect: procedure;                     /* set drive protection mode */
+ 530   2              declare pmode   byte;
+
+ 531   2              if fileref then  do;
+ 533   3                      call set$up$xfcb;
+ 534   3                      pmode = mods$map(opt$prot);
+
+ 535   3                      if pmode = 2 then passmode = 80h;       /* read only */
+                              else
+ 537   3                      if pmode = 3 then passmode = 40h;       /* write,read */
+                              else
+ 539   3                      if pmode = 4 then passmode = 20h;       /* r,w,delete */
+ 541   3                      else do ;
+ 542   4                              passmode = 1;                   /* turn off protection*/
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  25
+
+
+ 543   4                              call fill(.passwd(8),' ',8);
+ 544   4                      end;
+ 545   3                      if newpass then passmode = passmode or 1;
+ 547   3              end;
+ 548   2              else do;
+
+ 549   3                      if NONBANK then do;
+ 551   4                              call errprint(.errNBANK);
+ 552   4                              return;
+ 553   4                      end;
+
+ 554   3                      pmode = mods$map(opt$prot);
+ 555   3                      if pmode > 1 then do;
+ 557   4                              call errprint(.errDrvProt);
+ 558   4                              return;
+ 559   4                      end;
+
+ 560   3                      call set$extent(opt$prot,pwmask$on,pwmask$off);
+ 561   3                      call fill(.fcbv(16),' ',8);             /* erase password */
+ 562   3              end;
+
+ 563   2      end protect;
+
+              /*------------------------------------------------------------*/
+
+                                                      /* set attribute bits:
+                                                              f1 --> f4 flags 
+                                                              t1 --> t3 flags or
+                                                                 RO
+                                                                 SYS
+                                                                 Archive      */
+
+ 564   1      setatt: procedure(func,bytes);
+ 565   2              declare func    byte,
+                              bytes   byte;
+
+
+ 566   2              if sfamsg then return;                  /* printed msg before? */
+ 568   2              if not fileref then do;
+ 570   3                      sfamsg = true;
+ 571   3                      call errprint(.err$nofile);
+ 572   3                      return;
+ 573   3              end;
+
+ 574   2              if mods$map(func) then fcbv(bytes) = fcbv(bytes) or 80h;
+ 576   2              else fcbv(bytes) = fcbv(bytes) and 7fh;
+
+ 577   2              sfacmd = true;
+ 578   2      end setatt;
+
+              /*******************************************************
+
+                         S H O W   L A B E L   &   X F C B 
+
+              ********************************************************/
+
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  26
+
+
+ 579   1      show$passwd: procedure;                 /* display the new password */
+
+ 580   2          call printx(.('Password = ',0));
+ 581   2          passwd(16) = 0;
+ 582   2          call printx(.passwd(8));
+
+ 583   2      end show$passwd;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 584   1      dcl label1 (*) byte data (
+              'Directory       Passwds  Stamp    Stamp    Stamp',cr,lf,
+              'Label           Reqd     Create   Access   Update',cr,lf,
+              '--------------  -------  -------  -------  -------',cr,lf,0);
+
+ 585   1      showlbl: procedure;                     /* show the label options */
+ 586   2          declare (make,access) byte;
+
+ 587   2          call print(.('Label for drive ',0));
+ 588   2          call printdrv;
+ 589   2          call crlf;
+ 590   2          call print(.label1);
+ 591   2          call printfn;
+
+ 592   2          if (fext and 80h) = 80h then        /* PASSWORDS REQUIRED */
+ 593   2              call printx(.on);
+                  else
+ 594   2              call printx(.off);
+
+ 595   2          access = (fext and 40h) = 40h;      /* STAMP CREATE */
+ 596   2          if (fext and 10h) = 10h then 
+ 597   2              call printx(.on);
+                  else
+ 598   2              call printx(.off);
+
+ 599   2          if access then                      /* STAMP ACCESS */
+ 600   2              call printx(.on);
+                  else
+ 601   2              call printx(.off);
+
+ 602   2          if (fext and 20h) = 20h then        /* STAMP UPDATE */
+ 603   2              call printx(.on);
+                  else
+ 604   2              call printx(.off);
+
+ 605   2          call crlf;
+ 606   2          if fext then do;
+ 608   3              call crlf;
+ 609   3              call show$passwd;
+ 610   3          end;
+
+ 611   2      end showlbl;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  27
+
+
+ 612   1      show$xfcb: procedure;                   /* display xfcb attributes */
+
+ 613   2              call printx(.('Protection = ',0));
+
+ 614   2              if (passmode and 80h) = 80h then call printx(.readmode);
+                      else
+ 616   2              if (passmode and 40h) = 40h then call printx(.writemode);
+                      else
+ 618   2              if (passmode and 20h) = 20h then call printx(.deletemode);
+                      else
+ 620   2              if (not passmode) or (passwd(8) = ' ') then call printx(.nopasswd);
+                      else
+ 622   2                  call printx(.readmode);
+
+ 623   2              if passmode then do;                /* lsb on */
+ 625   3                      call printx(.comma);
+ 626   3                      call show$passwd;
+ 627   3              end;
+
+ 628   2      end show$xfcb;
+
+
+              /*******************************************************
+
+                      WRITE  XFCB, LABEL  AND  FILE  ATTRIBUTES
+
+              ********************************************************/
+
+ 629   1      pass$check: procedure(which) byte;
+ 630   2              declare which   byte;
+                                                      /* did we fail because of password?
+                                                         if so, then get it and re-try.
+                                                              which = 1 <-- put$attribute
+                                                                      2 <-- write$label
+                                                                      3 <-- write$xfcb */
+ 631   2              if high(error$code) = 7 then do;
+ 633   3                      call crlf;
+ 634   3                      if which <> 2 then call put$file;
+ 636   3                      else call print(.dirlabel);
+ 637   3                      call getpasswd;
+ 638   3                      if fileref then call crlf;
+                                                      /* put attributes ? */
+ 640   3                      if which = 1 then error$code = setind(fcbp);
+                              else                    /* write label ? */
+ 642   3                      if which = 2 then error$code = wrlbl(fcbp);
+                              else                    /* update xfcb */
+ 644   3                              error$code = wrxfcb(.xfcb);
+
+ 645   3                      if high(error$code) <> 0 then do;
+ 647   4                              call bdos$error;
+ 648   4                              if which = 2 then call print(.dirlabel);
+ 650   4                              else call put$file;
+ 651   4                              return(false);
+ 652   4                      end;
+ 653   3              end;
+
+ 654   2              return(true);
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  28
+
+
+
+ 655   2      end pass$check;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 656   1      put$attributes: procedure;              /* write file attributes */
+
+ 657   2          error$code = setind(fcbp);
+
+ 658   2          if low(error$code) = 0ffh then 
+ 659   2              if high(error$code) <> 0 then do;
+ 661   3                      if not pass$check(1) then return;
+ 663   3                      if high(error$code) <> 0 then do;
+ 665   4                              call bdos$error;
+ 666   4                              call put$file;
+ 667   4                              return;
+ 668   4                      end;
+ 669   3              end;
+ 670   2              else do;
+ 671   3                      call errprint(.not$found);
+ 672   3                      call put$file;
+ 673   3              end;
+
+ 674   2          if low(error$code) <> 0ffh then
+ 675   2              if fext <= dpb.extmsk then do;
+ 677   3                  call put$file;
+ 678   3                  call print$att;
+ 679   3              end;
+
+ 680   2      end put$attributes;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 681   1      write$label: procedure;                 /* write new label */
+
+ 682   2          error$code = wrlbl(fcbp);
+
+ 683   2          if low(error$code) = 0ffh then 
+ 684   2              if high(error$code) <> 0 then do;
+ 686   3                      if not pass$check(2) then return;
+ 688   3                      if high(error$code) <> 0 then do;
+ 690   4                              call bdos$error;
+ 691   4                              call print(.dirlabel);
+ 692   4                              return;
+ 693   4                      end;
+ 694   3                      call crlf;
+ 695   3              end;
+ 696   2              else do;
+ 697   3                      call errprint(.errFORMAT);
+ 698   3                      return;
+ 699   3              end;
+
+ 700   2              call showlbl;
+
+ 701   2      end write$label;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  29
+
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 702   1      write$xfcb: procedure;                  /* write out new xfcb */
+
+ 703   2              if passmode > 1 then do;
+ 705   3                      if password then go to wr0;
+ 707   3                      if newpass then go to wr0;
+
+ 709   3                              if passmsg then return;
+
+ 711   3                              if wild then 
+ 712   3                                 call errprint(.errWASSPASS);
+ 713   3                              else do;
+ 714   4                               call errprint(.errASSPASS);
+ 715   4                               call put$file;
+ 716   4                              end;
+
+ 717   3                              passmsg = true;
+ 718   3                              return;
+ 719   3              end;
+
+ 720   2      wr0:    if passmode = 1 then
+ 721   2                 if newpass then passmode = passmode or 80h;  /* read mode = def */
+
+ 723   2              xfcbmode = passmode;
+ 724   2              error$code = wrxfcb(.xfcb);
+
+ 725   2              if low(error$code) = 0ffh then 
+ 726   2                 if high(error$code) <> 0 then do;
+ 728   3                      if not pass$check(3) then return;
+ 730   3                      if high(error$code) <> 0 then do;
+ 732   4                              call bdos$error;
+ 733   4                              call put$file;
+ 734   4                              return;
+ 735   4                      end;
+ 736   3                 end;
+ 737   2                 else do;
+ 738   3                      call errprint(.not$found);
+ 739   3                      call print(.('       or protection not enabled for disk.',0));
+ 740   3                      return;
+ 741   3                 end;
+
+ 742   2              if passmode = 1 then do;                /* delete xfcb */
+ 744   3      wr1:            xfcb(5) = xfcb(5) or 80h;
+ 745   3                      error$code = delete(.xfcb);     /* no need to check for error*/
+ 746   3              end;                                    /* previous write-> failed!*/
+
+
+ 747   2              call put$file;
+ 748   2              call show$xfcb;                 /* errcode is good if we are here */
+
+ 749   2      end write$xfcb;
+
+
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  30
+
+
+
+              /*******************************************************
+
+                         C O M M A N D   P R O C E S S I N G
+
+              ********************************************************/
+
+
+
+ 750   1      setdisk: procedure;             /* select the disk specified in cmd line */
+
+ 751   2          if cmd(0) <> 0 then do;
+ 753   3              cdisk = cmd(0)-1;
+ 754   3              call select(cdisk);
+ 755   3              call set$dpb;
+ 756   3              end;
+
+ 757   2      end setdisk;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 758   1      wildcard: procedure byte;               /* test if the file is a wildcard */
+ 759   2          declare
+                      i byte;
+
+ 760   2              do i=1 to fnam;
+ 761   3                      if fcb(i) = '?' then return true;
+ 763   3              end;
+ 764   2              return false;
+ 765   2      end wildcard;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+ 766   1      setup$fcb: procedure;           /* set up the next file or drive reference */
+ 767   2              declare dcnt    byte;
+
+ 768   2              call setdisk;
+ 769   2              call copy(.cmd,.fcb,12);       /* name */
+ 770   2              call copy(.cmd(16),.passwd,8); /* password */
+
+ 771   2              if fcb(1) <> ' ' or fcb(ftyp) <> ' ' then do;
+ 773   3                      fileref = true;
+ 774   3                      call setdma(.dirbuf);
+ 775   3                      if (dcnt := search$first(.fcb)) = 0ffh then do;
+ 777   4                              fcbp = .fcb;
+ 778   4                              call errprint(.not$found);
+ 779   4                              call put$file;
+ 780   4                              call terminate;
+ 781   4                      end;
+ 782   3                      call set$up$file(dcnt);
+ 783   3              end;
+ 784   2              else fileref = false;
+
+ 785   2      end setup$fcb;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  31
+
+
+              $include (sopt.inc)
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  32
+
+
+          =   $eject
+ 786   1  =   check$choice: procedure(index,mindex) byte;
+          =                                           /* does this modifier go with this
+          =                                              option? */
+ 787   2  =           declare
+          =                   index   byte,
+          =                   mindex  byte;
+          =
+ 788   2  =           return(opt$mod(index).modifier(mindex));
+          =
+ 789   2  =   end check$choice;
+          =
+          =   /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+          =
+          =
+          =                       * * *  Option scanner  * * *
+          =
+          =
+          =    * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+          =
+          =
+ 790   1  =   separator: procedure(character) byte;
+          =
+          =                                           /* determines if character is a 
+          =                                              delimiter and which one */
+ 791   2  =           declare k       byte,
+          =                   character       byte;
+          =
+ 792   2  =           k = 1;
+ 793   2  =   loop:   if delimiters(k) = end$list then return(0);
+ 795   2  =           if delimiters(k) = character then return(k);    /* null = 25 */
+ 797   2  =                   k = k + 1;
+ 798   2  =                   go to loop;
+          =
+ 799   2  =   end separator;
+          =
+ 800   1  =   opt$scanner:    procedure(list$ptr,off$ptr) byte;
+          =
+          =                /* list$ptr        -       pointer to list of known strings
+          =                   off$ptr         -       pointer to offsets into known string
+          =                                           list
+          =                   buf$ptr         -       pointer to input string
+          =
+          =                   Scans the known string list for an occurrance of the input
+          =                   string.  If the input string is not found in the known list
+          =                   then return(0). Otherwise, return the index of the known string
+          =                   that matches the input.
+          =
+          =                   1. Find the known string that matches the input string on the 
+          =                      first letter.
+          =
+          =                           do i = 1 to #known_strings
+          =                                   if Known_string(i,1) = input(1) then do
+          =
+          =                                      if length(Known_string(i)) < end_of_input
+          =                                          then return(0)
+          =
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  33
+
+
+          =                                      do j = 2 to end_of_input
+          =
+          =                                           if Known_string(i,j) ~= input(j) then
+          =                                                   go to again
+          =                                      end
+          =
+          =                                      go to 2
+          =                                   end
+          =                    again: end
+          =
+          =                           return (0)              !no matchs
+          =
+          =                   2. Test to see if the input string does not match another Known
+          =                      string.  This may happen if the input string is not a
+          =                      unique sub-string of the Known string, ie., DI is a 
+          =                      sub-string of DIRECTORY and DISK.
+          =
+          =                           index = i
+          =
+          =                           do i = index+1 to #known_strings
+          =                                   do j = 1 to end of input
+          =
+          =                                           if Known_string(i,j) ~= input(j) then
+          =                                                   go to next
+          =                                   end
+          =
+          =                                   return(0)       !not unique
+          =                   next:   end;
+          =
+          =                           return(index)           !unique substring 
+          =
+          =                                   P.Balma   10/82  */
+          =
+ 801   2  =           declare
+          =                   buff            based buf$ptr (1) byte,
+          =                   off$ptr         address,
+          =                   list$ptr        address;
+          =
+ 802   2  =           declare
+          =                   i               byte,
+          =                   j               byte,
+          =                   list            based list$ptr (1) byte,
+          =                   offsets         based off$ptr (1) byte,
+          =                   wrd$pos         byte,
+          =                   character       byte,
+          =                   letter$in$word  byte,
+          =                   found$first     byte,
+          =                   start           byte,
+          =                   index           byte,
+          =                   save$index      byte,
+          =                   (len$new,len$found)     byte,
+          =                   valid           byte;
+          =
+          =   /*****************************************************************************/
+          =   /*                      internal subroutines                                 */
+          =   /*****************************************************************************/
+          =
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  34
+
+
+ 803   2  =   check$in$list: procedure;
+          =                                   /* find known string that has a match with 
+          =                                      input on the first character.  Set index
+          =                                      = invalid if none found.   */
+          =                           
+ 804   3  =           declare i       byte;
+          =
+ 805   3  =           i = start;
+ 806   3  =           wrd$pos = offsets(i);
+ 807   3  =           do while list(wrd$pos) <> end$list;
+ 808   4  =                   i = i + 1;
+ 809   4  =                   index = i;
+ 810   4  =                   if list(wrd$pos) = character then return;
+ 812   4  =                   wrd$pos = offsets(i);
+ 813   4  =           end;
+          =                           /* could not find character */
+ 814   3  =           index = 0;
+ 815   3  =           return;
+ 816   3  =   end check$in$list;
+          =
+ 817   2  =   setup:  procedure;
+ 818   3  =           character = buff(0);
+ 819   3  =           call check$in$list;
+ 820   3  =           letter$in$word = wrd$pos;
+          =                           /* even though no match may have occurred, position
+          =                              to next input character.  */
+ 821   3  =           i = 1;
+ 822   3  =           character = buff(1);
+ 823   3  =   end setup;
+          =
+ 824   2  =   test$letter:    procedure;
+          =                           /* test each letter in input and known string */
+          =
+ 825   3  =           letter$in$word = letter$in$word + 1;
+          =
+          =                                           /* too many chars input? 0 means
+          =                                              past end of known string */
+ 826   3  =           if list(letter$in$word) = end$of$string then valid = false;
+          =           else
+ 828   3  =           if list(letter$in$word) <> character then valid = false;
+          =
+          =           i = i + 1;
+ 831   3  =           character = buff(i);
+          =
+ 832   3  =   end test$letter;
+          =
+ 833   2  =   skip:   procedure;
+          =                                           /* scan past the offending string;
+          =                                              position buf$ptr to next string...
+          =                                              skip entire offending string;
+          =                                              ie., falseopt=mod, [note: comma or
+          =                                              space is considered to be group 
+          =                                              delimiter] */
+ 834   3  =           character = buff(i);
+ 835   3  =           delimiter = separator(character);
+ 836   3  =           do while ((delimiter <> 2) and (delimiter <> 4) and (delimiter <> 5)
+          =                      and (delimiter <> 25));
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  35
+
+
+ 837   4  =                   i = i + 1;
+ 838   4  =                   character = buff(i);
+ 839   4  =                   delimiter = separator(character);
+ 840   4  =           end;
+ 841   3  =           endbuf = i;
+ 842   3  =           buf$ptr = buf$ptr + endbuf + 1;
+ 843   3  =           return;
+ 844   3  =   end skip;
+          =
+ 845   2  =   eat$blanks: procedure;
+          =
+ 846   3  =           declare charac  based buf$ptr byte;
+          =
+ 847   3  =           do while(delimiter := separator(charac)) = SPACE;
+ 848   4  =                   buf$ptr = buf$ptr + 1;
+ 849   4  =           end;
+          =
+ 850   3  =   end eat$blanks;
+          =
+          =   /*****************************************************************************/
+          =   /*                      end of internals                                     */
+          =   /*****************************************************************************/
+          =
+          =
+          =                                           /* start of procedure */
+ 851   2  =           call eat$blanks;
+ 852   2  =           start = 0;
+ 853   2  =           call setup;
+          =
+          =                                           /* match each character with the option
+          =                                              for as many chars as input 
+          =                                              Please note that due to the array
+          =                                              indices being relative to 0 and the
+          =                                              use of index both as a validity flag
+          =                                              and as a index into the option/mods
+          =                                              list, index is forced to be +1 as an
+          =                                              index into array and 0 as a flag*/
+          =
+ 854   2  =           do while index <> 0;
+ 855   3  =                   start = index;
+ 856   3  =                   delimiter = separator(character);
+          =
+          =                                           /* check up to input delimiter */
+          =
+ 857   3  =                   valid = true;           /* test$letter resets this */
+ 858   3  =                   do while delimiter = 0;
+ 859   4  =                           call test$letter;
+ 860   4  =                           if not valid then go to exit1;
+ 862   4  =                           delimiter = separator(character);
+ 863   4  =                   end;
+          =
+ 864   3  =                   go to good;
+          =
+          =                                           /* input ~= this known string;
+          =                                              get next known string that 
+          =                                              matches */
+ 865   3  =   exit1:          call setup;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  36
+
+
+ 866   3  =           end;
+          =                                           /* fell through from above, did
+          =                                              not find a good match*/
+ 867   2  =           endbuf = i;                     /* skip over string & return*/
+ 868   2  =           call skip;
+ 869   2  =           return(0);
+          =
+          =                                           /* is it a unique match in options
+          =                                              list? */
+ 870   2  =   good:   endbuf = i;
+ 871   2  =           len$found = endbuf;
+ 872   2  =           save$index = index;
+ 873   2  =           valid = false;
+ 874   2  =   next$opt:
+          =                   start = index;
+ 875   2  =                   call setup;
+ 876   2  =                   if index = 0 then go to finished;
+          =
+          =                                           /* look at other options and check
+          =                                              uniqueness */
+          =
+ 878   2  =                   len$new = offsets(index + 1) - offsets(index) - 1;
+ 879   2  =                   if len$new = len$found then do;
+ 881   3  =                           valid = true;
+ 882   3  =                           do j = 1 to len$found;
+ 883   4  =                                   call test$letter;
+ 884   4  =                                   if not valid then go to next$opt;
+ 886   4  =                           end;
+ 887   3  =                   end;
+ 888   2  =                   else go to nextopt;
+          =                                           /* fell through...found another valid
+          =                                              match --> ambiguous reference */
+ 889   2  =           call skip;              /* skip input field to next delimiter*/
+ 890   2  =           return(0);
+          =
+ 891   2  =   finished:                       /* unambiguous reference */
+          =           buf$ptr = buf$ptr + endbuf;
+ 892   2  =           call eat$blanks;
+ 893   2  =           if delimiter <> 0 then buf$ptr = buf$ptr + 1;
+ 895   2  =           else delimiter = SPACE;
+          =
+ 896   2  =           return(save$index);
+          =
+ 897   2  =   end opt$scanner;
+          =
+ 898   1  =   error$prt:      procedure;
+ 899   2  =           declare i       byte,
+          =                   t       address,
+          =                   char    based t byte;
+          =
+ 900   2  =           t = buf$ptr - endbuf - 1;
+ 901   2  =           do i = 1 to endbuf;
+ 902   3  =                   call printchar(char);
+ 903   3  =                   t = t + 1;
+ 904   3  =           end;
+          =
+ 905   2  =   end error$prt;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  37
+
+
+          =
+
+ 906   1      parse$options:  procedure;
+
+ 907   2              declare
+                              charac          based buf$ptr byte,
+                              l               byte;
+
+ 908   2              delimiter = 1;
+ 909   2              index = 0;
+ 910   2              mindex = 0;
+
+ 911   2      loop:
+                      if delimiter = 0 then return;
+ 913   2              if delimiter = RBRACKET then return;
+ 915   2              if delimiter = ENDFF then return;
+
+                                                      /* get the index into list */
+ 917   2              if (index := opt$scanner(.options,.off$opt)) = 0 then go to error1;
+
+                                                      /* if we have more to parse,
+                                                         check for valid modifiers */
+ 919   2              if (delimiter <> RBRACKET and delimiter <> ENDFF) then do;
+
+                                                      /* is this a mod delimiter?
+                                                         test for equal sign. */
+ 921   3                      if delimiter = EQUAL then do;
+                                                      /* does option have a modifier?*/
+
+ 923   4                             if not opt$mod(index-1).modifier(0) then go to error2;
+
+                                                      /* is this a string modifier, ie.,
+                                                         password,default,name option */
+
+ 925   4                             if not opt$mod(index-1).modifier(7) then do;
+
+ 927   5                                     if (mindex := opt$scanner(.mods,.off$mods)) = 0 
+                                                 then go to error3;
+
+                                                      /* invalid option-modifier pair */
+
+ 929   5                                      if not opt$mod(index-1).modifier(mindex) then 
+ 930   5                                              go to error4;
+
+ 931   5                             end;             /* ends getting non-string mod */
+                                      
+ 932   4                             else do;
+                                                      /* get string */
+ 933   5                                      string$ptr = buf$ptr;
+ 934   5                                      mindex = 8;
+ 935   5                                      delimiter = 0;
+ 936   5                                      l = 0;
+ 937   5                                      do while delimiter = 0;
+ 938   6                                              delimiter = separator(charac);
+ 939   6                                              buf$ptr = buf$ptr + 1;
+ 940   6                                              l = l + 1;
+ 941   6                                      end;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  38
+
+
+
+ 942   5                                      if delimiter = SPACE then do;
+ 944   6                                              delimiter = separator(charac);
+ 945   6                                              buf$ptr = buf$ptr + 1;
+ 946   6                                      end;
+
+ 947   5                                      l = l - 1;
+ 948   5                                      if l > 0 then do;
+ 950   6                                         if (index -1) = opt$default then do;
+ 952   7                                              defpass = string$ptr;
+ 953   7                                              if (lendef := l) > 8 then do;
+ 955   8                                                 call errprint(.errBIGDEF);
+ 956   8                                                 lendef = 8;
+ 957   8                                              end;
+ 958   7                                         end;
+                                                 else
+ 959   6                                         if (index -1) = opt$name then do;
+ 961   7                                              labname = string$ptr;
+ 962   7                                              if (lenlab := l) > 11 then do;
+ 964   8                                                 lenlab = 11;
+ 965   8                                                 call errprint(.errBIGNAME);
+ 966   8                                              end;
+ 967   7                                         end;
+ 968   6                                         else do;
+ 969   7                                              passname = string$ptr;
+ 970   7                                              if (lenpass := l) > 8 then do;
+ 972   8                                                 call errprint(.errBIGPASS);
+ 973   8                                                 lenpass= 8;
+ 974   8                                              end;
+ 975   7                                         end;
+ 976   6                                      end;
+ 977   5                               end;
+ 978   4                      end;            /* ends mod delimiter? */
+ 979   3              end;                    /* ends last delimiter */
+
+                                                      /* option without modifier...
+                                                         index must be > 0 */
+ 980   2             if mindex = 0 and opt$mod(index-1).modifier(0) then go to error5;
+
+ 982   2             option$map(index - 1) = true;
+ 983   2             if mindex > 0 then mods$map(index - 1) = mindex - 1;
+
+ 985   2             go to loop;                      /* skip error routine */
+
+ 986   2      error1: call errprint(.errUNREC);
+ 987   2              go to optprt;
+ 988   2      error2: call errprint(.errNOMOD);
+ 989   2              go to optprt;
+ 990   2      error3: call errprint(.errUNRECM);
+ 991   2              go to modprt;
+ 992   2      error4: call errprint(.errVALM);
+ 993   2              go to modprt;
+ 994   2      error5: call errprint(.errOPTMOD);
+ 995   2              go to optprt;
+ 996   2      modprt: call print(.('Modifier: ',0));
+ 997   2              go to errprt;
+ 998   2      optprt: call print(.('Option: ',0));
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  39
+
+
+ 999   2      errprt: call error$prt;
+
+1000   2              go to loop;
+
+1001   2      end parse$options;
+
+1002   1      do$options:     procedure;
+1003   2              declare dump    byte;
+
+1004   2              if option$map(opt$archive) then
+1005   2                      call setatt(opt$archive,archiv);
+
+1006   2              if option$map(opt$f1) then call setatt(opt$f1,attrb1);
+1008   2              if option$map(opt$f2) then call setatt(opt$f2,attrb2);
+1010   2              if option$map(opt$f3) then call setatt(opt$f3,attrb3);
+1012   2              if option$map(opt$f4) then call setatt(opt$f4,attrb4);
+
+1014   2              if option$map(opt$name) then call lname;        /*Dir name*/
+1016   2              if option$map(opt$pass) then call set$password;
+1018   2              if option$map(opt$prot) then call protect;
+1020   2              if option$map(opt$default) then call defaultpass;
+
+1022   2              if option$map(opt$access) and option$map(opt$create) then do;
+1024   3                      if mods$map(opt$access) and mods$map(opt$create) then do;
+1026   4                              if fileref then call errprint(.err$driveonly);
+1028   4                              call errprint(.errCRAC);
+1029   4                              call crlf;
+1030   4                              go to do1;
+1031   4                      end;
+1032   3              end;
+
+1033   2              if option$map(opt$access) then do;
+1035   3                      if mods$map(opt$access) then do;        /* turn off create */
+1037   4                              mods$map(opt$create) = 0;
+1038   4                              call set$extent(opt$create,crmask$on,crmask$off);
+1039   4                      end;
+1040   3                      call set$extent(opt$access,acmask$on,acmask$off);
+1041   3              end;
+1042   2              if option$map(opt$create) then do;
+1044   3                      if mods$map(opt$create) then do;        /* turn off access */
+1046   4                              mods$map(opt$access) = 0;
+1047   4                              call set$extent(opt$access,acmask$on,acmask$off);
+1048   4                      end;
+1049   3                      call set$extent(opt$create,crmask$on,crmask$off);
+1050   3              end;
+
+                                                      /* Note that sys and dir do NOT have
+                                                         modifiers; thus the option scanner
+                                                         did not fill in the modifier map,
+                                                         which setatt looks at to turn things
+                                                         on/off.  So we have to set the mod
+                                                         map here.  applies to archive too */
+
+1051   2      do1:    if option$map(opt$dir) and option$map(opt$sys) then do;
+1053   3                      if not fileref then call errprint(.err$nofile);
+1055   3                      call errprint(.errSYSDIR);
+1056   3                      call crlf;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  40
+
+
+1057   3              end;
+1058   2              else do;
+1059   3                      if option$map(opt$dir) then
+                                                              /* do not turn sys on */
+1060   3                              call setatt(opt$sys,sysfile);
+
+1061   3                      else if option$map(opt$sys) then do;
+1063   4                              mods$map(opt$sys) = true;
+1064   4                              call setatt(opt$sys,sysfile);
+1065   4                      end;
+                      end;
+
+1067   2              if option$map(opt$update) then
+1068   2                      call set$extent(opt$update,upmask$on,upmask$off);
+
+1069   2              if option$map(opt$ro) and option$map(opt$rw) then do;
+1071   3                      call errprint(.errRORW);
+1072   3                      call crlf;
+1073   3              end;
+1074   2              else do;
+1075   3                      if option$map(opt$ro) then 
+1076   3                         if fileref then do;
+1078   4                              mods$map(opt$ro) = 1;
+1079   4                              call setatt(opt$ro,rofile);
+1080   4                         end;
+1081   3                         else call setdrvstatus(opt$ro);
+                              else
+1082   3                      if option$map(opt$rw) then 
+1083   3                         if fileref then do;
+                                                      /* turn ro off */
+1085   4                              mods$map(opt$ro) = 0;
+1086   4                              call setatt(opt$ro,rofile);
+1087   4                         end;
+1088   3                         else call setdrvstatus(opt$rw);
+                      end;
+1090   2      end do$options;
+
+1091   1      save: procedure;
+
+                                              /* save search parameters for later wild
+                                                 card processing */
+
+1092   2              save$dcnt = getscbword(dcnt$off);
+1093   2              save$searcha = getscbword(searcha$off);
+1094   2              save$searchl = getscbword(searchl$off);
+1095   2              save$hash1 = getscbword(hash1$off);
+1096   2              save$hash2 = getscbword(hash2$off);
+1097   2              save$hash3 = getscbword(hash3$off);
+
+1098   2      end save;
+
+
+1099   1      savewild: procedure;
+
+                                              /* save wildcard name for later processing */
+1100   2              if (wild := wildcard) then call copy(.cmd,.savefcb,12);
+1102   2              call setup$fcb;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  41
+
+
+
+1103   2      end savewild;
+
+
+1104   1      getfilename: procedure(buffadd);
+1105   2              declare buffadd         address;
+
+1106   2              parse$fn.buff$adr = buffadd;
+1107   2              last$buff$adr = buffadd;       /* used by perror routine */
+1108   2              parse$fn.fcb$adr = .cmd;
+1109   2              ibp = parser;                   /* parse file name */
+
+1110   2      end getfilename;
+
+1111   1      getfname: procedure;
+
+1112   2              call getfilename(bufptr);
+
+1113   2              if optdel then do;                      /* no local options */
+1115   3                      call errprint(.errGLOBAL);
+1116   3                      cmd(12) = 0;
+1117   3                      call print(.('FILE: ',0));
+1118   3                      call printx(.cmd(1));
+1119   3                      call terminate;
+1120   3              end;
+                                                              /* F152 returns ~= 0 if
+                                                                 another file name
+                                                                 follows in buffer */
+1121   2              if ibp <> 0 then multi = true;
+1123   2              else multi = false;
+
+1124   2              call copy(.cmd,.fcb,16);                /* copy file name to 
+                                                                 default buffer..*/
+1125   2              call savewild;
+
+1126   2      end getfname;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  42
+
+
+              $eject
+              /*******************************************************
+
+                              M A I N  P R O G R A M
+
+              ********************************************************/
+
+1127   1      declare 
+                      i              byte   initial (1),
+                      last$dseg$byte byte   initial (0),
+                      (vlow,vhigh)   byte;
+
+              /*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+1128   1      exec: procedure;
+
+
+1129   2              do while more;
+
+1130   3                      if wild then call save;
+
+1132   3                      call do$options;        /* perform options specified */
+
+1133   3                      call return$errors(0FFh);  /* Return mode */
+
+1134   3                      if lblcmd then             /* label options */
+1135   3                         call write$label;
+1136   3                      else do;
+1137   4                              if sfacmd then        /* file attributes*/
+1138   4                                      call put$attributes;
+1139   4                              if xfcbcmd then            /* xfcb attributes*/
+1140   4                                      call write$xfcb;
+1141   4                      end;
+
+1142   3                      call return$errors(0);  
+
+1143   3                      if not wild then more = false;
+                                                      /*wild card expansion */
+                              else 
+1145   3                         if not getnext then more = false;
+
+                      end;
+
+1148   2      end exec;
+
+              /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+1149   1      plm:
+                      ver = get$version;
+1150   1              vlow = low(ver);
+1151   1              vhigh = high(ver);
+
+1152   1              line$page = getpage;                    /* #lines per page */
+1153   1              line$out = 0;
+
+1154   1              if vlow < cpmversion then go to errver;
+
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  43
+
+
+1156   1              user$code = getuser;
+1157   1              call set$dpb;                           /* get disk parameter blk */
+1158   1              cdisk=cselect;                          /* get current disk */
+
+1159   1              do while buff(i)=' ';
+1160   2                      i = i + 1;
+1161   2              end;
+1162   1              buf$ptr = .buff(i);
+                      
+1163   1              if buff(i) = '[' then do;               /* first, options */
+1165   2                      buf$ptr = buf$ptr + 1;
+1166   2                      call parse$options;             /* delimiter = ] or
+                                                                  null if end of cmd tail */
+
+1167   2                      if delimiter = RBRACKET then call getfname;
+1169   2                      else do;
+1170   3                        call fill(.cmd(1),' ',26);      /* blank out command line */
+1171   3                        cmd(0) = 0;
+1172   3                      end;
+1173   2              end;
+1174   1              else do;                                /* filename ? */
+1175   2                      call getfilename(.buff(1));     /* will set multi */
+
+1176   2                      if optdel then do;
+1178   3                              buf$ptr = ibp;
+1179   3                              call parseoptions;
+1180   3                      end;
+1181   2                      else do;
+1182   3                              call errprint(.errNOPT);
+1183   3                              call terminate;
+1184   3                      end;
+1185   2                      call savewild;
+1186   2              end;
+
+1187   1              if option$map(opt$page) and option$map(opt$nopage) then do;
+1189   2                      call errprint(.errPAGE);
+1190   2                      call crlf;
+1191   2                      PAGE = false;
+1192   2              end;
+1193   1              else if option$map(opt$nopage) then PAGE = false;
+1195   1                   else if option$map(opt$page) then PAGE = true;
+
+                      if high(getscbword(COMbase)) = 0 then NONBANK = true;
+
+1199   1              call exec;
+1200   1              do while multi;
+1201   2                      buf$ptr = ibp;
+1202   2                      more = true;
+1203   2                      call getfname;
+1204   2                      call exec;
+1205   2              end;
+
+1206   1              call terminate;
+
+1207   1      errver: call errprint(.errVERS);
+1208   1              call terminate;
+1209   1      end;
+PL/M-80 COMPILER    CPM 3.0 --- SET 1.3                                                                                     PAGE  44
+
+
+
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 1E52H   7762D
+     VARIABLE AREA SIZE = 01B1H    433D
+     MAXIMUM STACK SIZE = 0016H     22D
+     2202 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

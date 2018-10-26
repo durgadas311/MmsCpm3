@@ -1,0 +1,835 @@
+CP/M RMAC ASSEM 1.1	#001	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                	title	'SAVE.RSX - CP/M 3.0 save routine.  July 1982'
+                ;	*************************************************
+                ;	*
+                ;	*	Title:	SAVE.RSX	Resident System eXtension       
+                ;	*	Date:	7/28/82
+                ;	*	Author:	Thomas J. Mason
+                ;	*
+                ;	*	Modified:
+                ;	*	11/30/82 - Thomas J. Mason
+                ;	*	Added trap for function 60 to fix PUT and SAVE
+                ;	*	bios vector mods.
+                ;	*
+                ;	*********************************************************
+                ;
+                ;	Copyright (c) 1982
+                ;	Digital Research
+                ;	PO Box	579
+                ;	Pacific Grove, Ca.  93950
+                ;
+ FFFF =         TRUE	equ	0FFFFh
+ 0000 =         FALSE	equ	not TRUE
+                ;
+                ; BIOS and BDOS Jump vectors
+                ;
+ 0000 =         WBOOT	equ	0
+ 0001 =         WBTADR	equ	1	;address of boot in BIOS
+ 0005 =         BDOS	equ	5	;BDOS jump vector
+ 0006 =         BDOSAD	equ	6	;location of instructions
+ 005C =         DFCB	equ	05Ch	;default FCB
+                ;
+                ; BDOS Function calls 
+                ;
+ 0006 =         BDOSAD	equ	6		;BDOS jump address
+ 0009 =         PSTRING	equ	9		;print string
+ 000A =         BUFIN	equ	10		;console buffer input
+ 0010 =         CFILE	equ	16		;file close
+ 0013 =         DFILE	equ	19		;file delete
+ 0015 =         WFILE	equ	21		;file write
+ 0016 =         MFILE	equ	22		;make file
+ 001A =         SETDMA	equ	26		;set DMA function
+ 002D =         BDOSER	equ	45		;Set BDOS error mode
+ 0031 =         GETSCB	equ	49		;get/set scb func #
+ 003B =         LDRSX	equ	59		;function for RSX load
+ 003C =         CALRSX	equ	60		;call rsx func #
+ 006D =         CONMOD	equ	109		;GET/SET Console Mode
+                ;
+                ; Non Printable ASCII characters
+                ;
+ 0003 =         CTL$C	equ	03	;CONTROL-C
+ 000D =         CR	equ	13	;ASCII Carrige Return
+ 000A =         LF	equ	10	;ASCII Line Feed
+                ;
+ 001E =         VERSION	equ	30
+                ;
+                ; Buffer size
+                ;
+CP/M RMAC ASSEM 1.1	#002	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 000D =         CONMAX	equ	13	;console buffer maximum
+ 0010 =         STKSZE	equ	010h	;size fo stack
+ 0068 =         SCBOST	equ	068h	;page boundary + to jmp instr
+ 00FE =         RETDSP	equ	0FEh	;RETurn and DiSPlay mode
+ 00C3 =         JUMP	equ	0C3h	;opcode for jump
+ 0021 =         LXIH	equ	21h	;lxi instr to poke
+ 007F =         BSNLY	equ	07Fh	;restore bios jump table only
+ 00F9 =         CMMON	equ	0F9h	;offset of common memory base from pg. bound
+                ;
+                ;	*********************************
+                ;	*				*
+                ;	*	The Save Program	*
+                ;	*				*
+                ;	*********************************
+                ;
+ 0000 0000000000	db	0,0,0,0,0,0
+ 0006 C31B00    	jmp	PREFIX
+                NEXTJ:
+ 0009 C3        	db	JUMP		;jump
+                NEXT:
+ 000A 0000      	db	0,0		;next module in line
+                PREV:
+ 000C 0500      	dw	5		;previous, initialized to 5
+ 000E 00        STKYBT:	db	00h		;for warm start
+ 000F 00        	db	0
+ 0010 5341564520	db	'SAVE    '
+ 0018           	ds	3
+                ;
+                ;
+                ; This is the check performed every time the BDOS is
+                ; called to see if the RSX is to be invoked
+                ;
+                PREFIX:
+ 001B 79        	mov	a,c	;set up for compare
+ 001C FE3C      	cpi	CALRSX
+ 001E C23100    	jnz	GETGOING
+                
+ 0021 C5        	push	b
+ 0022 D5        	push	d
+ 0023 E5        	push	h
+ 0024 210000    	lxi	h,0000h		;zero out HL
+ 0027 19        	dad	d		; <HL> -> RSXPB
+ 0028 7E        	mov	a,m		;get the byte
+ 0029 FEA0      	cpi	160		; sub function defined
+                
+ 002B E1        	pop	h
+ 002C D1        	pop	d
+ 002D C1        	pop	b
+ 002E CA8B01    	jz	GOODBYE		;remove this RSX
+                
+                GETGOING:
+                ;
+ 0031 FE3B      	cpi	LDRSX	;do the compare
+ 0033 CA3A00    	jz	START
+ 0036 2A0A00    	lhld	NEXT		;get address for continue
+ 0039 E9        	pchl			;get going.....
+CP/M RMAC ASSEM 1.1	#003	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                ;
+                ;
+                ;
+                START:
+                ;
+                ; They are equal so get the BIOS address to point here
+                ; in case of a Func 0 call
+                ;
+ 003A C5        	push	b		;save state
+ 003B D5        	push	d		; of registers
+                ;
+                ; check for jump byte before the SCB
+ 003C CDA901    	call	GETSET$SCB
+ 003F 22C203    	shld	SCBADR		;save address for later
+                ;
+ 0042 2EFA      	mvi	l,CMMON+1	;offset into scb to check BIOS
+ 0044 7E        	mov	a,m		;get byte
+ 0045 B7        	ora	a		;check for zero
+ 0046 3E00      	mvi	a,FALSE		;store for insurance
+ 0048 32C103    	sta	CHGJMP		;non-banked = FALSE
+ 004B CA6000    	jz	NBNKED		;high byte zero if non-banked
+                ;
+ 004E 2AC203    	lhld	SCBADR		;restor SCB
+ 0051 2E68      	mvi	l,SCBOST	;offset from page for instr
+ 0053 7E        	mov	a,m		;get byte
+ 0054 FEC3      	cpi	JUMP		;is it a jump?
+ 0056 C26000    	jnz	MORRSX		;we are not alone
+ 0059 3EFF      	mvi	a,TRUE
+ 005B 32C103    	sta	CHGJMP		;set flag
+ 005E 3621      	mvi	m,LXIH		;put in lxi h,xxxx mnemonic
+                ;
+                MORRSX:
+                ;	continue with processing
+                NBNKED:
+                ;
+                ;
+ 0060 2A0100    	lhld	WBTADR		;get address at 01h
+ 0063 23        	inx	h		;now points to address of jmp xxxx
+ 0064 7E        	mov	a,m		;get low order byte
+ 0065 32BA03    	sta	BIOSAD
+ 0068 23        	inx	h		;next byte
+ 0069 7E        	mov	a,m
+ 006A 32BB03    	sta	BIOSAD+1	;high order byte
+                ;
+                ; Now poke the BIOS address to point to
+                ; the save routine.
+                ;
+ 006D 118000    	lxi	d,BEGIN		;begining of routine
+ 0070 72        	mov	m,d
+ 0071 2B        	dcx	h		;point back to first byte
+ 0072 73        	mov	m,e		;low order
+                ;
+ 0073 0E2D      	mvi	c,BDOSER	;now set BDOS errormode
+ 0075 1EFE      	mvi	e,RETDSP	;to trap any hard
+ 0077 CD0500    	call	BDOS		;errors
+                ;
+CP/M RMAC ASSEM 1.1	#004	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                ;
+ 007A D1        	pop	d
+ 007B C1        	pop	b
+ 007C 2A0A00    	lhld	NEXT
+ 007F E9        	pchl			;continue on
+                ;
+                BEGIN:
+                ; Start of the save routine
+                ; Notify the user which program is running
+                ;
+ 0080 31AD04    	lxi	sp,STACK	;initialize stack
+ 0083 11D403    	lxi	d,SIGNON	;prompt
+ 0086 CDE901    	call	PSTR
+                ;
+                ; Get the file from the user
+                ;
+                FLEGET:
+ 0089 11F003    	lxi	d,FLEPRMPT	;ask for file name
+ 008C CDE901    	call	PSTR
+ 008F CDDA01    	call	GETBUF
+                ; zero at end of string for parser
+ 0092 21C603    	lxi	h,CONBUF-1	;address of #
+ 0095 7E        	mov	a,m		;get it
+ 0096 FE00      	cpi	0
+ 0098 CA8001    	jz	REPLCE
+ 009B 23        	inx	h		;HL->CONBUF
+ 009C 1600      	mvi	d,0		;zero out high order
+ 009E 5F        	mov	e,a		;fill low
+ 009F 19        	dad	d		;add to h
+ 00A0 3600      	mvi	m,00		;zero out byte for parse
+ 00A2 E5        	push	h
+                ;
+                ;
+ 00A3 CDEF01    	call	PARSE
+ 00A6 7C        	mov	a,h
+ 00A7 FEFF      	cpi	0FFh
+ 00A9 CA8900    	jz	FLEGET
+                ;
+ 00AC E1        	pop	h		;get end of string address back
+ 00AD 23        	inx	h
+ 00AE 363F      	mvi	m,'?'		;put in question mark
+ 00B0 23        	inx	h		;bump
+ 00B1 3620      	mvi	m,' '		;blank in string
+ 00B3 23        	inx	h		;bump
+ 00B4 3624      	mvi	m,'$'		;end of string
+                ;
+ 00B6 0E11      	mvi	c,17		;Search for first
+ 00B8 115C00    	lxi	d,DFCB
+ 00BB CD0500    	call	BDOS		;find it
+ 00BE 3C        	inr	a		;bump Acc
+ 00BF CAD900    	jz	FLECLR		;file no present skip prompt
+                ;
+ 00C2 111504    	lxi	d,DELFLE
+ 00C5 CDE901    	call	PSTR		;print out delete prompt
+ 00C8 11C703    	lxi	d,CONBUF	;buffer address
+ 00CB CDE901    	call	PSTR		;print out filename
+CP/M RMAC ASSEM 1.1	#005	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 00CE CDDA01    	call	GETBUF		;get answer
+ 00D1 CD3803    	call	GNC		;get the next char
+ 00D4 FE59      	cpi	'Y'		;is it yes
+ 00D6 C28900    	jnz	FLEGET		;another name if not
+                ;
+                ; Delete any existing file, then make a new one
+                FLECLR:
+ 00D9 0E13      	mvi	c,DFILE		;file delete func
+ 00DB 115C00    	lxi	d,DFCB		;default FCB
+ 00DE CD0500    	call	BDOS		;real BDOS call
+                ;
+ 00E1 3E00      	mvi	a,0
+ 00E3 217C00    	lxi	h,07ch		;M -> record count in FCB
+ 00E6 77        	mov	m,a		;zero out record count
+                ;
+ 00E7 0E16      	mvi	c,MFILE		;make file function
+ 00E9 115C00    	lxi	d,DFCB		;default FCB
+ 00EC CD0500    	call	BDOS
+                ; Get the address of start of write
+                ;
+                STRADD:
+ 00EF 111F04    	lxi	d,SPRMPT	;first address
+ 00F2 CDE901    	call	PSTR
+ 00F5 CDDA01    	call	GETBUF
+                ;
+ 00F8 3AC603    	lda	BUFFER+1	;get # of chars read
+ 00FB FE00      	cpi	0
+ 00FD CAEF00    	jz	STRADD
+                ;
+ 0100 CD5603    	call	SCANAD		;get address
+ 0103 DAEF00    	jc	STRADD
+                ;
+ 0106 22B603    	shld	SADDR		;store in SADDR
+                ;
+                ; Get the finish address
+                ENDADD:
+ 0109 113804    	lxi	d,FPRMPT	;load prompt
+ 010C CDE901    	call	PSTR		;print
+ 010F CDDA01    	call	GETBUF		;read in
+                ;
+ 0112 3AC603    	lda	BUFFER+1
+ 0115 FE00      	cpi	0
+ 0117 CA0901    	jz	ENDADD
+                ;
+ 011A CD5603    	call	SCANAD		;get finish address
+ 011D DA0901    	jc	ENDADD
+                ;
+ 0120 22B803    	shld	FADDR		;store it
+ 0123 EB        	xchg
+ 0124 2AB603    	lhld	SADDR
+ 0127 EB        	xchg
+                ;
+ 0128 CDCF01    	call	CHECK
+ 012B DAEF00    	jc	STRADD
+                ;
+                ;
+CP/M RMAC ASSEM 1.1	#006	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 012E 2AB603    	lhld	SADDR		;beginning DMA address
+ 0131 EB        	xchg			;DE=DMA address
+                ;
+                ; Write the first record then check the beginning address
+                ; if DMA address ends up larger exit
+                ;
+                WLOOP:
+ 0132 CDB201    	call	WFLAG
+ 0135 D5        	push	d		;save DMA address
+ 0136 0E1A       	mvi	c,SETDMA
+ 0138 CD0500    	call	BDOS		;set DMA address
+                ;
+ 013B 0E15      	mvi	c,WFILE	
+ 013D 115C00    	lxi	d,DFCB
+ 0140 CD0500    	call	BDOS		;write
+                ;
+                ; Check for directory space on disk for extents
+ 0143 116804    	lxi	d,NODIR
+ 0146 FE01      	cpi	01h		;no more directory
+ 0148 CA7D01    	jz	FINIS
+                ;
+                ; CHECK data block error
+ 014B 118504    	lxi	d,NOBLK
+ 014E FE02      	cpi	02h
+ 0150 CA7D01    	jz	FINIS		;out of disk space!
+                ; final check
+ 0153 B7        	ora	a		;if bad write occured...
+ 0154 C28001    	jnz	REPLCE		;restore BIOS address
+                ;
+                ; Write OK now check write address
+ 0157 D1        	pop	d		;get DMA address
+ 0158 218000    	lxi	h,080h
+ 015B 19        	dad	d
+ 015C EB        	xchg
+ 015D 2AB803    	lhld	FADDR		;HL=end of write
+                ;
+ 0160 CDCF01    	call	CHECK
+                ;
+ 0163 3ABE03    	lda	ONEFLG
+ 0166 FEFF      	cpi	TRUE
+ 0168 C23201    	jnz	WLOOP		;WLOOP if not done
+                ;
+                ; Else, Close file and print out ending prompt
+                CLOSE:
+ 016B 0E10      	mvi	c,CFILE		;close function
+ 016D 115C00    	lxi	d,DFCB		;get filename
+ 0170 CD0500    	call	BDOS
+                ;
+ 0173 3C        	inr	a		;check for close error
+ 0174 115404    	lxi	d,CERROR
+ 0177 CA7D01    	jz	FINIS		;maybe write protected
+                ;
+                ;good copy
+ 017A 115104    	lxi	d,ENDMSG
+                FINIS:
+ 017D CDE901    	call	PSTR
+CP/M RMAC ASSEM 1.1	#007	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                ;
+                ; Replace the BIOS Address to correct one
+                REPLCE:
+ 0180 2ABA03    	lhld	BIOSAD	;HL=BIOS warm jump
+ 0183 EB        	xchg		;DE="     "    "
+ 0184 2A0100    	lhld	WBTADR
+ 0187 23        	inx	h
+ 0188 73        	mov	m,e
+ 0189 23        	inx	h
+ 018A 72        	mov	m,d
+                ;
+                GOODBYE:
+ 018B 3EFF      	mvi	a,0FFh
+ 018D 320E00    	sta	STKYBT		;change sticky byte for 
+                ;				; removal of RSX
+                ;
+                ; check to see if JMP changed for BANKED system
+ 0190 3AC103    	lda	CHGJMP
+ 0193 FEFF      	cpi	TRUE		;has it been done?
+ 0195 C29F01    	jnz	CHGBIOS
+ 0198 2AC203    	lhld	SCBADR		;retreive SCB address
+ 019B 2E68      	mvi	l,SCBOST	;points to page + offset
+ 019D 36C3      	mvi	m,JUMP		;restore original code
+                ;
+                CHGBIOS:
+ 019F 0E0D      	mvi	c,13		;reset the disk system
+ 01A1 CD0500    	call	BDOS
+                ;
+ 01A4 0E00      	mvi	c,0		;set up for wboot
+ 01A6 CD0500    	call	BDOS
+                ;****************************************
+                ;*					*
+                ;*	 Logical end of the program	*
+                ;*					*
+                ;****************************************
+                ;
+                GETSET$SCB:
+ 01A9 0E31      	mvi	c,GETSCB
+ 01AB 11B403    	lxi	d,SCBPB
+ 01AE CD0500    	call	BDOS
+ 01B1 C9        	ret
+                ;
+                WFLAG:
+ 01B2 3E00      	mvi	a,FALSE
+ 01B4 32BE03    	sta	ONEFLG
+ 01B7 3AC003    	lda	RSLT+1
+ 01BA FE00      	cpi	00h
+ 01BC C0        	rnz	
+ 01BD 3ABF03    	lda	RSLT
+ 01C0 FE80      	cpi	080h
+ 01C2 DAC901    	jc	WFLAG1
+ 01C5 CAC901    	jz	WFLAG1
+ 01C8 C9        	ret
+                ;
+                WFLAG1:
+ 01C9 3EFF      	mvi	a,TRUE
+CP/M RMAC ASSEM 1.1	#008	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 01CB 32BE03    	sta	ONEFLG
+ 01CE C9        	ret
+                ;
+                ;
+                ;
+                CHECK:
+                ; Subtract the two to find out if finished
+ 01CF 7D        	mov	a,l		;low order
+ 01D0 93        	sub	e		;subtraction
+ 01D1 32BF03    	sta	RSLT
+ 01D4 7C        	mov	a,h		;now ...
+ 01D5 9A        	sbb	d		;high order subtraction	
+ 01D6 32C003    	sta	RSLT+1		;saved
+ 01D9 C9        	ret
+                ;
+                GETBUF:
+                ;buffer input routine
+                ;
+ 01DA 21C703    	lxi	h,CONBUF	;address of buffer
+ 01DD 22BC03    	shld	NEXTCOM		;store it
+ 01E0 0E0A      	mvi	c,BUFIN
+ 01E2 11C503    	lxi	d,BUFFER
+ 01E5 CD0500    	call	BDOS
+ 01E8 C9        	ret
+                ;
+                PSTR:
+                ; String output routine for messages
+                ;
+ 01E9 0E09      	mvi	c,PSTRING
+ 01EB CD0500    	call	BDOS
+ 01EE C9        	ret
+                ;
+                PARSE:
+                ; General purpose parser
+                ;
+                ; Filename = [d:]file[.type][;password]
+                ;
+                ; FCB assignments
+                ;
+                ;	0	=> drive, 0=default, 1=A, 2=B
+                ;	1-8	=> file, converted to upper case,
+                ;		   padded with blanks
+                ;	9-11	=> type, converted to upper case,
+                ;		   padded with blanks
+                ;	12-15	=> set to zero
+                ;	16-23	=> passwords, converted to upper case,
+                ;		   padded with blanks
+                ;	24-25	=> address of password field in "filename",
+                ;		   set to zero if password length=0.
+                ;	26	=> length of password (0-8)
+                ;
+                ; Upon return, HL is set to FFFFh if BC locates
+                ;		   an invalid file name;
+                ; otherwise, HL is set to 0000h if the delimiter
+                ;		   following the file name is a 00h (null)
+                ;		   or a 0Dh (CR);
+CP/M RMAC ASSEM 1.1	#009	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                ; otherwise, HL is set to the address of the delimiter
+                ;		   following the file name.
+                ;
+                ;
+ 01EF 210000    	lxi	h,0
+ 01F2 E5        	push	h
+ 01F3 E5        	push	h
+ 01F4 11C703    	lxi	d,CONBUF	;set up source address
+ 01F7 215C00    	lxi	h,DFCB		;set up dest address
+ 01FA CD2803    	call	DEBLNK		;scan the blanks
+ 01FD CDE602    	call	DELIM		;check for delimeter
+ 0200 C20C02    	jnz	PARSE1
+ 0203 79        	mov	a,c
+ 0204 B7        	ora	a
+ 0205 C28E02    	jnz	PARSE9
+ 0208 77        	mov	m,a
+ 0209 C33D02    	jmp	PARSE3
+                ;
+                PARSE1:
+ 020C 47        	mov	b,a
+ 020D 13        	inx	d
+ 020E 1A        	ldax	d
+ 020F FE3A      	cpi	':'
+ 0211 C23A02    	jnz	PARSE2
+                ;
+ 0214 78        	mov	a,b
+ 0215 D641      	sui	'A'
+ 0217 DA8E02    	jc	PARSE9
+ 021A FE10      	cpi	16
+ 021C D28E02    	jnc	PARSE9
+ 021F 3C        	inr	a
+ 0220 77        	mov	m,a
+ 0221 13        	inx	d
+ 0222 CDE602    	call	DELIM
+ 0225 C23D02    	jnz	PARSE3
+ 0228 FE2E      	cpi	'.'
+ 022A CA8E02    	jz	PARSE9
+ 022D FE3A      	cpi	':'
+ 022F CA8E02    	jz	PARSE9
+ 0232 FE3B      	cpi	';'
+ 0234 CA8E02    	jz	PARSE9
+ 0237 C33D02    	jmp	PARSE3
+                ;
+                PARSE2:
+ 023A 1B        	dcx	d
+ 023B 3600      	mvi	m,0
+                PARSE3:
+ 023D 0608      	mvi	b,8
+ 023F CD9402    	call	SETFLD
+ 0242 0603      	mvi	b,3
+ 0244 FE2E      	cpi	'.'
+ 0246 CA4F02    	jz	PARSE4
+ 0249 CDDE02    	call	PADFLD
+ 024C C35302    	jmp	PARSE5
+                ;
+                PARSE4:
+CP/M RMAC ASSEM 1.1	#010	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 024F 13        	inx	d
+ 0250 CD9402    	call	SETFLD
+                PARSE5:
+ 0253 0604      	mvi	b,4
+                PARSE6:
+ 0255 23        	inx	h
+ 0256 3600      	mvi	m,0
+ 0258 05        	dcr	b
+ 0259 C25502    	jnz	PARSE6
+ 025C 0608      	mvi	b,8
+ 025E FE3B      	cpi	';'
+ 0260 CA6902    	jz	PARSE7
+ 0263 CDDE02    	call	PADFLD
+ 0266 C36D02    	jmp	PARSE8
+                PARSE7:
+ 0269 13        	inx	d
+ 026A CDB702    	call	PWFLD
+                PARSE8:
+ 026D D5        	push	d
+ 026E CD2803    	call	DEBLNK
+ 0271 CDE602    	call	DELIM
+ 0274 C27C02    	jnz	PARSE81
+ 0277 33        	inx	sp
+ 0278 33        	inx	sp
+ 0279 C37D02    	jmp	PARSE82
+                PARSE81:
+ 027C D1        	pop	d
+                PARSE82:
+ 027D 79        	mov	a,c
+ 027E B7        	ora	a
+ 027F C1        	pop	b
+ 0280 79        	mov	a,c
+ 0281 C1        	pop	b	
+ 0282 23        	inx	h
+ 0283 71        	mov	m,c
+ 0284 23        	inx	h
+ 0285 70        	mov	m,b
+ 0286 23        	inx	h
+ 0287 77        	mov	m,a
+ 0288 EB        	xchg
+ 0289 C0        	rnz
+ 028A 210000    	lxi	h,0
+ 028D C9        	ret
+                PARSE9:
+ 028E E1        	pop	h
+ 028F E1        	pop	h
+ 0290 21FFFF    	lxi	h,0FFFFh
+ 0293 C9        	ret
+                ;
+                SETFLD:
+ 0294 CDE602    	call	DELIM
+ 0297 CADE02    	jz	PADFLD
+ 029A 23        	inx	h
+ 029B FE2A      	cpi	'*'
+ 029D C2A902    	jnz	SETFD1
+ 02A0 363F      	mvi	m,'?'
+CP/M RMAC ASSEM 1.1	#011	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 02A2 05        	dcr	b
+ 02A3 C29402    	jnz	SETFLD
+ 02A6 C3AB02    	jmp	SETFD2
+                SETFD1:
+ 02A9 77        	mov	m,a
+ 02AA 05        	dcr	b
+                SETFD2:
+ 02AB 13        	inx	d
+ 02AC C29402    	jnz	SETFLD
+                SETFD3:
+ 02AF CDE602    	call	DELIM
+ 02B2 C8        	rz
+ 02B3 E1        	pop	h
+ 02B4 C38E02    	jmp	PARSE9
+                ;
+                PWFLD:
+ 02B7 CDE602    	call	DELIM
+ 02BA CADE02    	jz	PADFLD
+ 02BD 33        	inx	sp
+ 02BE 33        	inx	sp
+ 02BF 33        	inx	sp
+ 02C0 33        	inx	sp
+ 02C1 33        	inx	sp
+ 02C2 33        	inx	sp
+ 02C3 D5        	push	d
+ 02C4 E5        	push	h
+ 02C5 2E00      	mvi	l,0
+ 02C7 E3        	xthl
+ 02C8 3B        	dcx	sp
+ 02C9 3B        	dcx	sp
+                PWFLD1:
+ 02CA 33        	inx	sp
+ 02CB 33        	inx	sp
+ 02CC E3        	xthl
+ 02CD 2C        	inr	l
+ 02CE E3        	xthl
+ 02CF 3B        	dcx	sp
+ 02D0 3B        	dcx	sp
+ 02D1 23        	inx	h
+ 02D2 77        	mov	m,a
+ 02D3 13        	inx	d
+ 02D4 05        	dcr	b
+ 02D5 CAAF02    	jz	SETFD3
+ 02D8 CDE602    	call	DELIM
+ 02DB C2CA02    	jnz	PWFLD1
+                ;
+                PADFLD:
+ 02DE 23        	inx	h
+ 02DF 3620      	mvi	m,' '
+ 02E1 05        	dcr	b
+ 02E2 C2DE02    	jnz	PADFLD
+ 02E5 C9        	ret
+                ;
+                DELIM:
+ 02E6 1A        	ldax	d
+ 02E7 4F        	mov	c,a
+CP/M RMAC ASSEM 1.1	#012	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 02E8 B7        	ora	a
+ 02E9 C8        	rz
+ 02EA 0E00      	mvi	c,0
+ 02EC FE0D      	cpi	0Dh
+ 02EE C8        	rz
+ 02EF 4F        	mov	c,a
+ 02F0 FE09      	cpi	09h
+ 02F2 C8        	rz
+ 02F3 FE20      	cpi	' '
+ 02F5 DA2403    	jc	DELIM2
+ 02F8 C8        	rz
+ 02F9 FE2E      	cpi	'.'
+ 02FB C8        	rz
+ 02FC FE3A      	cpi	':'
+ 02FE C8        	rz
+ 02FF FE3B      	cpi	';'
+ 0301 C8        	rz
+ 0302 FE3D      	cpi	'='
+ 0304 C8        	rz
+ 0305 FE2C      	cpi	','
+ 0307 C8        	rz
+ 0308 FE2F      	cpi	'/'
+ 030A C8        	rz
+ 030B FE5B      	cpi	'['
+ 030D C8        	rz
+ 030E FE5D      	cpi	']'
+ 0310 C8        	rz
+ 0311 FE3C      	cpi	'<'
+ 0313 C8        	rz
+ 0314 FE3E      	cpi	'>'
+ 0316 C8        	rz
+ 0317 FE61      	cpi	'a'
+ 0319 D8        	rc
+ 031A FE7B      	cpi	'z'+1
+ 031C D22103    	jnc	DELIM1
+ 031F E65F      	ani	05Fh
+                DELIM1:
+ 0321 E67F      	ani	07Fh
+ 0323 C9        	ret
+                DELIM2:
+ 0324 E1        	pop	h
+ 0325 C38E02    	jmp	PARSE9
+                ;
+                DEBLNK:
+ 0328 1A        	ldax	d
+ 0329 FE20      	cpi	' '
+ 032B CA3403    	jz	DBLNK1
+ 032E FE09      	cpi	09h
+ 0330 CA3403    	jz	DBLNK1
+ 0333 C9        	ret
+                DBLNK1:
+ 0334 13        	inx	d
+ 0335 C32803    	jmp	DEBLNK
+                ; End of the Parser
+                ;
+                ; GET a character from the console buffer
+CP/M RMAC ASSEM 1.1	#013	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+                GNC:
+ 0338 E5        	push	h
+ 0339 21C603    	lxi	h,CONBUF-1	;get length
+ 033C 7E        	mov	a,m
+ 033D B7        	ora	a		;zero?
+ 033E 3E0D      	mvi	a,CR		;return with CR if so
+ 0340 CA4C03    	jz	GNCRET
+ 0343 35        	dcr	m		;lenght = length-1
+ 0344 2ABC03    	lhld	NEXTCOM		;next char address
+ 0347 7E        	mov	a,m
+ 0348 23        	inx	h		;bump to next
+ 0349 22BC03    	shld	NEXTCOM		;update
+                GNCRET:
+ 034C E1        	pop	h
+                TRANS:
+ 034D FE7F      	cpi	7Fh		;Rubout?
+ 034F C8        	rz
+ 0350 FE61      	cpi	('A' or 0100000b)
+ 0352 D8        	rc
+ 0353 E65F      	ani	1011111b	; clear upper case bit
+ 0355 C9        	ret
+                ;
+                ;
+                ; Scan the buffer for the address read in ASCII from the terminal
+                ;
+                SCANAD:
+ 0356 110000    	lxi	d,00h		;zero out address
+ 0359 D5        	push	d		;and save
+                ;
+ 035A 3AC603    	lda	CONBUF-1	;get character count
+ 035D FE05      	cpi	05		;5 is too many
+ 035F DA6603    	jc	SCAN0
+ 0362 37        	stc			;set carry for routine
+ 0363 C3B103    	jmp	SCNRET
+                SCAN0:
+ 0366 CD3803    	call	GNC		;get a char
+ 0369 FE0D      	cpi	CR		;end?
+ 036B CAB103    	jz	SCNRET		;to scnret if so
+ 036E FE30      	cpi	'0'		;is it >0?
+ 0370 D27603    	jnc	SCAN01		;bad character
+ 0373 C3B103    	jmp	SCNRET
+                SCAN01:
+ 0376 FE40      	cpi	'@'
+ 0378 C27F03    	jnz	SCAN02		;bad character
+ 037B 37        	stc
+ 037C C3B103    	jmp	SCNRET		;return on bad file
+                SCAN02:
+ 037F D28703    	jnc	SCAN1		;must be A-F
+ 0382 D630      	sui	030h		;normalize 0-9
+ 0384 C39203    	jmp	SCAN2
+                SCAN1:
+ 0387 FE47      	cpi	'G'		;is it out of range?
+ 0389 DA9003    	jc	SCAN11
+ 038C 37        	stc
+ 038D C3B103    	jmp	SCNRET
+                SCAN11:	
+CP/M RMAC ASSEM 1.1	#014	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 0390 D637      	sui	037h		;normalize
+                SCAN2:
+ 0392 6F        	mov	l,a		;character in low of DE
+ 0393 3AC603    	lda	CONBUF-1	;get # left
+ 0396 C601      	adi	1		;readjust
+ 0398 4F        	mov	c,a
+ 0399 2600      	mvi	h,00		;zero out high order
+                SCAN3:
+ 039B 0D        	dcr	c		;dec to set flag
+ 039C CAA603    	jz	SCAN4		;were done
+ 039F 29        	dad	h		;shift 1bit left
+ 03A0 29        	dad	h		;same
+ 03A1 29        	dad	h		;same
+ 03A2 29        	dad	h		;finally
+ 03A3 C39B03    	jmp	SCAN3		;back for more
+                ;
+                SCAN4:
+ 03A6 D1        	pop	d		;ready for or
+ 03A7 7A        	mov	a,d		;high order
+ 03A8 B4        	ora	h		;
+ 03A9 57        	mov	d,a
+ 03AA 7B        	mov	a,e		;low order
+ 03AB B5        	ora	l		;ORed
+ 03AC 5F        	mov	e,a		;back
+ 03AD D5        	push	d		;save
+ 03AE C36603    	jmp	SCAN0		;get more characters
+                SCNRET:
+ 03B1 D1        	pop	d		;hl = address
+ 03B2 EB        	xchg			;DE->HL
+ 03B3 C9        	ret
+                ;
+                ;
+                ;	*********************************
+                ;	*				*
+                ;	*	Data Structures		*
+                ;	*				*
+                ;	*********************************
+                ;
+                SCBPB:
+ 03B4 3A        	db	03Ah	;SCB address
+ 03B5 00        	db	0
+                ;
+ 03B6 0000      SADDR:	dw	0		;write start address
+ 03B8 0000      FADDR:	dw	0		;write finish address
+ 03BA 0000      BIOSAD:	dw	0		;WarmBOOT bios address
+ 03BC 0000      NEXTCOM: dw	0		;address of next character to read
+ 03BE 00        ONEFLG:	db	0
+ 03BF 0000      RSLT:	dw	0
+ 03C1 00        CHGJMP	db	FALSE
+                ;
+ 03C2 0000      SCBADR:	dw	0		;Scb address
+                ;
+ 03C4 00        BIOSMD:	db	0		;if non-zero change LXI @jmpadr to
+                				;JUMP when removed.
+                ;
+ 03C5 0D        BUFFER:	db	CONMAX
+CP/M RMAC ASSEM 1.1	#015	SAVE.RSX - CP/M 3.0 SAVE ROUTINE.  JULY 1982
+
+ 03C6 00        	db	0		;# of console characters read
+ 03C7           CONBUF:	ds	CONMAX
+                ;
+ 03D4 0D0A43502FSIGNON:	db	CR,LF,'CP/M 3 SAVE - Version ',VERSION/10+'0','.',VERSION mod 10+'0','$'
+ 03F0 0D0A456E74FLEPRMPT: db	CR,LF,'Enter file '
+ 03FD 2874797065	db	'(type RETURN to exit): $'
+ 0415 0D0A44656CDELFLE:	db	CR,LF,'Delete $'
+ 041F 0D0A426567SPRMPT:	db	CR,LF,'Beginning hex address $'
+ 0438 0D0A456E64FPRMPT:	db	CR,LF,'Ending hex address    $'
+ 0451 0D0A24    ENDMSG:	db	CR,LF,'$'
+                ;
+                ; Error messages......
+ 0454 0D0A455252CERROR:	db	CR,LF,'ERROR: Bad close.$'
+ 0468 0D0A455252NODIR:	db	CR,LF,'ERROR: No directory space.$'
+ 0485 0D0A455252NOBLK:	db	CR,LF,'ERROR: No disk space.$'
+                ;
+                ; Stack for program
+ 049D           	ds	STKSZE
+                STACK:
+ 04AD           	end		;Physical end of program
+

@@ -1,0 +1,730 @@
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE TYPE
+OBJECT MODULE PLACED IN TYPE.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 TYPE.PLM PAGEWIDTH(100) DEBUG OPTIMIZE
+
+
+
+              $ TITLE('CP/M 3.0 --- TYPE ')
+   1          type:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+                Revised:
+                  19 Jan  80  by Thomas Rolander
+                  14 Sept 81  by Doug Huskey
+                  07 July 82  by John Knight
+                  06 Oct  82  by Doug Huskey
+                  02 Dec  82  by Bruce Skidmore
+              */
+
+   2   1      declare
+                  mpmproduct literally '01h', /* requires mp/m */
+                  cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+                /**************************************
+                 *                                    *
+                 *        EQUATES (LITERALS)          *
+                 *                                    *
+                 **************************************/
+
+
+   3   1      declare
+                  true           literally '0FFh',
+                  false          literally '0',
+                  forever        literally 'while true',
+                  lit            literally 'literally',
+                  proc           literally 'procedure',
+                  dcl            literally 'declare',
+                  addr           literally 'address',
+                  cr             literally '13',
+                  lf             literally '10',
+                  ctrli          literally '9',
+                  ctrlc          literally '3',
+                  ctrlo          literally '0fh',
+                  ctrlx          literally '18h',
+                  bksp           literally '8',
+                  dcnt$offset    literally '45h',
+                  searcha$offset literally '47h',
+                  searchl$offset literally '49h',
+                  hash1$offset   literally '00h',
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   2
+
+
+                  hash2$offset   literally '02h',
+                  hash3$offset   literally '04h',
+                  con$page$mode  literally '2ch',
+                  con$page$size  literally '1ch';
+
+                /**************************************
+                 *                                    *
+                 *         GLOBAL VARIABLES           *
+                 *                                    *
+                 **************************************/
+
+   4   1      declare plm label public;
+   5   1      declare (eod,i,char) byte;
+   6   1      declare control$z literally '1AH';
+   7   1      declare (cnt,tcnt,code) byte;
+   8   1      declare (ver, error$code)  address;
+   9   1      declare paging byte initial (true);
+  10   1      declare negate byte initial (false);
+  11   1      declare status address;
+  12   1      declare m based status byte;
+  13   1      declare no$chars byte;
+  14   1      declare last$dseg$byte byte initial (0);
+  15   1      declare wflag byte initial (false);
+  16   1      declare cur$fcb (33) byte;      /* current fcb (to type) */
+
+  17   1      declare 
+                more    (*)  byte data (cr,lf,cr,lf,'Press RETURN to Continue $'),
+                failed  (*)  byte data(cr,lf,'ERROR: Not typed: $');
+
+
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   INTERFACE          *
+                 *                                    *
+                 **************************************/
+
+
+  18   1        mon1:
+                  procedure (func,info) external;
+  19   2            declare func byte;
+  20   2            declare info address;
+  21   2          end mon1;
+
+  22   1        mon2:
+                  procedure (func,info) byte external;
+  23   2            declare func byte;
+  24   2            declare info address;
+  25   2          end mon2;
+
+  26   1        mon3:
+                  procedure (func,info) address external;
+  27   2            declare func byte;
+  28   2            declare info address;
+  29   2          end mon3;
+
+  30   1        declare cmdrv     byte    external;   /* command drive      */
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   3
+
+
+  31   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+  32   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+  33   1        declare pass0     address external;   /* 1st password ptr   */
+  34   1        declare len0      byte    external;   /* 1st passwd length  */
+  35   1        declare pass1     address external;   /* 2nd password ptr   */
+  36   1        declare len1      byte    external;   /* 2nd passwd length  */
+  37   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   Externals          *
+                 *                                    *
+                 **************************************/
+
+  38   1        read$console:
+                  procedure byte;
+  39   2            return mon2 (1,0);
+  40   2          end read$console;
+
+  41   1        printchar:
+                  procedure (char);
+  42   2            declare char byte;
+  43   2            call mon1 (2,char);
+  44   2          end printchar;
+
+  45   1        conin: 
+                  procedure byte;
+  46   2          return mon2(6,0fdh);
+  47   2          end conin;
+
+  48   1        print$buf:
+                  procedure (buff$adr);
+  49   2            declare buff$adr address;
+  50   2            call mon1 (9,buff$adr);
+  51   2          end print$buf;
+
+  52   1        read$console$buf:
+                  procedure (buffer$address,max) byte;
+  53   2            declare buffer$address address;
+  54   2            declare new$max based buffer$address address;
+  55   2            declare max byte;
+  56   2            new$max = max;
+  57   2            call mon1(10,buffer$address);
+  58   2            buffer$address = buffer$address + 1;
+  59   2            return new$max;   /* actually number of chars input */
+  60   2        end read$console$buf;
+
+  61   1        version: procedure address;
+                  /* returns current cp/m version # */
+  62   2          return mon3(12,0);
+  63   2          end version;
+
+  64   1        check$con$stat:
+                  procedure byte;
+  65   2            return mon2 (11,0);
+  66   2          end check$con$stat;
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   4
+
+
+
+  67   1        open$file:
+                  procedure (fcb$address) address;
+  68   2            declare fcb$address address;
+  69   2          return mon3(15,fcb$address);
+  70   2          end open$file;
+
+  71   1        close$file:
+                  procedure (fcb$address) byte;
+  72   2            declare fcb$address address;
+  73   2            return mon2 (16,fcb$address);
+  74   2          end close$file;
+
+  75   1        read$record:
+                  procedure (fcb$address) byte;
+  76   2            declare fcb$address address;
+  77   2            return mon2 (20,fcb$address);
+  78   2          end read$record;
+
+  79   1        setdma: procedure(dma);
+  80   2          declare dma address;
+  81   2          call mon1(26,dma);
+  82   2          end setdma;
+
+                /* 0ff & 0fe = return BDOS errors */
+  83   1        return$errors:
+                  procedure(mode);
+  84   2          declare mode byte;
+  85   2            call mon1 (45,mode);  
+  86   2          end return$errors;
+
+  87   1        terminate:
+                  procedure;
+  88   2            call mon1 (0,0);
+  89   2          end terminate;
+
+
+  90   1        search$first:
+                  procedure (fcb$address) byte;
+  91   2            declare fcb$address address;
+  92   2            return mon2 (17,fcb$address);
+  93   2          end search$first;
+
+  94   1        search$next:
+                  procedure byte;
+  95   2            return mon2 (18,0);
+  96   2          end search$next;
+
+  97   1        declare scbpd structure
+                   (offset byte,
+                    set    byte,
+                    value  address);
+
+  98   1        getscbbyte:
+                  procedure (offset) byte;
+  99   2             declare offset byte;
+ 100   2             scbpd.offset = offset;
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   5
+
+
+ 101   2             scbpd.set = 0;
+ 102   2             return mon2(49,.scbpd);
+ 103   2          end getscbbyte;
+
+ 104   1        getscbword:
+                  procedure (offset) address;
+ 105   2          declare offset byte;
+ 106   2          scbpd.offset = offset;
+ 107   2          scbpd.set = 0;
+ 108   2          return mon3(49,.scbpd);
+ 109   2        end getscbword;
+
+ 110   1        setscbword:
+                  procedure (offset,value);
+ 111   2            declare offset byte;
+ 112   2            declare value address;
+ 113   2            scbpd.offset = offset;
+ 114   2            scbpd.set = 0FEh;
+ 115   2            scbpd.value = value;
+ 116   2            call mon1(49,.scbpd);
+ 117   2        end setscbword;
+
+ 118   1        set$console$mode: procedure;
+                  /* set console mode to control-c only */
+ 119   2          call mon1(109,1);
+ 120   2        end set$console$mode;
+
+ 121   1        declare
+                  parse$fn structure (
+                    buff$adr  address,
+                    fcb$adr   address);
+
+ 122   1        parse: procedure(pfcb) address external;
+ 123   2          declare pfcb address;
+ 124   2          end parse;
+
+
+                /**************************************
+                 *                                    *
+                 *       S U B R O U T I N E S        *
+                 *                                    *
+                 **************************************/
+
+                                /* upper case character from console */
+ 125   1      crlf:   proc;
+ 126   2          call printchar(cr);
+ 127   2          call printchar(lf);
+ 128   2          end crlf;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* fill string @ s for c bytes with f */
+ 129   1      fill:   proc(s,f,c);
+ 130   2          dcl s addr,
+                      (f,c) byte,
+                      a based s byte;
+
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   6
+
+
+ 131   2              do while (c:=c-1)<>255;
+ 132   3              a = f;
+ 133   3              s = s+1;
+ 134   3              end;
+ 135   2          end fill;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* upper case character from console */
+ 136   1      ucase:   proc byte;
+ 137   2          dcl c byte;
+
+ 138   2          if (c:=conin) >= 'a' then
+ 139   2             if c < '{' then
+ 140   2                return(c-20h);
+ 141   2          return c;
+ 142   2          end ucase;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* get password and place at fcb + 16 */
+ 143   1      getpasswd:   proc;
+ 144   2          dcl (i,c) byte;
+
+ 145   2          call crlf;
+ 146   2          call crlf;
+ 147   2          call print$buf(.('Password: ','$'));
+ 148   2      retry:
+                  call fill(.fcb16,' ',8);
+ 149   2              do i = 0 to 7;
+ 150   3      nxtchr:
+                      if (c:=ucase) >= ' ' then 
+ 151   3                  fcb16(i)=c;
+ 152   3              if c = cr then
+ 153   3                  go to exit;
+ 154   3              if c = ctrlx then
+ 155   3                  goto retry;
+ 156   3              if c = bksp then do;
+ 158   4                  if i<1 then
+ 159   4                      goto retry;
+ 160   4                  else do;
+ 161   5                      fcb16(i:=i-1)=' ';
+ 162   5                      goto nxtchr;
+ 163   5                      end;
+ 164   4                  end;
+ 165   3              if c = 3 then
+ 166   3                  call terminate;
+ 167   3              end;
+ 168   2      exit:
+                  c = check$con$stat;             /* clear raw I/O mode */
+ 169   2          end getpasswd;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* error message routine */
+ 170   1      error:   proc(code);
+ 171   2         declare
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   7
+
+
+                    code byte;
+
+ 172   2          if code=0 then do;
+ 174   3              call print$buf (.('No File','$'));
+ 175   3              call terminate;
+ 176   3              end;
+ 177   2          if code=1 then do;
+ 179   3              call print$buf(.(cr,lf,'BDOS Bad Sector$'));
+ 180   3              call terminate;
+ 181   3              end;
+ 182   2          if code=4 then do;
+ 184   3              call print$buf(.(cr,lf,'Invalid Drive$'));
+ 185   3              call terminate;
+ 186   3              end;
+ 187   2          if code = 5 then      
+ 188   2              call print$buf(.('Currently Opened$'));
+ 189   2          if code = 7 then
+ 190   2              call print$buf(.('Password Error$'));
+ 191   2          end error;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                               /* print file name */
+ 192   1      print$file: procedure(fcbp);
+ 193   2          declare (k,c) byte;
+ 194   2          declare typ lit '9';        /* file type */
+ 195   2          declare fnam lit '11';        /* file type */
+ 196   2          declare
+                      fcbp   addr,
+                      fcbv   based fcbp (32) byte;
+
+ 197   2          if fcbv(0) <> 0 then do;
+ 199   3              call printchar(fcbv(0)+'@');
+ 200   3              call printchar(':');
+ 201   3          end;
+
+ 202   2              do k = 1 to fnam;
+ 203   3              if k = typ then 
+ 204   3                call printchar('.');
+ 205   3              if (c := (fcbv(k) and 7fh)) <> ' ' then
+ 206   3                call printchar(c);
+ 207   3              end;
+
+ 208   2      end print$file;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 209   1      error$opt: procedure (code);
+ 210   2         declare code byte;
+ 211   2         call print$buf(.('ERROR: $'));
+ 212   2         if code = 0 then 
+ 213   2            call print$buf(.('Invalid or missing delimiter(s) $'));
+ 214   2         if code = 1 then
+ 215   2            call print$buf(.('Try ''PAGE'' or ''NO PAGE'' $'));
+ 216   2         call terminate;
+ 217   2      end error$opt;
+
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   8
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 218   1      input$found: procedure (buffer$adr) byte;
+ 219   2        declare buffer$adr address;
+ 220   2        declare char based buffer$adr byte;
+ 221   2        do while (char = ' ') or (char = 9); /* tabs & spaces */
+ 222   3          buffer$adr = buffer$adr + 1;
+ 223   3        end;
+ 224   2        if char = 0 then  /* eoln */
+ 225   2          return false;   /* input not found */
+                else
+ 226   2          return true;    /* input found */
+ 227   2      end input$found;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 228   1      scanques: procedure(str$addr) byte;
+ 229   2         declare str$addr address;
+ 230   2         declare char based str$addr byte;
+ 231   2         declare i byte;
+ 232   2         declare wildcard byte;
+
+ 233   2         i = 0;
+ 234   2         wildcard = false;
+ 235   2         do while (i < 11);
+ 236   3            if char = '?' then
+ 237   3               wildcard = true;
+ 238   3            i = i + 1;
+ 239   3            str$addr = str$addr + 1;
+ 240   3            end; /* do while */
+ 241   2         return wildcard;
+ 242   2      end scanques;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+                                /* skip over blanks or tabs in command */
+ 243   1      page$test: procedure;
+
+ 244   2          if cnt <> 0 then
+ 245   2            if (tcnt:=tcnt+1) >= cnt then do;
+ 247   3              call print$buf(.more);
+ 248   3              tcnt = conin;
+ 249   3              call print$char(cr);
+ 250   3              if tcnt = ctrlc then
+ 251   3                call terminate;
+ 252   3              if tcnt = ctrlo then
+ 253   3                eod = true;
+ 254   3              tcnt = -1;
+ 255   3            end;
+ 256   2      end page$test;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+                                /* type a file specified by FCB */
+ 257   1      type$file: procedure;
+
+ 258   2          call return$errors(0FFh);           /* return after error message */
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE   9
+
+
+ 259   2          call setdma(.fcb16);                /* set dma to password */
+ 260   2          curfcb(6) = curfcb(6) or 80h;             /* open in RO mode     */
+ 261   2          curfcb(12) = 0;               /* open zero extent    */
+ 262   2          error$code = open$file (.curfcb);
+ 263   2          if low(error$code) = 0FFh then 
+ 264   2            if (code := high(error$code)) = 7 then do;
+ 266   3               call getpasswd;
+ 267   3               call crlf;
+ 268   3               call setdma(.fcb16);                /* set dma to password */
+ 269   3               curfcb(6) = curfcb(6) or 80h;             /* open in RO mode     */
+ 270   3               call return$errors(0);
+ 271   3               error$code = open$file(.curfcb);
+ 272   3            end;
+ 273   2            else do;
+ 274   3              call print$buf(.failed);
+ 275   3              call print$file(.curfcb);
+ 276   3              call printchar(' ');
+ 277   3              call error(code);
+ 278   3            end;
+ 279   2          if low(error$code) <> 0FFH then
+ 280   2          do;
+ 281   3            call return$errors(0);        /* reset error mode */
+ 282   3            call setdma(.tbuff);
+ 283   3            curfcb(32) = 0;
+ 284   3            eod = 0;
+ 285   3            do while (not eod) and (read$record (.curfcb) = 0);
+ 286   4              do i = 0 to 127;
+ 287   5                if (char := tbuff(i)) = control$z
+                          then eod = true;
+ 289   5                if not eod then
+ 290   5                do;
+ 291   6                  if check$con$stat then do;
+ 293   7                    tcnt = conin;
+ 294   7                    call terminate;   /* terminate only on ctrl-c */
+ 295   7                  end;
+ 296   6                  if cnt <> 0 then
+ 297   6                  do;
+ 298   7                    if char = 0ah then
+ 299   7                      call page$test;
+ 300   7                  end;
+ 301   6                  call printchar (char);
+ 302   6                end;
+ 303   5              end;
+ 304   4            end;
+                  /*  necessary to close under MP/M & Concurrent 
+                    call close (.curfcb);
+                  */
+ 305   3          end;
+ 306   2          else call error(0);
+
+ 307   2      end type$file;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+                                /* try typing files one at a time */
+ 308   1      multi$file:
+                  procedure;
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE  10
+
+
+ 309   2          declare (code,dcnt) byte;
+ 310   2          declare (nextfcb$adr,savdcnt,savsearcha,savsearchl) addr;
+ 311   2          declare nextfcb based nextfcb$adr (32) byte;
+ 312   2          declare (hash1,hash2,hash3) address;
+
+ 313   2          call setdma(.tbuff);
+ 314   2          if (dcnt:=search$first(.fcb)) = 0ffh then
+ 315   2              call error(0);
+
+ 316   2              do while dcnt <> 0ffh;
+ 317   3              nextfcb$adr = shl(dcnt,5) + .tbuff;
+ 318   3              savdcnt = getscbword(dcnt$offset);
+ 319   3              savsearcha = getscbword(searcha$offset);
+ 320   3              savsearchl = getscbword(searchl$offset);
+                      /* save searched fcb's hash code (5 bytes) */
+ 321   3              hash1 = getscbword(hash1$offset);
+ 322   3              hash2 = getscbword(hash2$offset);
+ 323   3              hash3 = getscbword(hash3$offset);   /* saved one extra byte */
+ 324   3              call move(16,nextfcb$adr,.curfcb);  /* copy matched filename */
+ 325   3              curfcb(0) = fcb(0);         /* set drive */
+ 326   3              call page$test;
+ 327   3          call crlf;
+ 328   3              call print$file(.curfcb);
+ 329   3              call printchar(':');
+ 330   3              call page$test;
+ 331   3              call crlf;
+ 332   3              call type$file;
+ 333   3              call setdma(.tbuff);
+ 334   3              call setscbword(dcnt$offset,savdcnt);
+ 335   3              call setscbword(searcha$offset,savsearcha);
+ 336   3              call setscbword(searchl$offset,savsearchl);
+                      /* restore hash code */
+ 337   3              call setscbword(hash1$offset,hash1);
+ 338   3              call setscbword(hash2$offset,hash2);
+ 339   3              call setscbword(hash3$offset,hash3);
+ 340   3              if .fcb <> savsearcha then  /*restore orig fcb if destroyed*/
+ 341   3                call move(16,.fcb,savsearcha);
+ 342   3              dcnt = search$next;
+ 343   3              end;
+ 344   2      end multi$file;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+                                /* skip over blanks or tabs in command */
+ 345   1      eat$blanks: procedure;
+ 346   2            do while (m = ' ') or (m = ctrli);
+ 347   3               status = status + 1;
+ 348   3            end;
+ 349   2      end eat$blanks;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+               
+                /**************************************
+               *                                    *
+               *       M A I N  P R O G R A M       *
+               *                                    *
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE  11
+
+
+               **************************************/
+
+ 350   1      plm:
+                do;
+ 351   2          ver = version;
+ 352   2          if (low(ver) < cpmversion) or (high(ver) = mpmproduct) then do;
+ 354   3            call print$buf (.('Requires CP/M 3.0','$'));
+ 355   3            call terminate;
+ 356   3            end;
+                  
+ 357   2          call set$console$mode;  /* set program interrupt to control-c only */ 
+                  
+                  /* get command */
+ 358   2          if not input$found(.tbuff(1)) then do;
+                     /* prompt for file */
+ 360   3             call print$buf(.('Enter file: $'));
+ 361   3             no$chars = read$console$buf(.tbuff(0),40);
+ 362   3             call print$buf(.(cr,lf,'$'));
+ 363   3             tbuff(1) = ' ';  /* blank out nc field */
+ 364   3             tbuff(no$chars+2)=0; /* mark eoln */
+                     /* convert input to upper case */
+ 365   3             do i = 2 to no$chars+1;
+ 366   4                if tbuff(i) >= 'a' then
+ 367   4                   if tbuff(i) < '}' then
+ 368   4                      tbuff(i) = tbuff(i) - 20h;
+ 369   4             end;
+ 370   3          end;
+
+                  /* parse command for file and options */
+ 371   2          tcnt,cnt = 0;
+ 372   2          parse$fn.buff$adr = .tbuff(1);
+ 373   2          parse$fn.fcb$adr = .fcb;
+ 374   2          status = parse(.parse$fn);
+ 375   2          if status = 0FFFFh then do;
+ 377   3             call print$buf(.('ERROR: Invalid file name. $'));
+ 378   3             call terminate;
+ 379   3          end;
+
+                  /* get default paging mode */
+ 380   2          if getscbbyte(con$page$mode) <> 0 then
+ 381   2             paging = false;
+
+                  /* check for options */
+ 382   2          if (status <> 0) then do;   /* options follow? */
+ 384   3            call eat$blanks;
+ 385   3            if m = 0 then goto continue;  /* no options found */
+                    /* check for page option */
+ 387   3            if m <> '[' then
+ 388   3               call error$opt(0);
+ 389   3            status = status + 1;
+ 390   3            call eat$blanks;
+ 391   3            if m = 'N' then do;
+ 393   4               status = status + 1;
+ 394   4               if (m = 'O') or (m = ' ') then do;
+ 396   5                 status = status + 1;
+ 397   5                 negate = true;
+ 398   5               end;
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE  12
+
+
+                       else
+ 399   4                 call error$opt(1);
+ 400   4               call eat$blanks;
+ 401   4            end;
+
+ 402   3            if m = 'P' then
+ 403   3               paging = true;
+                    else
+ 404   3               call error$opt(1);
+ 405   3            status = status + 1;
+ 406   3            if ( m = ']' ) or ( m = 0 ) then
+ 407   3               goto continue;
+ 408   3            else if m <> 'A' then
+ 409   3               goto end$opt;
+                    status = status + 1;
+ 411   3            if ( m = ']' ) or ( m = 0 ) then
+ 412   3               goto continue;
+ 413   3            else if m <> 'G' then
+ 414   3               goto end$opt;
+                    status = status + 1;
+ 416   3            if ( m = ']' ) or ( m = 0 ) then
+ 417   3               goto continue;
+ 418   3            else if m <> 'E' then
+ 419   3               goto end$opt;
+                    status = status + 1;
+ 421   3          end$opt:
+                    call eat$blanks;
+ 422   3            if ( m <> ']' ) and ( m <> 0 ) then
+ 423   3               call error$opt(1);
+ 424   3         end;
+ 425   2         continue:
+
+                 /* check for negation of paging */
+                 if negate then 
+ 426   2           paging = not paging;
+
+                 /* get page size */
+ 427   2         if paging then do;
+ 429   3           cnt = getscbbyte(con$page$size)-2;
+ 430   3           if cnt = 0 then cnt = 22;      /* by default, 22 lines on screen */
+ 432   3         end;
+                 else
+ 433   2           cnt = 0;   /* no paging */
+
+                 /* check for wild card or single file */
+ 434   2          wflag = scanques(.fcb);
+ 435   2          if wflag = true then 
+ 436   2             call multi$file;
+ 437   2          else do;
+ 438   3             call move(16,.fcb,.curfcb);
+ 439   3             call type$file;
+ 440   3          end;
+ 441   2          call terminate;
+ 442   2        end;
+ 443   1      end type;
+PL/M-80 COMPILER    CP/M 3.0 --- TYPE                                                       PAGE  13
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 097DH   2429D
+     VARIABLE AREA SIZE = 0073H    115D
+     MAXIMUM STACK SIZE = 000CH     12D
+     676 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

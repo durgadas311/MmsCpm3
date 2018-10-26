@@ -1,0 +1,689 @@
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE TOD
+OBJECT MODULE PLACED IN DATE.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 DATE.PLM PAGEWIDTH(100) DEBUG OPTIMIZE
+
+
+
+              $title ('CP/M V3.0 Date and Time')
+   1          tod:
+                 do;
+
+              /*
+                Revised:
+                  14 Sept 81  by Thomas Rolander
+
+                Modifications:
+                 Date: September 2,1982
+
+                 Programmer: Thomas J. Mason
+
+                 Changes:
+                  The 'P' option was changed to the 'C'ontinuous option.
+                  Also added is the 'S'et option to let the user set either
+                  the time or the date.
+
+                 Date: October 31,1982
+
+                 Programmer: Bruce K. Skidmore
+
+                 Changes:
+                  Added Function 50 call to signal Time Set and Time Get.
+
+                 Date: 17 May 1998
+
+                 Programmer: John Elliott
+
+                 Changes:
+                  Year 2000 fixes (flagged [JCE] below)
+                  Patch 17 implemented
+              */
+
+   2   1         declare PLM label public;
+
+   3   1         mon1:
+                  procedure (func,info) external;
+   4   2             declare func byte;
+   5   2             declare info address;
+   6   2          end mon1;
+
+   7   1         mon2:
+                  procedure (func,info) byte external;
+   8   2             declare func byte;
+   9   2             declare info address;
+  10   2          end mon2;
+
+  11   1         mon2a:
+                  procedure (func,info) address external;
+  12   2             declare func byte;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   2
+
+
+  13   2             declare info address;
+  14   2          end mon2a;
+
+  15   1         declare xdos literally 'mon2a';
+  16   1         declare date$flag$offset literally '0ch';    /* [JCE] Date in UK format? */
+
+  17   1         declare fcb (1) byte external;
+  18   1         declare fcb16 (1) byte external;
+  19   1         declare tbuff (1) byte external;
+
+  20   1         RETURN$VERSION$FUNC:
+                  procedure address;
+  21   2             return MON2A(12,0);
+  22   2          end RETURN$VERSION$FUNC;
+
+  23   1         read$console:
+                  procedure byte;
+  24   2             return mon2 (1,0);
+  25   2          end read$console;
+
+  26   1         write$console:
+                  procedure (char);
+  27   2             declare char byte;
+  28   2             call mon1 (2,char);
+  29   2          end write$console;
+
+  30   1         print$buffer:
+                  procedure (buffer$address);
+  31   2             declare buffer$address address;
+  32   2             call mon1 (9,buffer$address);
+  33   2          end print$buffer;
+
+  34   1         READ$CONSOLE$BUFFER:
+                  procedure (BUFF$ADR);
+  35   2          declare BUFF$ADR address;
+  36   2             call MON1(10,BUFF$ADR);
+  37   2          end READ$CONSOLE$BUFFER;
+
+  38   1         check$console$status:
+                  procedure byte;
+  39   2             return mon2 (11,0);
+  40   2          end check$console$status;
+
+
+  41   1         terminate:
+                  procedure;
+  42   2             call mon1 (0,0);
+  43   2          end terminate;
+
+  44   1         crlf:
+                  procedure;
+  45   2             call write$console (0dh);
+  46   2             call write$console (0ah);
+  47   2          end crlf;
+
+
+  48   1      get$date$flag: procedure byte;  /* [JCE] Read the date format flag */
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   3
+
+
+  49   2        declare scbpb structure
+                  (offset byte,
+                   set    byte,
+                   value  address);
+  50   2        scbpb.offset = date$flag$offset;
+  51   2        scbpb.set = 0;
+  52   2        return (mon2(49,.scbpb) and 1);
+  53   2      end get$date$flag;          /* [JCE] ends */
+
+              /*****************************************************
+
+                        Time & Date ASCII Conversion Code
+
+               *****************************************************/
+  54   1      declare BUFFER$ADR structure (
+                      MAX$CHARS byte,
+                      NUMB$OF$CHARS byte,
+                      CONSOLE$BUFFER(23) byte)       /* [JCE] size 21 -> 23 throughout */
+                      initial(23,0,0,0,0,0,0,0,0,0,0,0,  /*       because of printing */
+                               0,0,0,0,0,0,0,0,0,0,0,0,0); /*     four-figure year nos. */
+
+  55   1      declare tod$adr address;
+  56   1      declare tod based tod$adr structure (
+                opcode byte,
+                date address,
+                hrs byte,
+                min byte,
+                sec byte,
+                ASCII (23) byte );
+
+  57   1      declare string$adr address;
+  58   1      declare string based string$adr (1) byte;
+  59   1      declare index byte;
+
+  60   1      declare lit literally 'literally',
+                forever lit 'while 1',
+                word lit 'address';
+
+              /* - - - - - - - - - - - - - - - - - - - - - - */
+  61   1         emitchar:
+                  procedure(c);
+  62   2          declare c byte;
+  63   2             string(index := index + 1) = c;
+  64   2          end emitchar;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+  65   1         emitn:
+                  procedure(a);
+  66   2          declare a address;
+  67   2          declare c based a byte;
+  68   2             do while c <> '$';
+  69   3                string(index := index + 1) = c;
+  70   3                a = a + 1;
+  71   3             end;
+  72   2          end emitn;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   4
+
+
+
+  73   1         emit$bcd:
+                  procedure(b);
+  74   2          declare b byte;
+  75   2             call emitchar('0'+b);
+  76   2          end emit$bcd;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  77   1         emit$bcd$pair:  
+                  procedure(b);
+  78   2          declare b byte;
+  79   2             call emit$bcd(shr(b,4));
+  80   2             call emit$bcd(b and 0fh);
+  81   2          end emit$bcd$pair;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+               
+  82   1         emit$colon:
+                  procedure(b);
+  83   2          declare b byte;
+  84   2             call emit$bcd$pair(b);
+  85   2             call emitchar(':');
+  86   2          end emit$colon;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  87   1         emit$bin$pair:
+                  procedure(b);
+  88   2          declare b byte;
+  89   2             call emit$bcd(b/10);
+  90   2             call emit$bcd(b mod 10);
+  91   2          end emit$bin$pair;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  92   1         emit$slant:
+                  procedure(b);
+  93   2          declare b byte;
+  94   2             call emit$bin$pair(b);
+  95   2             call emitchar('/');
+  96   2          end emit$slant;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  97   1         declare chr byte;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  98   1         gnc:
+                  procedure;
+                  /* get next command byte */
+  99   2             if chr = 0 then return;
+ 101   2             if index = 22 then   /* [JCE] 20 -> 22 */
+ 102   2             do;
+ 103   3                chr = 0;
+ 104   3                return;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   5
+
+
+ 105   3             end;
+ 106   2             chr = string(index := index + 1);
+ 107   2          end gnc;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+ 108   1         deblank:
+                  procedure;
+ 109   2             do while chr = ' ';
+ 110   3                call gnc;
+ 111   3             end;
+ 112   2          end deblank;
+
+ 113   1         numeric:
+                  procedure byte;
+                  /* test for numeric */
+ 114   2             return (chr - '0') < 10;
+ 115   2          end numeric;
+
+ 116   1         scan$numeric:
+                  procedure(lb,ub) byte;
+ 117   2          declare (lb,ub) byte;
+ 118   2          declare b byte;
+ 119   2             b = 0;
+ 120   2             call deblank;
+ 121   2             if not numeric then go to error;
+ 123   2             do while numeric;
+ 124   3                if (b and 1110$0000b) <> 0 then go to error;
+ 126   3                b = shl(b,3) + shl(b,1); /* b = b * 10 */
+ 127   3                if carry then go to error;
+ 129   3                b = b + (chr - '0');
+ 130   3                if carry then go to error;
+ 132   3                call gnc;
+ 133   3             end;
+ 134   2             if (b < lb) or (b > ub) then go to error;
+ 136   2             return b;
+ 137   2           end scan$numeric;
+
+ 138   1         scan$delimiter:
+                  procedure(d,lb,ub) byte;
+ 139   2          declare (d,lb,ub) byte;
+ 140   2             call deblank;
+ 141   2             if chr <> d then go to error;
+ 143   2             call gnc;
+ 144   2             return scan$numeric(lb,ub);
+ 145   2          end scan$delimiter;
+
+ 146   1      declare base$year lit '78',   /* base year for computations */
+                      base$day  lit '0',    /* starting day for base$year 0..6 */
+                      month$size (*) byte data
+                      /* jan feb mar apr may jun jul aug sep oct nov dec */
+                      (   31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31),
+                      month$days (*) word data
+                      /* jan feb mar apr may jun jul aug sep oct nov dec */
+                      (  000,031,059,090,120,151,181,212,243,273,304,334);
+
+ 147   1         leap$days:
+                  procedure(y,m) byte;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   6
+
+
+ 148   2          declare (y,m) byte;
+                  /* compute days accumulated by leap years */
+ 149   2          declare yp byte;
+ 150   2             yp = shr(y,2); /* yp = y/4 */
+ 151   2             if (y and 11b) = 0 and month$days(m) < 59 then
+                      /* y not 00, y mod 4 = 0, before march, so not leap yr */
+ 152   2                return yp - 1;
+                  /* otherwise, yp is the number of accumulated leap days */
+ 153   2             return yp;
+ 154   2          end leap$days;
+
+ 155   1         declare word$value word;
+
+ 156   1         get$next$digit:
+                  procedure byte;
+                  /* get next lsd from word$value */
+ 157   2          declare lsd byte;
+ 158   2             lsd = word$value mod 10;
+ 159   2             word$value = word$value / 10;
+ 160   2             return lsd;
+ 161   2          end get$next$digit;
+
+ 162   1         bcd:
+                  procedure (val) byte;
+ 163   2          declare val byte;
+ 164   2             return shl((val/10),4) + val mod 10;
+ 165   2          end bcd;
+
+ 166   1         declare (month, day, year, hrs, min, sec) byte;
+
+ 167   1         set$date:
+                  procedure;
+ 168   2          declare (i, leap$flag) byte; /* temporaries */
+ 169   2             if get$date$flag = 1 then    /* [JCE] UK format */
+ 170   2               do;
+ 171   3               day = scan$numeric(1,31);
+ 172   3               month = scan$delimiter('/',1,12) - 1;
+ 173   3               if (leap$flag := month = 1) then i = 29;
+ 175   3                 else i = month$size(month);
+ 176   3               if day > i then go to error;
+ 178   3               end;
+                     else             /* US format */
+ 179   2               do;
+ 180   3               month = scan$numeric(1,12) - 1;
+                       /* may be feb 29 */
+ 181   3               if (leap$flag := month = 1) then i = 29;
+ 183   3                 else i = month$size(month);
+ 184   3               day   = scan$delimiter('/',1,i);
+ 185   3               end;       
+                                                       /* [JCE] year2000: Was  year  = scan$delimite
+           -   r('/',base$year,99); */
+ 186   2             year  = scan$delimiter('/',0,99); /* [JCE] */
+ 187   2             if year < base$year       /* [JCE] */
+                       then year = year + 100;     /* [JCE] Dates past 2000 */
+                  /* ensure that feb 29 is in a leap year */
+ 189   2             if leap$flag and day = 29 and (year and 11b) <> 0 then
+ 190   2          /* feb 29 of non-leap year */ go to error;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   7
+
+
+                  /* compute total days */
+ 191   2             tod.date = month$days(month)
+                              + 365 * (year - base$year)
+                              + day
+                              - leap$days(base$year,0)
+                              + leap$days(year,month);
+
+ 192   2           end SET$DATE;
+
+ 193   1         SET$TIME:
+                  procedure;
+ 194   2             tod.hrs   = bcd (scan$numeric(0,23));
+ 195   2             tod.min   = bcd (scan$delimiter(':',0,59));
+ 196   2             if tod.opcode = 2
+                      then
+                  /* date, hours and minutes only */
+ 197   2              do;
+ 198   3                 if chr = ':'
+                          then i = scan$delimiter (':',0,59);
+ 200   3                 tod.sec = 0;
+ 201   3              end;
+                  /* include seconds */
+ 202   2              else tod.sec   = bcd (scan$delimiter(':',0,59));
+ 203   2          end set$time;
+
+ 204   1         bcd$pair:
+                  procedure(a,b) byte;
+ 205   2          declare (a,b) byte;
+ 206   2             return shl(a,4) or b;
+ 207   2          end bcd$pair;
+
+
+ 208   1         compute$year:
+                  procedure;
+                  /* compute year from number of days in word$value */
+ 209   2          declare year$length word;
+ 210   2             year = base$year;
+ 211   2                do forever;
+ 212   3                   year$length = 365;
+ 213   3                   if (year and 11b) = 0 then /* leap year */
+ 214   3                      year$length = 366;
+ 215   3                   if word$value <= year$length then
+ 216   3                      return;
+ 217   3                   word$value = word$value - year$length;
+ 218   3                   year = year + 1;
+ 219   3                end;
+ 220   2          end compute$year;
+
+ 221   1      declare week$day  byte, /* day of week 0 ... 6 */
+                      day$list (*) byte data ('Sun$Mon$Tue$Wed$Thu$Fri$Sat$'),
+                      leap$bias byte; /* bias for feb 29 */
+
+ 222   1         compute$month:
+                  procedure;
+ 223   2             month = 12;
+ 224   2             do while month > 0;
+ 225   3                if (month := month - 1) < 2 then /* jan or feb */
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   8
+
+
+ 226   3                   leapbias = 0;
+ 227   3                if month$days(month) + leap$bias < word$value then return;
+ 229   3             end;
+ 230   2          end compute$month;
+
+ 231   1      declare date$test byte,    /* true if testing date */
+                      test$value word;   /* sequential date value under test */
+
+ 232   1         get$date$time:
+                  procedure;
+                  /* get date and time */
+ 233   2             hrs = tod.hrs;
+ 234   2             min = tod.min;
+ 235   2             sec = tod.sec;
+ 236   2             word$value = tod.date;
+                  /* word$value contains total number of days */
+ 237   2             week$day = (word$value + base$day - 1) mod 7;
+ 238   2             call compute$year;
+                  /* year has been set, word$value is remainder */
+ 239   2             leap$bias = 0;
+ 240   2             if (year and 11b) = 0 and word$value > 59 then
+ 241   2              /* after feb 29 on leap year */ leap$bias = 1;
+ 242   2             call compute$month;
+ 243   2             day = word$value - (month$days(month) + leap$bias);
+ 244   2             month = month + 1;
+ 245   2          end get$date$time;
+
+ 246   1         emit$date$time:
+                  procedure;
+ 247   2             declare century byte;    /* [JCE] century */
+
+ 248   2             century = 19;        /* [JCE] start in the 1900s */
+ 249   2             call emitn(.day$list(shl(week$day,2)));
+ 250   2             call emitchar(' ');
+ 251   2             if get$date$flag = 0 then /* [JCE] US or UK format for dates? */
+ 252   2               do;
+ 253   3               call emit$slant(month);
+ 254   3               call emit$slant(day);
+ 255   3               end;
+                     else
+ 256   2               do;
+ 257   3               call emit$slant(day);
+ 258   3               call emit$slant(month);
+ 259   3               end;       
+ 260   2             century = century + (year / 100);   /* [JCE] Y2000 fix for output */
+ 261   2             year    = year mod 100;             /* [JCE] */
+ 262   2             call emit$bin$pair(century);        /* [JCE] end of Y2000 fix for output */   
+ 263   2             call emit$bin$pair(year);
+ 264   2             call emitchar(' ');
+ 265   2             call emit$colon(hrs);
+ 266   2             call emit$colon(min);
+ 267   2             call emit$bcd$pair(sec);
+ 268   2          end emit$date$time;
+
+ 269   1         tod$ASCII:
+                  procedure (parameter);
+ 270   2          declare parameter address;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE   9
+
+
+ 271   2          declare ret address;
+ 272   2             ret = 0;
+ 273   2             tod$adr = parameter;
+ 274   2             string$adr = .tod.ASCII;
+ 275   2             if tod.opcode = 0 then
+ 276   2             do;
+ 277   3                call get$date$time;
+ 278   3                index = -1;
+ 279   3                call emit$date$time;
+ 280   3             end;
+                      else
+ 281   2             do;
+ 282   3                if (tod.opcode = 1) or
+                         (tod.opcode = 2) then
+ 283   3                do;
+ 284   4                   chr = string(index:=0);
+ 285   4                   call set$date;
+ 286   4                   call set$time;
+ 287   4                   ret = .string(index);
+ 288   4                end;
+                         else
+ 289   3                do;
+ 290   4                   go to error;
+ 291   4                end;
+ 292   3             end;
+ 293   2          end tod$ASCII;
+
+              /********************************************************
+               ********************************************************/
+
+
+ 294   1         declare lcltod structure (
+                   opcode byte,
+                   date address,
+                   hrs byte,
+                   min byte,
+                   sec byte,
+                   ASCII (23) byte ); /* [JCE] 21 -> 23 */
+
+ 295   1         declare datapgadr address;
+ 296   1         declare datapg based datapgadr address;
+
+ 297   1         declare extrnl$todadr address;
+ 298   1         declare extrnl$tod based extrnl$todadr structure (
+                   date address,
+                   hrs byte,
+                   min byte,
+                   sec byte );
+
+ 299   1         declare i byte;
+ 300   1         declare ret address;
+
+ 301   1         display$tod:
+                  procedure;
+ 302   2             lcltod.opcode = 0; /* read tod */
+ 303   2             call mon1(50,.(26,0,0,0,0,0,0,0)); /* BIOS TIME GET SIGNAL */
+ 304   2             call move (5,.extrnl$tod.date,.lcltod.date);
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE  10
+
+
+ 305   2             call tod$ASCII (.lcltod);
+ 306   2             call write$console (0dh);
+ 307   2             do i = 0 to 22;  /* [JCE] 20 -> 22 */
+ 308   3                call write$console (lcltod.ASCII(i));
+ 309   3             end;
+ 310   2          end display$tod;
+
+ 311   1         comp:
+                  procedure (cnt,parmadr1,parmadr2) byte;
+ 312   2          declare (i,cnt) byte;
+ 313   2          declare (parmadr1,parmadr2) address;
+ 314   2          declare parm1 based parmadr1 (5) byte;
+ 315   2          declare parm2 based parmadr2 (5) byte;
+ 316   2             do i = 0 to cnt-1;
+ 317   3                if parm1(i) <> parm2(i)
+                         then return 0;
+ 319   3             end;
+ 320   2             return 0ffh;
+ 321   2          end comp;
+
+
+                /**************************************
+
+
+                  Main Program
+
+
+                **************************************/
+
+ 322   1         declare last$dseg$byte byte initial (0);
+ 323   1         declare CURRENT$VERSION address initial (0);
+ 324   1         declare CPM30 byte initial (030h);
+ 325   1         declare MPM byte initial (01h);
+
+ 326   1      PLM:
+              do;
+ 327   2         CURRENT$VERSION = RETURN$VERSION$FUNC;
+ 328   2         if (low(CURRENT$VERSION) >= CPM30) and (high(CURRENT$VERSION) <> MPM) then
+ 329   2         do;
+ 330   3            datapgadr = xdos (49,.(03ah,0));
+ 331   3            extrnl$todadr = xdos(49,.(03ah,0)) + 58H;
+ 332   3            if (FCB(1) = 'C') then
+ 333   3            do while FCB(1) = 'C';
+ 334   4               call mon1(105,.(0,0,0,0)); /* [JCE] this implements Patch 17 */
+ 335   4               if comp(5,.extrnl$tod.date,.lcltod.date) = 0 then
+ 336   4                  call display$tod;
+ 337   4               if check$console$status then
+ 338   4               do;
+ 339   5                  ret = read$console;
+ 340   5                  fcb(1) = 0;
+ 341   5               end;
+ 342   4            end;
+                    else
+ 343   3               if (FCB(1) = ' ') then
+ 344   3               do;
+ 345   4                  call display$tod;
+ 346   4               end;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE  11
+
+
+                       else
+ 347   3                  if (FCB(1) = 'S')
+                          then do;
+ 349   4                     call crlf;
+ 350   4                     call print$buffer(.('Enter today''s date (','$'));   /* [JCE] UK-format
+           -    */
+ 351   4                     if get$date$flag then                    /* [JCE] */
+ 352   4                           call print$buffer(.('DD/MM/YY): ','$'));       /* [JCE] UK format
+           -    */
+ 353   4                     else  call print$buffer(.('MM/DD/YY): ','$'));       /* [JCE] US format
+           -    */
+ 354   4                     call move(23,.(000000000000000000000),.buffer$adr.console$buffer);
+ 355   4                     call read$console$buffer(.buffer$adr);
+ 356   4                     if buffer$adr.numb$of$chars > 0
+                             then do;
+ 358   5                        call move(23,.buffer$adr.console$buffer,.lcltod.ASCII);
+ 359   5                        tod$adr = .lcltod;
+ 360   5                        string$adr = .tod.ASCII;
+ 361   5                        chr = string(index := 0);
+ 362   5                        call set$date;
+ 363   5                        call move(2,.lcltod.date,.extrnl$tod.date);
+ 364   5                     end;  /* date initialization */
+ 365   4                     call crlf;
+ 366   4                     call print$buffer(.('Enter the time (HH:MM:SS):     ','$'));
+ 367   4                     call move(23,.(000000000000000000000),.buffer$adr.console$buffer);
+ 368   4                     call read$console$buffer(.buffer$adr);
+ 369   4                     if buffer$adr.numb$of$chars > 0
+                              then do;
+ 371   5                        call move(23,.buffer$adr.console$buffer,.lcltod.ASCII);
+ 372   5                        tod$adr = .lcltod;
+ 373   5                        string$adr = .tod.ASCII;
+ 374   5                        chr = string(index := 0);
+ 375   5                        call set$time;
+ 376   5                        call crlf;
+ 377   5                        call print$buffer(.('Press any key to set time ','$'));
+ 378   5                        ret = read$console;
+ 379   5                        call move(3,.lcltod.hrs,.extrnl$tod.hrs);
+ 380   5                        call mon1(50,.(26,0,0ffh,0,0,0,0,0)); /* BIOS TIME SET SIGNAL */
+ 381   5                      end;
+ 382   4                      call crlf;
+ 383   4                   end;
+ 384   3                  else do;
+ 385   4                     call move (23,.tbuff(1),.lcltod.ASCII);
+ 386   4                     lcltod.opcode = 1;
+ 387   4                     call tod$ASCII (.lcltod);
+ 388   4                     call crlf;
+ 389   4                     call print$buffer (.('Strike key to set time','$'));
+ 390   4                     ret = read$console;
+ 391   4                     call move (5,.lcltod.date,.extrnl$tod.date);
+ 392   4                     call mon1(50,.(26,0,0ffh,0,0,0,0,0)); /* BIOS TIME SET SIGNAL */
+ 393   4                     call crlf;
+ 394   4                   end;
+ 395   3            call terminate;
+ 396   3            end;
+                    else
+ 397   2            do;
+ 398   3               call CRLF;
+PL/M-80 COMPILER    CP/M V3.0 DATE AND TIME                                                 PAGE  12
+
+
+ 399   3               call PRINT$BUFFER(.('ERROR:  Requires CP/M3.','$'));
+ 400   3               call CRLF;
+ 401   3               call TERMINATE;
+ 402   3            end;
+ 403   2         end;
+
+ 404   1         error:
+                 do;
+ 405   2            call crlf;
+ 406   2            call print$buffer (.('ERROR: Illegal time/date specification.','$'));
+ 407   2            call terminate;
+ 408   2         end;
+
+ 409   1      end tod;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 09FBH   2555D
+     VARIABLE AREA SIZE = 0082H    130D
+     MAXIMUM STACK SIZE = 000EH     14D
+     631 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

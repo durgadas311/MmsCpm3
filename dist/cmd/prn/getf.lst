@@ -1,0 +1,618 @@
+:F3:ASM80 GETF.ASM DEBUG
+
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    1
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                      1 $title('GETF  - CP/M 3.0 Input Redirection - August 1982')
+                      2         name    getf
+                      3 ;******************************************************************
+                      4 ;
+                      5 ;       get  'Input Redirection Initializer'  version 3.0
+                      6 ;
+                      7 ;       11/30/82 - Doug Huskey
+                      8 ;******************************************************************
+                      9 ;
+                     10 ;
+                     11 ;       Copyright (c) 1982
+                     12 ;       Digital Research
+                     13 ;       P.O. Box 579
+                     14 ;       Pacific Grove, Ca.
+                     15 ;       93950
+                     16 ;
+                     17 ;
+                     18 ;       generation procedure
+                     19 ;
+                     20 ;       seteof get.plm
+                     21 ;       seteof getscan.dcl
+                     22 ;       seteof getf.asm
+                     23 ;       seteof getscan.plm
+                     24 ;       seteof parse.asm
+                     25 ;       is14
+                     26 ;       asm80 getf.asm debug
+                     27 ;       asm80 mcd80a.asm debug
+                     28 ;       asm80 parse.asm debug
+                     29 ;       plm80 get.plm pagewidth(100) debug optimize
+                     30 ;       link mcd80a.obj,get.obj,parse.obj,getf.obj,plm80.lib to get.mod
+                     31 ;       locate get.mod code(0100H) stacksize(100)
+                     32 ;       era get.mod
+                     33 ;       cpm
+                     34 ;       objcpm get
+                     35 ;       rmac getrsx
+                     36 ;       link getrsx[op]
+                     37 ;       era get.rsx
+                     38 ;       ren get.rsx=getrsx.prl
+                     39 ;       gencom get.com
+                     40 ;       gencom get.com get.rsx 
+                     41 ;       
+                     42 ;
+                     43 ;
+                     44 ;       This module is called as an external routine by the
+                     45 ;       PL/M routines GET and SUBMIT.  It is passed a structure
+                     46 ;       with the following format:
+                     47 ;
+                     48 ;
+                     49 ;                 declare getpb structure
+                     50 ;                   (input$type   byte,
+                     51 ;                    echo$flag     byte,
+                     52 ;                    filtered$flag byte,
+                     53 ;                    program$flag  byte);
+                     54 ;
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    2
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                     55 ;       input$type      = 0     > console input (default)
+                     56 ;                       = 1     > auxiliary output
+                     57 ;
+                     58 ;       echo            = true  > echo input to real device
+                     59 ;                                 (default)
+                     60 ;                       = false > don't echo input (output is 
+                     61 ;                                 still echoed)
+                     62 ;       filtered        = true  > convert control characters
+                     63 ;                                 to a printable form 
+                     64 ;                                 preceeded by an ^ in echo
+                     65 ;                                 (default)
+                     66 ;                       = false > no character conversions
+                     67 ;       program         = false > continue until EOF or 
+                     68 ;                                 GET INPUT FROM CONSOLE
+                     69 ;                                 command
+                     70 ;                       = true  > active only until program
+                     71 ;                                 termination
+                     72 ;
+                     73         public  getf
+                     74         extrn   mon1,fcb,memsiz
+                     75 ;
+                     76 ;
+  FFFF               77 true            equ     0ffffh
+  0000               78 false           equ     00000h
+                     79 ;
+  FFFF               80 biosfunctions   equ     true            ;intercept BIOS conin & constat 
+                     81 ;
+                     82 ;
+                     83 ;       low memory locations
+                     84 ;
+  0000               85 wboot   equ     0000h
+  0001               86 wboota  equ     wboot+1
+                     87 ;
+                     88 ;       equates for non graphic characters
+                     89 ;
+  000D               90 cr      equ     0dh     ; carriage return
+  000A               91 lf      equ     0ah     ; line feed
+                     92 ;
+                     93 ;       BDOS function equates
+                     94 ;
+  0001               95 cinf    equ     1       ;read character
+  0002               96 coutf   equ     2       ;output character
+  0006               97 crawf   equ     6       ;raw console I/O
+  000A               98 creadf  equ     10      ;read buffer
+  000B               99 cstatf  equ     11      ;status
+  0005              100 pchrf   equ     5       ;print character
+  0009              101 pbuff   equ     9       ;print buffer
+  000F              102 openf   equ     15      ;open file
+  0010              103 closef  equ     16      ;close file
+  0013              104 delf    equ     19      ;delete file
+  0014              105 dreadf  equ     20      ;disk read
+  001A              106 dmaf    equ     26      ;set dma function
+  0019              107 curdrv  equ     25
+  0020              108 userf   equ     32      ;set/get user number
+  0031              109 scbf    equ     49      ;set/get system control block word
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    3
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  003C              110 rsxf    equ     60      ;RSX function call
+  0080              111 initf   equ     128     ;GET initialization sub-function no.
+  0081              112 killf   equ     129     ;GET delete sub-function no.
+  008D              113 jkillf  equ     141     ;JOURNAL delete sub-function no.
+                    114 ;
+                    115 ;       System Control Block definitions
+                    116 ;
+  003A              117 scba    equ     03ah    ;offset of scbadr from SCB base
+  00B4              118 ccpflg2 equ     0b4h    ;offset of 2nd ccp flag byte from pg bound
+  00AA              119 errflg  equ     0aah    ;offset of error flag from page boundary
+  00CF              120 conmode equ     0cfh    ;offset of console mode from page boundary
+  00D4              121 listcp  equ     0d4h    ;offset of ^P flag from page boundary
+  00F9              122 common  equ     0f9h    ;offset of common memory base from pg. bound
+  0068              123 wbootfx equ     068h    ;offset of warm boot jmp from page. bound
+  006E              124 constfx equ     06eh    ;offset of constat jmp from page. bound
+  0074              125 coninfx equ     074h    ;offset of conin jmp from page. bound
+  007A              126 conoufx equ     07ah    ;offset of conout jmp from page. bound
+  0080              127 listfx  equ     080h    ;offset of list jmp from page. bound
+  0098              128 realdos equ     098h    ;offset of real BDOS entry from pg. bound
+                    129 ;
+                    130 ;       Restore mode equates    (used with inr a, rz, rm, rpe, ret)
+                    131 ;
+  00FF              132 norestore       equ     0ffh    ;no BIOS interception
+  007F              133 biosonly        equ     07fh    ;restore BIOS jump table only
+  0080              134 stfix   equ     080h    ;restore BIOS jump table and
+                    135                                 ;restore JMP in RESBDOS for constat
+  0000              136 everything      equ     0       ;restore BIOS jump table and jmps in
+                    137                                 ;RESBDOS (default mode)
+                    138 ;
+                    139 ;       Instructions
+                    140 ;
+  0021              141 lxih            equ     21h     ;LXI H, instruction
+  00C3              142 jmpi            equ     0c3h    ;JMP instruction
+  0022              143 shldi           equ     22h     ;SHLD instruction
+                    144 ;
+                    145 ;******************************************************************
+                    146 ;               START OF INITIALIZATION CODE
+                    147 ;******************************************************************
+                    148 
+                    149                 cseg
+                    150 
+                    151 getf:
+                    152         ;get parameters
+  0000 60           153         mov     h,b
+  0001 69           154         mov     l,c             ;HL = .(parameter block)
+  0002 7E           155         mov     a,m             ;input type 0=con:,1=aux:
+  0003 FE01         156         cpi     1               ;is it aux?
+  0005 CA2301   C   157         jz      notimp          ;error if so
+  0008 23           158         inx     h
+  0009 7E           159         mov     a,m             ;echo/noecho mode
+  000A 32ED01   C   160         sta     echo
+  000D 23           161         inx     h
+  000E 7E           162         mov     a,m             ;cooked/raw mode        
+  000F 32EE01   C   163         sta     cooked  
+  0012 23           164         inx     h
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    4
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0013 7E           165         mov     a,m
+  0014 32EF01   C   166         sta     program
+                    167         ;
+                    168         ;check if enough memory
+                    169         ;
+  0017 2A0000   E   170         lhld    memsiz
+  001A 7C           171         mov     a,h
+  001B FE20         172         cpi     20h
+  001D DA3E01   C   173         jc      nomem
+                    174         ;
+                    175         ;close to get those blocks in the directory
+                    176         ;
+  0020 110000   E   177         lxi     d,fcb
+  0023 0E10         178         mvi     c,closef
+  0025 CD0000   E   179         call    mon1
+                    180         ;
+                    181         ;check if drive specified
+  0028 210000   E   182         lxi     h,fcb
+  002B 7E           183         mov     a,m             ;drive code
+  002C B7           184         ora     a               ;default?
+  002D C23900   C   185         jnz     movfcb
+                    186         ;
+                    187         ;set to current drive, if  not
+                    188         ;
+  0030 E5           189         push    h               ;save .fcb
+  0031 0E19         190         mvi     c,curdrv
+  0033 CD0000   E   191         call    mon1
+  0036 E1           192         pop     h               ;a=current drive, hl=.fcb
+  0037 3C           193         inr     a
+  0038 77           194         mov     m,a             ;set fcb to force drive select
+                    195         ;
+                    196 movfcb: ;copy default fcb up into data area for move to RSX
+                    197         ;
+  0039 11F101   C   198         lxi     d,subfcb
+  003C 012000       199         lxi     b,32            ;length of fcb
+  003F CD5601   C   200         call    ldir            ;move it to subfcb
+                    201         ;
+                    202         ;initialize other variables to be moved to RSX
+                    203         ;
+  0042 CD4401   C   204         call    getusr          ;get current user number
+  0045 32F001   C   205         sta     subusr          ;save for redirection file I/O
+  0048 CD4C01   C   206         call    getscbadr
+  004B 22DB01   C   207         shld    scbadr          ;System Control Block address
+                    208         ;
+                    209         ;get real BDOS address (bypass chain to check for user break)
+                    210         ;
+  004E 2E98         211         mvi     l,realdos
+  0050 5E           212         mov     e,m
+  0051 23           213         inx     h
+  0052 56           214         mov     d,m
+  0053 EB           215         xchg
+  0054 22EB01   C   216         shld    realbdos+1
+                    217         ;
+                    218         ;check for user abort
+                    219         ;
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    5
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0057 EB           220         xchg
+  0058 2ECF         221         mvi     l,conmode
+  005A 7E           222         mov     a,m
+  005B F601         223         ori     1               ;set ^C status mode
+  005D 77           224         mov     m,a
+  005E 0E0B         225         mvi     c,cstatf
+  0060 CDEA01   C   226         call    realbdos        ;check for user abort
+  0063 B7           227         ora     a
+  0064 C22B01   C   228         jnz     error1          ;abort if so
+                    229         ;
+                    230         ;get address of initialization table in RSX
+                    231         ;
+  0067 0E3C         232         mvi     c,rsxf
+  0069 116101   C   233         lxi     d,journkill
+  006C CD0000   E   234         call    mon1            ;terminate any PUT INPUT commands
+  006F 0E3C         235         mvi     c,rsxf
+  0071 116201   C   236         lxi     d,rsxinit
+  0074 CD0000   E   237         call    mon1            ;call GET.RSX initialization routine
+  0077 E5           238         push    h               ;save for move at end of setup
+  0078 5E           239         mov     e,m
+  0079 23           240         inx     h
+  007A 56           241         mov     d,m             ;DE = .RSXKILL flag 
+  007B D5           242         push    d               ;set flag to zero if successfull
+  007C 23           243         inx     h               ;HL = .(real bios status routine)
+  007D E5           244         push    h
+                    245         ;
+                    246 if biosfunctions
+                    247         ;
+                    248         ;check if BIOS jump table looks valid (jmp in right places)
+  007E 2A0100       249         lhld    wboota
+  0081 110300       250         lxi     d,3
+  0084 19           251         dad     d               ;HL = .(jmp constat address)
+  0085 7E           252         mov     a,m
+  0086 FEC3         253         cpi     jmpi            ;should be a jump
+  0088 C21201   C   254         jnz     bioserr         ;skip bios redirection if not
+  008B 19           255         dad     d               ;HL = .(jmp conin address)
+  008C 7E           256         mov     a,m
+  008D FEC3         257         cpi     jmpi
+  008F C21201   C   258         jnz     bioserr         ;skip bios redirection if not
+                    259         ;
+                    260         ;fix up RESBDOS to do BIOS calls to intercepted functions
+                    261         ;
+  0092 2ADB01   C   262         lhld    scbadr
+  0095 2EFA         263         mvi     l,common+1
+  0097 7E           264         mov     a,m             ;get high byte of common base
+  0098 B7           265         ora     a               
+  0099 C2A400   C   266         jnz     fix0            ;high byte = zero if non-banked
+  009C 3E7F         267         mvi     a,biosonly
+  009E 32E101   C   268         sta     biosmode
+  00A1 C3D000   C   269         jmp     trap            ;skip code that fixes resbdos
+                    270         ;fix BIOS constat
+  00A4 2E6E         271 fix0:   mvi     l,constfx               ;hl = .constfx in SCB
+  00A6 7E           272         mov     a,m
+  00A7 FEC3         273         cpi     jmpi            ;is it a jump instruction?
+  00A9 CAB100   C   274         jz      fix1            ;jump if so
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    6
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  00AC 3E7F         275         mvi     a,biosonly      ;whoops already changed
+  00AE 32E101   C   276         sta     biosmode        ;restore jump table only
+  00B1 3621         277 fix1:   mvi     m,lxih
+                    278         ;fix BIOS conin
+  00B3 2E74         279         mvi     l,coninfx       ;hl = .coninfx in SCB
+  00B5 7E           280         mov     a,m
+  00B6 FEC3         281         cpi     jmpi            ;is it a jump instruction?
+  00B8 3AE101   C   282         lda     biosmode
+  00BB CAC400   C   283         jz      fix2            ;jump if so
+  00BE FE7F         284         cpi     biosonly
+  00C0 C21201   C   285         jnz     bioserr         ;error if conin is LXI but not constat
+  00C3 AF           286         xra     a               ;zero accumulator to jnz below
+  00C4 FE7F         287 fix2:   cpi     biosonly        ;was const already an LXI h?
+  00C6 C2CE00   C   288         jnz     fix3            ;jmp if not
+  00C9 3E80         289         mvi     a,stfix ;restore constat jmp but not conin
+  00CB 32E101   C   290         sta     biosmode
+  00CE 3621         291 fix3:   mvi     m,lxih
+                    292         ;get addresses of RSX const and conin traps
+  00D0 E1           293 trap:   pop     h
+  00D1 4E           294         mov     c,m             ;HL = .(.bios constat trap)
+  00D2 23           295         inx     h
+  00D3 46           296         mov     b,m             ;BC = .bios constat trap in RSX
+  00D4 23           297         inx     h
+  00D5 E5           298         push    h               ;save for CONIN setup
+                    299         ;
+                    300         ;patch RSX constat entry into BIOS jump table 
+                    301         ;save real constat address in RSX exit table
+                    302         ;
+  00D6 2A0100       303         lhld    wboota
+  00D9 110400       304         lxi     d,4
+  00DC 19           305         dad     d               ;HL = .(jmp constat address)
+  00DD 22E301   C   306         shld    constjmp        ;save for RSX restore at end
+  00E0 5E           307         mov     e,m
+  00E1 71           308         mov     m,c
+  00E2 23           309         inx     h
+  00E3 56           310         mov     d,m             ;DE = constat address
+  00E4 70           311         mov     m,b             ;BIOS constat jumps to RSX
+  00E5 EB           312         xchg
+  00E6 22DD01   C   313         shld    biosta          ;save real constat address
+                    314         ;
+                    315         ;get address of RSX bios conin entry point
+                    316         ;
+  00E9 E1           317         pop     h               ;HL = .(RSX BIOS conin trap)
+  00EA 4E           318         mov     c,m
+  00EB 23           319         inx     h
+  00EC 46           320         mov     b,m
+                    321         ;
+                    322         ;patch RSX conin entry into BIOS jump table 
+                    323         ;save real conin address in RSX exit table
+                    324         ;
+  00ED EB           325         xchg
+  00EE 23           326         inx     h               ;past jmp instruction
+  00EF 23           327         inx     h               ;HL = .(conin address)
+  00F0 22E701   C   328         shld    coninjmp
+  00F3 5E           329         mov     e,m
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    7
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  00F4 71           330         mov     m,c
+  00F5 23           331         inx     h
+  00F6 56           332         mov     d,m             ;DE = conin address
+  00F7 70           333         mov     m,b             ;BIOS conin jumps to RSX
+  00F8 EB           334         xchg
+  00F9 22DF01   C   335         shld    biosin          ;save real conin address
+                    336 endif
+                    337         ;
+                    338         ;move data area to RSX
+                    339         ;
+                    340 rsxmov:
+  00FC E1           341         pop     h               ;HL = .Kill flag in RSX
+  00FD 34           342         inr     m               ;switch from FF to 0
+  00FE 21DB01   C   343         lxi     h,movstart
+  0101 D1           344         pop     d               ;RSX data area address
+  0102 013700       345         lxi     b,movend-movstart
+  0105 CD5601   C   346         call    ldir
+  0108 0E06         347         mvi     c,crawf
+  010A 1EFD         348         mvi     e,0fdh          ;raw console input
+  010C CD0000   E   349         call    mon1            ;prime RSX by reading a char
+  010F C30000       350         jmp     wboot
+                    351 
+                    352 if biosfunctions
+                    353 ;
+                    354 ;       can't do BIOS redirection
+                    355 ;
+                    356 bioserr:
+  0112 116301   C   357         lxi     d,nobios
+  0115 0E09         358         mvi     c,pbuff
+  0117 CD0000   E   359         call    mon1
+  011A 21E101   C   360         lxi     h,biosmode
+  011D 36FF         361         mvi     m,norestore     ;no bios redirection 
+  011F E1           362         pop     h               ;throw away bios constat trap adr
+  0120 C3FC00   C   363         jmp     rsxmov
+                    364 endif
+                    365 ;
+                    366 ;       auxiliary redirection
+                    367 ;
+                    368 notimp:
+  0123 118801   C   369         lxi     d,notdone
+                    370 error:
+  0126 0E09         371         mvi     c,pbuff
+  0128 CD0000   E   372         call    mon1    
+  012B 0E10         373 error1: mvi     c,closef
+  012D 110000   E   374         lxi     d,fcb
+  0130 CD0000   E   375         call    mon1
+  0133 0E13         376         mvi     c,delf
+  0135 110000   E   377         lxi     d,fcb
+  0138 CD0000   E   378         call    mon1
+  013B C30000       379         jmp     wboot
+                    380 ;
+                    381 ;       insufficient memory
+                    382 ;
+  013E 11BE01   C   383 nomem:  lxi     d,memerr
+  0141 C32601   C   384         jmp     error
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    8
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    385         
+                    386 ;
+                    387 ;       get/set user number
+                    388 ;
+  0144 3EFF         389 getusr: mvi     a,0ffh          ;get current user number
+  0146 5F           390 setusr: mov     e,a             ;set current user number (in A)
+  0147 0E20         391         mvi     c,userf
+  0149 C30000   E   392         jmp     mon1
+                    393 ;
+                    394 ;       get system control block address 
+                    395 ;       (BDOS function #49)
+                    396 ;
+                    397 ;       exit:   hl = system control block address
+                    398 ;
+                    399 getscbadr:
+  014C 0E31         400         mvi     c,scbf
+  014E 115401   C   401         lxi     d,data49
+  0151 C30000   E   402         jmp     mon1
+                    403 ;
+  0154 3A           404 data49: db      scba,0          ;data structure for getscbadd
+  0155 00              
+                    405 ;
+                    406 ;       copy memory bytes (emulates z80 ldir instruction)
+                    407 ;
+  0156 7E           408 ldir:   mov     a,m             ;get byte
+  0157 12           409         stax    d               ;store it at destination
+  0158 23           410         inx     h               ;advance pointers
+  0159 13           411         inx     d
+  015A 0B           412         dcx     b               ;decrement byte count
+  015B 79           413         mov     a,c             ;loop if non-zero
+  015C B0           414         ora     b
+  015D C25601   C   415         jnz     ldir
+  0160 C9           416         ret
+                    417 ;
+                    418 ;******************************************************************
+                    419 ;               DATA AREA
+                    420 ;******************************************************************
+                    421 
+                    422         ;
+  0161 8D           423 journkill:      db      jkillf
+  0162 80           424 rsxinit:        db      initf
+  0163 5741524E     425 nobios:         db      'WARNING: Cannot redirect from BIOS',cr,lf,'$'
+  0167 494E473A  
+  016B 2043616E  
+  016F 6E6F7420  
+  0173 72656469  
+  0177 72656374  
+  017B 2066726F  
+  017F 6D204249  
+  0183 4F53      
+  0185 0D              
+  0186 0A              
+  0187 24              
+                    426 notdone:
+  0188 4552524F     427         db 'ERROR: Auxiliary device redirection not implemented',cr,lf,'$'
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE    9
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  018C 523A2041  
+  0190 7578696C  
+  0194 69617279  
+  0198 20646576  
+  019C 69636520  
+  01A0 72656469  
+  01A4 72656374  
+  01A8 696F6E20  
+  01AC 6E6F7420  
+  01B0 696D706C  
+  01B4 656D656E  
+  01B8 746564    
+  01BB 0D              
+  01BC 0A              
+  01BD 24              
+                    428 memerr:
+  01BE 4552524F     429         db 'ERROR: Insufficient Memory',cr,lf,'$'
+  01C2 523A2049  
+  01C6 6E737566  
+  01CA 66696369  
+  01CE 656E7420  
+  01D2 4D656D6F  
+  01D6 7279      
+  01D8 0D              
+  01D9 0A              
+  01DA 24              
+                    430         ;       
+                    431 ;******************************************************************
+                    432 ;       Following variables are initialized by GET.COM
+                    433 ;       and moved to the GET RSX - Their order must not be changed
+                    434 ;******************************************************************
+                    435         ;
+                    436         ;
+                    437         ;
+                    438 movstart:
+                    439 inittable:                      ;addresses used by GET.COM for 
+  01DB 0000         440 scbadr: dw      0               ;address of System Control Block
+                    441         ;
+                    442         if biosfunctions        ;GET.RSX initialization
+                    443         ;
+  01DD 0000         444 biosta: dw      0               ;set to real BIOS routine
+  01DF 0000         445 biosin: dw      0               ;set to real BIOS routine
+                    446         ;
+                    447                                 ;restore only if changed when removed.
+                    448 biosmode:
+  01E1 00           449         db      0               ;if non-zero change LXI @jmpadr to JMP
+                    450                                 ;when removed.
+                    451 restorebios:
+                    452         ;hl = real constat routine
+                    453         ;de = real conin routine
+  01E2 22           454         db      shldi
+                    455 constjmp:
+  01E3 0000         456         dw      0               ;address of const jmp initialized by COM
+  01E5 EB           457         xchg
+  01E6 22           458         db      shldi
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         GETF     PAGE   10
+GETF  - CP/M 3.0 Input Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    459 coninjmp:
+  01E7 0000         460         dw      0               ;address of conin jmp initialized by COM
+  01E9 C9           461         ret
+                    462         endif
+                    463         ;
+                    464 realbdos:
+  01EA C30000       465         jmp     0               ;address filled in by COM
+                    466         ;
+  01ED 01           467 echo:   db      1
+  01EE 00           468 cooked: db      0
+                    469         ;
+                    470 program:
+  01EF 00           471         db      0               ;true if only program input 
+  01F0 00           472 subusr: db      0               ;user number for redirection file
+  01F1 01           473 subfcb: db      1               ;a:
+  01F2 53595349     474         db      'SYSIN   '
+  01F6 4E202020  
+  01FA 535542       475         db      'SUB'
+  01FD 00           476         db      0,0
+  01FE 00              
+  01FF 00           477 submod: db      0
+  0200 00           478 subrc:  db      0
+  0201              479         ds      16              ;map
+  0211 00           480 subcr:  db      0
+                    481         ;
+                    482 movend:
+                    483 ;*******************************************************************
+                    484         end
+
+
+PUBLIC SYMBOLS
+GETF   C 0000    
+
+EXTERNAL SYMBOLS
+FCB    E 0000    MEMSIZ E 0000    MON1   E 0000    
+
+USER SYMBOLS
+BIOSER C 0112    BIOSFU A FFFF    BIOSIN C 01DF    BIOSMO C 01E1    BIOSON A 007F    BIOSTA C 01DD    CCPFLG A 00B4    
+CINF   A 0001    CLOSEF A 0010    COMMON A 00F9    CONINF A 0074    CONINJ C 01E7    CONMOD A 00CF    CONOUF A 007A    
+CONSTF A 006E    CONSTJ C 01E3    COOKED C 01EE    COUTF  A 0002    CR     A 000D    CRAWF  A 0006    CREADF A 000A    
+CSTATF A 000B    CURDRV A 0019    DATA49 C 0154    DELF   A 0013    DMAF   A 001A    DREADF A 0014    ECHO   C 01ED    
+ERRFLG A 00AA    ERROR  C 0126    ERROR1 C 012B    EVERYT A 0000    FALSE  A 0000    FCB    E 0000    FIX0   C 00A4    
+FIX1   C 00B1    FIX2   C 00C4    FIX3   C 00CE    GETF   C 0000    GETSCB C 014C    GETUSR C 0144    INITF  A 0080    
+INITTA C 01DB    JKILLF A 008D    JMPI   A 00C3    JOURNK C 0161    KILLF  A 0081    LDIR   C 0156    LF     A 000A    
+LISTCP A 00D4    LISTFX A 0080    LXIH   A 0021    MEMERR C 01BE    MEMSIZ E 0000    MON1   E 0000    MOVEND C 0212    
+MOVFCB C 0039    MOVSTA C 01DB    NOBIOS C 0163    NOMEM  C 013E    NOREST A 00FF    NOTDON C 0188    NOTIMP C 0123    
+OPENF  A 000F    PBUFF  A 0009    PCHRF  A 0005    PROGRA C 01EF    REALBD C 01EA    REALDO A 0098    RESTOR C 01E2    
+RSXF   A 003C    RSXINI C 0162    RSXMOV C 00FC    SCBA   A 003A    SCBADR C 01DB    SCBF   A 0031    SETUSR C 0146    
+SHLDI  A 0022    STFIX  A 0080    SUBCR  C 0211    SUBFCB C 01F1    SUBMOD C 01FF    SUBRC  C 0200    SUBUSR C 01F0    
+TRAP   C 00D0    TRUE   A FFFF    USERF  A 0020    WBOOT  A 0000    WBOOTA A 0001    WBOOTF A 0068    
+
+ASSEMBLY COMPLETE,   NO ERRORS

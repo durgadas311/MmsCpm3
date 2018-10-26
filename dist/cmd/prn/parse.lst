@@ -1,0 +1,282 @@
+:F3:ASM80 PARSE.ASM DEBUG
+
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         PARSE    PAGE    1
+Filename Parser
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                      1 $title  ('Filename Parser')
+                      2         name    Parse
+                      3         public parse
+                      4         CSEG
+                      5         ; BC->.(.filename,.fcb)
+                      6         ;
+                      7         ; filename = [d:]file[.type][;password]
+                      8         ;             
+                      9         ; fcb assignments
+                     10         ;
+                     11         ;   0     => drive, 0 = default, 1 = A, 2 = B, ...
+                     12         ;   1-8   => file, converted to upper case,
+                     13         ;            padded with blanks
+                     14         ;   9-11  => type, converted to upper case,
+                     15         ;            padded with blanks
+                     16         ;   12-15 => set to zero
+                     17         ;   16-23 => password, converted to upper case,
+                     18         ;            padded with blanks
+                     19         ;   24-25 => address of password field in 'filename',
+                     20         ;            set to zero if password length = 0
+                     21         ;   26    => length of password (0 - 8)
+                     22         ;
+                     23         ; Upon return, HL is set to FFFFH if BC locates
+                     24         ;            an invalid file name;
+                     25         ; otherwise, HL is set to 0000H if the delimiter
+                     26         ;            following the file name is a 00H (NULL)
+                     27         ;            or a 0DH (CR);
+                     28         ; otherwise, HL is set to the address of the delimiter
+                     29         ;            following the file name.
+                     30         ;
+  0000 210000        31 parse:  lxi h,0
+  0003 E5            32         push h
+  0004 E5            33         push h
+  0005 60            34         mov h,b
+  0006 69            35         mov l,c
+  0007 5E            36         mov e,m
+  0008 23            37         inx h
+  0009 56            38         mov d,m
+  000A 23            39         inx h           
+  000B 7E            40         mov a,m
+  000C 23            41         inx h
+  000D 66            42         mov h,m
+  000E 6F            43         mov l,a 
+  000F CD3D01   C    44         call deblnk
+  0012 CDFB00   C    45         call delim
+  0015 C22100   C    46         jnz parse1
+  0018 79            47         mov a,c
+  0019 B7            48         ora a
+  001A C2A300   C    49         jnz parse9
+  001D 77            50         mov m,a
+  001E C35200   C    51         jmp parse3
+  0021 47            52 parse1: mov b,a
+  0022 13            53         inx d
+  0023 1A            54         ldax d
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         PARSE    PAGE    2
+Filename Parser
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0024 FE3A          55         cpi ':'
+  0026 C24F00   C    56         jnz parse2
+  0029 78            57         mov a,b
+  002A D641          58         sui 'A'
+  002C DAA300   C    59         jc parse9
+  002F FE10          60         cpi 16
+  0031 D2A300   C    61         jnc parse9
+  0034 3C            62         inr a
+  0035 77            63         mov m,a
+  0036 13            64         inx d
+  0037 CDFB00   C    65         call delim
+  003A C25200   C    66         jnz parse3
+  003D FE2E          67         cpi '.'
+  003F CAA300   C    68         jz parse9
+  0042 FE3A          69         cpi ':'
+  0044 CAA300   C    70         jz parse9
+  0047 FE3B          71         cpi ';'
+  0049 CAA300   C    72         jz parse9
+  004C C35200   C    73         jmp parse3
+  004F 1B            74 parse2: dcx d
+  0050 3600          75         mvi m,0
+  0052 0608          76 parse3: mvi b,8
+  0054 CDA900   C    77         call setfld
+  0057 0603          78         mvi b,3
+  0059 FE2E          79         cpi '.'
+  005B CA6400   C    80         jz parse4
+  005E CDF300   C    81         call padfld
+  0061 C36800   C    82         jmp parse5
+  0064 13            83 parse4: inx d
+  0065 CDA900   C    84         call setfld
+  0068 0604          85 parse5: mvi b,4
+  006A 23            86 parse6: inx h
+  006B 3600          87         mvi m,0
+  006D 05            88         dcr b
+  006E C26A00   C    89         jnz parse6
+  0071 0608          90         mvi b,8
+  0073 FE3B          91         cpi ';'
+  0075 CA7E00   C    92         jz parse7
+  0078 CDF300   C    93         call padfld
+  007B C38200   C    94         jmp parse8
+  007E 13            95 parse7: inx d
+  007F CDCC00   C    96         call pwfld
+  0082 D5            97 parse8: push d
+  0083 CD3D01   C    98         call deblnk
+  0086 CDFB00   C    99         call delim
+  0089 C29100   C   100         jnz pars81
+  008C 33           101         inx sp
+  008D 33           102         inx sp
+  008E C39200   C   103         jmp pars82
+  0091 D1           104 pars81: pop d
+  0092 79           105 pars82: mov a,c
+  0093 B7           106         ora a
+  0094 C1           107         pop b
+  0095 79           108         mov a,c
+  0096 C1           109         pop b
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         PARSE    PAGE    3
+Filename Parser
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0097 23           110         inx h
+  0098 71           111         mov m,c
+  0099 23           112         inx h
+  009A 70           113         mov m,b
+  009B 23           114         inx h
+  009C 77           115         mov m,a
+  009D EB           116         xchg
+  009E C0           117         rnz
+  009F 210000       118         lxi h,0
+  00A2 C9           119         ret
+  00A3 E1           120 parse9: pop h
+  00A4 E1           121         pop h
+  00A5 21FFFF       122         lxi h,0ffffh
+  00A8 C9           123         ret
+                    124 
+  00A9 CDFB00   C   125 setfld: call delim
+  00AC CAF300   C   126         jz padfld
+  00AF 23           127         inx h
+  00B0 FE2A         128         cpi '*'
+  00B2 C2BE00   C   129         jnz setfd1
+  00B5 363F         130         mvi m,'?'
+  00B7 05           131         dcr b
+  00B8 C2A900   C   132         jnz setfld
+  00BB C3C000   C   133         jmp setfd2
+  00BE 77           134 setfd1: mov m,a
+  00BF 05           135         dcr b
+  00C0 13           136 setfd2: inx d
+  00C1 C2A900   C   137         jnz setfld
+  00C4 CDFB00   C   138 setfd3: call delim
+  00C7 C8           139         rz
+  00C8 E1           140         pop h
+  00C9 C3A300   C   141         jmp parse9
+                    142 
+  00CC CDFB00   C   143 pwfld:  call delim
+  00CF CAF300   C   144         jz padfld
+  00D2 33           145         inx sp
+  00D3 33           146         inx sp
+  00D4 33           147         inx sp
+  00D5 33           148         inx sp
+  00D6 33           149         inx sp
+  00D7 33           150         inx sp
+  00D8 D5           151         push d
+  00D9 E5           152         push h
+  00DA 2E00         153         mvi l,0
+  00DC E3           154         xthl
+  00DD 3B           155         dcx sp
+  00DE 3B           156         dcx sp
+  00DF 33           157 pwfld1: inx sp
+  00E0 33           158         inx sp
+  00E1 E3           159         xthl
+  00E2 2C           160         inr l
+  00E3 E3           161         xthl
+  00E4 3B           162         dcx sp
+  00E5 3B           163         dcx sp
+  00E6 23           164         inx h
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         PARSE    PAGE    4
+Filename Parser
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  00E7 77           165         mov m,a
+  00E8 13           166         inx d
+  00E9 05           167         dcr b
+  00EA CAC400   C   168         jz setfd3
+  00ED CDFB00   C   169         call delim
+  00F0 C2DF00   C   170         jnz pwfld1
+                    171         ;jmp padfld
+                    172 
+  00F3 23           173 padfld: inx h
+  00F4 3620         174         mvi m,' '
+  00F6 05           175         dcr b
+  00F7 C2F300   C   176         jnz padfld
+  00FA C9           177         ret
+                    178 
+  00FB 1A           179 delim:  ldax d
+  00FC 4F           180         mov c,a
+  00FD B7           181         ora a
+  00FE C8           182         rz
+  00FF 0E00         183         mvi c,0
+  0101 FE0D         184         cpi 0dh
+  0103 C8           185         rz
+  0104 4F           186         mov c,a
+  0105 FE09         187         cpi 09h
+  0107 C8           188         rz
+  0108 FE20         189         cpi ' '
+  010A DA3901   C   190         jc delim2
+  010D C8           191         rz
+  010E FE2E         192         cpi '.'
+  0110 C8           193         rz
+  0111 FE3A         194         cpi ':'
+  0113 C8           195         rz
+  0114 FE3B         196         cpi ';'
+  0116 C8           197         rz
+  0117 FE3D         198         cpi '='
+  0119 C8           199         rz
+  011A FE2C         200         cpi ','
+  011C C8           201         rz
+  011D FE2F         202         cpi '/'
+  011F C8           203         rz
+  0120 FE5B         204         cpi '['
+  0122 C8           205         rz
+  0123 FE5D         206         cpi ']'
+  0125 C8           207         rz
+  0126 FE3C         208         cpi '<'
+  0128 C8           209         rz
+  0129 FE3E         210         cpi '>'
+  012B C8           211         rz
+  012C FE61         212         cpi 'a'
+  012E D8           213         rc
+  012F FE7B         214         cpi 'z'+1
+  0131 D23601   C   215         jnc delim1
+  0134 E65F         216         ani 05fh
+  0136 E67F         217 delim1: ani 07fh
+  0138 C9           218         ret
+  0139 E1           219 delim2: pop h
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         PARSE    PAGE    5
+Filename Parser
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  013A C3A300   C   220         jmp parse9
+                    221 
+  013D 1A           222 deblnk: ldax d
+  013E FE20         223         cpi ' '
+  0140 CA4901   C   224         jz dblnk1
+  0143 FE09         225         cpi 09h
+  0145 CA4901   C   226         jz dblnk1
+  0148 C9           227         ret
+  0149 13           228 dblnk1: inx d
+  014A C33D01   C   229         jmp deblnk
+                    230         END
+
+
+PUBLIC SYMBOLS
+PARSE  C 0000    
+
+EXTERNAL SYMBOLS
+
+
+USER SYMBOLS
+DBLNK1 C 0149    DEBLNK C 013D    DELIM  C 00FB    DELIM1 C 0136    DELIM2 C 0139    PADFLD C 00F3    PARS81 C 0091    
+PARS82 C 0092    PARSE  C 0000    PARSE1 C 0021    PARSE2 C 004F    PARSE3 C 0052    PARSE4 C 0064    PARSE5 C 0068    
+PARSE6 C 006A    PARSE7 C 007E    PARSE8 C 0082    PARSE9 C 00A3    PWFLD  C 00CC    PWFLD1 C 00DF    SETFD1 C 00BE    
+SETFD2 C 00C0    SETFD3 C 00C4    SETFLD C 00A9    
+
+ASSEMBLY COMPLETE,   NO ERRORS

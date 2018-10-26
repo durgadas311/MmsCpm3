@@ -1,0 +1,878 @@
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE DISPLAY
+OBJECT MODULE PLACED IN DISP
+COMPILER INVOKED BY:  :F1:PLM80 DISP.PLM DEBUG PAGEWIDTH(130) OPTIMIZE OBJECT(DISP)
+
+
+
+              $title ('SDIR - Display Files')
+   1          display:
+              do;
+                               /*  Display Module for SDIR */
+
+              $include(comlit.lit)
+          =
+   2   1  =   declare
+          =           lit                literally          'literally',
+          =           dcl                lit                'declare',
+          =           true               lit                '0ffh',
+          =           false              lit                '0',
+          =           boolean            lit                'byte',
+          =           forever            lit                'while true',
+          =           cr                 lit                '13',
+          =           lf                 lit                '10',
+          =           tab                lit                '9',
+          =           ctrlc              lit                '3',
+          =           ff                 lit                '12',
+          =           page$len$offset    lit                '1ch',
+          =           nopage$mode$offset lit                '2Ch',
+          =           sectorlen          lit                '128';
+
+              $include(mon.plm)
+          =
+          =                   /* definitions for assembly interface module        */
+   3   1  =   declare
+          =       fcb (33) byte external,        /* default file control block    */
+          =       maxb address external,         /* top of memory                 */
+          =       buff(128)byte external;        /* default buffer                */
+          =
+   4   1  =   mon1: procedure(f,a) external;
+   5   2  =       declare f byte, a address;
+   6   2  =       end mon1;
+          =
+   7   1  =   mon2: procedure(f,a) byte external;
+   8   2  =       declare f byte, a address;
+   9   2  =       end mon2;
+          =
+  10   1  =   mon3: procedure(f,a) address external;
+  11   2  =       declare f byte, a address;
+  12   2  =       end mon3;
+          =
+
+  13   1      dcl debug boolean external;
+  14   1      dcl (cur$drv, cur$usr) byte external;
+
+  15   1      dcl (os,bdos) byte external;
+              $include(vers.lit)
+  16   1  =   declare
+          =      bdos20  lit  '20h',
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   2
+
+
+          =      bdos30  lit  '30h',
+          =      mpm     lit  '01h',
+          =      mpm86   lit  '11h';
+
+  17   1      dcl used$de address external;        /* number of used directory entries */
+  18   1      dcl date$opt boolean external;      /* date option flag */  
+  19   1      dcl display$attributes boolean external;    /* attributes display flag */
+  20   1      dcl sorted boolean external;
+  21   1      dcl filesfound address external;
+  22   1      dcl no$page$mode byte external;
+  23   1      dcl sfcbs$present byte external;    /*  sfcb's there/not there indicator  */
+
+              $include (search.lit)
+          =
+  24   1  =   declare                       /* what kind of file user wants to find       */
+          =       find$structure lit 'structure (
+          =       dir byte,
+          =       sys byte,
+          =       ro  byte,
+          =       rw  byte,
+          =       pass byte,
+          =       xfcb byte,
+          =       nonxfcb byte,
+          =       exclude byte)';
+          =
+  25   1  =   declare
+          =       max$search$files literally '10';
+          =
+  26   1  =   declare
+          =       search$structure lit 'structure(
+          =       drv byte,
+          =       name(8) byte,
+          =       type(3) byte,
+          =       anyfile boolean)';        /* match on any drive if true */
+          =
+  27   1      dcl find find$structure external;
+
+  28   1      dcl format byte external,       /* format is one of the following */
+                  page$len address external,  /* page size before printing new headers */
+                  message boolean external,   /* print titles and msg when no file found */
+                  formfeeds boolean external; /* use form feeds to separate headers */
+
+              $include(format.lit)
+          =
+  29   1  =   dcl form$short lit '0',       /* format values for SDIR */
+          =       form$size lit '1',
+          =       form$full lit '2';
+          =
+
+  30   1      dcl file$displayed boolean public initial (false);
+                            /* true if we ever display a file, from any drive or user */
+                            /* used by main.plm for file not found message            */
+
+  31   1      dcl dir$label byte external;
+
+              $include(fcb.lit)
+          =
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   3
+
+
+  32   1  =   declare
+          =       f$drvusr          lit '0',        /* drive/user byte               */
+          =       f$name            lit '1',        /* file name                     */
+          =       f$namelen         lit '8',        /* file name length              */
+          =       f$type            lit '9',        /* file type field               */
+          =       f$typelen         lit '3',        /* type length                   */
+          =       f$rw              lit '9',        /* high bit is R/W attribute     */
+          =       f$dirsys          lit '10',       /* high bit is dir/sys attribute */
+          =       f$arc             lit '11',       /* high bit is archive attribute */
+          =       f$ex              lit '12',       /* extent                        */
+          =       f$s1              lit '13',       /* module byte                   */
+          =       f$rc              lit '15',       /* record count                  */
+          =       f$diskmap         lit '16',       /* file disk map                 */
+          =       diskmaplen        lit '16',       /* disk map length               */
+          =       f$drvusr2         lit '16',       /* fcb2                          */
+          =       f$name2           lit '17',
+          =       f$type2           lit '25',
+          =       f$rrec            lit '33',       /* random record                 */
+          =       f$rreco           lit '35';       /*   "      "    overflow        */
+          =
+              $include(xfcb.lit)
+          =
+  33   1  =   declare                                 /* XFCB                        */
+          =       xfcb$type          lit '10h',       /* identifier on disk          */
+          =       xf$passmode        lit '12',        /* pass word protection mode   */
+          =       xf$pass            lit '16',        /* XFCB password               */
+          =       passlen            lit '8',         /* password length             */
+          =       xf$create          lit '24',        /* creation/access time stamp  */
+          =       xf$update          lit '28';        /* update time stamp           */
+          =
+  34   1  =   declare                       /* directory label: special case of XFCB */
+          =       dirlabeltype       lit '20h',       /* identifier on disk          */
+          =       dl$password        lit '128',       /* masks on data byte          */
+          =       dl$access          lit '64',
+          =       dl$update          lit '32',
+          =       dl$makexfcb        lit '16',
+          =       dl$exists          lit '1';
+          =
+  35   1  =   declare                                 /* password mode of xfcb       */
+          =       pm$read            lit '80h',
+          =       pm$write           lit '40h',
+          =       pm$delete          lit '20h';
+          =
+
+  36   1      dcl
+                      buf$fcb$adr address external,       /* index into directory buffer  */
+                      buf$fcb based buf$fcb$adr (32) byte,
+                                                          /* fcb template for dir         */
+
+                      (f$i$adr,last$f$i$adr,first$f$i$adr) address external,
+                      cur$file address;                   /* number of file currently     */
+                                                          /* being displayed              */
+
+              $include(finfo.lit)
+          =
+          =   /* file info record for SDIR - note if this structure changes in size  */
+          =   /* the multXX: routine in the sort.plm module must also change         */
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   4
+
+
+          =
+  37   1  =   declare
+          =           f$info$structure lit 'structure(
+          =               usr byte, name (8) byte, type (3) byte, onekblocks address,
+          =               kbytes address, recs$lword address, recs$hbyte byte,
+          =               hash$link address, x$i$adr address)';
+  38   1  =   declare
+          =           x$info$structure lit 'structure (
+          =               create (4) byte,
+          =               update (4) byte,
+          =               passmode byte)';
+          =
+                                                          /* structure of file info       */ 
+  39   1      dcl     file$info based f$i$adr f$info$structure;
+
+  40   1      dcl     x$i$adr address external,
+                      xfcb$info based x$i$adr x$info$structure;
+
+  41   1      dcl     f$i$indices$base address external,  /* if sorted then f$i$indices   */
+                      f$i$indices based f$i$indices$base (1) address; /* are here         */
+
+
+              /* -------- Routines in util.plm -------- */
+
+  42   1      printchar: procedure (char) external;
+  43   2          dcl char byte;
+  44   2      end printchar;
+
+  45   1      print: procedure (string$adr) external;      /* BDOS call # 9               */
+  46   2          dcl string$adr address;
+  47   2      end print;
+
+  48   1      printb: procedure external;
+  49   2      end printb;
+
+  50   1      crlf: procedure external;
+  51   2      end crlf;
+
+  52   1      printfn: procedure(fname$adr) external;
+  53   2          dcl fname$adr address;
+  54   2      end printfn;
+
+  55   1      pdecimal: procedure(v,prec,zerosup) external;
+                                     /* print value val, field size = (log10 prec) + 1  */
+                                     /* with leading zero suppression if zerosup = true */
+  56   2          declare v address,                           /* value to print        */
+                          prec address,                        /* precision             */
+                          zerosup boolean;                     /* zero suppression flag */
+  57   2      end pdecimal;
+
+  58   1      p3byte: procedure(byte3adr,prec)external;
+                                              /* print 3 byte value with 0 suppression */
+  59   2            dcl (byte3adr,prec) address; /* assume high order bit is < 10         */
+  60   2      end p3byte;
+
+  61   1      add3byte: procedure (byte3$adr,word$amt) external;
+  62   2          dcl (byte3$adr, word$amt) address;
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   5
+
+
+  63   2      end add3byte;            /* add word to 3 byte structure */
+
+  64   1      add3byte3: procedure (byte3$adr,byte3) external;
+  65   2          dcl (byte3$adr, byte3) address;
+  66   2      end add3byte3;            /* add 3 byte quantity to 3 byte total */
+
+  67   1      shr3byte: procedure (byte3$adr) external;
+  68   2          dcl byte3$adr address;
+  69   2      end shr3byte;
+
+
+              /* -------- Routines in search.plm -------- */
+
+  70   1      search$first: procedure(fcb$adr) byte external;
+  71   2          dcl fcb$adr address;
+  72   2      end search$first;
+
+  73   1      search$next: procedure byte external;
+  74   2      end search$next;
+
+  75   1      break: procedure external;
+  76   2      end break;
+
+  77   1      match: procedure boolean external;
+  78   2          dcl fcb$adr address;
+  79   2      end match;
+
+
+              /* -------- Other external routines -------- */
+
+  80   1      display$time$stamp: procedure (ts$adr) external;     /* in dts.plm */
+  81   2          dcl ts$adr address;
+  82   2      end display$time$stamp;
+
+  83   1      terminate: procedure external;                       /* in main.plm */
+  84   2      end terminate;
+
+  85   1      mult23: procedure(index) address external;           /* in sort.plm */
+  86   2          dcl index address;
+  87   2      end mult23;
+
+
+              /* -------- From dpb86.plm or dpb80.plm -------- */
+
+              $include(dpb.lit)
+          =
+          =   /* indices into disk parameter block, used as parameters to dpb procedure */
+          =
+  88   1  =   dcl        spt$w        lit        '0',
+          =              blkshf$b     lit        '2',
+          =              blkmsk$b     lit        '3',
+          =              extmsk$b     lit        '4',
+          =              blkmax$w     lit        '5',
+          =              dirmax$w     lit        '7',
+          =              dirblk$w     lit        '9',
+          =              chksiz       lit        '11',
+          =              offset$w     lit        '13';
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   6
+
+
+          =
+
+  89   1      dpb$byte: procedure (dpb$index) byte external;
+  90   2          dcl dpb$index byte;
+  91   2      end dpb$byte;
+
+  92   1      dpb$word: procedure (dpb$index) address external;
+  93   2          dcl dpb$index byte;
+  94   2      end dpb$word;
+
+
+              /* -------- routines and data structures local to this module -------- */
+
+  95   1      direct$console$io: procedure byte;
+  96   2        return mon2(6,0ffh);  /* ff to stay downward compatable */
+  97   2      end direct$console$io;
+
+  98   1      dcl first$time address initial (0);
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+  99   1      wait$keypress: procedure;
+ 100   2        declare char byte;
+              /*  if debug then
+              call print(.(cr,lf,'In wait*keypress...',cr,lf,'$'));
+              */
+ 101   2        char = direct$console$io;
+ 102   2        do while char = 0;
+ 103   3          char = direct$console$io;
+ 104   3        end;
+ 105   2        if char = ctrlc then
+ 106   2          call terminate;
+ 107   2      end wait$keypress;
+
+ 108   1      declare global$line$count byte initial(1);
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+               
+ 109   1      crlf$and$check: procedure;
+              /*
+                   if debug then
+              call print(.(cr,lf,'In crlf*and*check...',cr,lf,'$'));
+              */
+ 110   2           if no$page$mode = 0 then do;
+ 112   3              if global$line$count > page$len-1 then do;
+ 114   4                 call print(.(cr,lf,'Press RETURN to Continue $'));
+ 115   4                 cur$line = cur$line + 1;
+ 116   4                 call wait$keypress;
+ 117   4                 global$line$count = 0;
+ 118   4              end; /* global$line$count > page$len */
+ 119   3           end; /* no$page$mode = 0 */
+ 120   2        call crlf;
+ 121   2        global$line$count = global$line$count + 1;
+ 122   2      end crlf$and$check;
+
+ 123   1      dcl     total$kbytes structure (    /* grand total k bytes of files matched */
+                        lword address,
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   7
+
+
+                        hbyte byte),
+                      total$recs structure (      /* grand total records of files matched */
+                        lword address,
+                        hbyte byte),
+                      total$1k$blocks structure(  /* how many 1k blocks are allocated     */
+                        lword address,
+                        hbyte byte);
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+               
+ 124   1      add$totals: procedure;
+
+              /*
+                  if debug then
+              call print(.(cr,lf,'In add*totals...',cr,lf,'$'));
+              */
+ 125   2          call add3byte(.total$kbytes,file$info.kbytes);
+ 126   2          call add3byte3(.total$recs,.file$info.recs$lword); /* records in file */
+ 127   2          call add3byte(.total$1k$blocks,file$info.onekblocks);
+                  
+ 128   2      end add$totals;
+
+ 129   1      dcl files$per$line byte;
+ 130   1      dcl cur$line address;
+
+ 131   1      dcl hdr (*) byte data      ('    Name     Bytes   Recs   Attributes $');
+ 132   1      dcl hdr$bars (*) byte data ('------------ ------ ------ ------------$');
+ 133   1      dcl hdr$pu (*) byte data        ('  Prot      Update    $');
+ 134   1      dcl hdr$xfcb$bars (*) byte data (' ------ --------------  --------------$');
+ 135   1      dcl hdr$access (*) byte data                          ('      Access    $');
+ 136   1      dcl hdr$create (*) byte data                          ('      Create    $');
+                                                 /* example date        04/02/55 00:34  */
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 137   1      display$file$info: procedure;
+                                                                  /* print filename.typ   */
+              /*
+              if debug then
+              call print(.(cr,lf,'In display*file*info...',cr,lf,'$'));
+              */
+ 138   2          call printfn(.file$info.name(0));
+ 139   2          call printb;
+ 140   2          call pdecimal(file$info.kbytes,10000,true);
+ 141   2          call printchar('k');                           /* up to 32 Meg - Bytes  */
+                                                                 /* or 32,000k            */
+ 142   2          call printb;
+ 143   2          call p3byte(.file$info.recs$lword,1);          /* records               */
+ 144   2          call printb;
+ 145   2          if rol(file$info.name(f$dirsys-1),1) then      /* Type                  */
+ 146   2             call print(.('Sys$'));
+ 147   2          else call print(.('Dir$'));
+ 148   2          call printb;
+ 149   2          if rol(file$info.name(f$rw-1),1) then
+ 150   2              call print(.('RO$'));
+ 151   2          else call print(.('RW$'));
+ 152   2          call printb;
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   8
+
+
+ 153   2          if not display$attributes then do;
+ 155   3            if rol(file$info.name(f$arc-1),1) then
+ 156   3              call print(.('Arcv $'));
+                    else 
+ 157   3              call print(.('     $'));
+ 158   3          end;
+ 159   2          else do;
+ 160   3            if  rol(file$info.name(f$arc-1),1) then       /* arc bit was on in all */
+ 161   3                call print$char('A');                     /* dir entries           */
+ 162   3            else call printb;
+ 163   3            if rol(file$info.name(0),1) then
+ 164   3                call print$char('1');
+ 165   3            else call printb;
+ 166   3            if rol(file$info.name(1),1) then
+ 167   3                call print$char('2');
+ 168   3            else call printb;
+ 169   3            if rol(file$info.name(2),1) then
+ 170   3                call print$char('3');
+ 171   3            else call printb;
+ 172   3            if rol(file$info.name(3),1) then
+ 173   3                call print$char('4');
+ 174   3            else call printb;
+ 175   3          end;
+ 176   2      end display$file$info;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 177   1      display$xfcb$info: procedure;
+              /*
+              if debug then
+              call print(.(cr,lf,'In display*xfcb*info...',cr,lf,'$'));
+              */
+ 178   2              if file$info.x$i$adr <> 0 then
+ 179   2              do;
+ 180   3                  call printb;
+ 181   3                  x$i$adr = file$info.x$i$adr;
+ 182   3                  if (xfcb$info.passmode and pm$read) <> 0 then
+ 183   3                      call print(.('Read  $'));
+ 184   3                  else if (xfcb$info.passmode and pm$write) <> 0 then
+ 185   3                      call print(.('Write $'));
+ 186   3                  else if (xfcb$info.passmode and pm$delete) <> 0 then
+ 187   3                      call print(.('Delete$'));
+                          else
+ 188   3                      call print(.('None  $'));
+ 189   3                  call printb;
+ 190   3                  if (xfcb$info.update(0) <> 0 or xfcb$info.update(1) <> 0) then
+ 191   3                      call display$timestamp(.xfcb$info.update);
+ 192   3                  else call print(.('              $'));
+ 193   3                      call printb; call printb;
+ 195   3                  if (xfcb$info.create(0) <> 0 or xfcb$info.create(1) <> 0) then
+ 196   3                       call display$timestamp(.xfcb$info.create(0));
+                                                              /* Create/Access */
+ 197   3              end;
+ 198   2      end display$xfcb$info;
+
+ 199   1      dcl first$title boolean initial (true);
+
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE   9
+
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 200   1      display$title: procedure;
+              /*
+              if debug then
+              call print(.(cr,lf,'In display*title...',cr,lf,'$'));
+              */
+ 201   2          if formfeeds then
+ 202   2              call print$char(ff);
+ 203   2          else if not first$title then
+ 204   2              call crlf$and$check;
+                  call print(.('Directory For Drive $'));
+ 206   2          call printchar('A'+ cur$drv); call printchar(':');
+ 208   2          if bdos >= bdos20 then 
+ 209   2          do;
+ 210   3              call print(.('  User $'));
+ 211   3              call pdecimal(cur$usr,10,true);
+ 212   3          end;
+ 213   2          call crlf$and$check;
+ 214   2          cur$line = 2;
+ 215   2          first$title = false;
+ 216   2      end display$title;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 217   1      short$display: procedure (fname$adr);
+ 218   2          dcl fname$adr address;
+              /*
+              if debug then
+              call print(.(cr,lf,'In short*display...',cr,lf,'$'));
+              */
+ 219   2          if cur$file mod files$per$line = 0 then
+ 220   2              do;
+ 221   3                  if cur$line mod page$len = 0  and first$time = 0 then
+ 222   3                  do; 
+ 223   4                      call crlf$and$check;
+ 224   4                      call display$title;
+ 225   4                      call crlf$and$check;
+ 226   4                  end;
+                          else
+ 227   3                      call crlf$and$check;
+ 228   3                  cur$line = cur$line + 1;
+ 229   3                  call printchar(cur$drv + 'A');
+ 230   3              end;
+ 231   2          else call printb;
+ 232   2          call print(.(': $'));
+ 233   2          call printfn(fname$adr);
+ 234   2          call break;
+ 235   2          cur$file = cur$file + 1;
+ 236   2          first$time = first$time + 1;
+ 237   2      end short$display;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 238   1      test$att: procedure(char,off,on) boolean;
+ 239   2          dcl (char,off,on) byte;
+              /*
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  10
+
+
+              if debug then
+              call print(.(cr,lf,'In test*att...',cr,lf,'$'));
+              */
+ 240   2          if (80h and char) <> 80h and off then
+ 241   2              return(true);
+ 242   2          if (80h and char) = 80h and on then
+ 243   2              return(true);
+ 244   2          return(false);
+ 245   2      end test$att;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 246   1      right$attributes: procedure(name$adr) boolean;
+ 247   2          dcl name$adr address,
+                      name based name$adr (1) byte;
+ 248   2          return 
+                      test$att(name(f$rw-1),find.rw,find.ro) and
+                      test$att(name(f$dirsys-1),find.dir,find.sys);
+ 249   2      end right$attributes;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 250   1      short$dir: procedure;             /* looks like "DIR" command */
+ 251   2          dcl dcnt byte;
+              /*
+              if debug then
+              call print(.(cr,lf,'In short*dir...',cr,lf,'$'));
+              */
+ 252   2          fcb(f$drvusr) = '?';
+ 253   2          files$per$line = 4;
+ 254   2          dcnt = search$first(.fcb);
+ 255   2          do while dcnt <> 0ffh;
+ 256   3              buf$fcb$adr = shl(dcnt and 11b,5)+.buff;    /* dcnt mod 4 * 32      */
+ 257   3              if (buf$fcb(f$drvusr) and 0f0h) = 0 and
+                          buf$fcb(f$ex) = 0 and
+                          buf$fcb(f$ex)<= dpb$byte(extmsk$b) then /* no dir labels, xfcbs */
+ 258   3                  if match then
+ 259   3                      if right$attributes(.buf$fcb(f$name)) then
+ 260   3                          call short$display(.buf$fcb(f$name));
+ 261   3              dcnt = search$next;
+ 262   3          end;
+ 263   2      end short$dir;
+
+ 264   1      dcl (last$plus$one,index) address;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 265   1      getnxt$file$info: procedure;     /* set f$i$adr to base file$info on file    */
+ 266   2      dcl right$usr boolean;           /* to be displayed, f$i$adr = 0ffffh if end */
+              /*
+              if debug then
+              call print(.(cr,lf,'In getnxt*file*info...',cr,lf,'$'));
+              */
+ 267   2          right$usr = false;
+ 268   2          if sorted then
+ 269   2          do; index = index + 1;
+ 271   3              f$i$adr = mult23(f$i$indices(index));
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  11
+
+
+ 272   3              do while file$info.usr <> cur$usr and index <> filesfound;
+ 273   4                 index = index + 1;
+ 274   4                 f$i$adr = mult23(f$i$indices(index));
+ 275   4              end;
+ 276   3              if index = files$found then
+ 277   3                 f$i$adr = last$plus$one;               /* no more files */
+ 278   3          end;
+                  else /* not sorted display in order found in directory */
+ 279   2          do;  /* use last$plus$one to avoid wrap around problems */
+ 280   3              f$i$adr = f$i$adr + size(file$info);
+ 281   3              do while file$info.usr <> cur$usr and f$i$adr <> last$plus$one;
+ 282   4                  f$i$adr = f$i$adr + size(file$info);
+ 283   4              end;
+ 284   3          end;
+ 285   2      end getnxt$file$info;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 286   1      size$display: procedure;
+              /*
+              if debug then
+              call print(.(cr,lf,'In size*display...',cr,lf,'$'));
+              */
+ 287   2          if (format and form$size) <> 0 then
+ 288   2              files$per$line = 3;
+ 289   2          else files$per$line = 4;
+ 290   2          do while f$i$adr <> last$plus$one;
+ 291   3          if ((file$info.x$i$adr <> 0 and find.xfcb) or
+                      file$info.x$i$adr  = 0 and find.nonxfcb) and
+                      right$attributes(.file$info.name(0)) then 
+ 292   3              do;
+ 293   4                  call add$totals;
+ 294   4                  call short$display(.file$info.name(0));
+ 295   4                  call pdecimal(file$info.kbytes,10000,true);
+ 296   4                  call print(.('k$'));
+ 297   4              end;
+ 298   3              call getnxt$file$info;
+ 299   3          end;
+ 300   2      end size$display;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 301   1      display$no$dirlabel: procedure;
+              /*
+              if debug then
+              call print(.(cr,lf,'In display*no*dirlabel...',cr,lf,'$'));
+              */
+ 302   2          files$per$line = 2;
+ 303   2          first$time = 0;
+ 304   2          do while (f$i$adr <> last$plus$one);
+
+ 305   3           if ((file$info.x$i$adr <> 0 and find.xfcb) or
+                       (file$info.x$i$adr  = 0 and find.nonxfcb)) and
+                       right$attributes(.file$info.name(0)) then
+ 306   3           do;
+
+ 307   4            if ((cur$file mod files$per$line) = 0) then  /* need new line */
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  12
+
+
+ 308   4            do;
+
+ 309   5                 if ((cur$line mod page$len) = 0) then
+ 310   5                 do; 
+
+ 311   6                   if ((no$page$mode = 0) or (first$time = 0)) then do;
+ 313   7                     call crlf$and$check;
+ 314   7                     call display$title;
+ 315   7                     call crlf$and$check;
+ 316   7                     call print(.hdr);
+ 317   7                     call printb;                    /* two sets of hdrs  */
+ 318   7                     call print(.hdr);
+ 319   7                     call crlf$and$check;
+ 320   7                     call print(.hdr$bars);
+ 321   7                     call printb;
+ 322   7                     call print(.hdr$bars);
+ 323   7                     call crlf$and$check;
+ 324   7                     cur$line = cur$line + 4;
+ 325   7                     first$time = first$time+1;
+ 326   7                   end;  
+ 327   6                   else do;
+ 328   7                     call crlf$and$check;
+ 329   7                     cur$line = cur$line + 1;
+ 330   7                   end;  /* no$page$mode check */
+
+ 331   6                 end;  
+                         else
+ 332   5                 do; call crlf$and$check;
+ 334   6                    cur$line = cur$line + 1;
+ 335   6                 end; 
+
+ 336   5               end;  
+                    else
+ 337   4              call printb;                           /* separate the files        */
+
+ 338   4            call display$file$info;
+ 339   4            cur$file = cur$file + 1;
+ 340   4            call add$totals;
+ 341   4            call break;
+ 342   4           end; 
+ 343   3           call getnxt$file$info;
+ 344   3          end;
+                  
+ 345   2      end display$no$dirlabel;
+
+              /*- - - - - - - - - - - - - - - - - - - - - - -*/
+
+ 346   1      display$with$dirlabel: procedure;
+              /*
+              if debug then
+              call print(.(cr,lf,'In display*with*dirlabel...',cr,lf,'$'));
+              */
+ 347   2          files$per$line = 1;
+ 348   2          first$time = 0;
+ 349   2          do while (f$i$adr <> last$plus$one);
+
+ 350   3            if ((file$info.x$i$adr <> 0 and find.xfcb) or
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  13
+
+
+                       (file$info.x$i$adr  = 0 and find.nonxfcb)) and
+                       right$attributes(.file$info.name(0)) then 
+ 351   3            do;
+
+ 352   4              if cur$line mod page$len = 0 then
+ 353   4              do; 
+
+ 354   5                  if ((no$page$mode = 0) or (first$time = 0)) then do;
+
+ 356   6                     call crlf$and$check;
+ 357   6                     call display$title; 
+ 358   6                     call crlf$and$check;
+ 359   6                     call print(.hdr);
+ 360   6                     call print(.hdr$pu);
+ 361   6                     if (dirlabel and dl$access) <> 0 then
+ 362   6                         call print(.hdr$access);
+                             else
+ 363   6                         call print(.hdr$create);
+ 364   6                     call crlf$and$check;
+ 365   6                     call print(.hdr$bars);
+ 366   6                     call print(.hdr$xfcb$bars);
+ 367   6                     call crlf$and$check;
+ 368   6                     cur$line = cur$line + 4;
+ 369   6                     first$time = first$time + 1;
+ 370   6                  end; /* no$page$mode check */
+
+ 371   5              end;
+
+ 372   4              call crlf$and$check;
+ 373   4              cur$line = cur$line + 1;
+ 374   4              call display$file$info;        /* display non bdos 3.0 file info    */
+ 375   4              call display$xfcb$info;
+ 376   4              cur$file = cur$file + 1;
+ 377   4              call break;
+ 378   4              call add$totals;
+ 379   4            end;
+ 380   3            call getnxt$file$info;
+ 381   3          end;
+ 382   2      end display$with$dirlabel;
+
+
+              /*- - - - -MAIN ENTRY POINT - - - - - - - - - -*/
+
+
+ 383   1      display$files: procedure public; /* MODULE ENTRY POINT         */
+                                               /* display the collected data */
+              /*
+              if debug then
+              call print(.(cr,lf,'In main display routine...',cr,lf,'$'));
+              */
+ 384   2          cur$line, cur$file = 0;      /* force titles and new line  */
+ 385   2          totalkbytes.lword, totalkbytes.hbyte, totalrecs.lword, totalrecs.hbyte =0;
+ 386   2          total$1k$blocks.lword, total$1k$blocks.hbyte = 0;
+ 387   2          f$i$adr = first$f$i$adr - size(file$info);        /* initial if no sort */
+ 388   2          last$plus$one = last$f$i$adr + size(file$info);
+ 389   2          index = 0ffffh;              /* initial if sorted          */
+ 390   2          call getnxt$file$info;       /* base file info record      */
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  14
+
+
+
+ 391   2          if format > 2 then
+ 392   2          do;
+ 393   3              call print(.('ERROR: Illegal Format Value.',cr,lf,'$'));
+ 394   3              call terminate;          /* default could be patched - watch it */
+ 395   3          end;
+
+ 396   2          do case format;              /* format = */   
+ 397   3              call short$dir;                       /* form$short          */
+ 398   3              call size$display;                    /* form$size           */
+                                                            /* form = full         */
+ 399   3              if date$opt then do;
+ 401   4                if ((( dir$label and dl$exists) <> 0 ) and
+                        ((( dir$label and dl$access) <> 0 ) or
+                        (( dir$label and dl$update) <> 0 ) or
+                        (( dir$label and dl$makexfcb) <> 0 )) and (sfcbs$present)) then
+ 402   4                  call display$with$dirlabel; /* Timestamping is active! */
+ 403   4                else do;
+ 404   5                  call print(.('ERROR: Date and Time Stamping Inactive.',cr,lf,'$'));
+ 405   5                  call terminate;
+ 406   5                end;
+ 407   4              end;
+ 408   3              else do;    /* No date option; Regular Full display */
+ 409   4                if (((dir$label and dl$exists) <> 0) and (sfcbs$present)) then 
+ 410   4                do;
+ 411   5                  call display$with$dirlabel; 
+ 412   5                end;
+                        else 
+ 413   4                do;
+ 414   5                  call display$no$dirlabel; 
+ 415   5                end;
+ 416   4              end;
+ 417   3          end;  /* end of case */
+ 418   2          if format <> form$short and cur$file > 0 then    /* print totals */
+ 419   2          do;
+ 420   3              if cur$line + 4 > page$len and formfeeds then
+ 421   3              do;
+ 422   4                  call printchar(cr);
+ 423   4                  call printchar(ff);                 /* need a new page ? */
+ 424   4              end;
+                      else
+ 425   3              do;
+ 426   4                  call crlf$and$check;
+ 427   4                  call crlf$and$check;
+ 428   4              end;
+ 429   3              call print(.(      'Total Bytes     = $'));
+ 430   3              call p3byte(.total$kbytes,1);         /* 6 digit max */
+ 431   3              call printchar('k');
+ 432   3              call print(.('  Total Records = $'));
+ 433   3              call p3byte(.total$recs,10);      /* 7 digit max */
+ 434   3              call print(.('  Files Found = $'));
+ 435   3              call pdecimal(cur$file,1000,true);    /* 4 digit max */
+ 436   3              call print(.(cr,lf,'Total 1k Blocks = $'));
+ 437   3              call p3byte(.total$1k$blocks,1);           /* 6 digit max */
+ 438   3              call print(.('   Used/Max Dir Entries For Drive $'));
+ 439   3              call print$char('A' + cur$drv);
+ 440   3              call print$char(':'); call printb;
+PL/M-80 COMPILER    SDIR - DISPLAY FILES                                                                                  PAGE  15
+
+
+ 442   3              call pdecimal(used$de,1000,true);
+ 443   3              call print$char('/');
+ 444   3              call pdecimal(dpb$word(dirmax$w) + 1,1000,true);
+ 445   3          end;
+
+ 446   2          if cur$file = 0 then
+ 447   2          do;
+ 448   3              if message then
+ 449   3              do; call crlf$and$check;
+ 451   4                  call display$title;
+ 452   4                  call print(.('No File',cr,lf,'$'));
+ 453   4              end;
+ 454   3              call break;
+ 455   3          end;
+ 456   2          else do;
+ 457   3            file$displayed = true;
+ 458   3            if not formfeeds then
+ 459   3              call crlf$and$check;
+ 460   3          end;
+
+ 461   2      end display$files;
+
+ 462   1      end display;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0B31H   2865D
+     VARIABLE AREA SIZE = 0023H     35D
+     MAXIMUM STACK SIZE = 000EH     14D
+     815 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

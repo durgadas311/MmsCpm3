@@ -1,7 +1,7 @@
 $title	('COM Externals')
-	name	mcd80a
+	name	mcd80b
 	CSEG
-;	September 14, 1982
+;	August 2, 1982
 
 offset	equ	0000h
 
@@ -10,12 +10,11 @@ offset	equ	0000h
 
 ;	EXTERNAL ENTRY POINTS
 
-boot	equ	0000h+offset
 mon1	equ	0005h+offset
 mon2	equ	0005h+offset
 mon2a	equ	0005h+offset
 mon3 	equ	0005h+offset
-	public	boot,mon1,mon2,mon2a,mon3
+	public	mon1,mon2,mon2a,mon3
 
 ;	EXTERNAL BASE PAGE DATA LOCATIONS
 
@@ -50,33 +49,47 @@ cpu	equ	0	; 0 = 8080, 1 = 8086/88, 2 = 68000
 	public	cmdrv,pass0,len0,pass1,len1
 	public	fcb,fcba,sfcb,ifcb,ifcba,fcb16
 	public	cr,rr,rreca,ro,rreco,dolla,parma
-	public	buff,tbuff,buffa, cpu
+	public	buff,tbuff,buffa,cpu,reset
 
 
 	;*******************************************************
 	; The interface should proceed the program
 	; so that TRINT becomes the entry point for the 
 	; COM file.  The stack is set and memsiz is set
-	; to the top of memory.  Program termination is done
-	; with a return to preserve R/O diskettes.
+	; to the top of memory.
 	;*******************************************************
+
+bdos	equ	mon1
+getalv	equ	27
+getdpb	equ	31
 
 ;	EXECUTION BEGINS HERE
 
-	lxi	sp, stack
-	JMP 	PLM
+reset:
+trint:
 
-;	PATCH AREA, DATE, VERSION & SERIAL NOS.
+;[JCE 17-5-1998] Protect against being run under DOS
+
+	db	0EBh,0Bh		;Sends 8086s to I8086: below
+
+	lxi	sp, stack		
+	call	plm			; call program
+	mvi	c,0
+	call	bdos
+
+I8086:	db	0CDh,020h		;8086 processors come here - INT 20h
+
+	;	PATCH AREA, DATE, VERSION & SERIAL NOS.
 
 	dw	0,0,0,0,0,0,0,0
 	dw	0,0,0,0,0,0,0,0
 	dw	0,0,0,0,0,0,0,0
-	dw	0,0,0,0,0
+	db	0
 
 	db	'CP/M Version 3.0'
-	db	'COPYRIGHT 1982, '
-	db	'DIGITAL RESEARCH'
-	db	'151282'	; version date day-month-year
+	db	'COPYRIGHT 1998, '
+	db	'Caldera, Inc.   '
+	db	'190598'	; version date day-month-year
 	db	0,0,0,0		; patch bit map
 	db	'654321'	; Serial no.
 

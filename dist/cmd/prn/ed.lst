@@ -1,0 +1,2950 @@
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE ED
+OBJECT MODULE PLACED IN ED.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 ED.PLM OPTIMIZE DEBUG
+
+
+
+              $ TITLE(' CP/M-80 3.0 --- ED')
+   1          ED:
+              DO;
+                  /* MODIFIED FOR .PRL OPERATION MAY, 1979 */
+                  /* MODIFIED FOR OPERATION WITH CP/M 2.0 AUGUST 1979 */
+                  /* modified for MP/M 2.0 June 1981 */
+                  /* modified for CP/M 1.1 Oct  1981 */
+                  /* modified for CONCURRENT CP/M 1.0 Jul 1982 */
+                  /* modified for CP/M 3.0 July 1982 */
+                  /* modified for CP/M 3.0 SEPT 1982 */
+
+              /* MODIFICATION LOG:
+               *   July 1982 whf: some code cleanup (grouped logicals, declared BOOL);
+               *        fixed disk full error handling; fixed read from null files;
+               *        fixed (some) of the dirty fcb handling (shouldn't use settype
+               *        function on open fcbs!).
+               *   July 1982 dh: installed patches to change macro abort command from
+               *        ^C to ^Y and to not print error message when trying to delete
+               *        a file that doesn't exist.  Added PERROR: PROCEDURE to print
+               *        error messages in a consistant format and modified error 
+               *        message handler at RESET: entry point.  Also corrected Invalid
+               *        filename error to not abort ED if parsing a R or X command.
+               *        Modified start (at PLM:) and SETDEST: to prompt for missing 
+               *        filenames.  Modified parse$fcb & parse$lib to set a global 
+               *        flag and break if it got an invalid filename for X or R commands.
+               *        Start sets page size from the system control block (SCB) if 
+               *        ED is running under CP/M-80 (high(ver)=0).
+               *        The H command now works with new files. (sets newfile=false)
+               *    Sept 82
+               *        Corrected bug in which ED file b: didn't work. Changed PLM:
+               *        and SETDEST: routines.
+               *    Nov  82
+               *        Corrected bug in parse$fcb where filenames of 9 characters and
+               *        types of 4 characters where accepted as valid and truncated.
+               */
+
+              $include (copyrt.lit)
+          =
+          =   /*
+          =     Copyright (C) 1982
+          =     Digital Research
+          =     P.O. Box 579
+          =     Pacific Grove, CA 93950
+          =   */
+          =
+
+   2   1      declare
+                  mpmproduct literally '01h', /* requires mp/m */
+                  cpm3       literally '30h'; /* requires 3.0 cp/m */
+
+   3   1      declare plm label public;  /* entry point for plm86 interface */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   2
+
+
+
+              /*  THE FOLLOWING COMMANDS CREATE ED.COM AND ED.CMD:
+
+                  wm $1.plm
+                  attach b 5
+                  b:seteof $1.plm
+                  vax $1.plm $$san\batch smpmcmd $1 date($2 Oct 81)\
+                  b:is14
+                  ERA $1.MOD
+                  era $1
+                  era $1.obj
+                  :f1:PLM80 $1.PLM debug PAGEWIDTH(132) $3
+                  :f1:link $101.obj,$1.obj,:f1:plm80.lib to $1.mod 
+                  :f1:locate $1.mod code(0100H) stacksize(100) map print($1.tra)
+                  :f1:cpm
+                  b:objcpm $1
+                  attach b 1
+                  
+
+              the following VAX commands were used to create ED.CMD
+
+               $ asm86 scd1.a86 debug xref
+               ! scd1 does a jump to the plm code
+               $ plm86 'p1'.plm 'p2' 'p3' 'p4' optimize(3) debug
+               $ link86 scd1.obj,'p1'.obj  to 'p1'.lnk
+               $ loc86 'p1'.lnk od(sm(dats,code,data,stack,const)) ad(sm(code(0)))  ss(stack(+16))
+               $ h86 'p1'
+
+                 followed by the gencmd command 
+                 gencmd ed data[b1E3,m80,xFFF]
+                 where 1E2 is the start of the constant area / 16 from ED.MP2
+
+              */
+
+              /* DECLARE                            8080 Interface
+                  JMP EDCOMMAND - 3 (TO ADDRESS LXI SP) 
+                  EDJMP BYTE DATA(0C3H),
+                  EDADR ADDRESS DATA(.EDCOMMAND-3); */
+
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   INTERFACE          *
+                 *                                    *
+                 **************************************/
+
+
+   4   1        mon1:
+                  procedure (func,info) external;
+   5   2            declare func byte;
+   6   2            declare info address;
+   7   2          end mon1;
+
+   8   1        mon2:
+                  procedure (func,info) byte external;
+   9   2            declare func byte;
+  10   2            declare info address;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   3
+
+
+  11   2          end mon2;
+
+  12   1        mon3:
+                  procedure (func,info) address external;
+  13   2            declare func byte;
+  14   2            declare info address;
+  15   2          end mon3;
+
+  16   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+  17   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+  18   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+
+  19   1      DECLARE
+                  MAXB      ADDRESS EXTERNAL, /* MAX BASE 0006H */
+                  BUFF (128)BYTE    EXTERNAL, /* BUFFER 0080H */
+                  SECTSHF   LITERALLY '7',    /* SHL(1,SECTSHF) = SECTSIZE */
+                  SECTSIZE  LITERALLY '80H';  /* SECTOR SIZE */
+
+  20   1      BOOT: PROCEDURE ;
+  21   2          call mon1(0,0);          /* changed for MP/M-86 version */
+                  /* SYSTEM REBOOT */
+  22   2          END BOOT;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   4
+
+
+              $ eject
+
+                /*  E D  :   T H E   C P / M   C O N T E X T    E D I T O R  */
+               
+                  /*      COPYRIGHT (C) 1976, 1977, 1978, 1979, 1980, 1981, 1982
+                          DIGITAL RESEARCH
+                          BOX 579 PACIFIC GROVE
+                          CALIFORNIA 93950
+
+                          Revised:
+                            07 April 81  by Thomas Rolander
+                            21 July  81  by Doug Huskey
+                            29 Oct   81  by Doug Huskey
+                            10 Nov   81  by Doug Huskey
+                            08 July  82  by Bill Fitler
+                            26 July  82  by Doug Huskey
+                  */
+              /* DECLARE COPYRIGHT(*) BYTE DATA
+                 (' COPYRIGHT (C) 1982, DIGITAL RESEARCH '); 
+                 **** this message should be in the header ***
+              */
+  23   1      declare date(*) byte data ('8/82');
+
+               /* COMMAND           FUNCTION
+                  -------           --------
+                   A            APPEND LINES OF TEXT TO BUFFER
+                   B            MOVE TO BEGINNING OR END OF TEXT
+                   C            SKIP CHARACTERS
+                   D            DELETE CHARACTERS
+                   E            END OF EDIT
+                   F            FIND STRING IN CURRENT BUFFER
+                   H            MOVE TO TOP OF FILE (HEAD)
+                   I            INSERT   CHARACTERS FROM KEYBOARD
+                                UP TO NEXT <ENDFILE>
+                   J            JUXTAPOSITION OPERATION - SEARCH FOR FIRST STRING,
+                                INSERT SECOND STRING, DELETE UNTIL THIRD STRING
+                   K            DELETE LINES
+                   L            SKIP LINES
+                   M            MACRO DEFINITION (SEE COMMENT BELOW)
+                   N            FIND NEXT OCCURRENCE OF STRING
+                                WITH AUTO SCAN THROUGH FILE
+                   O            RE-EDIT OLD FILE
+                   P            PAGE AND DISPLAY (MOVES UP OR DOWN 24 LINES AND
+                                DISPLAYS 24 LINES)
+                   Q            QUIT EDIT WITHOUT UPDATING THE FILE
+                   R<FILENAME>  READ FROM FILE <FILENAME> UNTIL <ENDFILE> AND
+                                INSERT INTO TEXT
+                   S            SEARCH FOR FIRST STRING, REPLACE BY SECOND STRING
+                   T            TYPE LINES
+                   U            TRANSLATE TO UPPER CASE (-U CHANGES TO NO TRANSLATE)
+                   W            WRITE LINES OF TEXT TO FILE
+                   X<FILENAME>  TRANSFER (XFER) LINES TO FILE <FILENAME> 
+                   Z            SLEEP FOR 1/2 SECOND (USED IN MACROS TO STOP DISPLAY)
+                   <CR>         MOVE UP OR DOWN AND PRINT ONE LINE
+               
+
+                  IN GENERAL, THE EDITOR ACCEPTS SINGLE LETTER COMMANDS WITH OPTIONAL
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   5
+
+
+              INTEGER VALUES PRECEDING THE COMMAND.  THE EDITOR ACCEPTS BOTH UPPER AND LOWER
+              CASE COMMANDS AND VALUES, AND PERFORMS TRANSLATION TO UPPER CASE UNDER THE FOL-
+              LOWING CONDITIONS.  IF THE COMMAND IS TYPED IN UPPER CASE, THEN THE DATA WHICH
+              FOLLOWS IS TRANSLATED TO UPPER CASE.  THUS, IF THE "I" COMMAND IS TYPED IN
+              UPPER CASE, THEN ALL INPUT IS AUTOMATICALLY TRANSLATED (ALTHOUGH ECHOED IN
+              LOWER CASE, AS TYPED).  IF THE "A" COMMAND IS TYPED IN UPPER CASE, THEN ALL
+              INPUT IS TRANSLATED AS READ FROM THE DISK.  GLOBAL TRANSLATION TO UPPER CASE
+              CAN BE CONTROLLED BY THE "U" COMMAND (-U TO NEGATE ITS EFFECT).  IF YOU ARE
+              OPERATING WITH AN UPPER CASE ONLY TERMINAL, THEN OPERATION IS AUTOMATIC.
+              SIMILARLY, IF YOU ARE OPERATING WITH A LOWER CASE TERMINAL, AND TRANSLATION
+              TO UPPER CASE IS NOT SPECIFIED, THEN LOWER CASE CHARACTERS CAN BE ENTERED.
+
+                   A NUMBER OF COMMANDS CAN BE PRECEDED BY A POSITIVE OR
+                   NEGATIVE INTEGER BETWEEN 0 AND 65535 (1 IS DEFAULT IF NO VALUE
+                   IS SPECIFIED).  THIS VALUE DETERMINES THE NUMBER OF TIMES THE
+                   COMMAND IS APPLIED BEFORE RETURNING FOR ANOTHER COMMAND.
+                       THE COMMANDS
+                                     C D K L T P U  <CR>
+                   CAN BE PRECEDED BY AN UNSIGNED, POSITIVE, OR NEGATIVE NUMBER,
+                   THE COMMANDS
+                                     A F J N W Z
+                   CAN BE PRECEDED BY AN UNSIGNED OR POSITIVE NUMBER,
+                   THE COMMANDS
+                                     E H O Q
+                   CANNOT BE PRECEDED BY A NUMBER.  THE COMMANDS
+                                     F I J M R S
+                   ARE ALL FOLLOWED BY ONE OR MORE STRINGS OF CHARACTERS WHICH CAN
+                   BE OPTIONALLY SEPARATED OR TERMINATED BY EITHER <ENDFILE> OR <CR>.
+                   THE <ENDFILE> IS GENERALLY USED TO SEPARATE THE SEARCH STRINGS
+                   IN THE S AND J COMMANDS, AND IS USED AT THE END OF THE COMMANDS IF
+                   ADDITIONAL COMMANDS FOLLOW.  FOR EXAMPLE, THE FOLLOWING COMMAND
+                   SEQUENCE SEARCHES FOR  THE STRING 'GAMMA', SUBSTITUTES THE STRING
+                   'DELTA', AND THEN TYPES THE FIRST PART OF THE LINE WHERE THE
+                   CHANGE OCCURRED, FOLLOWED BY THE REMAINDER OF THE LINE WHICH WAS
+                   CHANGED:
+                               SGAMMA<ENDFILE>DELTA<ENDFILE>0TT<CR>
+               
+                   THE CONTROL-L CHARACTER IN SEARCH AND SUBSTITUTE STRINGS IS
+                   REPLACED ON INPUT BY <CR><LF> CHARACTERS.  THE CONTROL-I KEY
+                   IS TAKEN AS A TAB CHARACTER.
+               
+                      THE COMMANDS R & X MUST BE FOLLOWED BY A FILE NAME (WITH default 
+                   FILE TYPE OF 'LIB') WITH A TRAILING <CR> OR <ENDFILE>.  THE COMMAND
+                   I IS FOLLOWED BY A STRING OF SYMBOLS TO INSERT, TERMINATED BY
+                   A <CR> OR <ENDFILE>.  IF SEVERAL LINES OF TEXT ARE TO BE INSERTED,
+                   THE I CAN BE DIRECTLY FOLLOWED BY AN <ENDFILE> OR <CR> IN WHICH
+                   CASE THE EDITOR ACCEPTS LINES OF INPUT TO THE NEXT <ENDFILE>.
+                   THE COMMAND 0T PRINTS THE FIRST PART OF THE CURRENT LINE,
+                   AND THE COMMAND 0L MOVES THE REFERENCE TO THE BEGINNING OF THE
+                   CURRENT LINE.  THE COMMAND 0P PRINTS THE CURRENT PAGE ONLY, WHILE
+                   THE COMMAND 0Z READS THE CONSOLE RATHER THAN WAITING (THIS IS USED
+                   AGAIN WITHIN MACROS TO STOP THE DISPLAY - THE MACRO EXPANSION
+                   STOPS UNTIL A CHARACTER IS READ.  IF THE CHARACTER IS NOT A BREAK
+                   THEN THE MACRO EXPANSION CONTINUES NORMALLY).
+               
+                      NOTE THAT A POUND SIGN IS TAKEN AS THE NUMBER 65535, ALL
+                   UNSIGNED NUMBERS ARE ASSUMED POSITIVE, AND A SINGLE - IS ASSUMED -1
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   6
+
+
+               
+                   A NUMBER OF COMMANDS CAN BE GROUPED TOGETHER AND EXECUTED
+                   REPETITIVELY USING THE MACRO COMMAND WHICH TAKES THE FORM
+               
+                           <NUMBER>MC1C2...CN<DELIMITER>
+               
+                   WHERE <NUMBER> IS A NON-NEGATIVE INTEGER N, AND <DELIMITER> IS
+                   <ENDFILE> OR <CR>.  THE COMMANDS C1 ... CN  FOLLOWING THE M ARE
+                   EXECUTED N TIMES, STARTING AT THE CURRENT POSITION IN THE BUFFER.
+                   IF N IS 0, 1, OR OMITTED, THE COMMANDS ARE EXECUTED UNTIL THE END
+                   IF THE BUFFER IS ENCOUNTERED.
+               
+                   THE FOLLOWING MACRO, FOR EXAMPLE, CHANGES ALL OCCURRENCES OF
+                   THE NAME 'GAMMA' TO 'DELTA', AND PRINTS THE LINES WHICH
+                   WERE CHANGED:
+               
+                               MFGAMMA<ENDFILE>-5DIDELTA<ENDFILE>0LT<CR>
+               
+                  (NOTE: AN <ENDFILE> IS THE CP/M END OF FILE MARK - CONTROL-Z)
+               
+                  IF ANY KEY IS DEPRESSED DURING TYPING OR MACRO EXPANSION, THE
+                  FUNCTION IS CONSIDERED TERMINATED, AND CONTROL RETURNS TO THE
+                  OPERATOR.
+               
+                  ERROR CONDITIONS ARE INDICATED BY PRINTING ONE OF THE CHARACTERS:
+               
+                   SYMBOL                    ERROR CONDITION
+                   ------      ----------------------------------------------------
+                   GREATER     FREE MEMORY IS EXHAUSTED - ANY COMMAND CAN BE ISSUED
+                               WHICH DOES NOT INCREASE MEMORY REQUIREMENTS.
+                   QUESTION    UNRECOGNIZED COMMAND OR ILLEGAL NUMERIC FIELD
+                   POUND       CANNOT APPLY THE COMMAND THE NUMBER OF TIMES SPECFIED
+                               (OCCURS IF SEARCH STRING CANNOT BE FOUND)
+                   LETTER O    CANNOT OPEN <FILENAME>.LIB IN R COMMAND
+               
+                   THE ERROR CHARACTER IS ALSO ACCOMPANIED BY THE LAST CHARACTER
+                   SCANNED WHEN THE ERROR OCCURRED.                      */
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   7
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  GLOBAL VARIABLES * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+  24   1      DECLARE LIT LITERALLY 'LITERALLY',
+                  DCL LIT 'DECLARE',
+                  PROC LIT 'PROCEDURE',
+                  ADDR LIT 'ADDRESS',
+                  BOOLEAN LIT 'BYTE',
+                  CTLL LIT '0CH',
+                  CTLR LIT '12H',                /* REPEAT LINE IN INSERT MODE */
+                  CTLU LIT '15H',                /* LINE DELETE IN INSERT MODE */
+                  CTLX LIT '18H',                /* EQUIVALENT TO CTLU */
+                  CTLH LIT '08H',                /* BACKSPACE */
+                  TAB LIT '09H',                 /* TAB CHARACTER */
+                  LCA  LIT '110$0001B',          /* LOWER CASE A */
+                  LCZ  LIT '111$1010B',          /* LOWER CASE Z */
+                  ESC  LIT '1BH',                /* ESCAPE CHARACTER */
+                  ENDFILE LIT '1AH';             /* CP/M END OF FILE */
+               
+  25   1      DECLARE 
+                  TRUE LITERALLY '1', 
+                  FALSE LITERALLY '0',
+                  FOREVER LITERALLY 'WHILE TRUE',
+                  CTRL$Y LITERALLY '19h',
+                  CR LITERALLY '13',
+                  LF LITERALLY '10',
+                  WHAT LITERALLY '63';
+
+  26   1      DECLARE
+                  MAX ADDRESS,                   /* .MEMORY(MAX)=0 (END) */
+                  MAXM ADDRESS,                  /* MINUS 1 */
+                  HMAX ADDRESS;                  /* = MAX/2 */
+               
+  27   1      declare
+                  i  byte;                       /* used by command parsing */
+
+  28   1      DECLARE
+                  us literally '8',              /* file from user 0   */
+                  RO LITERALLY '9',              /* R/O FILE INDICATOR */
+                  SY LITERALLY '10',             /* SYSTEM FILE ATTRIBUTE */
+                  EX LITERALLY '12',             /* EXTENT NUMBER POSITION */
+                  UB LITERALLY '13',             /* UNFILLED BYTES */
+                  ck LITERALLY '13',             /* checksum */
+                  MD LITERALLY '14',             /* MODULE NUMBER POSITION */
+                  NR LITERALLY '32',             /* NEXT RECORD FIELD */
+                  FS LITERALLY '33',             /* FCB SIZE */
+                  RFCB (FS) BYTE                 /* READER FILE CONTROL BLOCK */
+                      INITIAL(0, /* FILE NAME */ '        ',
+                                 /* FILE TYPE */ 'LIB',0,0,0),
+                  RBP BYTE,                      /* READ BUFFER POINTER */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   8
+
+
+                  XFCB (FS) BYTE                 /* XFER FILE CONTROL BLOCK */
+                      INITIAL(0, 'X$$$$$$$','LIB',0,0,0,0,0,0,0),
+                  XFCBE BYTE AT(.XFCB(EX)),      /* XFCB EXTENT */
+                  XFCBR BYTE AT(.XFCB(NR)),      /* XFCB RECORD # */
+                  xfcbext byte initial(0),       /* save xfcb extent for appends */
+                  xfcbrec byte initial(0),       /* save xfcb record for appends */
+                  XBUFF (SECTSIZE) BYTE,         /* XFER BUFFER */
+                  XBP BYTE,                      /* XFER POINTER */
+
+                  NBUF BYTE,                     /* NUMBER OF BUFFERS */
+                  BUFFLENGTH ADDRESS,            /* NBUF * SECTSIZE */
+                  SFCB (FS) BYTE AT(.FCB),       /* SOURCE FCB = DEFAULT FCB */
+                  SDISK BYTE AT (.FCB),          /* SOURCE DISK */
+                  SBUFFADR ADDRESS,              /* SOURCE BUFFER ADDRESS */
+                  SBUFF BASED SBUFFADR (128) BYTE, /* SOURCE BUFFER */
+                  password (16) byte initial(0), /* source password */
+
+                  DFCB (FS) BYTE,                /* DEST FILE CONTROL BLOCK */
+                  DDISK BYTE AT (.DFCB),         /* DESTINATION DISK */
+                  DBUFFADR ADDRESS,              /* DESTINATION BUFFER ADDRESS */
+                  DBUFF BASED DBUFFADR (128) BYTE, /* DEST BUFFER */
+                  NSOURCE ADDRESS,               /* NEXT SOURCE CHARACTER */
+                  NDEST   ADDRESS,               /* NEXT DESTINATION CHAR */
+
+                  tmpfcb (FS) BYTE;              /* temporary fcb for rename & deletes */
+               
+  29   1      DECLARE                                   /**** some of the logicals *****/ 
+                  newfile      BOOLEAN initial (false), /* true if no source file */
+                  onefile      BOOLEAN initial (true),  /* true if output file=input file */
+                  XFERON       BOOLEAN initial (false), /* TRUE IF XFER ACTIVE */
+                  reading      BOOLEAN initial (false), /* TRUE IF reading RFCB */
+                  PRINTSUPPRESS BOOLEAN initial (false),/* TRUE IF PRINT SUPPRESSED */
+                  sys          BOOLEAN initial (false), /* true if system file */
+                  protection   BOOLEAN initial (false), /* password protection mode */
+                  INSERTING    BOOLEAN,             /* TRUE IF INSERTING CHARACTERS */
+                  READBUFF     BOOLEAN,             /* TRUE IF END OF READ BUFFER */
+                  TRANSLATE    BOOLEAN initial (false), /* TRUE IF XLATION TO UPPER CASE */
+                  UPPER        BOOLEAN initial (false), /* TRUE IF GLOBALLY XLATING TO UC */
+                  LINESET      BOOLEAN initial (true),  /* TRUE IF LINE #'S PRINTED */
+                  has$bdos3    BOOLEAN initial (false), /* true if BDOS version >= 3.0 */
+                  tail BOOLEAN initial (true),  /* true if readiing from cmd tail */
+                  dot$found    BOOLEAN initial (false); /* true if dot found in fname parse*/
+
+  30   1      DECLARE
+                  dtype  (3)  byte,                /* destination file type */
+                  libfcb (12) byte initial(0,'X$$$$$$$LIB'),/* default lib name */
+                  tempfl (3)  byte initial('$$$'), /* temporary file type */
+                  backup (3)  byte initial('BAK'); /* backup file type */
+
+  31   1      declare
+                 error$code address;
+               
+  32   1      DECLARE
+                  COLUMN  BYTE initial(0),  /* CONSOLE COLUMN POSITION */
+                  SCOLUMN BYTE INITIAL(8),  /* STARTING COLUMN IN "I" MODE */
+                  TCOLUMN BYTE,             /* TEMP DURING BACKSPACE */
+                  QCOLUMN BYTE;             /* TEMP DURING BACKSPACE */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE   9
+
+
+               
+  33   1      DECLARE DCNT BYTE;        /* RETURN CODE FROM MON? CALLS */
+               
+              /* COMMAND BUFFER */
+  34   1      DECLARE (MAXLEN,COMLEN) BYTE, COMBUFF(128) BYTE,
+                  CBP BYTE initial(0);
+
+  35   1      DECLARE /* LINE COUNTERS */
+                  BASELINE ADDRESS,        /* CURRENT LINE */
+                  RELLINE  ADDRESS;        /* RELATIVE LINE IN TYPEOUT */
+               
+  36   1      DECLARE
+                  FORWARD LIT '1',
+                  BACKWARD LIT '0',
+                  RUBOUT LIT '07FH',
+                  POUND LIT '23H',
+                  MACSIZE LIT '128',       /* MAX MACRO SIZE */
+                  SCRSIZE LIT '100',       /* SCRATCH BUFFER SIZE */
+                  COMSIZE LIT 'ADDRESS';   /* DETERMINES MAX COMMAND NUMBER*/
+               
+  37   1      DCL MACRO(MACSIZE) BYTE,
+                  SCRATCH(SCRSIZE) BYTE,     /* SCRATCH BUFFER FOR F,N,S */
+                  (WBP, WBE, WBJ)  BYTE,     /* END OF F STRING, S STRING, J STRING */
+                  (FLAG, MP, MI, XP) BYTE,
+                  MT COMSIZE;
+               
+  38   1      DCL (START, RESTART, OVERCOUNT, OVERFLOW, 
+                   disk$err, dir$err, RESET, BADCOM) LABEL;
+
+              /* global variables used by file parsing routines */
+  39   1      dcl ncmd byte initial(0);
+                 
+               
+  40   1      DCL (DISTANCE, TDIST) COMSIZE,
+                  (DIRECTION, CHAR) BYTE,
+                  ( FRONT, BACK, FIRST, LASTC) ADDR;
+               
+  41   1      dcl LPP byte initial(23);          /* LINES PER PAGE */
+
+              /* the following stucture is used near plm: to set
+                 the lines per page from the BDOS 3 SCB */
+  42   1      declare
+                  pb (2) byte data (28,0);
+
+  43   1      declare 
+                  ver address;                   /* VERSION NUMBER */
+               
+  44   1      declare
+                  err$msg         address initial(0),
+                  invalid (*)     byte data ('Invalid Filename$'),
+                  dirfull (*)     byte data ('DIRECTORY FULL$'),
+                  diskfull (*)    byte data ('DISK FULL$'),
+                  password$err(*) byte data ('Creating Password$'),
+                  not$found (*)   byte data ('File not found$'),
+                  notavail (*)    byte data ('File not available$');
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  10
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                             * * *  CP/M INTERFACE ROUTINES * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+
+               /* IO SECTION */
+               
+  45   1      READCHAR: PROCEDURE BYTE; RETURN MON2(1,0);
+  47   2          END READCHAR;
+
+  48   1        conin: 
+                  procedure byte;
+  49   2          return mon2(6,0fdh);
+  50   2          end conin;
+
+  51   1      PRINTCHAR: PROCEDURE(CHAR);
+  52   2          DECLARE CHAR BYTE;
+  53   2          IF PRINTSUPPRESS THEN RETURN;
+  55   2          CALL MON1(2,CHAR);
+  56   2          END PRINTCHAR;
+
+  57   1      TTYCHAR: PROCEDURE(CHAR);
+  58   2          DECLARE CHAR BYTE;
+  59   2          IF CHAR >= ' ' THEN COLUMN = COLUMN + 1;
+  61   2          IF CHAR = LF THEN COLUMN = 0;
+  63   2          CALL PRINTCHAR(CHAR);
+  64   2          END TTYCHAR;
+               
+  65   1      BACKSPACE: PROCEDURE;
+                  /* MOVE BACK ONE POSITION */
+  66   2          IF COLUMN = 0 THEN RETURN;
+  68   2          CALL TTYCHAR(CTLH); /* COLUMN = COLUMN - 1 */
+  69   2          CALL TTYCHAR(' ' ); /* COLUMN = COLUMN + 1 */
+  70   2          CALL TTYCHAR(CTLH); /* COLUMN = COLUMN - 1 */
+  71   2          COLUMN = COLUMN - 2;
+  72   2          END BACKSPACE;
+
+  73   1      PRINTABS: PROCEDURE(CHAR);
+  74   2          DECLARE (CHAR,I,J) BYTE;
+  75   2          I = CHAR = TAB AND 7 - (COLUMN AND 7);
+  76   2          IF CHAR = TAB THEN CHAR = ' ';
+  78   2              DO J = 0 TO I;
+  79   3              CALL TTYCHAR(CHAR);
+  80   3              END;
+  81   2          END PRINTABS;
+               
+  82   1      GRAPHIC: PROCEDURE(C) BOOLEAN;
+  83   2          DECLARE C BYTE;
+                  /* RETURN TRUE IF GRAPHIC CHARACTER */
+  84   2          IF C >= ' ' THEN RETURN TRUE;
+  86   2          RETURN C = CR OR C = LF OR C = TAB;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  11
+
+
+  87   2          END GRAPHIC;
+
+  88   1      PRINTC: PROCEDURE(C);
+  89   2          DECLARE C BYTE;
+  90   2          IF NOT GRAPHIC(C) THEN
+  91   2              DO; CALL PRINTABS('^');
+  93   3              C = C + '@';
+  94   3              END;
+  95   2          CALL PRINTABS(C);
+  96   2          END PRINTC;
+
+  97   1      CRLF: PROCEDURE;
+  98   2          CALL PRINTC(CR); CALL PRINTC(LF);
+ 100   2          END CRLF;
+
+ 101   1      PRINTM: PROCEDURE(A);
+ 102   2          DECLARE A ADDRESS;
+ 103   2          CALL MON1(9,A);
+ 104   2          END PRINTM;
+
+ 105   1      PRINT: PROCEDURE(A);
+ 106   2          DECLARE A ADDRESS;
+ 107   2          CALL CRLF;
+ 108   2          CALL PRINTM(A);
+ 109   2          END PRINT;
+
+ 110   1      perror: procedure(a);
+ 111   2          declare a address;
+ 112   2          call print(.(tab,'ERROR - $'));
+ 113   2          call printm(A);
+ 114   2          call crlf;
+ 115   2          end perror;
+
+ 116   1      READ: PROCEDURE(A);
+ 117   2          DECLARE A ADDRESS;
+ 118   2          CALL MON1(10,A);
+ 119   2          END READ;
+               
+                      /* used for library files */
+ 120   1      OPEN: PROCEDURE(FCB);
+ 121   2           DECLARE FCB ADDRESS;
+ 122   2           if MON2(15,FCB) = 255 then do;
+ 124   3              flag = 'O';
+ 125   3          err$msg = .not$found;
+ 126   3              go to reset;
+ 127   3              end;
+ 128   2           END OPEN;
+               
+                      /* used for main source file */
+ 129   1      OPEN$FILE: PROCEDURE(FCB) ADDRESS;
+ 130   2           DECLARE FCB ADDRESS;
+ 131   2           RETURN MON3(15,FCB);
+ 132   2           END OPEN$FILE;
+               
+ 133   1      CLOSE: PROCEDURE(FCB);
+ 134   2          DECLARE FCB ADDRESS;
+ 135   2          DCNT = MON2(16,FCB);
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  12
+
+
+ 136   2          END CLOSE;
+               
+ 137   1      DELETE: PROCEDURE(FCB);
+ 138   2          DECLARE FCB ADDRESS;
+ 139   2          DCNT = MON2(19,FCB);
+ 140   2          END DELETE;
+               
+ 141   1      DISKREAD: PROCEDURE(FCB) BYTE;
+ 142   2          DECLARE FCB ADDRESS;
+ 143   2          RETURN MON2(20,FCB);
+ 144   2          END DISKREAD;
+               
+ 145   1      DISKWRITE: PROCEDURE(FCB) BYTE;
+ 146   2          DECLARE FCB ADDRESS;
+ 147   2          RETURN MON2(21,FCB);
+ 148   2          END DISKWRITE;
+               
+ 149   1      RENAME: PROCEDURE(FCB);
+ 150   2          DECLARE FCB ADDRESS;
+ 151   2          CALL MON1(23,FCB);
+ 152   2          END RENAME;
+               
+ 153   1      READCOM: PROCEDURE;
+ 154   2          MAXLEN = 128; CALL READ(.MAXLEN);
+ 156   2          END READCOM;
+               
+ 157   1      BREAK$KEY: PROCEDURE BOOLEAN;
+ 158   2          IF MON2(11,0) THEN
+ 159   2              DO; /* CLEAR CHAR */
+ 160   3              IF MON2(1,0) = CTRL$Y THEN 
+ 161   3                  RETURN TRUE;
+ 162   3              END;
+ 163   2          RETURN FALSE;
+ 164   2          END BREAK$KEY;
+               
+ 165   1      CSELECT: PROCEDURE BYTE;
+                  /* RETURN CURRENT DRIVE NUMBER */
+ 166   2          RETURN MON2(25,0);
+ 167   2          END CSELECT;
+               
+ 168   1      SETDMA: PROCEDURE(A);
+ 169   2          DECLARE A ADDRESS;
+                  /* SET DMA ADDRESS */
+ 170   2          CALL MON1(26,A);
+ 171   2          END SETDMA;
+               
+ 172   1      set$attribute: procedure(FCB);
+ 173   2          declare fcb address;
+ 174   2          call MON1(30,FCB);
+ 175   2          end set$attribute;
+
+              /* The PL/M built-in procedure "MOVE" can be used to move storage,
+                 its definition is:  
+
+              MOVE: PROCEDURE(COUNT,SOURCE,DEST);
+                      DECLARE (COUNT,SOURCE,DEST) ADDRESS;
+                      / MOVE DATA FROM SOURCE TO DEST ADDRESSES, FOR COUNT BYTES /
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  13
+
+
+                      END MOVE;
+                */
+                                /* this routine is included solely for 
+                                   enconomy of space over the use of the
+                                   equivalent (in-line) code generated by
+                                   the built-in function */
+ 176   1      move:   proc(c,s,d);
+ 177   2          dcl (s,d) addr, c byte;
+ 178   2          dcl a based s byte, b based d byte;
+
+ 179   2              do while (c:=c-1)<>255;
+ 180   3              b=a; s=s+1; d=d+1;
+ 183   3              end;
+ 184   2          end move;
+               
+ 185   1      write$xfcb: PROCEDURE(FCB);
+ 186   2          DECLARE FCB ADDRESS;
+ 187   2          call move(8,.password,.password(8));
+ 188   2          if MON2(103,FCB)= 0ffh then
+ 189   2             call perror(.password$err);
+ 190   2          END write$xfcb;
+               
+ 191   1      read$xfcb: PROCEDURE(FCB);
+ 192   2          DECLARE FCB ADDRESS;
+ 193   2          call MON1(102,FCB);
+ 194   2          END read$xfcb;
+               
+                /* 0ff => return BDOS errors */
+ 195   1      return$errors:
+                  procedure(mode);
+ 196   2          declare mode byte;
+ 197   2            call mon1 (45,mode);  
+ 198   2          end return$errors;
+
+ 199   1      REBOOT: PROCEDURE;
+ 200   2          IF XFERON THEN 
+ 201   2              CALL DELETE(.libfcb);
+ 202   2          CALL BOOT;
+ 203   2          END REBOOT;
+
+ 204   1      version: procedure address;
+                  /* returns current cp/m version # */
+ 205   2          return mon3(12,0);
+ 206   2          end version;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  14
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  SUBROUTINES  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+
+                /*  INPUT / OUTPUT BUFFERING ROUTINES */
+               
+
+
+                                /* abort ED and print error message */
+ 207   1      ABORT: PROCEDURE(A);
+ 208   2          DECLARE A ADDRESS;
+ 209   2          CALL perror(A);
+ 210   2          CALL REBOOT;
+ 211   2          END ABORT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* fatal file error */
+ 212   1      FERR: PROCEDURE;
+ 213   2          CALL CLOSE(.DFCB); /* ATTEMPT TO CLOSE FILE FOR LATER RECOVERY */
+ 214   2          CALL ABORT (.dirfull);
+ 215   2          END FERR;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set password if cpm 3*/
+ 216   1      setpassword: procedure;
+ 217   2          if has$bdos3 then
+ 218   2              call setdma(.password);
+ 219   2          end setpassword;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* delete file at afcb */
+ 220   1      delete$file: procedure(afcb);
+ 221   2          declare afcb address;
+ 222   2          call setpassword;
+ 223   2          call delete(afcb);
+ 224   2          end delete$file;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* rename file at afcb */
+ 225   1      rename$file: procedure(afcb);
+ 226   2          declare afcb address;
+ 227   2          call delete$file(afcb+16);     /* delete new file */
+ 228   2          call setpassword;
+ 229   2          call rename(afcb);
+ 230   2          end rename$file;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  15
+
+
+
+
+                                /* make file at afcb */
+ 231   1      make$file: procedure(afcb);
+ 232   2          declare afcb address;
+ 233   2          call delete$file(afcb);     /* delete file */
+ 234   2          call setpassword;
+ 235   2          DCNT = MON2(22,afcb);       /* create file */
+ 236   2          end make$file;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* fill string @ s for c bytes with f */
+ 237   1      fill:   proc(s,f,c);
+ 238   2          dcl s addr,
+                      (f,c) byte,
+                      a based s byte;
+
+ 239   2              do while (c:=c-1)<>255;
+ 240   3              a = f;
+ 241   3              s = s+1;
+ 242   3              end;
+ 243   2          end fill;
+               
+
+
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  16
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                              * * *  FILE HANDLING ROUTINES  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+
+
+                                /* set destination file type to type at A */
+ 244   1      SETTYPE: PROCEDURE(afcb,A);
+ 245   2          DECLARE (afcb, A) ADDRESS;
+ 246   2          CALL MOVE(3,A,aFCB+9);
+ 247   2          END SETTYPE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set dma to xfer buffer */
+ 248   1      SETXDMA: PROCEDURE;
+ 249   2          CALL SETDMA(.XBUFF);
+ 250   2          END SETXDMA;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* fill primary source buffer  */
+ 251   1      FILLSOURCE: PROCEDURE;
+ 252   2          DECLARE I BYTE;
+ 253   2          ZN: PROCEDURE;
+ 254   3              NSOURCE = 0;
+ 255   3              END ZN;
+               
+ 256   2           CALL ZN;
+ 257   2              DO I = 0 TO NBUF;
+ 258   3              CALL SETDMA(SBUFFADR+NSOURCE);
+ 259   3              IF (DCNT := DISKREAD(.FCB)) <> 0 THEN
+ 260   3                  DO; IF DCNT > 1 THEN CALL FERR;
+ 263   4                  SBUFF(NSOURCE) = ENDFILE;
+ 264   4                  I = NBUF;
+ 265   4                  END;
+                      ELSE
+ 266   3                  NSOURCE = NSOURCE + SECTSIZE;
+ 267   3              END;
+ 268   2          CALL ZN;
+ 269   2          END FILLSOURCE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* get next character in source file */
+ 270   1      GETSOURCE: PROCEDURE BYTE;
+ 271   2          DECLARE B BYTE;
+ 272   2          if newfile then return endfile;   /* in case they try to #a */
+ 274   2          IF NSOURCE >= BUFFLENGTH THEN CALL FILLSOURCE;
+ 276   2          IF (B := SBUFF(NSOURCE)) <> ENDFILE THEN
+ 277   2              NSOURCE = NSOURCE + 1;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  17
+
+
+ 278   2          RETURN B;
+ 279   2          END GETSOURCE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* try to free space by erasing backup */
+ 280   1      erase$bak: PROCEDURE BOOLEAN;
+
+ 281   2          if onefile then 
+ 282   2              if newfile then do;
+ 284   3                  call move(fs,.dfcb,.tmpfcb);  /* can't diddle with open fcb */
+ 285   3                  CALL SETTYPE(.tmpfcb,.BACKUP);
+ 286   3                  CALL DELETE$file(.tmpfcb);
+ 287   3                  if dcnt <> 255 then
+ 288   3                      return true;
+ 289   3                  end;
+ 290   2          return false;
+ 291   2          end erase$bak;
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* write output buffer up to (not including)
+                                   ndest  (low 7 bits of ndest are 0  */
+ 292   1      WRITEDEST: PROCEDURE;
+ 293   2          DECLARE (I,N,save$ndest) BYTE;
+               
+ 294   2          n = shr(ndest,sectshf);   /* calculate number sectors to write */
+ 295   2          if n=0 then return;       /* no need to write if we haven't filled sector*/
+ 297   2          save$ndest = ndest;       /* save for error recovery */
+ 298   2          ndest = 0;
+ 299   2              DO I = 1 TO N;
+ 300   3      retry:
+                      CALL SETDMA(DBUFFADR+NDEST);
+ 301   3              IF DISKWRITE(.DFCB) <> 0 THEN 
+ 302   3                  if erase$bak then
+ 303   3                      go to retry;
+ 304   3                  else do;    /* reset buffer, let them take action (delete files) */
+ 305   4                      if ndest <> 0 then
+ 306   4                          call move(save$ndest-ndest, dbuffadr+ndest, dbuffadr);
+ 307   4                      ndest = save$ndest-ndest;
+ 308   4                      go to disk$err;
+ 309   4                      end;
+ 310   3              NDEST = NDEST + SECTSIZE;
+ 311   3              END;
+ 312   2          ndest = 0;
+ 313   2          END WRITEDEST;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* put a character in output buffer */
+ 314   1      PUTDEST: PROCEDURE(B);
+ 315   2          DECLARE B BYTE;
+ 316   2          IF NDEST >= BUFFLENGTH THEN CALL WRITEDEST;
+ 318   2          DBUFF(NDEST) = B;
+ 319   2          NDEST = NDEST + 1;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  18
+
+
+ 320   2          END PUTDEST;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* put a character in the xfer buffer */
+ 321   1      PUTXFER: PROCEDURE(C);
+ 322   2          DECLARE C BYTE;
+ 323   2          IF XBP >= SECTSIZE THEN /* BUFFER OVERFLOW */
+ 324   2              DO; 
+ 325   3      retry:
+                      CALL SETXDMA;
+ 326   3              xfcbext = xfcbe;               /* save for appends */
+ 327   3              xfcbrec = xfcbr; 
+ 328   3              IF DISKWRITE(.XFCB) <> 0 THEN 
+ 329   3                  if erase$bak then
+ 330   3                      go to retry;
+ 331   3                  else do;
+              /********       call close(.xfcb);   ***  commented out whf 8/82 !!!! ********/
+ 332   4                      go to disk$err;
+ 333   4                      end;
+ 334   3              XBP = 0;
+ 335   3              END;
+ 336   2          XBUFF(XBP) = C; XBP = XBP + 1;
+ 338   2          END PUTXFER;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* empty xfer buffer and close file.
+                                   This routine is added to allow saving lib
+                                   files for future edits - DH 10/18/81 */
+ 339   1      close$xfer: procedure;
+ 340   2          dcl i byte;
+
+ 341   2              do i = xbp to sectsize;
+ 342   3              call putxfer(ENDFILE);
+ 343   3              end;
+ 344   2          call close(.xfcb);
+ 345   2          end close$xfer;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* compare xfcb and rfcb to see if same */
+ 346   1      compare$xfer: procedure BOOLEAN;
+ 347   2          dcl i byte;
+
+ 348   2          i = 12;
+ 349   2              do while (i:=i-1) <> -1;
+ 350   3              if xfcb(i) <> rfcb(i) then
+ 351   3                  return false;
+ 352   3              end;
+ 353   2          return true;
+ 354   2          end compare$xfer;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* restore xfer file extent and current 
+                                   record, read record and set xfer pointer
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  19
+
+
+                                   to first ENDFILE */
+ 355   1      append$xfer: procedure;
+
+ 356   2          xfcbe = xfcbext;
+ 357   2          call open(.xfcb);
+ 358   2          xfcbr = xfcbrec;
+ 359   2          call setxdma;
+ 360   2          if diskread(.xfcb) = 0 then do;
+ 362   3              xfcbr = xfcbrec;                /* write same record */
+ 363   3                  do xbp = 0 to sectsize;
+ 364   4                  if xbuff(xbp) = ENDFILE then
+ 365   4                      return;
+ 366   4                  end;
+ 367   3              end; 
+ 368   2          end append$xfer;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  20
+
+
+              $ eject
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+                                * * *  END EDIT ROUTINE * * *
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+                                /* finish edit, close files, rename */
+ 369   1      FINIS: PROCEDURE;
+ 370   2          MOVEUP: PROCEDURE(afcb);
+ 371   3          dcl afcb address;
+                  /* set second filename (new name) for rename function */
+ 372   3          CALL MOVE(16,aFCB,aFCB+16);
+ 373   3          END MOVEUP;
+
+                  /* * * * * * * *  WRITE OUTPUT BUFFER  * * * * * * * * */
+                  /* SET UNFILLED BYTES - USED FOR ISIS-II COMPATIBILITY */
+                  /*  DFUB = 0 ; <<<< REMOVE FOR MP/M 2 , CP/M 3 */
+ 374   2              DO WHILE (LOW(NDEST) AND 7FH) <> 0;
+                      /* COUNTS UNFILLED BYTES IN LAST RECORD */
+                      /* DFUB = DFUB + 1; */
+ 375   3              CALL PUTDEST(ENDFILE);
+ 376   3              END;
+ 377   2          CALL WRITEDEST;
+
+ 378   2          if not newfile then
+ 379   2              call close(.sfcb);  /* close this to clean up for mp/m environs */
+
+                  /* * * * * *  CLOSE TEMPORARY DESTINATION FILE  * * * * * */
+ 380   2          CALL CLOSE(.DFCB);
+ 381   2          IF DCNT = 255 THEN CALL FERR;
+ 383   2          if sys then do;
+ 385   3              dfcb(sy)=dfcb(sy) or 80h;
+ 386   3              call setpassword;
+ 387   3              call set$attribute(.dfcb);
+ 388   3              end;
+
+                  /* * * * * *  RENAME SOURCE TO BACKUP IF ONE FILE  * * * * * */
+ 389   2          if onefile then do;
+ 391   3              call moveup(.sfcb);
+ 392   3              CALL SETTYPE(.sfcb+16,.BACKUP);   /* set new type to BAK */
+ 393   3              CALL RENAME$FILE(.SFCB);
+ 394   3              end;
+
+                  /* * * * * *  RENAME TEMPORARY DESTINATION FILE  * * * * * */
+ 395   2          CALL MOVEUP(.DFCB);
+ 396   2          CALL SETTYPE(.DFCB+16,.DTYPE);
+ 397   2          CALL RENAME$FILE(.DFCB);
+
+ 398   2          END FINIS;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  21
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  COMMAND ROUTINES * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+
+
+                                /* print a character if not macro expansion */
+ 399   1      PRINTNMAC: PROCEDURE(CHAR);
+ 400   2          DECLARE CHAR BYTE;
+ 401   2          IF MP <> 0 THEN RETURN;
+ 403   2          CALL PRINTC(CHAR);
+ 404   2          END PRINTNMAC;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return true if lower case character */
+ 405   1      LOWERCASE: PROCEDURE(C) BOOLEAN;
+ 406   2          DECLARE C BYTE;
+ 407   2          RETURN C >= LCA AND C <= LCZ;
+ 408   2          END LOWERCASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* translate character to upper case */
+ 409   1      UCASE: PROCEDURE(C) BYTE;
+ 410   2          DECLARE C BYTE;
+ 411   2          IF LOWERCASE(C) THEN RETURN C AND 5FH;
+ 413   2          RETURN C;
+ 414   2          END UCASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* get password and place at fcb + 16 */
+ 415   1      getpasswd:   proc;
+ 416   2          dcl (i,c) byte;
+
+ 417   2          call crlf;
+ 418   2          call print(.('Password ? ','$'));
+ 419   2      retry:
+                  call fill(.password,' ',8);
+ 420   2              do i = 0 to 7;
+ 421   3      nxtchr:
+                      if (c:=ucase(conin)) >= ' ' then 
+ 422   3                  password(i)=c;
+ 423   3              if c = cr then
+ 424   3                  go to exit;
+ 425   3              if c = CTLX then
+ 426   3                  goto retry;
+ 427   3              if c = CTLH then do;
+ 429   4                  if i<1 then
+ 430   4                      goto retry;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  22
+
+
+ 431   4                  else do;
+ 432   5                      password(i:=i-1)=' ';
+ 433   5                      goto nxtchr;
+ 434   5                      end;
+ 435   4                  end;
+ 436   3              if c = 3 then
+ 437   3                  call reboot;
+ 438   3              end;
+ 439   2      exit:
+                  c = break$key;     /* clear raw I/O mode */
+ 440   2          end getpasswd;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* translate to upercase if translate flag
+                                   is on (also translate ESC to ENDFILE) */
+ 441   1      UTRAN: PROCEDURE(C) BYTE;
+ 442   2          DECLARE C BYTE;
+ 443   2          IF C = ESC THEN C = ENDFILE;
+ 445   2          IF TRANSLATE THEN RETURN UCASE(C);
+ 447   2          RETURN C;
+ 448   2          END UTRAN;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* print the line number */
+ 449   1      PRINTVALUE: PROCEDURE(V);
+                  /* PRINT THE LINE VALUE V */
+ 450   2          DECLARE D BYTE,
+                  ZERO BOOLEAN,
+                      (K,V) ADDRESS;
+ 451   2          K = 10000;
+ 452   2          ZERO = FALSE;
+ 453   2              DO WHILE K <> 0;
+ 454   3              D = LOW(V/K); V = V MOD K;
+ 456   3              K = K / 10;
+ 457   3              IF ZERO OR  D <> 0 THEN
+ 458   3                  DO; ZERO = TRUE;
+ 460   4                  CALL PRINTC('0'+D);
+ 461   4                  END; 
+                      ELSE
+ 462   3                  CALL PRINTC(' ');
+ 463   3              END;
+ 464   2          END PRINTVALUE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* print line with number V */
+ 465   1      PRINTLINE: PROCEDURE(V);
+ 466   2          DECLARE V ADDRESS;
+ 467   2          IF NOT LINESET THEN RETURN;
+ 469   2          CALL PRINTVALUE(V);
+ 470   2          CALL PRINTC(':');
+ 471   2          CALL PRINTC(' ');
+ 472   2          IF INSERTING THEN 
+ 473   2              CALL PRINTC(' '); 
+                  ELSE
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  23
+
+
+ 474   2              CALL PRINTC('*');
+ 475   2          END PRINTLINE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* print current line (baseline) */
+ 476   1      PRINTBASE: PROCEDURE;
+ 477   2          CALL PRINTLINE(BASELINE);
+ 478   2          END PRINTBASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* print current line if not in a macro */
+ 479   1      PRINTNMBASE: PROCEDURE;
+ 480   2          IF MP <> 0 THEN RETURN;
+ 482   2          CALL PRINTBASE;
+ 483   2          END PRINTNMBASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               
+
+                                /* get next character from command tail */
+ 484   1      getcmd: proc byte;
+ 485   2           if buff(ncmd+1) <> 0 then
+ 486   2              return buff(ncmd := ncmd + 1);
+ 487   2           return cr;
+ 488   2          end getcmd;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                        /* read next char from command buffer */
+ 489   1      READC: PROCEDURE BYTE;
+                  /* MAY BE MACRO EXPANSION */
+ 490   2          IF MP > 0 THEN
+ 491   2              DO;
+ 492   3              IF BREAK$KEY THEN GO TO OVERCOUNT;
+ 494   3              IF XP >= MP THEN
+ 495   3                  DO; /* START AGAIN */
+ 496   4                  IF MT <> 0 THEN
+ 497   4                      DO; IF (MT:=MT-1) = 0 THEN
+ 499   5                          GO TO OVERCOUNT;
+ 500   5                      END;
+ 501   4                  XP = 0;
+ 502   4                  END;
+ 503   3              RETURN UTRAN(MACRO((XP := XP + 1) - 1));
+ 504   3              END;
+ 505   2          IF INSERTING THEN RETURN UTRAN(READCHAR);
+               
+                  /* GET COMMAND LINE */
+ 507   2          IF READBUFF THEN
+ 508   2              DO; READBUFF = FALSE;
+ 510   3              IF LINESET AND COLUMN = 0 THEN
+ 511   3                  DO;
+ 512   4                  IF BACK >= MAXM THEN
+ 513   4                      CALL PRINTLINE(0); 
+                          ELSE
+ 514   4                      CALL PRINTBASE;
+ 515   4                  END; 
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  24
+
+
+                      ELSE
+ 516   3                  CALL PRINTC('*');
+ 517   3              CALL READCOM; CBP = 0;
+ 519   3              CALL PRINTC(LF);
+ 520   3              COLUMN = 0;
+ 521   3              END;
+ 522   2          IF (READBUFF := CBP = COMLEN ) THEN 
+ 523   2              COMBUFF(CBP) = CR;
+ 524   2          RETURN UTRAN(COMBUFF((CBP := CBP +1) -1));
+ 525   2          END READC;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               
+
+                                /* get upper case character from command 
+                                   buffer or command line */
+ 526   1      get$uc: proc;
+ 527   2          if tail then 
+ 528   2              char = ucase(getcmd);
+                  else
+ 529   2              char = ucase(readc);
+ 530   2          end get$uc;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               
+
+                                /* parse file name 
+                                   this routine requires a routine to get 
+                                   the next character and put it in a byte
+                                   variable */
+ 531   1      parse$fcb: proc(fcbadr) byte;
+ 532   2          dcl fcbadr addr;
+ 533   2          dcl afcb based fcbadr (33) byte;
+ 534   2          dcl drive lit 'afcb(0)';
+ 535   2          dcl (i,delimiter) byte;
+ 536   2          dcl pflag boolean;
+
+ 537   2          putc: proc;
+ 538   3             afcb(i := i + 1) = char;
+ 539   3             pflag = true;
+ 540   3          end putc;
+
+ 541   2          delim: proc boolean;
+ 542   3             dcl del(*) byte data (CR,ENDFILE,' ,.;=:<>_[]*?');
+                                       /*   0 1        2345678901234 */
+ 543   3                do delimiter = 0 to last(del);
+ 544   4                if char = del(delimiter) then do;
+ 546   5                   if delimiter > 12 then     /* * or ? */
+ 547   5                      call perror(.('Cannot Edit Wildcard Filename$'));
+ 548   5                   return (true);
+ 549   5                   end;
+ 550   4                end;
+ 551   3             return (false);
+ 552   3          end delim;
+
+
+ 553   2          pflag = false;
+ 554   2          flag = true;    /* global flag set to false if invalid filename */
+ 555   2          dot$found = false;  /* allow null extensions in 'parse$lib' */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  25
+
+
+ 556   2          call get$uc;
+ 557   2          if char <> CR then 
+ 558   2              if char <> ENDFILE then do;
+                                      /* initialize fcb to srce fcb type & drive */
+ 560   3                  call fill(fcbadr+12,0,21);
+ 561   3                  call fill(fcbadr+1,' ',11);
+                                      /* clear leading blanks */
+ 562   3                      do while char = ' ';
+ 563   4                      call get$uc;
+ 564   4                      end;
+                                      /* parse loop */
+ 565   3                      do while not delim;
+ 566   4                      i = 0;
+                                  /* get name */
+ 567   4                          do while not delim;
+ 568   5                          if i > 7 then
+ 569   5                              go to err;      /* too long */
+ 570   5                          call putc;
+ 571   5                          call get$uc;
+ 572   5                          end;
+ 573   4                      if char = ':' then do;
+                                  /* get drive from afcb(1) */
+ 575   5                          if i <> 1 then
+ 576   5                              go to err;      /* invalid : */
+ 577   5                          if (drive := afcb(1) - 'A' + 1) > 16 then
+ 578   5                              go to err;      /* invalid drive */
+ 579   5                          afcb(1) = ' ';
+ 580   5                          call get$uc;
+ 581   5                          end;
+ 582   4                      if char = '.' then do;
+                                  /* get file type */
+ 584   5                          i = 8;
+ 585   5                          dot$found = true;         /* .ext specified (may be null)*/
+ 586   5                          call get$uc;
+ 587   5                              do while not delim;
+ 588   6                              if i > 10 then
+ 589   6                                  go to err;      /* too long */
+ 590   6                              call putc;
+ 591   6                              call get$uc;
+ 592   6                              end;
+ 593   5                          end;
+ 594   4              if char = ';' then do;
+                          /* get password */
+ 596   5                  call fill(fcbadr+16,' ',8); /* where fn #152 puts passwd */
+ 597   5                  i = 15;         /* passwd is last field */
+ 598   5                  call get$uc;
+ 599   5                  do while not delim;
+ 600   6                  if i > 23 then
+ 601   6                      go to err;
+ 602   6                  call putc;
+ 603   6                  call get$uc;
+ 604   6                  end;
+ 605   5                  call move(8,fcbadr+16,.password); /* where ed wants it */
+ 606   5                  end;
+ 607   4                      end;                /* parse loop */
+                          /* delimiter must be a comma or space */
+ 608   3                  if delimiter > 3 then   /* not a CR,ENDFILE,SPACE,COMMA */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  26
+
+
+ 609   3                      go to err;
+ 610   3                  if not pflag then
+ 611   3                      go to err;
+ 612   3                  end;
+
+ 613   2          return (pflag);
+
+ 614   2      err:
+                  call perror(.invalid);
+ 615   2          return (flag:=false);
+ 616   2          end parse$fcb;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set up destination FCB */
+ 617   1      setdest: PROCEDURE;
+ 618   2          dcl i byte;
+
+                  /* onefile = true; (initialized) */
+ 619   2          if not tail then do;
+ 621   3              call print(.('Enter Output file: $'));
+ 622   3              call readcom;
+ 623   3              cbp,readbuff = 0;
+ 624   3              call crlf;
+ 625   3              call crlf;
+ 626   3              end;
+ 627   2          if parse$fcb(.dfcb) then do;
+ 629   3              onefile = false;
+ 630   3              if dfcb(1) = ' ' then
+ 631   3                  call move(15,.sfcb+1,.dfcb+1);
+ 632   3              end;
+                  else
+ 633   2              CALL MOVE(16,.SFCB,.DFCB);
+ 634   2          call move(3,.dfcb(9),.dtype);   /* save destination type */
+ 635   2          end setdest;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set read lib file DMA address */
+ 636   1      SETRDMA: PROCEDURE;
+ 637   2          CALL SETDMA(.BUFF);
+ 638   2          END SETRDMA;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* read lib file routine */
+ 639   1      READFILE: PROCEDURE BYTE;
+ 640   2          IF RBP >= SECTSIZE THEN
+ 641   2              DO; CALL SETRDMA;
+ 643   3              IF DISKREAD(.RFCB) <> 0 THEN RETURN ENDFILE;
+ 645   3              RBP = 0;
+ 646   3              END;
+ 647   2          RETURN UTRAN(BUFF((RBP := RBP + 1) - 1));
+ 648   2          END READFILE;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  27
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  INITIALIZATION  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+ 649   1      SETUP: PROCEDURE;
+
+                  /* * * * * * * * *  OPEN SOURCE FILE  * * * * * * * * */
+
+ 650   2          sfcb(ex), sfcb(md), sfcb(nr) = 0;
+ 651   2          if has$bdos3 then do;
+ 653   3              call return$errors(0FEh);            /* set error mode */
+ 654   3              call setpassword;
+ 655   3              end;
+ 656   2          error$code = open$file (.SFCB);
+ 657   2          if has$bdos3 then do;                    /* extended bdos errors */
+ 659   3              call return$errors(0);               /* reset error mode */
+ 660   3              if low(error$code) = 0FFh and high(error$code) = 7 then do; 
+ 662   4                  call getpasswd;                  /* let them enter password */
+ 663   4                  call crlf;
+ 664   4                  call crlf;
+ 665   4                  call setpassword;                /* set dma to password */
+ 666   4                  error$code = open$file(.fcb);    /* reset error$code */
+ 667   4                  end;
+ 668   3              if low(error$code)=0FFh and high(error$code)<>0 then 
+ 669   3                      call abort(.notavail);       /* abort anything but not found */
+ 670   3              end;
+ 671   2          dcnt=low(error$code);
+ 672   2          if onefile then do;
+ 674   3              IF ROL(FCB(RO),1) THEN
+ 675   3                  CALL abort(.('FILE IS READ/ONLY$'));
+ 676   3              else IF ROL(FCB(SY),1) THEN   /* system attribute */
+ 677   3                  do;
+ 678   4                  if rol(FCB(us),1) then
+ 679   4                      dcnt = 255;          /* user 0 file so create */
+                          else
+ 680   4                      sys = true;
+ 681   4                  end;
+                      end;
+
+                  /* * * * * *  NEW FILE IF NO SOURCE FILE  * * * * * */
+
+ 683   2          IF DCNT = 255 THEN do;
+ 685   3              if not onefile then
+ 686   3                  call abort(.not$found);
+ 687   3              newfile = true;
+ 688   3              CALL PRINT(.('NEW FILE$'));
+ 689   3              CALL CRLF;
+ 690   3              END; 
+
+                  /* * * * * *  MAKE TEMPORARY DESTINATION FILE  * * * * * */
+
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  28
+
+
+ 691   2          CALL SETTYPE(.dfcb,.tempfl);
+ 692   2          DFCB(EX)=0;
+ 693   2          CALL MAKE$file(.DFCB);
+ 694   2          if dcnt = 255 then
+ 695   2              call ferr;
+                  /* THE TEMP FILE IS NOW CREATED */
+
+                  /* now create the password if any */
+ 696   2          if protection <> 0 then do;
+ 698   3              dfcb(ex) = protection or 1;  /* set password */
+ 699   3              call setpassword;
+ 700   3              call write$xfcb(.dfcb);
+ 701   3              end;
+ 702   2          dfcb(ex),DFCB(32) = 0;  /* NEXT RECORD IS ZERO */
+
+                  /* * * * * * * * *  RESET BUFFER  * * * * * * * * */
+
+ 703   2          NSOURCE = BUFFLENGTH; 
+ 704   2          NDEST = 0;
+ 705   2          BASELINE = 1;           /* START WITH LINE 1 */
+ 706   2          END SETUP;
+
+
+
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  29
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  BUFFER MANAGEMENT * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+
+
+                                /* DISTANCE is the number of lines prefix 
+                                   to a command */
+                                /* set maximum distance (0FFFFH) */
+ 707   1      SETFF: PROCEDURE;
+ 708   2          DISTANCE = 0FFFFH;
+ 709   2          END SETFF;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return true if distance is zero */
+ 710   1      DISTZERO: PROCEDURE BOOLEAN;
+ 711   2          RETURN DISTANCE = 0;
+ 712   2          END DISTZERO;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set distance to zero */
+ 713   1      ZERODIST: PROCEDURE;
+ 714   2          DISTANCE = 0;
+ 715   2          END ZERODIST;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* check for zero distance and decrement */
+ 716   1      DISTNZERO: PROCEDURE BOOLEAN;
+ 717   2          IF NOT DISTZERO THEN
+ 718   2              DO; DISTANCE = DISTANCE - 1;
+ 720   3              RETURN TRUE;
+ 721   3              END;
+ 722   2          RETURN FALSE;
+ 723   2          END DISTNZERO;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set memory limits of command from 
+                                   distance and direction */
+ 724   1      SETLIMITS: PROC;
+ 725   2          DCL (I,K,L,M) ADDR, (MIDDLE,LOOPING) BYTE;
+ 726   2          RELLINE = 1; /* RELATIVE LINE COUNT */
+ 727   2          IF DIRECTION = BACKWARD THEN
+ 728   2              DO; DISTANCE = DISTANCE+1; I = FRONT; L = 0; K = 0FFFFH;
+ 733   3              END; 
+                  ELSE
+ 734   2              DO; I = BACK; L = MAXM; K = 1;
+ 738   3              END;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  30
+
+
+               
+ 739   2          LOOPING = TRUE;
+ 740   2              DO WHILE LOOPING;
+ 741   3                  DO WHILE (MIDDLE := I <> L) AND
+                              MEMORY(M:=I+K) <> LF;
+ 742   4                  I = M;
+ 743   4                  END;
+ 744   3              LOOPING = (DISTANCE := DISTANCE - 1) <> 0;
+ 745   3              IF NOT MIDDLE THEN
+ 746   3                  DO; LOOPING = FALSE;
+ 748   4                  I = I - K;
+ 749   4                  END; 
+ 750   3              ELSE do;
+ 751   4                  RELLINE = RELLINE - 1;
+ 752   4                  IF LOOPING THEN 
+ 753   4                      I = M;
+ 754   4                  end;
+ 755   3              END;
+               
+ 756   2          IF DIRECTION = BACKWARD THEN
+ 757   2              DO; FIRST = I; LASTC = FRONT - 1;
+ 760   3              END; 
+                  ELSE
+ 761   2              DO; FIRST = BACK + 1; LASTC = I + 1;
+ 764   3              END;
+ 765   2          END SETLIMITS;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* increment current position */
+ 766   1      INCBASE: PROCEDURE;
+ 767   2          BASELINE = BASELINE + 1;
+ 768   2          END INCBASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* decrement current position */
+ 769   1      DECBASE: PROCEDURE;
+ 770   2          BASELINE = BASELINE - 1;
+ 771   2          END DECBASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* increment limits */
+ 772   1      INCFRONT: PROC; FRONT = FRONT + 1;
+ 774   2          END INCFRONT;
+ 775   1      INCBACK: PROCEDURE; BACK = BACK + 1;
+ 777   2          END INCBACK;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* decrement limits */
+ 778   1      DECFRONT: PROC; FRONT = FRONT - 1;
+ 780   2          IF MEMORY(FRONT) = LF THEN 
+ 781   2              CALL DECBASE;
+ 782   2          END DECFRONT;
+ 783   1      DECBACK: PROC; BACK = BACK - 1;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  31
+
+
+ 785   2          END DECBACK;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* move current page in memory if move flag 
+                                   true otherwise delete it */
+ 786   1      MEM$MOVE: PROC(MOVEFLAG);
+ 787   2          DECLARE (MOVEFLAG,C) BYTE;
+                  /* MOVE IF MOVEFLAG IS TRUE */
+ 788   2          IF DIRECTION = FORWARD THEN
+ 789   2              DO WHILE BACK < LASTC; CALL INCBACK;
+ 791   3              IF MOVEFLAG THEN
+ 792   3                  DO;
+ 793   4                  IF (C := MEMORY(BACK)) = LF THEN CALL INCBASE;
+ 795   4                  MEMORY(FRONT) = C; CALL INCFRONT;
+ 797   4                  END;
+ 798   3              END; 
+                  ELSE
+ 799   2              DO WHILE FRONT > FIRST; CALL DECFRONT;
+ 801   3              IF MOVEFLAG THEN
+ 802   3                  DO; MEMORY(BACK) = memory(front); CALL DECBACK;
+ 805   4                  END;
+ 806   3              END;
+ 807   2          END MEM$MOVE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* force a memory move */
+ 808   1      MOVER: PROC;
+ 809   2          CALL MEM$MOVE(TRUE);
+ 810   2          END MOVER;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* reset memory limit pointers, deleting
+                                   characters (used by D command) */
+ 811   1      SETPTRS: PROC;
+ 812   2          CALL MEM$MOVE(FALSE);
+ 813   2          END SETPTRS;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set limits and force a move */
+ 814   1      MOVELINES: PROC;
+ 815   2          CALL SETLIMITS;
+ 816   2          CALL MOVER;
+ 817   2          END MOVELINES;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set front to lower value deleteing
+                                   characters (used by S and J commands) */
+ 818   1      setfront: proc(newfront);
+ 819   2          dcl newfront addr;
+
+ 820   2              do while front <> newfront;
+ 821   3              call decfront;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  32
+
+
+ 822   3              end;
+ 823   2          end setfront;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set limits for memory move */
+ 824   1      SETCLIMITS: PROC;
+ 825   2          IF DIRECTION = BACKWARD THEN
+ 826   2              DO; LASTC = BACK;
+ 828   3              IF DISTANCE > FRONT THEN
+ 829   3                  FIRST = 1; 
+                      ELSE 
+ 830   3                  FIRST = FRONT - DISTANCE;
+ 831   3              END; 
+                  ELSE
+ 832   2              DO; FIRST = FRONT;
+ 834   3              IF DISTANCE >= MAX - BACK THEN
+ 835   3                  LASTC = MAXM; 
+                      ELSE 
+ 836   3                  LASTC = BACK + DISTANCE;
+ 837   3              END;
+ 838   2          END SETCLIMITS;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* read another line of input */
+ 839   1      READLINE: PROCEDURE;
+ 840   2          DECLARE B BYTE;
+                  /* READ ANOTHER LINE OF INPUT */
+ 841   2          CTRAN: PROCEDURE(B) BYTE;
+ 842   3              DECLARE B BYTE;
+                      /* CONDITIONALLY TRANSLATE TO UPPER CASE ON INPUT */
+ 843   3              IF UPPER THEN RETURN UTRAN(B);
+ 845   3              RETURN B;
+ 846   3              END CTRAN;
+ 847   2          DO FOREVER;
+ 848   3          IF FRONT >= BACK THEN GO TO OVERFLOW;
+ 850   3          IF (B := CTRAN(GETSOURCE)) = ENDFILE THEN
+ 851   3              DO; CALL ZERODIST; RETURN;
+ 854   4              END;
+ 855   3          MEMORY(FRONT) = B;
+ 856   3          CALL INCFRONT;
+ 857   3          IF B = LF THEN
+ 858   3              DO; CALL INCBASE;
+ 860   4              RETURN;
+ 861   4              END;
+ 862   3          END;
+ 863   2          END READLINE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* write one line out */
+ 864   1      WRITELINE: PROCEDURE;
+ 865   2          DECLARE B BYTE;
+ 866   2              DO FOREVER;
+ 867   3              IF BACK >= MAXM THEN /* EMPTY */
+ 868   3                  DO; CALL ZERODIST; RETURN;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  33
+
+
+ 871   4                  END;
+ 872   3              CALL INCBACK;
+ 873   3              CALL PUTDEST(B:=MEMORY(BACK));
+ 874   3              IF B = LF THEN
+ 875   3                  DO; CALL INCBASE;
+ 877   4                  RETURN;
+ 878   4                  END;
+ 879   3              END;
+ 880   2          END WRITELINE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* write lines until at least half the
+                                   the buffer is empty */
+ 881   1      WRHALF: PROCEDURE;
+ 882   2          CALL SETFF;
+ 883   2              DO WHILE DISTNZERO;
+ 884   3              IF HMAX >= (MAXM - BACK) THEN 
+ 885   3                  CALL ZERODIST; 
+                      ELSE
+ 886   3                  CALL WRITELINE;
+ 887   3              END;
+ 888   2          END WRHALF;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* write lines determined by distance 
+                                   called from W and E commands */
+ 889   1      WRITEOUT: PROCEDURE;
+ 890   2          DIRECTION = BACKWARD; FIRST = 1; LASTC = BACK;
+ 893   2          CALL MOVER;
+ 894   2          IF DISTZERO THEN CALL WRHALF;
+                  /* DISTANCE = 0 IF CALL WRHALF */
+ 896   2              DO WHILE DISTNZERO;
+ 897   3              CALL WRITELINE;
+ 898   3              END;
+ 899   2          IF BACK < LASTC THEN
+ 900   2              DO; DIRECTION = FORWARD; CALL MOVER;
+ 903   3              END;
+ 904   2          END WRITEOUT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* clear memory buffer */
+ 905   1      CLEARMEM: PROCEDURE;
+ 906   2          CALL SETFF;
+ 907   2          CALL WRITEOUT;
+ 908   2          END CLEARMEM;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* clear buffers, terminate edit */
+ 909   1      TERMINATE: PROCEDURE;
+ 910   2          CALL CLEARMEM;
+ 911   2          if not newfile then
+ 912   2              DO WHILE (CHAR := GETSOURCE) <> ENDFILE;
+ 913   3              CALL PUTDEST(CHAR);
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  34
+
+
+ 914   3              END;
+ 915   2          CALL FINIS;
+ 916   2          END TERMINATE;
+               
+
+
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  35
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  COMMAND PRIMITIVES  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+               
+
+
+                                /* insert char into memory buffer */
+ 917   1      INSERT: PROCEDURE;
+ 918   2          IF FRONT = BACK THEN GO TO OVERFLOW;
+ 920   2          MEMORY(FRONT) = CHAR; CALL INCFRONT;
+ 922   2          IF CHAR = LF THEN CALL INCBASE;
+ 924   2          END INSERT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* read a character and check for endfile
+                                   or CR  */
+ 925   1      SCANNING: PROCEDURE BYTE;
+ 926   2          RETURN NOT ((CHAR := READC) = ENDFILE OR
+                                 (CHAR = CR AND NOT INSERTING));
+ 927   2          END SCANNING;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* read command buffer and insert characters
+                                   into scratch 'til next endfile or CR for
+                                   find, next, juxt, or substitute commands
+                                   fill at WBE and increment WBE so it 
+                                   addresses the next empty position of scratch */
+ 928   1      COLLECT: PROCEDURE;
+
+ 929   2          SETSCR: PROCEDURE;
+ 930   3              SCRATCH(WBE) = CHAR;
+ 931   3              IF (WBE := WBE + 1) >= SCRSIZE THEN GO TO OVERFLOW;
+ 933   3              END SETSCR;
+
+ 934   2              DO WHILE SCANNING;
+ 935   3              IF CHAR = CTLL THEN
+ 936   3                  DO; CHAR = CR; CALL SETSCR;
+ 939   4                  CHAR = LF;
+ 940   4                  END;
+ 941   3              IF CHAR = 0 THEN GO TO BADCOM;
+ 943   3              CALL SETSCR;
+ 944   3              END;
+ 945   2          END COLLECT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* find the string in scratch starting at
+                                   PA and ending at PB */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  36
+
+
+ 946   1      FIND: PROCEDURE(PA,PB) BYTE;
+ 947   2          DECLARE (PA,PB) BYTE;
+ 948   2          DECLARE J ADDRESS,
+                      (K, MATCH) BYTE;
+ 949   2          J = BACK ;
+ 950   2          MATCH = FALSE;
+ 951   2              DO WHILE NOT MATCH AND (MAXM > J);
+ 952   3              LASTC,J = J + 1; /* START SCAN AT J */
+ 953   3              K = PA ; /* ATTEMPT STRING MATCH AT K */
+ 954   3                  DO WHILE SCRATCH(K) = MEMORY(LASTC) AND
+                              NOT (MATCH := K = PB);
+                          /* MATCHED ONE MORE CHARACTER */
+ 955   4                  K = K + 1; LASTC = LASTC + 1;
+ 957   4                  END;
+ 958   3              END;
+ 959   2          IF MATCH THEN /* MOVE STORAGE */
+ 960   2              DO; LASTC = LASTC - 1; CALL MOVER;
+ 963   3              END;
+ 964   2          RETURN MATCH;
+ 965   2          END FIND;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set up the search string for F, N, and
+                                   S commands  */
+ 966   1      SETFIND: PROCEDURE;
+ 967   2          WBE = 0; CALL COLLECT; WBP = WBE;
+ 970   2          END SETFIND;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* check for found string in F and S commands */
+ 971   1      CHKFOUND: PROCEDURE;
+ 972   2          IF NOT FIND(0,WBP) THEN /* NO MATCH */ GO TO OVERCOUNT;
+ 974   2          END CHKFOUND;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* parse read / xfer lib FCB */
+ 975   1      parse$lib: procedure(fcbadr) byte;
+ 976   2          dcl fcbadr address;
+ 977   2          dcl afcb based fcbadr (33) byte;
+ 978   2          dcl b byte;
+
+ 979   2          b = parse$fcb(fcbadr);  
+                  /* flag = false if invalid */
+ 980   2          if not flag then do;
+ 982   3              flag = 'O';
+ 983   3              goto reset;
+ 984   3              end;
+ 985   2          if afcb(9) = ' ' and not dot$found then
+ 986   2              call move(3,.libfcb(9),fcbadr+9);
+ 987   2          if afcb(1) = ' ' then
+ 988   2              call move(8,.libfcb(1),fcbadr+1);
+ 989   2          return b;
+ 990   2          end parse$lib;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  37
+
+
+
+
+                                /* print relative position */
+ 991   1      PRINTREL: PROCEDURE;
+ 992   2          CALL PRINTLINE(BASELINE+RELLINE);
+ 993   2          END PRINTREL;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* type lines command */
+ 994   1      TYPELINES: PROCEDURE;
+ 995   2          DCL I ADDR;
+ 996   2          DCL C BYTE;
+ 997   2          CALL SETLIMITS;
+                  /* DISABLE THE * PROMPT */
+ 998   2          INSERTING = TRUE;
+ 999   2          IF DIRECTION = FORWARD THEN
+1000   2              DO; RELLINE = 0; I = FRONT;
+1003   3              END; 
+                  ELSE
+1004   2              I = FIRST;
+1005   2          IF (C := MEMORY(I-1)) = LF then  do;
+1007   3              if COLUMN <> 0 THEN
+1008   3                  CALL CRLF;
+1009   3              end;
+                  else
+1010   2              relline = relline + 1;
+
+1011   2              DO I = FIRST TO LASTC;
+1012   3              IF C = LF THEN
+1013   3                  DO;
+1014   4                  CALL PRINTREL;
+1015   4                  RELLINE = RELLINE + 1;
+1016   4                  IF BREAK$KEY THEN GO TO OVERCOUNT;
+1018   4                  END;
+1019   3              CALL PRINTC(C:=MEMORY(I));
+1020   3              END;
+1021   2          END TYPELINES;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set distance to lines per page (LPP) */
+1022   1      SETLPP: PROCEDURE;
+1023   2          DISTANCE = LPP;
+1024   2          END SETLPP;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* save distance in TDIST */
+1025   1      SAVEDIST: PROCEDURE;
+1026   2          TDIST = DISTANCE;
+1027   2          END SAVEDIST;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* Restore distance from TDIST */
+1028   1      RESTDIST: PROCEDURE;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  38
+
+
+1029   2          DISTANCE = TDIST;
+1030   2          END RESTDIST;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* page command (move n pages and print) */
+1031   1      PAGE: PROCEDURE;
+1032   2          DECLARE I BYTE;
+1033   2          CALL SAVEDIST;
+1034   2          CALL SETLPP;
+1035   2          CALL MOVELINES;
+1036   2          I = DIRECTION;
+1037   2          DIRECTION = FORWARD;
+1038   2          CALL SETLPP;
+1039   2          CALL TYPELINES;
+1040   2          DIRECTION = I;
+1041   2          IF LASTC = MAXM OR FIRST = 1 THEN 
+1042   2              CALL ZERODIST;
+                  ELSE 
+1043   2              CALL RESTDIST;
+1044   2          END PAGE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* wait command (1/2 second time-out) */
+1045   1      WAIT: PROCEDURE;
+1046   2          DECLARE I BYTE;
+1047   2              DO I = 0 TO 19;
+1048   3              IF BREAK$KEY THEN GO TO RESET;
+1050   3              CALL TIME(250);
+1051   3              END;
+1052   2          END WAIT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set direction to forward */
+1053   1      SETFORWARD: PROCEDURE;
+1054   2          DIRECTION = FORWARD;
+1055   2          DISTANCE = 1;
+1056   2          END SETFORWARD;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* append 'til buffer is at least half full */
+1057   1      APPHALF: PROCEDURE;
+1058   2          CALL SETFF; /* DISTANCE = 0FFFFH */
+1059   2              DO WHILE DISTNZERO;
+1060   3              IF FRONT >= HMAX THEN 
+1061   3                  CALL ZERODIST; 
+                      ELSE
+1062   3                  CALL READLINE;
+1063   3              END;
+1064   2          END APPHALF;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* insert CR LF characters */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  39
+
+
+1065   1      INSCRLF: PROCEDURE;
+                  /* INSERT CR LF CHARACTERS */
+1066   2          CHAR = CR; CALL INSERT;
+1068   2          CHAR = LF; CALL INSERT;
+1070   2          END INSCRLF;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* test if invalid delete or
+                                   backspace at beginning of inserting */
+1071   1      ins$error$chk: procedure;
+1072   2          if (tcolumn = 255) or (front = 1) then
+1073   2              go to reset;
+1074   2          end ins$error$chk;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  40
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  COMMAND PARSING * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+               
+
+
+                                /* test for upper or lower case command
+                                   set translate flag (used to determine
+                                   if following characters should be translated
+                                   to upper case */
+1075   1      TESTCASE: PROCEDURE;
+1076   2          DECLARE T BYTE;
+1077   2          TRANSLATE = TRUE;
+1078   2          T = LOWERCASE(CHAR);
+1079   2          CHAR = UTRAN(CHAR);
+1080   2          TRANSLATE = UPPER OR NOT T;
+1081   2          END TESTCASE;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set translate to false and read next 
+                                   character */
+1082   1      READCTRAN: PROCEDURE;
+1083   2          TRANSLATE = FALSE;
+1084   2          CHAR = READC;
+1085   2          CALL TESTCASE;
+1086   2          END READCTRAN;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return true if command is only character
+                                   not in macro or combination on a line */
+1087   1      SINGLECOM: PROCEDURE(C) BOOLEAN;
+1088   2          DECLARE C BYTE;
+1089   2          RETURN CHAR = C AND COMLEN = 1 AND MP = 0;
+1090   2          END SINGLECOM;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return true if command is only character
+                                   not in macro or combination on a line, and
+                                   the operator has responded with a 'Y' to a
+                                   Y/N request */
+1091   1      SINGLERCOM: PROCEDURE(C) BOOLEAN;
+1092   2          DECLARE (C,i) BYTE;
+1093   2          IF SINGLECOM(C) THEN
+1094   2              DO forever; 
+1095   3              CALL CRLF; CALL PRINTCHAR(C);
+1097   3              CALL MON1(9,.('-(Y/N)',WHAT,'$'));
+1098   3              i = UCASE(READCHAR); CALL CRLF;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  41
+
+
+1100   3              IF i = 'N' THEN GO TO START;
+1102   3              if i = 'Y' then 
+1103   3                  RETURN TRUE;
+1104   3              END;
+1105   2          RETURN FALSE;
+1106   2          END SINGLERCOM;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return true if char is a digit */
+1107   1      DIGIT: PROCEDURE BOOLEAN;
+1108   2          RETURN (I := CHAR - '0') <= 9;
+1109   2          END DIGIT;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* return with distance = number char = 
+                                   next command */
+1110   1      NUMBER: PROCEDURE;
+1111   2          DISTANCE = 0;
+1112   2              DO WHILE DIGIT;
+1113   3              DISTANCE = SHL(DISTANCE,3) +
+                                 SHL(DISTANCE,1) + I;
+1114   3              CALL READCTRAN;
+1115   3              END;
+1116   2          END NUMBER;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                                /* set distance to distance relative to
+                                   the current line */
+1117   1      RELDISTANCE: PROCEDURE;
+1118   2          IF DISTANCE > BASELINE THEN
+1119   2              DO; DIRECTION = FORWARD;
+1121   3              DISTANCE = DISTANCE - BASELINE;
+1122   3              END; 
+                  ELSE
+1123   2              DO; DIRECTION = BACKWARD;
+1125   3              DISTANCE = BASELINE - DISTANCE;
+1126   3              END;
+1127   2          END RELDISTANCE;
+
+
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  42
+
+
+              $ eject
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                * * *  MAIN PROGRAM * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+               
+               
+1128   1      plm:              /* entry of MP/M-86 Interface */  
+               
+               /* INITIALIZE THE SYSTEM */
+
+                  ver = version;
+1129   1          if low(ver) >= cpm3 then 
+1130   1              has$bdos3 = true;      /* handles passwords & xfcbs */
+
+                  /* * * * * * * SET UP MEMORY BUFFER * * * * * * * * * */
+
+                  /* I/O BUFFER REGION IS 1/8 AVAILABLE MEMORY */
+1131   1          NBUF = SHR(MAX := MAXB - .MEMORY,SECTSHF+3) - 1;
+                  /* NBUF IS NUMBER OF BUFFERS - 1 */
+1132   1          BUFFLENGTH = SHL(DOUBLE(NBUF+1),SECTSHF+1);
+                  /* NOW SET MAX AS REMAINDER OF FREE MEMORY */
+1133   1          IF BUFFLENGTH + 1024 > MAX THEN
+1134   1              DO; CALL perror(.('Insufficient memory$'));
+1136   2              CALL BOOT;
+1137   2              END;
+                  /* REMOVE BUFFER SPACE AND 00 AT END OF MEMORY VECTOR */
+1138   1          MAX = MAX - BUFFLENGTH - 1;
+                  /* RESET BUFFER LENGTH FOR I AND O */
+1139   1          BUFFLENGTH = SHR(BUFFLENGTH,1);
+1140   1          SBUFFADR = MAXB - BUFFLENGTH;
+1141   1          DBUFFADR = SBUFFADR - BUFFLENGTH;
+1142   1          MEMORY(MAX) = 0; /* STOPS MATCH AT END OF BUFFER */
+1143   1          MAXM = MAX - 1;
+1144   1          HMAX = SHR(MAXM,1);
+
+                  /* * * * * *  SET UP SOURCE & DESTINATION FILES  * * * * * */
+
+1145   1          if fcb(1)=' ' then do;
+1147   2              call print(.('Enter Input  file: $'));
+1148   2              call readcom;
+1149   2              call crlf;
+1150   2              tail = false;
+1151   2              end;
+1152   1          if not parse$fcb(.SFCB) then     /* parse source fcb */
+1153   1              call reboot;
+
+1154   1          if has$bdos3 then do;
+1156   2              call read$xfcb(.sfcb);       /* get prot from source */
+1157   2              protection = sfcb(ex);       /* password protection mode */
+1158   2              sfcb(ex) = 0;
+1159   2              if high(ver) = 0 then        /* CP/M-80 */
+1160   2                  if (lpp:=mon2(49,.pb)) = 0 then
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  43
+
+
+1161   2                      lpp = 23;            /* get lines per page from SCB */
+1162   2              end;
+1163   1          call setdest;                    /* parse destination file */
+1164   1          tail = false;                    /* parse$fcb from ED command */
+
+                  /* SOURCE AND DESTINATION DISKS SET */
+
+                  /* IF SOURCE AND DESTINATION DISKS DIFFER, CHECK FOR
+                  AN EXISTING SOURCE FILE ON THE DESTINATION DISK - THERE
+                  COULD BE A FATAL ERROR CONDITION WHICH COULD DESTROY A
+                  FILE IF THE USER HAPPENED TO BE ADDRESSING THE WRONG
+                  DISK */
+1165   1          IF (SDISK <> DDISK) or not onefile THEN
+1166   1              IF mon2(15,.dfcb) <> 255 THEN   /* try to open */
+                          /* SOURCE FILE PRESENT ON DEST DISK */
+1167   1                  CALL ABORT(.('Output File Exists, Erase It$'));
+
+
+               
+1168   1      RESTART:
+                  CALL SETUP;
+1169   1          MEMORY(0) = LF;
+1170   1          FRONT = 1; BACK = MAXM;
+1172   1          COLUMN = 0;
+1173   1          GO TO START;
+               
+1174   1      OVERCOUNT: FLAG = POUND; GO TO RESET;
+               
+1176   1      BADCOM: FLAG = WHAT; GO TO RESET;
+               
+1178   1      OVERFLOW: /* ARRIVE HERE ON OVERFLOW CONDITION (I,F,S COMMAND) */
+                  FLAG = '>'; go to reset;
+
+1180   1      disk$err:
+                  flag = 'F';
+1181   1          err$msg = .diskfull;
+1182   1          go to reset;
+
+1183   1      dir$err:
+                  flag = 'F';
+1184   1          err$msg = .dirfull;
+               
+1185   1      RESET: /* ARRIVE HERE ON ERROR CONDITION */
+                  PRINTSUPPRESS = FALSE;
+1186   1          CALL PRINT(.(tab,'BREAK "$'));
+1187   1          CALL PRINTC(FLAG);
+1188   1          CALL PRINTM(.('" AT $'));
+1189   1          if char = CR or char = LF then
+1190   1              call printm(.('END OF LINE$'));
+                  else
+1191   1              CALL PRINTC(CHAR);
+1192   1          if err$msg <> 0 then do;
+1194   2              call perror(err$msg);
+1195   2              err$msg = 0;
+1196   2              end;
+1197   1          CALL CRLF;
+
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  44
+
+
+
+1198   1      START:
+                  READBUFF = TRUE;
+1199   1          MP = 0;
+               
+               
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  45
+
+
+              $ eject
+
+1200   1          DO FOREVER; /* OR UNTIL THE POWER IS TURNED OFF */
+               
+                  /* **************************************************************
+                  SIMPLE COMMANDS (CANNOT BE PRECEDED BY DIRECTION/DISTANCE):
+                           E      END THE EDIT NORMALLY
+                           H      MOVE TO HEAD OF EDITED FILE
+                           I      INSERT CHARACTERS
+                           O      RETURN TO THE ORIGINAL FILE
+                           R      READ FROM LIBRARY FILE
+                           Q      QUIT EDIT WITHOUT CHANGES TO ORIGINAL FILE
+                     ************************************************************** */
+               
+               
+               
+1201   2          INSERTING = FALSE;
+1202   2          CALL READCTRAN;
+1203   2          FLAG = 'E';
+1204   2          MI = CBP; /* SAVE STARTING ADDRESS FOR <CR> COMMAND */
+1205   2          IF SINGLECOM('E') THEN
+1206   2              DO; CALL TERMINATE;
+1208   3              CALL REBOOT;
+1209   3              END; 
+
+1210   2          ELSE IF SINGLECOM('H') THEN /* GO TO TOP */
+1211   2              DO; CALL TERMINATE;
+1213   3              newfile = false;
+1214   3              if onefile then do;
+                          /* PING - PONG DISKS */
+1216   4                  CHAR  = DDISK; 
+1217   4                  DDISK = SDISK; 
+1218   4                  SDISK = CHAR;
+1219   4                  end;
+1220   3              else do;
+1221   4                  call settype(.dfcb,.dtype);
+1222   4                  call move (16,.dfcb,.sfcb); /* source = destination */
+1223   4                  onefile = true;
+1224   4                  end;
+1225   3              GO TO RESTART;
+1226   3              END; 
+
+1227   2          ELSE IF CHAR = 'I' THEN /* INSERT CHARACTERS */
+1228   2              DO;
+1229   3              IF (INSERTING := (CBP = COMLEN) AND (MP = 0)) THEN do;
+1231   4                  tcolumn = 255;           /* tested in ins$error$chk routine */
+1232   4                  distance = 0; 
+1233   4                  direction = backward;
+1234   4                  if memory(front-1) = LF then 
+1235   4                      call printbase;
+                          else 
+1236   4                      call typelines;
+1237   4                  end;
+1238   3              DO WHILE SCANNING;
+1239   4                  DO WHILE CHAR <> 0;
+1240   5                  IF CHAR=CTLU OR CHAR=CTLX OR CHAR=CTLR THEN
+                              /* LINE DELETE OR RETYPE */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  46
+
+
+1241   5                      DO;
+                              /* ELIMINATE OR REPEAT THE LINE */
+1242   6                      IF CHAR = CTLR THEN
+1243   6                          DO; CALL CRLF;
+1245   7                          CALL TYPELINES;
+1246   7                          END; 
+                              ELSE
+                                  /* LINE DELETE */
+1247   6                          DO; CALL SETLIMITS; CALL SETPTRS;
+1250   7                          IF CHAR = CTLU THEN
+1251   7                              DO; CALL CRLF; CALL PRINTNMBASE;
+1254   8                              END; 
+                                  ELSE
+                                      /* MUST BE CTLX */
+1255   7                              DO WHILE COLUMN > SCOLUMN;
+1256   8                              CALL BACKSPACE;
+1257   8                              END;
+1258   7                          END;
+1259   6                      END; 
+1260   5                  ELSE IF CHAR = CTLH THEN
+1261   5                      DO;
+1262   6                      call ins$error$chk;
+1263   6                      IF (TCOLUMN := COLUMN) > 0 THEN
+1264   6                          CALL PRINTNMAC(' '); /* RESTORE AFT BACKSP */
+1265   6                      call decfront;
+1266   6                      if tcolumn > scolumn then
+1267   6                          DO; /* CHARACTER CAN BE ELIMINATED */
+1268   7                          PRINTSUPPRESS = TRUE;
+                                  /* BACKSPACE CHARACTER ACCEPTED */
+1269   7                          COLUMN = 0;
+1270   7                          CALL TYPELINES;
+1271   7                          PRINTSUPPRESS = FALSE;
+                                  /* COLUMN POSITION NOW RESET */
+1272   7                          IF (QCOLUMN := COLUMN) < SCOLUMN THEN
+1273   7                              QCOLUMN = SCOLUMN;
+1274   7                          COLUMN = TCOLUMN; /* ORIGINAL VALUE */
+1275   7                              DO WHILE COLUMN > QCOLUMN;
+1276   8                              CALL BACKSPACE;
+1277   8                              END;
+1278   7                          END;
+                              else
+1279   6                          do;
+1280   7                          if memory(front-1) = CR then
+1281   7                              call decfront;
+1282   7                          call crlf;
+1283   7                          call typelines;
+1284   7                          end;
+1285   6                      CHAR = 0;
+1286   6                      END; 
+1287   5                  ELSE IF CHAR = RUBOUT THEN
+1288   5                      DO; call ins$error$chk;
+1290   6                      CALL DECFRONT; CALL PRINTC(CHAR:=MEMORY(FRONT));
+1292   6                      CHAR = 0;
+1293   6                      END; 
+1294   5                  else if char = LF and memory(front-1) <> CR then
+1295   5                      do;
+1296   6                      call printc(CR);
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  47
+
+
+1297   6                      call inscrlf;
+1298   6                      end;  
+                          ELSE
+                              /* NOT A SPECIAL CASE */
+1299   5                      DO; 
+1300   6                      IF NOT GRAPHIC(CHAR) THEN
+1301   6                          DO; 
+1302   7                          CALL PRINTNMAC('^');
+1303   7                          CALL PRINTNMAC(CHAR + '@');
+1304   7                          end;
+                                  /* COLUMN COUNT GOES UP IF GRAPHIC */
+                                  /* COMPUTE OUTPUT COLUMN POSITION */
+1305   6                      if char = CTLL and not inserting then
+1306   6                          call inscrlf;
+1307   6                      else do;
+1308   7                          IF MP = 0 THEN
+1309   7                              DO; 
+1310   8                              IF CHAR >= ' ' THEN
+1311   8                                  COLUMN = COLUMN + 1; 
+1312   8                              ELSE IF CHAR = TAB THEN
+1313   8                                  COLUMN = COLUMN + (8 - (COLUMN AND 111B));
+                                      END;
+1315   7                          CALL INSERT;
+1316   7                          END;
+1317   6                      end;
+1318   5                  IF CHAR = LF THEN CALL PRINTNMBASE;
+1320   5                  IF CHAR = CR THEN
+1321   5                      CALL PRINTNMAC(CHAR:=LF); 
+                          ELSE 
+1322   5                      CHAR = 0;
+1323   5                  tcolumn = 0;
+1324   5                  END; /* of while char <> 0 */
+1325   4              END; /* of while scanning */
+1326   3              IF CHAR <> ENDFILE THEN do; /* MUST HAVE STOPPED ON CR */
+1328   4                  CALL INSCRLF;
+1329   4                  column = 0;
+1330   4                  end;
+1331   3              IF INSERTING AND LINESET THEN CALL CRLF;
+1333   3              END; 
+
+
+1334   2          ELSE IF SINGLERCOM('O') THEN /* FORGET THIS EDIT */
+1335   2              do;
+1336   3              call close(.sfcb);
+1337   3              GO TO RESTART; 
+1338   3              end; 
+
+
+1339   2          ELSE IF CHAR = 'R' THEN
+1340   2              DO; DECLARE I BYTE;
+                      /* READ FROM LIB FILE */
+1342   3              CALL SETRDMA;
+1343   3              IF (FLAG := parse$lib(.rfcb)) THEN 
+1344   3                  reading = false;
+1345   3              if not reading then do;
+1347   4                  if not flag then 
+                              /* READ FROM XFER FILE */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  48
+
+
+1348   4                      CALL MOVE(12,.XFCB,.RFCB);
+1349   4                  RFCB(12), RFCB(32) = 0; /* zero extent, next record */
+1350   4                  rbp = sectsize;
+1351   4                  CALL open(.RFCB); 
+1352   4                  reading = true;
+1353   4                  end;
+                  
+1354   3                  DO WHILE (CHAR := READFILE) <> ENDFILE;
+1355   4                  CALL INSERT;
+1356   4                  END;
+1357   3              reading = false;
+1358   3              call close (.rfcb);
+1359   3              END; 
+
+
+1360   2          ELSE IF SINGLERCOM('Q') THEN
+1361   2              DO; 
+1362   3              CALL DELETE$file(.DFCB); 
+1363   3              if newfile or not onefile then do;
+1365   4                  call settype(.dfcb,.dtype);
+1366   4                  call delete$file(.dfcb);
+1367   4                  end;
+1368   3              CALL REBOOT;
+1369   3              END; 
+
+
+                  ELSE 
+                      /* MAY BE A COMMAND WHICH HAS AN OPTIONAL DIRECTION AND DISTANCE */
+1370   2              DO; /* SCAN A SIGNED INTEGER VALUE (IF ANY) */
+1371   3              DCL I BYTE;
+
+1372   3              CALL SETFORWARD;
+               
+1373   3              IF CHAR = '-' THEN
+1374   3                  DO; CALL READCTRAN; DIRECTION = BACKWARD;
+1377   4                  END;
+               
+1378   3              IF CHAR = POUND THEN
+1379   3                  DO; CALL SETFF; CALL READCTRAN;
+1382   4                  END; 
+
+1383   3              ELSE IF DIGIT THEN
+1384   3                  DO; CALL NUMBER;
+                          /* MAY BE ABSOLUTE LINE REFERENCE */
+1386   4                  IF CHAR = ':' THEN
+1387   4                      DO; CHAR = 'L';
+1389   5                      CALL RELDISTANCE;
+1390   5                      END;
+1391   4                  END; 
+
+1392   3              ELSE IF CHAR = ':' THEN /* LEADING COLON */
+1393   3                  DO; CALL READCTRAN; /* CLEAR THE COLON */
+1395   4                  CALL NUMBER;
+1396   4                  CALL RELDISTANCE;
+1397   4                  IF DIRECTION = FORWARD THEN
+1398   4                      DISTANCE = DISTANCE + 1;
+1399   4                  END;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  49
+
+
+
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  50
+
+
+              $ eject
+
+                      IF DISTZERO THEN 
+1401   3                  DIRECTION = BACKWARD;
+                      /* DIRECTION AND DISTANCE ARE NOW SET */
+               
+               
+                  /* **************************************************************
+                  MAY BE A COMMAND WHICH HAS DIRECTION AND DISTANCE SPECIFIED:
+                           B      BEGINNING/BOTTOM OF BUFFER
+                           C      MOVE CHARACTER POSITIONS
+                           D      DELETE CHARACTERS
+                           K      KILL LINES
+                           L      MOVE LINE POSITION
+                           P      PAGE UP OR DOWN (LPP LINES AND PRINT)
+                           T      TYPE LINES
+                           U      UPPER CASE TRANSLATE
+                           V      VERIFY LINE NUMBERS
+                          <CR>    MOVE UP OR DOWN LINES AND PRINT LINE
+                     ************************************************************** */
+               
+               
+1402   3              IF CHAR = 'B' THEN
+1403   3                  DO; DIRECTION = 1 - DIRECTION;
+1405   4                  FIRST = 1; LASTC = MAXM; CALL MOVER;
+1408   4                  END; 
+
+
+1409   3              ELSE IF CHAR = 'C' THEN
+1410   3                  DO; CALL SETCLIMITS; CALL MOVER;
+1413   4                  END; 
+
+
+1414   3              ELSE IF CHAR = 'D' THEN
+1415   3                  DO; CALL SETCLIMITS;
+1417   4                  CALL SETPTRS; /* SETS BACK/FRONT */
+1418   4                  END; 
+
+
+1419   3              ELSE IF CHAR = 'K' THEN
+1420   3                  DO; CALL SETLIMITS;
+1422   4                  CALL SETPTRS;
+1423   4                  END; 
+
+
+1424   3             ELSE IF CHAR = 'L' THEN 
+1425   3                  CALL MOVELINES; 
+
+
+1426   3             ELSE IF CHAR = 'P' THEN /* PAGE MODE PRINT */
+1427   3                  DO; 
+1428   4                  IF DISTZERO THEN
+1429   4                      DO; DIRECTION = FORWARD;
+1431   5                      CALL SETLPP; CALL TYPELINES;
+1433   5                      END; 
+                          ELSE
+1434   4                      DO WHILE DISTNZERO; CALL PAGE;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  51
+
+
+1436   5                      CALL WAIT;
+1437   5                      END;
+1438   4                  END; 
+
+
+1439   3              ELSE IF CHAR = 'T' THEN
+1440   3                  CALL TYPELINES; 
+
+
+1441   3              ELSE IF CHAR = 'U' THEN
+1442   3                  UPPER = DIRECTION = FORWARD; 
+
+
+1443   3              ELSE IF CHAR = 'V' THEN
+1444   3                  DO; /* 0V DISPLAYS BUFFER STATE */
+1445   4                  IF DISTZERO THEN
+1446   4                      DO; CALL PRINTVALUE(BACK-FRONT);
+1448   5                      CALL PRINTC('/');
+1449   5                      CALL PRINTVALUE(MAXM);
+1450   5                      CALL CRLF;
+1451   5                      END; 
+1452   4                  ELSE if (LINESET := DIRECTION = FORWARD) then
+1453   4                      scolumn = 8;
+                          else
+1454   4                      scolumn = 0;
+1455   4                  END;
+
+
+
+1456   3              ELSE IF CHAR = CR THEN /* MAY BE MOVE/TYPE COMMAND */
+1457   3                  DO;
+1458   4                  IF MI = 1 AND MP = 0 THEN /* FIRST COMMAND */
+1459   4                      DO; CALL MOVELINES; CALL SETFORWARD; CALL TYPELINES;
+1463   5                      END;
+1464   4                  END; 
+               
+               
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  52
+
+
+              $ eject
+
+1465   3              ELSE IF DIRECTION = FORWARD OR DISTZERO THEN
+1466   3                  DO;
+               
+                  /* **************************************************************
+                  COMMANDS WHICH ALLOW ONLY A PRECEDING NUMBER:
+                           A      APPEND LINES
+                           F      FIND NTH OCCURRENCE
+                           M      APPLY MACRO
+                           N      SAME AS F WITH AUTOSCAN THROUGH FILE
+                           S      PERFORM N SUBSTITUTIONS
+                           W      WRITE LINES TO OUTPUT FILE
+                           X      TRANSFER (XFER) LINES TO TEMP FILE
+                           Z      SLEEP
+                     ************************************************************** */
+               
+               
+               
+1467   4              IF CHAR = 'A' THEN
+1468   4                  DO; DIRECTION = FORWARD;
+1470   5                  FIRST = FRONT; LASTC = MAXM; CALL MOVER;
+                          /* ALL STORAGE FORWARD */
+1473   5                  IF DISTZERO THEN CALL APPHALF;
+                          /* DISTANCE = 0 IF APPHALF CALLED */
+1475   5                      DO WHILE DISTNZERO;
+1476   6                      CALL READLINE;
+1477   6                      END;
+1478   5                  DIRECTION = BACKWARD; CALL MOVER;
+                          /* POINTERS REPOSITIONED */
+1480   5                  END; 
+
+
+1481   4              ELSE IF CHAR = 'F' THEN
+1482   4                  DO; CALL SETFIND; /* SEARCH STRING SCANNED
+                          AND SETUP BETWEEN 0 AND WBP-1 IN SCRATCH */
+1484   5                      DO WHILE DISTNZERO; CALL CHKFOUND;
+1486   6                      END;
+1487   5                  END; 
+
+
+1488   4              ELSE IF CHAR = 'J' THEN /* JUXTAPOSITION OPERATION */
+1489   4                  DO; DECLARE T ADDRESS;
+1491   5                  CALL SETFIND; CALL COLLECT;
+1493   5                  WBJ = WBE; CALL COLLECT;
+                          /* SEARCH FOR STRING 0 - WBP-1, INSERT STRING WBP TO WBJ-1,
+                          AND THEN DELETE UP TO STRING WBJ TO WBE-1 */
+1495   5                  DO WHILE DISTNZERO; CALL CHKFOUND;
+1497   6                  /* INSERT STRING */ MI = WBP - 1;
+1498   6                      DO WHILE (MI := MI + 1) < WBJ;
+1499   7                      CHAR = SCRATCH(MI); CALL INSERT;
+1501   7                      END;
+1502   6                  T = FRONT; /* SAVE POSITION FOR DELETE */
+1503   6                  IF NOT FIND(WBJ,WBE) THEN GO TO OVERCOUNT;
+                          /* STRING FOUND, SO MOVE IT BACK */
+1505   6                  FIRST = FRONT - (WBE - WBJ);
+1506   6                  DIRECTION = BACKWARD; CALL MOVER;
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  53
+
+
+                          /* NOW REMOVE THE INTERMEDIATE STRING */
+1508   6                  call setfront(t);
+1509   6                  END;
+1510   5              END; 
+
+
+1511   4              ELSE IF CHAR = 'M' AND MP = 0 THEN /* MACRO DEFINITION */
+1512   4                  DO; XP = 255;
+1514   5                  IF DISTANCE = 1 THEN CALL ZERODIST;
+1516   5                      DO WHILE (MACRO(XP := XP + 1) := READC) <> CR;
+1517   6                      END;
+1518   5                  MP = XP; XP = 0; MT = DISTANCE;
+1521   5                  END; 
+
+
+1522   4              ELSE IF CHAR = 'N' THEN
+1523   4                  DO; /* SEARCH FOR STRING WITH AUTOSCAN */
+1524   5                  CALL SETFIND; /* SEARCH STRING SCANNED */
+1525   5                      DO WHILE DISTNZERO;
+                              /* FIND ANOTHER OCCURRENCE OF STRING */
+1526   6                          DO WHILE NOT FIND(0,WBP); /* NOT IN BUFFER */
+1527   7                          IF BREAK$KEY THEN GO TO RESET;
+1529   7                          CALL SAVEDIST; CALL CLEARMEM;
+                                  /* MEMORY BUFFER WRITTEN */
+1531   7                          CALL APPHALF;
+1532   7                          DIRECTION = BACKWARD; FIRST = 1; CALL MOVER;
+1535   7                          CALL RESTDIST; DIRECTION = FORWARD;
+                                  /* MAY BE END OF FILE */
+1537   7                          IF BACK >= MAXM THEN GO TO OVERCOUNT;
+1539   7                          END;
+1540   6                      END;
+1541   5                  END; 
+
+
+1542   4              ELSE IF CHAR = 'S' THEN /* SUBSTITUTE COMMAND */
+1543   4                  DO; CALL SETFIND;
+1545   5                  CALL COLLECT;
+                          /* FIND STRING FROM 0 TO WBP-1, SUBSTITUTE STRING
+                          BETWEEN WBP AND WBE-1 IN SCRATCH */
+1546   5                      DO WHILE DISTNZERO;
+1547   6                      CALL CHKFOUND;
+                              /* FRONT AND BACK NOW POSITIONED AT FOUND
+                              STRING - REPLACE IT */
+1548   6                      call setfront(FRONT - (MI := WBP)); /* BACKED UP */
+1549   6                          DO WHILE MI < WBE;
+1550   7                          CHAR = SCRATCH(MI);
+1551   7                          MI = MI + 1; CALL INSERT;
+1553   7                          END;
+1554   6                       END;
+1555   5                  END; 
+
+
+1556   4              ELSE IF CHAR = 'W' THEN
+1557   4                  CALL WRITEOUT; 
+
+
+1558   4              ELSE IF CHAR = 'X' THEN /* TRANSFER LINES */
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  54
+
+
+1559   4                  DO;
+1560   5                  flag = parse$lib(.rfcb);
+1561   5                  xbp = 0;
+1562   5                  IF DISTZERO THEN  
+1563   5                      DO;             /* delete the file */
+1564   6                      xferon  = false;
+1565   6                      CALL DELETE(.rfcb);
+1566   6                      if dcnt = 255 then
+1567   6                          call perror(.not$found);    
+1568   6                      END; 
+                          ELSE 
+1569   5                      do;             /* transfer lines */
+1570   6                      declare i address;
+
+1571   6                      if xferon and compare$xfer then
+1572   6                          call append$xfer;
+                              else
+1573   6                          DO;         
+1574   7                          XFERON = TRUE;
+1575   7                          call move(12,.rfcb,.xfcb);
+1576   7                          xfcbext, xfcbrec, xfcbe, xfcbr = 0;
+1577   7                          CALL MAKE$file(.XFCB);
+1578   7                          IF DCNT = 255 THEN 
+1579   7                              goto dir$err;
+1580   7                          END;
+1581   6                      CALL SETLIMITS;
+1582   6                          DO I = FIRST TO LASTC;
+1583   7                          CALL PUTXFER(MEMORY(I));
+1584   7                          END;
+1585   6                      call close$xfer;
+1586   6                      END;
+1587   5                  END; 
+
+
+1588   4              ELSE IF CHAR = 'Z' THEN /* SLEEP */
+1589   4                  DO;
+1590   5                  IF DISTZERO THEN
+1591   5                      DO; IF READCHAR = ENDFILE THEN GO TO RESET;
+1594   6                      END;
+1595   5                      DO WHILE DISTNZERO; CALL WAIT;
+1597   6                      END;
+1598   5                  END; 
+1599   4              ELSE IF CHAR <> 0 THEN /* NOT BREAK LEFT OVER FROM STOP */
+                      /* DIRECTION FORWARD, BUT NOT ONE OF THE ABOVE */
+1600   4              GO TO BADCOM;
+               
+               
+                      END; 
+                      ELSE /* DIRECTION NOT FORWARD */
+1602   3                  GO TO BADCOM;
+1603   3              END;
+1604   2          END;
+1605   1      END;
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  55
+
+
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  56
+
+
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #1605, NEAR 'END',   UNPRINTABLE ASCII CHARACTER IGNORED
+              
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 1FF1H   8177D
+     VARIABLE AREA SIZE = 0360H    864D
+     MAXIMUM STACK SIZE = 001CH     28D
+     2656 LINES READ
+     106 PROGRAM ERROR(S)
+PL/M-80 COMPILER     CP/M-80 3.0 --- ED                                                                         PAGE  57
+
+
+END OF PL/M-80 COMPILATION

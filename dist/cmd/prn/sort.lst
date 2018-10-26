@@ -1,0 +1,177 @@
+PL/M-80 COMPILER    SDIR - SORT MODULE                                                                                    PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SORT
+OBJECT MODULE PLACED IN SORT
+COMPILER INVOKED BY:  :F1:PLM80 SORT.PLM DEBUG PAGEWIDTH(130) OPTIMIZE OBJECT(SORT)
+
+
+
+              $title ('SDIR - Sort Module')
+   1          sort:
+              do;
+                              /* sort module for extended dir */
+
+              $include(comlit.lit)
+          =
+   2   1  =   declare
+          =           lit                literally          'literally',
+          =           dcl                lit                'declare',
+          =           true               lit                '0ffh',
+          =           false              lit                '0',
+          =           boolean            lit                'byte',
+          =           forever            lit                'while true',
+          =           cr                 lit                '13',
+          =           lf                 lit                '10',
+          =           tab                lit                '9',
+          =           ctrlc              lit                '3',
+          =           ff                 lit                '12',
+          =           page$len$offset    lit                '1ch',
+          =           nopage$mode$offset lit                '2Ch',
+          =           sectorlen          lit                '128';
+
+   3   1      print: procedure(str$adr) external;  /* in util.plm */
+   4   2      dcl str$adr address;
+   5   2      end print;
+
+   6   1      dcl sorted boolean public;         /* set by this module if successful sort */
+
+              $include(finfo.lit)
+          =
+          =   /* file info record for SDIR - note if this structure changes in size  */
+          =   /* the multXX: routine in the sort.plm module must also change         */
+          =
+   7   1  =   declare
+          =           f$info$structure lit 'structure(
+          =               usr byte, name (8) byte, type (3) byte, onekblocks address,
+          =               kbytes address, recs$lword address, recs$hbyte byte,
+          =               hash$link address, x$i$adr address)';
+   8   1  =   declare
+          =           x$info$structure lit 'structure (
+          =               create (4) byte,
+          =               update (4) byte,
+          =               passmode byte)';
+          =
+
+   9   1      declare
+                      buf$fcb$adr address external,     /* index into directory buffer */
+                      buf$fcb based buf$fcb$adr (32) byte,
+                                                      /* fcb template for dir        */
+
+PL/M-80 COMPILER    SDIR - SORT MODULE                                                                                    PAGE   2
+
+
+                      (f$i$adr, first$f$i$adr, last$f$i$adr, x$i$adr, filesfound)
+                           address external,
+                                                  /* indices into file$info array    */
+                      file$info based f$i$adr f$info$structure,
+                
+                      mid$adr address,
+                      mid$file$info based mid$adr f$info$structure;
+
+
+  10   1      mult23: procedure(index) address public;
+  11   2          dcl index address;   /* return address of file$info numbered by index */
+  12   2          return shl(index, 4) + shl(index,2) + shl(index,1) + index + first$f$i$adr;
+                      /* index * size(file$info) + base of file$info array */
+  13   2      end mult23;
+
+  14   1      lessthan: procedure( str1$adr, str2$adr) boolean;
+  15   2          dcl (i,c1,c2) byte,                   /* true if str1 < str2            */
+                      (str1$adr, str2$adr) address,     /* sorting on name and type field */
+                      str1 based str1$adr (1) byte,     /* only, assumed to be first in   */
+                      str2 based str2$adr (1) byte;     /* file$info record */
+  16   2          do i = 1 to 11;
+  17   3              if (c1:=(str1(i) and 7fh)) <> (c2:=(str2(i) and 7fh)) then
+  18   3                  return(c1 < c2);
+  19   3          end;
+  20   2          return(false);
+  21   2      end lessthan;
+
+  22   1      dcl f$i$indices$base address public,
+                  f$i$indices based f$i$indices$base (1) address;
+
+  23   1      qsort: procedure(l,r);     /* no recursive quick sort, sorting largest    */
+  24   2      dcl (l,r,i,j,temp) address,/* partition first                             */
+                  stacksiz lit '14',     /* should always be able to sort 2 ** stacksiz */
+                  stack (stack$siz) structure (l address, r address),
+                  sp byte;
+
+  25   2          sp = 0; stack(0).l = l; stack(0).r = r;
+
+  28   2          do while sp < stack$siz - 1;
+  29   3              l = stack(sp).l; r = stack(sp).r; sp = sp - 1;
+  32   3              do while l < r;
+  33   4                  i = l; j = r;
+  35   4                  mid$adr = mult23(f$i$indices(shr(l+r,1)));
+  36   4                  do while i <= j;
+  37   5                      f$i$adr = mult23(f$i$indices(i));
+  38   5                      do while lessthan(f$i$adr,mid$adr);
+  39   6                          i = i + 1;
+  40   6                          f$i$adr = mult23(f$i$indices(i));
+  41   6                      end;
+  42   5                      f$i$adr = mult23(f$i$indices(j));
+  43   5                      do while lessthan(mid$adr,f$i$adr);
+  44   6                          j = j - 1;
+  45   6                          f$i$adr = mult23(f$i$indices(j));
+  46   6                      end;
+  47   5                      if i <= j then
+  48   5                      do; temp = f$i$indices(i); f$i$indices(i) = f$i$indices(j); 
+  51   6                          f$i$indices(j) = temp;
+PL/M-80 COMPILER    SDIR - SORT MODULE                                                                                    PAGE   3
+
+
+  52   6                          i = i + 1;
+  53   6                          if j > 0 then j = j - 1;
+  55   6                      end;
+  56   5                  end;  /* while i <= j    */
+  57   4                  if j - l < r - i then        /* which partition is larger */
+  58   4                  do; if i < r then
+  60   5                      do; sp = sp + 1; stack(sp).l = i; stack(sp).r = r;
+  64   6                      end;
+  65   5                      r = j;     /* continue sorting left partition */
+  66   5                  end;
+                          else
+  67   4                  do; if l < j then
+  69   5                      do; sp = sp + 1; stack(sp).l = l; stack(sp).r = j;
+  73   6                      end;
+  74   5                      l = i;     /* continue sorting right partition */
+  75   5                  end;
+  76   4              end;      /* while l < r              */
+  77   3          end;          /* while sp < stack$siz - 1 */
+  78   2          if sp <> 255 then
+  79   2              call print(.(cr,lf,lf,'Sort Stack Overflow',cr,lf,'$'));
+  80   2          else sorted = true;
+  81   2      end qsort;
+
+  82   1      sort: procedure public;
+  83   2          dcl i address;
+  84   2          f$i$indices$base = last$f$i$adr + size(file$info);
+  85   2          if filesfound < 2 then
+  86   2              return;
+  87   2          if shr((x$i$adr - f$i$indices$base),1) < filesfound then
+  88   2          do;
+  89   3              call print(.('Not Enough Memory for Sort',cr,lf,'$'));
+  90   3              return;
+  91   3          end;
+  92   2          do i = 0 to filesfound - 1;
+  93   3              f$i$indices(i) = i;                       /* initialize f$i$indices */
+  94   3          end;
+  95   2          call print(.(cr,lf,'Sorting  Directory...',cr,lf,'$'));
+  96   2          call qsort(0,filesfound - 1);
+  97   2          sorted = true;
+  98   2      end sort;
+
+  99   1      end sort;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0366H    870D
+     VARIABLE AREA SIZE = 0053H     83D
+     MAXIMUM STACK SIZE = 0006H      6D
+     150 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

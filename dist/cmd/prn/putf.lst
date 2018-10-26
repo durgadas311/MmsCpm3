@@ -1,0 +1,794 @@
+:F3:ASM80 PUTF.ASM DEBUG
+
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    1
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                      1 $title  ('PUTF - CP/M 3.0 Output Redirection - August 1982')
+                      2 ;******************************************************************
+                      3 ;
+                      4 ;       PUT  'Redirection Initializer'  version 3.0
+                      5 ;
+                      6 ;       11/30/82 - Doug Huskey
+                      7 ;******************************************************************
+                      8 ;
+                      9 ;
+                     10 ;       Copyright (c) 1982
+                     11 ;       Digital Research
+                     12 ;       P.O. Box 579
+                     13 ;       Pacific Grove, Ca.
+                     14 ;       93950
+                     15 ;
+                     16 ;
+                     17 ;       generation procedure
+                     18 ;
+                     19 ;       seteof put.plm
+                     20 ;       seteof getscan.dcl
+                     21 ;       seteof putf.asm
+                     22 ;       seteof getscan.plm
+                     23 ;       seteof parse.asm
+                     24 ;       is14
+                     25 ;       asm80 putf.asm debug
+                     26 ;       asm80 mcd80a.asm debug
+                     27 ;       asm80 parse.asm debug
+                     28 ;       plm80 put.plm pagewidth(100) debug optimize
+                     29 ;       link mcd80a.obj,put.obj,parse.obj,putf.obj,plm80.lib to put.mod
+                     30 ;       locate put.mod code(0100H) stacksize(100)
+                     31 ;       era put.mod
+                     32 ;       cpm
+                     33 ;       objcpm put
+                     34 ;       rmac putrsx
+                     35 ;       link putrsx[op]
+                     36 ;       era put.rsx
+                     37 ;       ren put.rsx=putrsx.prl
+                     38 ;       gencom put.com
+                     39 ;       gencom put.com put.rsx 
+                     40 ;
+                     41 ;
+                     42 ;       This module is called as an external routine by the
+                     43 ;       PL/M program PUT.  The address of a the following 
+                     44 ;       structure is passed:
+                     45 ;               
+                     46 ;                 declare putpb structure
+                     47 ;                   (output$type   byte,
+                     48 ;                    echo$flag     byte,
+                     49 ;                    filtered$flag byte,
+                     50 ;                    system$flag   byte);
+                     51 ;
+                     52 ;       output$type     = 0     > console output (default)
+                     53 ;                       = 1     > auxiliary output
+                     54 ;                       = 2     > list output
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    2
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                     55 ;                       = 3     > console input
+                     56 ;
+                     57 ;       echo            = true  > echo output to real device
+                     58 ;                                 (default)
+                     59 ;                       = false > don't echo output (input is 
+                     60 ;                                 still echoed)
+                     61 ;       filtered        = true  > convert control characters
+                     62 ;                                 to a printable form 
+                     63 ;                                 preceeded by an ^
+                     64 ;                       = false > no character conversions
+                     65 ;       program         = true  > continue until user uses 
+                     66 ;                                 PUT command to revert to 
+                     67 ;                                 console
+                     68 ;                       = false > active only until program
+                     69 ;                                 termination
+                     70         public  putf
+                     71         extrn   mon1,fcb,memsiz
+                     72 ;
+                     73 ;
+  FFFF               74 true            equ     0ffffh
+  0000               75 false           equ     00000h
+                     76 ;
+  FFFF               77 biosfunctions   equ     true            ;intercept BIOS list or conout
+                     78 ;
+                     79 ;
+                     80 ;       low memory locations
+                     81 ;
+  0000               82 wboot   equ     0000h
+  0001               83 wboota  equ     wboot+1
+                     84 ;
+                     85 ;       equates for non graphic characters
+                     86 ;
+  000D               87 cr      equ     0dh     ; carriage return
+  000A               88 lf      equ     0ah     ; line feed
+                     89 ;
+                     90 ;       BDOS function equates
+                     91 ;
+  0001               92 cinf    equ     1       ;read character
+  0002               93 coutf   equ     2       ;output character
+  0006               94 crawf   equ     6       ;raw console I/O
+  000A               95 creadf  equ     10      ;read buffer
+  000B               96 cstatf  equ     11      ;status
+  0005               97 lchrf   equ     5       ;list character
+  0009               98 pbuff   equ     9       ;print buffer
+  000D               99 resetf  equ     13      ;disk reset
+  000E              100 selectf equ     14      ;select disk
+  000F              101 openf   equ     15      ;open file
+  0010              102 closef  equ     16      ;close file
+  0013              103 delf    equ     19      ;delete file
+  0014              104 dreadf  equ     20      ;disk read
+  0016              105 makef   equ     22      ;make file
+  001A              106 dmaf    equ     26      ;set dma function
+  0019              107 curdrv  equ     25      ;get current drive
+  001F              108 dpbf    equ     31      ;get dpb address
+  0020              109 userf   equ     32      ;set/get user number
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    3
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0025              110 resdvf  equ     37      ;reset drive
+  0031              111 scbf    equ     49      ;set/get system control block word
+  003C              112 rsxf    equ     60      ;RSX function call
+  0063              113 resalvf equ     99      ;reset allocation vector
+  006F              114 pblkf   equ     111     ;print block to console
+  0070              115 lblkf   equ     112     ;print block to list device
+  0080              116 ginitf  equ     128     ;GET initialization sub-function no.
+  0081              117 gkillf  equ     129     ;GET delete sub-function no.
+  0082              118 gfcbf   equ     130     ;GET file display sub-function no.
+  0084              119 pinitf  equ     132     ;PUT initialization sub-funct no.
+  0085              120 pckillf equ     133     ;PUT CON: delete sub-function no.
+  0086              121 pcfcbf  equ     134     ;return PUT CON: fcb address
+  0089              122 plkillf equ     137     ;PUT LST: delete sub-function no.
+  008A              123 plfcbf  equ     138     ;return PUT LST:fcb address
+  008C              124 jinitf  equ     140     ;JOURNAL initialization sub-funct no.
+  008D              125 jkillf  equ     141     ;JOURNAL delete sub-function no.
+  008E              126 jfcbf   equ     142     ;return JOURNAL fcb address
+  0090              127 skillf  equ     144     ;SUBMIT delete sub-function no.
+  0091              128 sfcbf   equ     145     ;SUBMIT fcb address function
+  00A0              129 svkillf equ     160     ;SAVE delete sub-function no.
+                    130 ;
+                    131 ;       System Control Block definitions
+                    132 ;
+  003A              133 scba    equ     03ah    ;offset of scbadr from SCB base
+  00B3              134 ccpflg1 equ     0b3h    ;offset of ccpflags word from page boundary
+  0040              135 submit  equ     040h    ;mask for active submit or get test
+  00AA              136 errflg  equ     0aah    ;offset of error flag from page boundary
+  00CF              137 conmode equ     0cfh    ;offset of console mode from page boundary
+  00D4              138 listcp  equ     0d4h    ;offset of ^P flag from page boundary
+  00F9              139 common  equ     0f9h    ;offset of common memory base from pg. bound
+  0068              140 wbootfx equ     068h    ;offset of warm boot jmp from page. bound
+  006E              141 constfx equ     06eh    ;offset of constat jmp from page. bound
+  0074              142 coninfx equ     074h    ;offset of conin jmp from page. bound
+  007A              143 conoufx equ     07ah    ;offset of conout jmp from page. bound
+  0080              144 listfx  equ     080h    ;offset of list jmp from page. bound
+  0003              145 cstjmp  equ     003h    ;offset of console status jmp from warm boot
+  0006              146 cinjmp  equ     006h    ;offset of console input jmp from warm boot
+  0009              147 coujmp  equ     009h    ;offset of console output jmp from warm boot
+  000C              148 lstjmp  equ     00ch    ;offset of list output jmp from warm boot
+                    149 
+                    150 ;
+                    151 ;       Restore mode equates    (used with inr a, rz, rm, ret)
+                    152 ;
+  00FF              153 norestore       equ     0ffh    ;no BIOS interception
+  007F              154 biosonly        equ     07fh    ;restore BIOS jump table only
+  0000              155 everything      equ     0       ;restore BIOS jump table and jmps in
+                    156                                 ;RESBDOS (default mode)
+                    157 ;
+                    158 ;       Instructions
+                    159 ;
+  0021              160 lxih            equ     21h     ;LXI H, instruction
+  00C3              161 jmpi            equ     0c3h    ;jump instruction
+                    162 ;
+                    163 ;******************************************************************
+                    164 ;               START OF INITIALIZATION CODE
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    4
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    165 ;******************************************************************
+                    166                 cseg
+                    167 
+                    168 putf:
+                    169         ;get parameters
+  0000 60           170         mov     h,b
+  0001 69           171         mov     l,c             ;HL = .(parameter block)
+  0002 7E           172         mov     a,m             ;output type 0=con:,1=aux:,2=lst:,3=conin:
+  0003 FE01         173         cpi     1               ;is it aux?
+  0005 CA6701   C   174         jz      notimp          ;error if so
+  0008 FE03         175         cpi     3               ;is it console input only
+  000A C21100   C   176         jnz     setlst
+  000D 32C202   C   177         sta     input           ;non-zero => console input
+  0010 AF           178         xra     a
+  0011 32C302   C   179 setlst: sta     list            ;non-zero => list device
+  0014 23           180         inx     h
+  0015 7E           181         mov     a,m             ;echo/noecho mode
+  0016 32C402   C   182         sta     echo
+  0019 23           183         inx     h
+  001A 7E           184         mov     a,m             ;cooked/raw mode        
+  001B 32C502   C   185         sta     cooked  
+  001E 23           186         inx     h
+  001F 7E           187         mov     a,m             ;system/program mode
+  0020 32CA02   C   188         sta     program
+                    189         ;
+                    190         ;check if enough memory
+                    191         ;
+  0023 2A0000   E   192         lhld    memsiz
+  0026 7C           193         mov     a,h
+  0027 FE20         194         cpi     20h
+  0029 113302   C   195         lxi     d,memerr
+  002C DA6A01   C   196         jc      error
+                    197         ;
+                    198         ;check if drive specified
+  002F 210000   E   199         lxi     h,fcb
+  0032 7E           200         mov     a,m             ;drive code
+  0033 3D           201         dcr     a               ;drive specified?
+  0034 F24000   C   202         jp      movfcb          ;jump if so
+                    203         ;
+                    204         ;set to current drive, if  not
+                    205         ;
+  0037 0E19         206         mvi     c,curdrv
+  0039 E5           207         push    h               ;save .fcb
+  003A CD0000   E   208         call    mon1
+  003D E1           209         pop     h               ;a=current drive, hl=.fcb
+  003E 77           210         mov     m,a             ;set fcb to force drive select
+  003F 34           211         inr     m               ;must be relative to 1
+                    212         ;
+                    213 movfcb: ;copy default fcb up into data area for move to RSX
+                    214         ;
+  0040 5F           215         mov     e,a
+  0041 0E0E         216         mvi     c,selectf       ;make sure drive is selected
+  0043 E5           217         push    h               ;save .fcb
+  0044 CD0000   E   218         call    mon1            ;so we get the right DPB
+  0047 E1           219         pop     h       
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    5
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0048 11CC02   C   220         lxi     d,putfcb
+  004B 012000       221         lxi     b,32            ;length of fcb
+  004E CDAD01   C   222         call    ldir            ;move it to putfcb
+                    223         ;
+                    224         ;initialize other variables to be moved to RSX
+                    225         ;
+  0051 CD9B01   C   226         call    getusr          ;get current user number
+  0054 32CB02   C   227         sta     putusr          ;save for redirection file I/O
+  0057 CDA301   C   228         call    getscbadr
+  005A 22A202   C   229         shld    scbadr          ;System Control Block address
+                    230         ;
+                    231         ;initialize records per block (BLM)
+                    232         ;
+  005D 0E1F         233         mvi     c,dpbf
+  005F CD0000   E   234         call    mon1            ;HL = .disk parameter block
+  0062 23           235         inx     h
+  0063 23           236         inx     h
+  0064 23           237         inx     h               ;HL = .blm
+  0065 7E           238         mov     a,m
+  0066 32C902   C   239         sta     blm
+                    240         ;
+                    241         ;initialize function table (functions to be intercepted)
+                    242         ;
+  0069 3AC302   C   243         lda     list
+  006C B7           244         ora     a
+  006D 010D00       245         lxi     b,funcend-functbl               ;count
+  0070 11B502   C   246         lxi     d,functbl                       ;destination
+  0073 218586       247         lxi     h,pcfcbf*256+pckillf            ;rsx function codes
+  0076 CA9400   C   248         jz      ckinput
+  0079 21B801   C   249         lxi     h,listfunc                      ;list function table
+  007C CDAD01   C   250         call    ldir
+  007F 3E05         251         mvi     a,lchrf
+  0081 32B302   C   252         sta     bdosfunc                        ;use list output for bios trap
+  0084 3E80         253         mvi     a,listfx
+  0086 329E02   C   254         sta     resoff                          ;offset of fixup for bios list
+  0089 3E0C         255         mvi     a,lstjmp
+  008B 329F02   C   256         sta     biosoff                         ;offset of bios lst jmp 
+  008E 21898A       257         lxi     h,plfcbf*256+plkillf
+  0091 C3C400   C   258         jmp     getrsxadr
+                    259 ckinput:
+  0094 3AC202   C   260         lda     input
+  0097 B7           261         ora     a
+  0098 CAC400   C   262         jz      getrsxadr
+  009B 21C501   C   263         lxi     h,inputfunc
+  009E CDAD01   C   264         call    ldir
+  00A1 3E01         265         mvi     a,cinf
+  00A3 32B302   C   266         sta     bdosfunc                        ;use console input
+  00A6 3E74         267         mvi     a,coninfx
+  00A8 329E02   C   268         sta     resoff                          ;offset of fixup for bios conin
+  00AB 3E06         269         mvi     a,cinjmp
+  00AD 329F02   C   270         sta     biosoff
+  00B0 32C402   C   271         sta     echo                            ;must be non-zero for input
+  00B3 2AA202   C   272         lhld    scbadr
+  00B6 2EB4         273         mvi     l,ccpflg+1
+  00B8 7E           274         mov     a,m
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    6
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  00B9 E640         275         ani     submit                          ;SUBMIT or GET active?
+  00BB 115202   C   276         lxi     d,noget
+  00BE C26A01   C   277         jnz     error                           ;error if so
+  00C1 218D8E       278         lxi     h,jfcbf*256+jkillf
+                    279         ;
+                    280         ;get address of initialization table in RSX
+                    281         ;
+                    282 getrsxadr:
+  00C4 22C602   C   283         shld    rsxfun
+  00C7 0E3C         284         mvi     c,rsxf          ;PUT is not compatible with SAVE.RSX
+  00C9 11D201   C   285         lxi     d,savkill       ;as both SAVE & PUT trap warm starts
+  00CC CD0000   E   286         call    mon1            ;eliminate SAVE.RSX if active
+  00CF 0E3C         287         mvi     c,rsxf
+  00D1 11D301   C   288         lxi     d,rsxinit
+  00D4 CD0000   E   289         call    mon1            ;call PUT.RSX initialization routine
+  00D7 E5           290         push    h               ;save address of destination for move
+  00D8 5E           291         mov     e,m
+  00D9 23           292         inx     h               
+  00DA 56           293         mov     d,m             ;DE = .kill flag 
+  00DB D5           294         push    d               ;save for later set
+                    295         ;
+                    296 if biosfunctions
+                    297         ;
+  00DC 23           298         inx     h
+  00DD 23           299         inx     h
+  00DE 23           300         inx     h               ;HL = .(.(bios entry in RSX))
+  00DF E5           301         push    h               ;save for getting RSX entry point
+                    302                                 ;later (in trap:)
+                    303         ;check if BIOS jump table looks valid (jmp in right places)
+  00E0 2A9F02   C   304 check:  lhld    biosoff
+  00E3 EB           305         xchg
+  00E4 2A0100       306         lhld    wboota
+  00E7 7E           307         mov     a,m
+  00E8 FEC3         308         cpi     jmpi            ;should be a jump
+  00EA 19           309         dad     d               ;HL = .(jmp address)
+  00EB 7E           310         mov     a,m
+  00EC FEC3         311         cpi     jmpi            ;should be a jump
+  00EE C28A01   C   312         jnz     bioserr         ;skip bios redirection if not
+                    313         ;
+                    314         ;fix up RESBDOS to do BIOS calls to intercepted functions
+                    315         ;
+  00F1 2AA202   C   316         lhld    scbadr
+  00F4 2EFA         317         mvi     l,common+1
+  00F6 7E           318         mov     a,m             ;get high byte of common base
+  00F7 B7           319         ora     a               
+  00F8 C20301   C   320         jnz     fix0            ;high byte = zero if non-banked
+  00FB 3E7F         321         mvi     a,biosonly
+  00FD 32B402   C   322         sta     biosmode
+  0100 C32901   C   323         jmp     trap            ;skip code that fixes resbdos
+                    324         ;fix warmboot BIOS jmp in resbdos
+  0103 2E68         325 fix0:   mvi     l,wbootfx       ;HL = .warm boot fix in SCB
+  0105 22B102   C   326         shld    wmfix           ;save for RSX restore at end
+  0108 7E           327         mov     a,m
+  0109 FEC3         328         cpi     jmpi            ;is it a jump instruction?
+  010B CA1301   C   329         jz      fix1            ;jump if so
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    7
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  010E 3E7F         330         mvi     a,biosonly      ;whoops already traped
+  0110 32B402   C   331         sta     biosmode
+  0113 3621         332 fix1:   mvi     m,lxih          ;change jump to an lxi h,
+                    333         ;fix list bios jmp in resbdos
+  0115 3A9E02   C   334         lda     resoff
+  0118 6F           335         mov     l,a
+  0119 22AA02   C   336         shld    biosfix
+  011C 7E           337         mov     a,m
+  011D FEC3         338         cpi     jmpi            ;is it a jump instruction?
+  011F CA8201   C   339         jz      biosck          ;jump if so
+  0122 3E7F         340         mvi     a,biosonly      ;whoops already changed
+  0124 32B402   C   341         sta     biosmode        ;restore jump table only
+  0127 3621         342 fix3:   mvi     m,lxih
+                    343         ;
+                    344         ;get address of list entry point
+                    345         ;
+  0129 E1           346 trap:   pop     h               ;.(.(bios entry point in RSX))
+  012A 4E           347         mov     c,m
+  012B 23           348         inx     h
+  012C 46           349         mov     b,m
+  012D E5           350         push    h
+  012E 2A9F02   C   351         lhld    biosoff
+  0131 EB           352         xchg    
+  0132 2A0100       353         lhld    wboota
+  0135 19           354         dad     d               ;HL = .(jmp address)
+  0136 23           355         inx     h               ;move past jmp instruction
+  0137 22A802   C   356         shld    biosjmp         ;save for RSX restore at end
+  013A 5E           357         mov     e,m
+  013B 71           358         mov     m,c
+  013C 23           359         inx     h
+  013D 56           360         mov     d,m             ;DE = bios routine address
+  013E 70           361         mov     m,b             ;BIOS jmp jumps to RSX
+  013F EB           362         xchg
+  0140 22A602   C   363         shld    biosout         ;save bios routine address
+                    364         ;get addresses of RSX bios trap
+  0143 E1           365         pop     h
+  0144 23           366         inx     h
+  0145 4E           367         mov     c,m             ;HL = .(.(bios warm start in RSX))
+  0146 23           368         inx     h
+  0147 46           369         mov     b,m             ;BC = .bios warmstart entry in RSX
+                    370         ;
+                    371         ;patch RSX wmboot entry into BIOS jump table 
+                    372         ;save real wmboot address in RSX exit table
+                    373         ;
+  0148 2A0100       374         lhld    wboota
+  014B 23           375         inx     h
+  014C 22AF02   C   376         shld    wmjmp           ;save for RSX restore at end
+  014F 5E           377         mov     e,m
+  0150 71           378         mov     m,c
+  0151 23           379         inx     h
+  0152 56           380         mov     d,m
+  0153 70           381         mov     m,b
+  0154 EB           382         xchg
+  0155 22AD02   C   383         shld    wmsta           ;save real bios warm start routine
+                    384 endif
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    8
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    385         ;
+                    386         ;move data area to RSX
+                    387         ;
+                    388 rsxmov:
+  0158 E1           389         pop     h               ;HL = .(kill flag = 0FFh)
+  0159 34           390         inr     m               ;set to zero for redirection active
+  015A 21A202   C   391         lxi     h,movstart
+  015D D1           392         pop     d               ;RSX data area address
+  015E 014C00       393         lxi     b,movend-movstart
+  0161 CDAD01   C   394         call    ldir
+  0164 C30000       395         jmp     wboot
+                    396 ;
+                    397 ;       auxiliary redirection
+                    398 ;
+                    399 notimp:
+  0167 11FB01   C   400         lxi     d,notdone
+                    401 error:
+  016A 0E09         402         mvi     c,pbuff
+  016C CD0000   E   403         call    mon1
+  016F 0E10         404         mvi     c,closef
+  0171 110000   E   405         lxi     d,fcb
+  0174 CD0000   E   406         call    mon1
+  0177 0E13         407         mvi     c,delf
+  0179 110000   E   408         lxi     d,fcb
+  017C CD0000   E   409         call    mon1
+  017F C30000       410         jmp     wboot
+                    411         
+                    412 
+                    413 if biosfunctions
+                    414 ;
+                    415 ;       check if warm boot was fixed up by someone
+                    416 ;       and list or console output was not
+                    417 ;
+  0182 3AB402   C   418 biosck: lda     biosmode
+  0185 FE7F         419         cpi     biosonly
+  0187 C22701   C   420         jnz     fix3                    ;warm boot not fixed up
+                    421 ;
+                    422 ;       can't do BIOS redirection
+                    423 ;
+                    424 bioserr:
+  018A 11D401   C   425         lxi     d,nobios
+  018D 0E09         426         mvi     c,pbuff
+  018F CD0000   E   427         call    mon1
+  0192 21B402   C   428         lxi     h,biosmode
+  0195 36FF         429         mvi     m,norestore
+  0197 E1           430         pop     h               ;throw away stacked bios entry 
+  0198 C35801   C   431         jmp     rsxmov
+                    432 endif
+                    433 ;
+                    434 ;       get/set user number
+                    435 ;
+  019B 3EFF         436 getusr: mvi     a,0ffh          ;get current user number
+  019D 5F           437 setusr: mov     e,a             ;set current user number (in A)
+  019E 0E20         438         mvi     c,userf
+  01A0 C30000   E   439         jmp     mon1
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE    9
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    440 ;
+                    441 ;       get system control block address 
+                    442 ;       (BDOS function #49)
+                    443 ;
+                    444 ;       exit:   hl = system control block address
+                    445 ;
+                    446 getscbadr:
+  01A3 0E31         447         mvi     c,scbf
+  01A5 11AB01   C   448         lxi     d,data49
+  01A8 C30000   E   449         jmp     mon1
+                    450 ;
+  01AB 3A           451 data49: db      scba,0          ;data structure for getscbadd
+  01AC 00              
+                    452 ;
+                    453 ;
+                    454 ;       copy memory bytes (emulates z80 ldir instruction)
+                    455 ;
+  01AD 7E           456 ldir:   mov     a,m             ;get byte
+  01AE 12           457         stax    d               ;store it at destination
+  01AF 23           458         inx     h               ;advance pointers
+  01B0 13           459         inx     d
+  01B1 0B           460         dcx     b               ;decrement byte count
+  01B2 79           461         mov     a,c             ;loop if non-zero
+  01B3 B0           462         ora     b
+  01B4 C2AD01   C   463         jnz     ldir
+  01B7 C9           464         ret
+                    465 ;
+                    466 ;******************************************************************
+                    467 ;               DATA AREA
+                    468 ;******************************************************************
+                    469 
+                    470 ;
+                    471 ;       equates function table
+                    472 ;
+  00FF              473 eot     equ     0ffh    ; end of function table
+  00FE              474 skipf   equ     0feh    ; skip this function
+                    475 ;
+                    476 listfunc:
+  01B8 05           477                 db      lchrf, lblkf, coutf, cstatf, crawf
+  01B9 70              
+  01BA 02              
+  01BB 0B              
+  01BC 06              
+  01BD 09           478                 db      pbuff, cinf, creadf, resetf, resdvf
+  01BE 01              
+  01BF 0A              
+  01C0 0D              
+  01C1 25              
+  01C2 63           479                 db      resalvf, pblkf, eot
+  01C3 6F              
+  01C4 FF              
+                    480 
+                    481 ;               Note that the list routines precede the console
+                    482 ;               routines so that the CKLIST: routine in PUTRSX
+                    483 ;               can distinquish list functions from console 
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE   10
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    484 ;               functions.
+                    485 
+                    486 inputfunc:                      ;preset for console input
+  01C5 FE           487                 db      skipf, skipf, skipf, skipf, crawf
+  01C6 FE              
+  01C7 FE              
+  01C8 FE              
+  01C9 06              
+  01CA FE           488                 db      skipf, cinf, creadf, resetf, resdvf
+  01CB 01              
+  01CC 0A              
+  01CD 0D              
+  01CE 25              
+  01CF 63           489                 db      resalvf, eot, skipf
+  01D0 FF              
+  01D1 FE              
+                    490 
+                    491 
+                    492 ;
+  01D2 A0           493 savkill:        db      svkillf
+  01D3 84           494 rsxinit:        db      Pinitf
+  01D4 0D           495 nobios:         db      cr,lf,'WARNING: Cannot redirect from BIOS',cr,lf,'$'
+  01D5 0A              
+  01D6 5741524E        
+  01DA 494E473A  
+  01DE 2043616E  
+  01E2 6E6F7420  
+  01E6 72656469  
+  01EA 72656374  
+  01EE 2066726F  
+  01F2 6D204249  
+  01F6 4F53      
+  01F8 0D              
+  01F9 0A              
+  01FA 24              
+                    496 notdone:
+  01FB 0D           497         db cr,lf
+  01FC 0A              
+  01FD 4552524F     498         db 'ERROR: Auxiliary device redirection not implemented',cr,lf,'$'
+  0201 523A2041  
+  0205 7578696C  
+  0209 69617279  
+  020D 20646576  
+  0211 69636520  
+  0215 72656469  
+  0219 72656374  
+  021D 696F6E20  
+  0221 6E6F7420  
+  0225 696D706C  
+  0229 656D656E  
+  022D 746564    
+  0230 0D              
+  0231 0A              
+  0232 24              
+                    499 memerr:
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE   11
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0233 0D           500         db cr,lf        
+  0234 0A              
+  0235 4552524F     501         db 'ERROR: Insufficient Memory',cr,lf,'$'
+  0239 523A2049  
+  023D 6E737566  
+  0241 66696369  
+  0245 656E7420  
+  0249 4D656D6F  
+  024D 7279      
+  024F 0D              
+  0250 0A              
+  0251 24              
+                    502 noget:
+  0252 0D           503         db cr,lf
+  0253 0A              
+  0254 4552524F     504         db 'ERROR: You cannot PUT INPUT to a file',cr,lf
+  0258 523A2059  
+  025C 6F752063  
+  0260 616E6E6F  
+  0264 74205055  
+  0268 5420494E  
+  026C 50555420  
+  0270 746F2061  
+  0274 2066696C  
+  0278 65        
+  0279 0D              
+  027A 0A              
+  027B 20202020     505         db '       when using GET or SUBMIT.',cr,lf,'$'
+  027F 20202077  
+  0283 68656E20  
+  0287 7573696E  
+  028B 67204745  
+  028F 54206F72  
+  0293 20535542  
+  0297 4D49542E  
+  029B 0D              
+  029C 0A              
+  029D 24              
+  029E 7A           506 resoff:         db      conoufx
+  029F 0900         507 biosoff:        dw      coujmp
+  02A1 00           508 aux:            db      0
+                    509         ;       
+                    510 ;******************************************************************
+                    511 ;       Following variables are initialized by PUT.COM
+                    512 ;       and moved to the PUT RSX - Their order must not be changed
+                    513 ;******************************************************************
+                    514         ;
+                    515         ;
+                    516 movstart:
+                    517 inittable:                      ;addresses used by PUT.COM for 
+  02A2 0000         518 scbadr: dw      0               ;address of System Control Block
+                    519         ;
+                    520         if biosfunctions        ;PUT.RSX initialization
+                    521         ;
+  02A4 4B           522 gobios: mov     c,e
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE   12
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  02A5 C3           523         db      jmpi
+                    524 biosout:
+  02A6 0000         525         dw      0               ;set to real BIOS routine
+                    526         ;
+                    527                                 ;restore only if changed when removed.
+                    528 biosjmp:
+  02A8 0000         529         dw      0               ;address of bios jmp initialized by COM
+                    530 biosfix:
+  02AA 0000         531         dw      0               ;address of jmp in resbdos to restore
+  02AC C3           532         db      jmpi
+  02AD 0000         533 wmsta:  dw      0               ;address of real warm start routine
+  02AF 0000         534 wmjmp:  dw      0               ;address of jmp in bios to restore
+  02B1 0000         535 wmfix:  dw      0               ;address of jmp in resbdos to restore
+                    536 bdosfunc:
+  02B3 02           537         db      coutf
+                    538 biosmode:
+  02B4 00           539         db      0               ;0FFh = no bios restore, 07fh = restore
+                    540                                 ;only bios jmp, 0 = restore bios jump and
+                    541                                 ;resbdos jmp when removed.
+                    542         endif
+                    543 
+                    544 functbl:                        ;preset for console output
+  02B5 FE           545         db      skipf, skipf, coutf, cstatf, crawf, pbuff
+  02B6 FE              
+  02B7 02              
+  02B8 0B              
+  02B9 06              
+  02BA 09              
+  02BB 01           546         db      cinf, creadf, resetf, resdvf, resalvf, pblkf, eot
+  02BC 0A              
+  02BD 0D              
+  02BE 25              
+  02BF 63              
+  02C0 6F              
+  02C1 FF              
+                    547 
+                    548 funcend:
+                    549         ;
+  02C2 00           550 input:  db      0               ;non-zero if putting input to a file
+  02C3 00           551 list:   db      0               ;TRUE if list output redirection
+  02C4 01           552 echo:   db      1               ;echo output to device
+                    553 cooked:                         ;must be next after echo
+  02C5 00           554         db      0               ;TRUE if ctrl chars displayed with ^
+                    555 rsxfun:
+  02C6 FF           556 pkillf: db      255             ;put abort routine code
+  02C7 FF           557 pfcbf:  db      255             ;put FCB display function no.
+                    558         ;       **********  remaining variables must be in this order
+  02C8 00           559 record: db      0               ;counts down records to block boundary
+  02C9 00           560 blm:    db      0               ;block mask = records per block (rel 0)
+                    561 program:                        ;This must be @ .putfcb-2
+  02CA 00           562         db      0
+  02CB 00           563 putusr: db      0               ;user number for redirection file
+  02CC 01           564 putfcb: db      1               ;a
+  02CD 5359534F     565         db      'SYSOUT  '
+  02D1 55542020  
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         MODULE   PAGE   13
+PUTF - CP/M 3.0 Output Redirection - August 1982
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  02D5 242424       566         db      '$$$'
+  02D8 00           567         db      0,0
+  02D9 00              
+  02DA 00           568 putmod: db      0
+  02DB 00           569 putrc:  db      0
+  02DC              570         ds      16              ;map
+  02EC 00           571 putcr:  db      0
+                    572         ;
+  02ED 00           573 cbufp:  db      0
+                    574 movend:
+                    575 ;*******************************************************************
+                    576         end
+
+
+PUBLIC SYMBOLS
+PUTF   C 0000    
+
+EXTERNAL SYMBOLS
+FCB    E 0000    MEMSIZ E 0000    MON1   E 0000    
+
+USER SYMBOLS
+AUX    C 02A1    BDOSFU C 02B3    BIOSCK C 0182    BIOSER C 018A    BIOSFI C 02AA    BIOSFU A FFFF    BIOSJM C 02A8    
+BIOSMO C 02B4    BIOSOF C 029F    BIOSON A 007F    BIOSOU C 02A6    BLM    C 02C9    CBUFP  C 02ED    CCPFLG A 00B3    
+CHECK  C 00E0    CINF   A 0001    CINJMP A 0006    CKINPU C 0094    CLOSEF A 0010    COMMON A 00F9    CONINF A 0074    
+CONMOD A 00CF    CONOUF A 007A    CONSTF A 006E    COOKED C 02C5    COUJMP A 0009    COUTF  A 0002    CR     A 000D    
+CRAWF  A 0006    CREADF A 000A    CSTATF A 000B    CSTJMP A 0003    CURDRV A 0019    DATA49 C 01AB    DELF   A 0013    
+DMAF   A 001A    DPBF   A 001F    DREADF A 0014    ECHO   C 02C4    EOT    A 00FF    ERRFLG A 00AA    ERROR  C 016A    
+EVERYT A 0000    FALSE  A 0000    FCB    E 0000    FIX0   C 0103    FIX1   C 0113    FIX3   C 0127    FUNCEN C 02C2    
+FUNCTB C 02B5    GETRSX C 00C4    GETSCB C 01A3    GETUSR C 019B    GFCBF  A 0082    GINITF A 0080    GKILLF A 0081    
+GOBIOS C 02A4    INITTA C 02A2    INPUT  C 02C2    INPUTF C 01C5    JFCBF  A 008E    JINITF A 008C    JKILLF A 008D    
+JMPI   A 00C3    LBLKF  A 0070    LCHRF  A 0005    LDIR   C 01AD    LF     A 000A    LIST   C 02C3    LISTCP A 00D4    
+LISTFU C 01B8    LISTFX A 0080    LSTJMP A 000C    LXIH   A 0021    MAKEF  A 0016    MEMERR C 0233    MEMSIZ E 0000    
+MON1   E 0000    MOVEND C 02EE    MOVFCB C 0040    MOVSTA C 02A2    NOBIOS C 01D4    NOGET  C 0252    NOREST A 00FF    
+NOTDON C 01FB    NOTIMP C 0167    OPENF  A 000F    PBLKF  A 006F    PBUFF  A 0009    PCFCBF A 0086    PCKILL A 0085    
+PFCBF  C 02C7    PINITF A 0084    PKILLF C 02C6    PLFCBF A 008A    PLKILL A 0089    PROGRA C 02CA    PUTCR  C 02EC    
+PUTF   C 0000    PUTFCB C 02CC    PUTMOD C 02DA    PUTRC  C 02DB    PUTUSR C 02CB    RECORD C 02C8    RESALV A 0063    
+RESDVF A 0025    RESETF A 000D    RESOFF C 029E    RSXF   A 003C    RSXFUN C 02C6    RSXINI C 01D3    RSXMOV C 0158    
+SAVKIL C 01D2    SCBA   A 003A    SCBADR C 02A2    SCBF   A 0031    SELECT A 000E    SETLST C 0011    SETUSR C 019D    
+SFCBF  A 0091    SKILLF A 0090    SKIPF  A 00FE    SUBMIT A 0040    SVKILL A 00A0    TRAP   C 0129    TRUE   A FFFF    
+USERF  A 0020    WBOOT  A 0000    WBOOTA A 0001    WBOOTF A 0068    WMFIX  C 02B1    WMJMP  C 02AF    WMSTA  C 02AD    
+
+ASSEMBLY COMPLETE,   NO ERRORS

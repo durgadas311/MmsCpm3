@@ -1,0 +1,926 @@
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SETDEF
+OBJECT MODULE PLACED IN SETDEF.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 SETDEF.PLM PAGEWIDTH(132) DEBUG OPTIMIZE
+
+
+
+              $ TITLE('CP/M 3.0 --- SETDEF')
+   1          setdef:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+              Written:  27 July 82  by John Knight 
+              Modified: 30 Sept 82  by Doug Huskey
+              Modified: 03 Dec  82  by Bruce Skidmore
+              */
+
+              /********************************************
+              *                                           *
+              *       LITERALS AND GLOBAL VARIABLES       *
+              *                       *
+              ********************************************/
+
+   2   1      declare
+                  true            literally '1',
+                  false           literally '0',
+                  forever         literally 'while true',
+                  lit             literally 'literally',
+                  proc            literally 'procedure',
+                  dcl             literally 'declare',
+                  addr            literally 'address',
+                  cr              literally '13',
+                  tab         literally '9',
+                  lf              literally '10',
+                  ctrlc           literally '3',
+                  ctrlx           literally '18h',
+                  bksp            literally '8',
+                  con$width$offset    literally '1ah',
+                  drive0$offset   literally '4ch',
+                  drive1$offset   literally '4dh',
+                  drive2$offset   literally '4eh',
+                  drive3$offset   literally '4fh',
+                  temp$drive$offset   literally '50h',
+                  ccp$flag1$offset    literally '17h',
+                  ccp$flag2$offset    literally '18h',
+                  pg$mode$offset  literally '2ch',
+                  pg$def$offset   literally '2dh',
+                  cpmversion      literally '30h';
+                  
+   3   1        declare drive$table (4) byte;
+   4   1        declare order$table (2) byte initial(0);
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   2
+
+
+   5   1        declare drive (4) byte;
+   6   1        declare temp$drive byte;
+   7   1        declare ccp$flag1 byte;
+   8   1        declare ccp$flag2 byte;
+   9   1        declare con$width byte;
+  10   1        declare i byte;
+  11   1        declare begin$buffer address;
+  12   1        declare buf$length byte;
+
+                /* display control variables */
+  13   1        declare show$drive   byte initial(true);
+  14   1        declare show$order   byte initial(true);
+  15   1        declare show$temp    byte initial(true);
+  16   1        declare show$page    byte initial(true);
+  17   1        declare show$display byte initial(true);
+
+
+  18   1        declare scbpd structure
+                  (offset byte,
+                   set    byte,
+                   value  address);
+
+                /* scanner variables and data */
+  19   1        declare
+                  options(*) byte data
+                      ('TEMPORARY~ORDER~PAGE~DISPLAY~NO~COM~SUB~NOPAGE~NODISPLAY',
+                        '~ON~OFF',0ffh),
+                      
+                  options$offset(*) byte data
+                      (0,10,16,21,29,32,36,40,47,57,60,63),
+
+                  drives(*) byte data
+                      ('*~A:~B:~C:~D:~E:~F:~G:~H:~I:~J:~K:~',
+                       'L:~M:~N:~O:~P:',0ffh),
+                                 
+                  drives$offset(*) byte data
+                      (0,2,5,8,11,14,17,20,23,26,29,32,
+                       35,38,41,44,47,49),
+
+                  end$list    byte data (0ffh),
+
+                  delimiters(*) byte data (0,'[]=, ./;()',0,0ffh),
+
+                  SPACE   byte data(5),
+                  j       byte initial(0),
+                  buf$ptr address,
+                  index   byte,
+                  endbuf  byte,
+                  delimiter   byte;
+                  
+  20   1          declare end$of$string   byte initial ('~');
+
+  21   1       declare plm label public;
+               
+                /**************************************
+                 *                                    *
+                 *       B D O S   INTERFACE          *
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   3
+
+
+                 *                                    *
+                 **************************************/
+
+
+  22   1        mon1:
+                  procedure (func,info) external;
+  23   2            declare func byte;
+  24   2            declare info address;
+  25   2          end mon1;
+
+  26   1        mon2:
+                  procedure (func,info) byte external;
+  27   2            declare func byte;
+  28   2            declare info address;
+  29   2          end mon2;
+
+  30   1        mon3:
+                  procedure (func,info) address external;
+  31   2            declare func byte;
+  32   2            declare info address;
+  33   2          end mon3;
+
+  34   1        declare cmdrv     byte    external;   /* command drive      */
+  35   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+  36   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+  37   1        declare pass0     address external;   /* 1st password ptr   */
+  38   1        declare len0      byte    external;   /* 1st passwd length  */
+  39   1        declare pass1     address external;   /* 2nd password ptr   */
+  40   1        declare len1      byte    external;   /* 2nd passwd length  */
+  41   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   Externals          *
+                 *                                    *
+                 **************************************/
+
+  42   1        printchar: 
+                  procedure(char);
+  43   2          declare char byte;
+  44   2          call mon1(2,char);
+  45   2          end printchar;
+
+  46   1        print$buf:
+                  procedure (buffer$address);
+  47   2            declare buffer$address address;
+  48   2            call mon1 (9,buffer$address);
+  49   2          end print$buf;
+
+  50   1        version: procedure address;
+                  /* returns current cp/m version # */
+  51   2          return mon3(12,0);
+  52   2          end version;
+
+  53   1        getscbbyte: procedure (offset) byte;
+  54   2          declare offset byte;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   4
+
+
+  55   2          scbpd.offset = offset;
+  56   2          scbpd.set = 0;
+  57   2          return mon2(49,.scbpd);
+  58   2        end getscbbyte;
+
+  59   1        setscbbyte:
+                  procedure (offset,value);
+  60   2          declare offset byte;
+  61   2          declare value byte;
+  62   2          scbpd.offset = offset;
+  63   2          scbpd.set = 0ffh;
+  64   2          scbpd.value = double(value);
+  65   2          call mon1(49,.scbpd);
+  66   2        end setscbbyte;
+                  
+                /**************************************
+                 *                                    *
+                 *       S U B R O U T I N E S        *
+                 *                                    *
+                 **************************************/
+
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                  * * *  Option scanner  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+  67   1      separator: procedure(character) byte;
+
+                                  /* determines if character is a 
+                                     delimiter and which one */
+  68   2          declare k   byte,
+                      character   byte;
+
+  69   2          k = 1;
+  70   2      loop:   if delimiters(k) = end$list then return(0);
+  72   2          if delimiters(k) = character then return(k);    /* null = 25 */
+  74   2              k = k + 1;
+  75   2              go to loop;
+
+  76   2      end separator;
+
+  77   1      opt$scanner:    procedure(list$ptr,off$ptr,idx$ptr);
+                                  /* scans the list pointed at by idxptr
+                                     for any strings that are in the 
+                                     list pointed at by list$ptr.
+                                     Offptr points at an array that 
+                                     contains the indices for the known
+                                     list. Idxptr points at the index 
+                                     into the list. If the input string
+                                     is unrecognizable then the index is
+                                     0, otherwise > 0.
+
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   5
+
+
+                                  First, find the string in the known
+                                  list that starts with the same first 
+                                  character.  Compare up until the next
+                                  delimiter on the input. if every input
+                                  character matches then check for 
+                                  uniqueness.  Otherwise try to find 
+                                  another known string that has its first
+                                  character match, and repeat.  If none
+                                  can be found then return invalid.
+
+                                  To test for uniqueness, start at the 
+                                  next string in the knwon list and try
+                                  to get another match with the input.
+                                  If there is a match then return invalid.
+
+                                  else move pointer past delimiter and 
+                                  return.
+
+                              P.Balma     */
+
+  78   2          declare
+                      buff        based buf$ptr (1) byte,
+                      idx$ptr     address,
+                      off$ptr     address,
+                      list$ptr    address;
+
+  79   2          declare
+                      i       byte,
+                      j       byte,
+                      list        based list$ptr (1) byte,
+                      offsets     based off$ptr (1) byte,
+                      wrd$pos     byte,
+                      character   byte,
+                      letter$in$word  byte,
+                      found$first byte,
+                      start       byte,
+                      index       based idx$ptr byte,
+                      save$index  byte,
+                      (len$new,len$found) byte,
+                      valid       byte;
+
+              /*****************************************************************************/
+              /*          internal subroutines                     */
+              /*****************************************************************************/
+
+  80   2      check$in$list: procedure;
+                              /* find known string that has a match with 
+                                 input on the first character.  Set index
+                                 = invalid if none found.   */
+                          
+  81   3          declare i   byte;
+
+  82   3          i = start;
+  83   3          wrd$pos = offsets(i);
+  84   3          do while list(wrd$pos) <> end$list;
+  85   4              i = i + 1;
+  86   4              index = i;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   6
+
+
+  87   4              if list(wrd$pos) = character then return;
+  89   4              wrd$pos = offsets(i);
+  90   4          end;
+                          /* could not find character */
+  91   3          index = 0;
+  92   3          return;
+  93   3      end check$in$list;
+
+  94   2      setup:  procedure;
+  95   3          character = buff(0);
+  96   3          call check$in$list;
+  97   3          letter$in$word = wrd$pos;
+                          /* even though no match may have occurred, position
+                             to next input character.  */
+  98   3          i = 1;
+  99   3          character = buff(1);
+ 100   3      end setup;
+
+ 101   2      test$letter:    procedure;
+                          /* test each letter in input and known string */
+
+ 102   3          letter$in$word = letter$in$word + 1;
+
+                                  /* too many chars input? 0 means
+                                     past end of known string */
+ 103   3          if list(letter$in$word) = end$of$string then valid = false;
+                  else
+ 105   3          if list(letter$in$word) <> character then valid = false;
+
+                  i = i + 1;
+ 108   3          character = buff(i);
+
+ 109   3      end test$letter;
+
+ 110   2      skip:   procedure;
+                                  /* scan past the offending string;
+                                     position buf$ptr to next string...
+                                     skip entire offending string;
+                                     ie., falseopt=mod, [note: comma or
+                                     space is considered to be group 
+                                     delimiter] */
+ 111   3          character = buff(i);
+ 112   3          delimiter = separator(character);
+                  /* No skip for SETPATH */
+ 113   3              do while ((delimiter < 1) or (delimiter > 11));
+ 114   4              i = i + 1;
+ 115   4              character = buff(i);
+ 116   4              delimiter = separator(character);
+ 117   4          end;
+ 118   3          endbuf = i;
+ 119   3          buf$ptr = buf$ptr + endbuf + 1;
+ 120   3          return;
+ 121   3      end skip;
+
+ 122   2      eat$blanks: procedure;
+
+ 123   3          declare charac  based buf$ptr byte;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   7
+
+
+
+
+ 124   3          do while ((delimiter := separator(charac)) = SPACE);
+ 125   4              buf$ptr = buf$ptr + 1;
+ 126   4          end;
+
+ 127   3      end eat$blanks;
+
+              /*****************************************************************************/
+              /*          end of internals                     */
+              /*****************************************************************************/
+
+
+                                  /* start of procedure */
+ 128   2          call eat$blanks;
+ 129   2          start = 0;
+ 130   2          call setup;
+
+                                  /* match each character with the option
+                                     for as many chars as input 
+                                     Please note that due to the array
+                                     indices being relative to 0 and the
+                                     use of index both as a validity flag
+                                     and as a index into the option/mods
+                                     list, index is forced to be +1 as an
+                                     index into array and 0 as a flag*/
+
+ 131   2          do while index <> 0;
+ 132   3              start = index;
+ 133   3              delimiter = separator(character);
+
+                                  /* check up to input delimiter */
+
+ 134   3              valid = true;       /* test$letter resets this */
+ 135   3              do while delimiter = 0;
+ 136   4                  call test$letter;
+ 137   4                  if not valid then go to exit1;
+ 139   4                  delimiter = separator(character);
+ 140   4              end;
+
+ 141   3              go to good;
+
+                                  /* input ~= this known string;
+                                     get next known string that 
+                                     matches */
+ 142   3      exit1:      call setup;
+ 143   3          end;
+                                  /* fell through from above, did
+                                     not find a good match*/
+ 144   2          endbuf = i;         /* skip over string & return*/
+ 145   2          call skip;
+ 146   2          return;
+
+                                  /* is it a unique match in options
+                                     list? */
+ 147   2      good:   endbuf = i;
+ 148   2          len$found = endbuf;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   8
+
+
+ 149   2          save$index = index;
+ 150   2          valid = false;
+ 151   2      next$opt:
+                      start = index;
+ 152   2              call setup;
+ 153   2              if index = 0 then go to finished;
+
+                                  /* look at other options and check
+                                     uniqueness */
+
+ 155   2              len$new = offsets(index + 1) - offsets(index) - 1;
+ 156   2              if len$new = len$found then do;
+ 158   3                  valid = true;
+ 159   3                  do j = 1 to len$found;
+ 160   4                      call test$letter;
+ 161   4                      if not valid then go to next$opt;
+ 163   4                  end;
+ 164   3              end;
+ 165   2              else go to nextopt;
+                                  /* fell through...found another valid
+                                     match --> ambiguous reference */
+ 166   2          index = 0;
+ 167   2          call skip;      /* skip input field to next delimiter*/
+ 168   2          return;
+
+ 169   2      finished:           /* unambiguous reference */
+                  index = save$index;
+ 170   2          buf$ptr = buf$ptr + endbuf;
+ 171   2          call eat$blanks;
+ 172   2          if delimiter <> 0 then
+ 173   2                buf$ptr = buf$ptr + 1;
+                      else
+ 174   2                delimiter = 5;
+ 175   2          return;
+
+ 176   2      end opt$scanner;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 177   1      crlf:   proc;
+ 178   2          call printchar(cr);
+ 179   2          call printchar(lf);
+ 180   2          end crlf;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* The error processor.  This routine prints the command line
+                with a carot '^' under the offending delimiter, or sub-string.
+                The code passed to the routine determines the error message
+                to be printed beneath the command string.                  */
+
+ 181   1      error: procedure (code);
+ 182   2        declare (code,i,j,nlines,rem) byte;
+ 183   2        declare (string$ptr,tstring$ptr) address;
+ 184   2        declare chr1 based string$ptr byte;
+ 185   2        declare chr2 based tstring$ptr byte;
+ 186   2        declare carot$flag byte;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE   9
+
+
+
+ 187   2      print$command: procedure (size);
+ 188   3        declare size byte;
+ 189   3        do j=1 to size;   /* print command string */
+ 190   4          call printchar(chr1);
+ 191   4          string$ptr = string$ptr + 1;
+ 192   4        end;
+ 193   3        call crlf;
+ 194   3        do j=1 to size;   /* print carot if applicable */
+ 195   4          if .chr2 = buf$ptr then do;
+ 197   5            carot$flag = true;
+ 198   5            call printchar('^');
+ 199   5          end;
+                  else
+ 200   4            call printchar(' ');
+ 201   4          tstring$ptr = tstring$ptr + 1;
+ 202   4        end;
+ 203   3        call crlf;
+ 204   3      end print$command;
+
+ 205   2        carot$flag = false;
+ 206   2        string$ptr,tstring$ptr = begin$buffer;
+ 207   2        con$width = getscbbyte(con$width$offset);
+ 208   2        if con$width < 40 then con$width = 40;
+ 210   2        nlines = buf$length / con$width;  /* num lines to print */
+ 211   2        rem = buf$length mod con$width;   /* num extra chars to print */
+ 212   2        if ((code = 1) or (code = 5)) then    /* adjust carot pointer */
+ 213   2          buf$ptr = buf$ptr - 1;  /* for delimiter errors */
+                else
+ 214   2          buf$ptr = buf$ptr - endbuf - 1; /* all other errors */
+ 215   2        call crlf;
+ 216   2        do i=1 to nlines;
+ 217   3          tstring$ptr = string$ptr;
+ 218   3          call print$command(con$width);
+ 219   3        end;
+ 220   2        call print$command(rem);
+ 221   2        if carot$flag then
+ 222   2          call print$buf(.('Error at the ''^''; $'));
+                else
+ 223   2          call print$buf(.('Error at end of line; $'));
+ 224   2        if con$width < 65 then
+ 225   2          call crlf;
+ 226   2        do case code;
+ 227   3          call print$buf(.('More than four drives specified$'));
+ 228   3          call print$buf(.('Invalid delimiter$'));
+ 229   3          call print$buf(.('Invalid drive$'));
+ 230   3          call print$buf(.('Invalid type for ORDER option$'));
+ 231   3          call print$buf(.('Invalid option$'));
+ 232   3          call print$buf(.('End of line expected$'));
+ 233   3          call print$buf(.('Drive defined twice in search path$'));
+ 234   3          call print$buf(.('Invalid ORDER specification$'));
+ 235   3          call print$buf(.('Must be ON or OFF$'));
+ 236   3        end;
+ 237   2        call crlf;
+ 238   2        call mon1(0,0);
+ 239   2      end error;
+
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  10
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* This is the main screen display for SETPATH.  After every
+                 successful operation, this procedure will be called to 
+                 show the results.  This routine is also called whenever the
+                 user just types SETPATH with no options.                  */
+
+ 240   1      display$path: procedure;
+ 241   2        declare i byte;
+ 242   2        declare (display$flag,pg$mode,order) byte;
+
+                /* GET SETTINGS FROM SYSTEM CONTROL BLOCK */
+ 243   2        drive(0)     = getscbbyte(drive0$offset);
+ 244   2        drive(1)     = getscbbyte(drive1$offset);
+ 245   2        drive(2)     = getscbbyte(drive2$offset);
+ 246   2        drive(3)     = getscbbyte(drive3$offset);
+ 247   2        temp$drive   = getscbbyte(temp$drive$offset);
+ 248   2        pg$mode      = getscbbyte(pg$mode$offset);
+ 249   2        ccp$flag2    = getscbbyte(ccp$flag2$offset);
+ 250   2        display$flag = ccp$flag2 and 00$000$011b;
+ 251   2        order        = shr((ccp$flag2 and 00$011$000b),3);  
+                               /* 0 = COM, 1 = COM,SUB, 2 = SUB,COM  */
+
+                /* DRIVE SEARCH PATH */
+ 252   2        if show$drive then do;
+ 254   3          call crlf;
+ 255   3          call print$buf(.('Drive Search Path:',cr,lf,'$'));
+ 256   3          i = 0;
+ 257   3          do while ((drive(i) <> 0ffh) and (i < 4));
+ 258   4            call printchar(i + '1');
+ 259   4            do case i;
+ 260   5              call print$buf(.('st$'));
+ 261   5              call print$buf(.('nd$'));
+ 262   5              call print$buf(.('rd$'));
+ 263   5              call print$buf(.('th$'));
+ 264   5            end;
+ 265   4               call print$buf(.(' Drive            - $'));
+ 266   4            if drive(i) = 0 then
+ 267   4              call print$buf(.('Default$'));
+ 268   4            else do;
+ 269   5              call printchar(drive(i) + 40h);
+ 270   5              call printchar(':');
+ 271   5            end;
+ 272   4            call crlf;
+ 273   4            i = i + 1;
+ 274   4          end;
+ 275   3        end;
+
+                /* PROGRAM vs. SUBMIT SEARCH ORDER */
+ 276   2        if show$order then do;
+ 278   3          call crlf;
+ 279   3          call print$buf(.('Search Order         - $'));
+ 280   3          do case order;
+ 281   4            call print$buf(.('COM$'));
+ 282   4            call print$buf(.('COM, SUB$'));
+ 283   4            call print$buf(.('SUB, COM$'));
+ 284   4          end;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  11
+
+
+ 285   3        end;
+
+                /* TEMPORARY FILE DRIVE */
+ 286   2        if show$temp then do;
+ 288   3          call crlf;
+ 289   3          call print$buf(.('Temporary Drive      - $'));
+ 290   3          if temp$drive > 16
+                    then temp$drive = 0;
+ 292   3          if temp$drive = 0 then
+ 293   3            call print$buf(.('Default$'));
+ 294   3          else do;
+ 295   4            call printchar(temp$drive + 40h);
+ 296   4            call printchar(':');
+ 297   4          end;
+ 298   3        end;
+
+                /* CONSOLE PAGE MODE */
+ 299   2        if show$page then do;
+ 301   3          call crlf;
+ 302   3          call print$buf(.('Console Page Mode    - $'));
+ 303   3          if pg$mode = 0 then
+ 304   3            call print$buf(.('On$'));
+                  else
+ 305   3            call print$buf(.('Off$'));
+ 306   3        end;
+
+                /* PROGRAM NAME & DRIVE DISPLAY */
+ 307   2        if show$display then do;
+ 309   3          call crlf;
+ 310   3          call print$buf(.('Program Name Display - $'));
+ 311   3          if display$flag = 0 then
+ 312   3            call print$buf(.('Off$'));
+                  else
+ 313   3            call print$buf(.('On$'));
+ 314   3        end;
+ 315   2      call crlf;
+ 316   2      end display$path;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* This routine processes the search drives string.  When called
+                 this routine scans the command line expecting a drive name, a:-p:.
+                 It puts the drive code in a drive table and continues the scan
+                 collecting drives until more than 4 drives are specified (an error)
+                 or an eoln or the delimiter '[' is encountered.  Next it modifies
+                 the SCB searchchain bytes so that it reflects the drive order as
+                 inputed.  No check is made to insure that the drive specified is
+                 a known drive to the particular system being used.         */
+
+ 317   1      process$drives: procedure;
+ 318   2        declare (i,ct) byte;
+ 319   2        show$drive = true;
+ 320   2        index = 0;
+ 321   2        delimiter = 0;
+ 322   2        do i=0 to 3;  /* clear drive table */
+ 323   3          drive$table(i) = 0ffh;
+ 324   3        end;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  12
+
+
+ 325   2        ct = 0;
+ 326   2        do while ((delimiter <> 1) and (delimiter <> 11));    /* not eoln */
+ 327   3          call opt$scanner(.drives(0),.drives$offset(0),.index);
+ 328   3          if ct > 3 then  /* too many drives */
+ 329   3            call error(0);
+ 330   3          if index = 0 then   /* invalid drive */
+ 331   3            call error(2);
+ 332   3          do i=0 to 3;
+ 333   4            if drive$table(i) = (index-1) then
+ 334   4              call error(6);  /* Drive already defined */
+ 335   4          end;
+ 336   3          drive$table(ct) = index-1;
+ 337   3          ct = ct + 1;
+ 338   3        end;
+ 339   2        do i=0 to 3;  /* update scb drive table */
+ 340   3          call setscbbyte(drive0$offset+i,drive$table(i));
+ 341   3        end;
+ 342   2      end process$drives;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* This routine does all the processing for the options. Ie. any
+                 string beginning with a '['.  The routine will handle basically
+                 five options: Temporary, Order, Display, Page, No Display and
+                 No Page.  Each routine is fairly short and can be found as a 
+                 branch in the case statement.
+                 */
+
+ 343   1      process$options: procedure;
+ 344   2        declare next$delim based buf$ptr byte;
+ 345   2        declare (first$sub,paren,val) byte;
+ 346   2        do while (delimiter <> 2) and (delimiter <> 11);
+ 347   3          index = 0;
+ 348   3          delimiter = 1;
+ 349   3          call opt$scanner(.options(0),.options$offset(0),.index);
+ 350   3          do case index;
+                    
+ 351   4            call error(4);        /* not in options list (INVALID) */
+
+ 352   4            do;   /* temporary drive option */
+ 353   5              show$temp = true;
+ 354   5              if delimiter <> 3 then  /* = */
+ 355   5                call error(1);
+ 356   5              call opt$scanner(.drives(0),.drives$offset(0),.index);
+ 357   5              if index = 0 then
+ 358   5                call error(2);
+ 359   5              call setscbbyte(temp$drive$offset,index-1);
+ 360   5            end;
+                    
+ 361   4            do;   /* order option */
+ 362   5              show$order = true;
+ 363   5              first$sub,paren = false;
+ 364   5              if delimiter <> 3 then  /* = */
+ 365   5                call error(1);
+ 366   5              do while ((next$delim = ' ') or (next$delim = tab)); /* skip spaces */
+ 367   6                buf$ptr = buf$ptr + 1;
+ 368   6              end;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  13
+
+
+ 369   5              if next$delim = '(' then do;
+ 371   6                paren = true;
+ 372   6                buf$ptr = buf$ptr + 1;
+ 373   6              end;
+ 374   5              call opt$scanner(.options(0),.options$offset(0),.index);
+ 375   5              if ((index <> 6) and (index <> 7)) then
+ 376   5                call error(3);
+ 377   5              if index = 7 then   /* note that the first entry was SUB */
+ 378   5                first$sub = true;
+ 379   5              order$table(0) = index - 6;
+ 380   5              if (first$sub and ((delimiter = 10) or not paren)) then 
+ 381   5                call error(7); /* (SUB) not allowed */
+ 382   5              if (delimiter <> 10) and paren then do;
+ 384   6                call opt$scanner(.options(0),.options$offset(0),.index);
+ 385   6                if ((index <> 6) and (index <> 7)) then
+ 386   6                  call error(3);
+ 387   6                order$table(1) = index - 6;
+ 388   6                if (first$sub and (index = 7)) then   /* can't have SUB,SUB */
+ 389   6                  call error(7);
+ 390   6              end;
+ 391   5              ccp$flag2 = getscbbyte(ccp$flag2$offset);
+ 392   5              if order$table(0) = 0 then
+ 393   5                ccp$flag2 = ccp$flag2 and 111$0$1111b;
+                      else
+ 394   5                ccp$flag2 = ccp$flag2 or 000$1$0000b;
+ 395   5              if order$table(1) = 0 then
+ 396   5                ccp$flag2 = ccp$flag2 and 1111$0$111b;
+                      else
+ 397   5                ccp$flag2 = ccp$flag2 or 0000$1$000b;
+ 398   5              call setscbbyte(ccp$flag2$offset,ccp$flag2);
+ 399   5              if paren then do;
+ 401   6                if delimiter <> 10 then
+ 402   6                  call error(1);
+                        else
+ 403   6                  buf$ptr = buf$ptr + 1;
+ 404   6              end;
+ 405   5              else if delimiter = 10 then 
+ 406   5                  call error(1);
+                      if next$delim = ']' or next$delim = 0 then  /* two delimiters */
+ 408   5                delimiter = 11;   /* eoln, so exit loop */
+ 409   5            end;
+
+                    /* PAGE Option */
+ 410   4            do;
+ 411   5              show$page = true;
+ 412   5              val = 0;
+ 413   5              if delimiter = 3 then do;  /* = */
+ 415   6                call opt$scanner(.options(0),.options$offset(0),.index);
+ 416   6            if index <> 10 then
+ 417   6                  if index = 11 then
+ 418   6                    val = 0ffh;
+                          else
+ 419   6                    call error(8);
+ 420   6              end;
+ 421   5              call setscbbyte(pg$mode$offset,val);
+ 422   5              call setscbbyte(pg$def$offset,val);
+ 423   5            end;
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  14
+
+
+                 
+                    /* call error(4); page option now an error */
+                        
+ 424   4            do;    /* DISPLAY option */
+ 425   5              show$display,val = true;
+ 426   5              if delimiter = 3 then do;  /* = */
+ 428   6                call opt$scanner(.options(0),.options$offset(0),.index);
+ 429   6            if index <> 10 then
+ 430   6                  if index = 11 then
+ 431   6                    val = false;
+                          else
+ 432   6                    call error(8);
+ 433   6              end;
+ 434   5              ccp$flag2 = getscbbyte(ccp$flag2$offset);
+ 435   5              if val then
+ 436   5                ccp$flag2 = ccp$flag2 or 00000$0$11b;  /* set bits */
+                      else
+ 437   5                ccp$flag2 = ccp$flag2 and 11111$1$00b;     /* clear bits */ 
+ 438   5            call setscbbyte(ccp$flag2$offset,ccp$flag2);
+ 439   5            end;
+
+                    /* call error(4); Display option now an error */
+                    
+ 440   4            do;    /* NO keyword */
+ 441   5              call opt$scanner(.options(0),.options$offset(0),.index);
+ 442   5              if (index <> 3) and (index <> 4) then 
+ 443   5                call error(4);
+ 444   5              if index = 3 then do;    /* NO PAGE option */
+ 446   6                show$page = true;
+ 447   6                call setscbbyte(pg$mode$offset,0FFh);
+ 448   6                call setscbbyte(pg$def$offset,0FFh);
+ 449   6              end;  
+ 450   5              else do;             /* NO DISPLAY option */
+ 451   6                show$display = true;
+ 452   6                ccp$flag2 = getscbbyte(ccp$flag2$offset);
+ 453   6                ccp$flag2 = ccp$flag2 and 11111$1$00b;     /* clear bits */ 
+ 454   6                call setscbbyte(ccp$flag2$offset,ccp$flag2);
+ 455   6              end;
+ 456   5            end;
+
+                    /* call error(4); NO keyword is now an error */
+                   
+ 457   4            call error(4);        /* COM is not an option */
+
+ 458   4            call error(4);        /* SUB is not an option */
+
+                    /* NOPAGE option */
+ 459   4            do;
+ 460   5              show$page = true;
+ 461   5              call setscbbyte(pg$mode$offset,0FFh);
+ 462   5              call setscbbyte(pg$def$offset,0FFh);
+ 463   5            end;  
+
+                    /* NODISPLAY option */
+ 464   4            do;
+ 465   5              show$display = true;
+ 466   5              ccp$flag2 = getscbbyte(ccp$flag2$offset);
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  15
+
+
+ 467   5              ccp$flag2 = ccp$flag2 and 11111$1$00b;   /* clear bits */ 
+ 468   5              call setscbbyte(ccp$flag2$offset,ccp$flag2);
+ 469   5            end;
+
+ 470   4            call error(4);        /* ON is not an option */
+
+ 471   4            call error(4);        /* OFF is not an option */
+ 472   4          end;
+ 473   3        end;
+ 474   2      end process$options;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 475   1      input$found: procedure (buffer$adr) byte;
+ 476   2        declare buffer$adr address;
+ 477   2        declare char based buffer$adr byte;
+ 478   2        do while (char = ' ') or (char = 9); /* tabs & spaces */
+ 479   3          buffer$adr = buffer$adr + 1;
+ 480   3        end;
+ 481   2        if char = 0 then  /* eoln */
+ 482   2          return false;   /* input not found */
+                else
+ 483   2          return true;    /* input found */
+ 484   2      end input$found;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+               /**************************************
+              *                                     *
+              *       M A I N   P R O G R A M       *
+              *                                     *
+              **************************************/
+
+ 485   1      plm:
+                do;
+ 486   2          if (low(version) < cpmversion) or (high(version) = 1) then do;
+ 488   3            call print$buf(.('Requires CP/M 3.0$'));
+ 489   3            call mon1(0,0);
+ 490   3          end;
+ 491   2          if not input$found(.tbuff(1)) then do; 
+                    /* SHOW DEFAULTS */
+ 493   3            call display$path;
+ 494   3            call mon1(0,0);             /* & terminate  */
+ 495   3          end;
+
+                  /* SET DEFAULTS */
+ 496   2          i = 1;          /* skip over leading spaces */
+ 497   2          do while (tbuff(i) = ' ');
+ 498   3            i = i + 1;
+ 499   3          end;
+ 500   2          show$drive,show$order,show$temp,show$page,show$display 
+                    = false;
+ 501   2          begin$buffer = .tbuff(1);   /* note beginning of input */
+ 502   2          buf$length = tbuff(0);      /* note length of input */
+ 503   2          buf$ptr = .tbuff(i);        /* set up for scanner */
+ 504   2          if tbuff(i) = '[' then do;  /* options, no drives */
+ 506   3            buf$ptr = buf$ptr + 1;    /* skip over '[' */
+PL/M-80 COMPILER    CP/M 3.0 --- SETDEF                                                                                     PAGE  16
+
+
+ 507   3            call process$options;
+ 508   3          end;
+ 509   2          else do;            /* drives first, maybe options too */
+ 510   3            call process$drives;
+ 511   3            if delimiter = 1 then /* options, because we found an '[' */
+ 512   3              call process$options;
+ 513   3          end;
+ 514   2          call display$path;      /* show results */
+ 515   2          call mon1(0,0);             /* & terminate  */
+ 516   2        end;
+ 517   1      end setdef;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0E69H   3689D
+     VARIABLE AREA SIZE = 0052H     82D
+     MAXIMUM STACK SIZE = 000CH     12D
+     860 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

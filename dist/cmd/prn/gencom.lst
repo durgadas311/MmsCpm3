@@ -1,0 +1,2140 @@
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE GENCOMER
+OBJECT MODULE PLACED IN GENCOM.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 GENCOM.PLM DEBUG OPTIMIZE PAGEWIDTH(132)
+
+
+
+              $ TITLE('CPM 3.0 --- GENCOM 1.0')
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                     * * *  GENCOM  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+   1          gencomer:
+              do;
+
+
+   2   1      declare
+                  mpmproduct literally '01h', /* requires mp/m */
+                  cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+   3   1      declare plm label public;
+
+   4   1      declare copyright (*) byte data (
+                ' Copyright (c) 1982, Digital Research ');
+
+   5   1      declare version (*)     byte data('11/02/82');
+
+              /*
+                          Digital Research
+                          Box 579
+                          Pacific Grove, Ca
+                          93950
+              */
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   2
+
+
+              $ eject
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                 * * *  CP/M INTERFACE * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+   6   1      declare
+                      maxb      address external,     /* addr field of jmp BDOS */
+                      fcb (33)  byte external,        /* default file control block */
+                      fcb16(33) byte external,        /* default fcb 2 */
+                      buff(128) byte external,        /* default buffer */
+                      buffa     literally '.buff',    /* default buffer */
+                      fcba      literally '.fcb',     /* default file control block */
+
+                      cr              literally '13',
+                      lf              literally '10';
+                      
+                                                      /* reset drive mask */
+   7   1          declare reset$mask (16) address data (
+                    0000000000000001b,
+                    0000000000000010b,
+                    0000000000000100b,
+                    0000000000001000b,
+                    0000000000010000b,
+                    0000000000100000b,
+                    0000000001000000b,
+                    0000000010000000b,
+                    0000000100000000b,
+                    0000001000000000b,
+                    0000010000000000b,
+                    0000100000000000b,
+                    0001000000000000b,
+                    0010000000000000b,
+                    0100000000000000b,
+                    1000000000000000b );
+
+   8   1      mon1: procedure(f,a) external;
+   9   2          declare f byte, a address;
+  10   2          end mon1;
+
+  11   1      mon2: procedure(f,a) byte external;
+  12   2          declare f byte, a address;
+  13   2          end mon2;
+
+  14   1      declare mon3 literally 'mon2a';
+
+  15   1      mon3: procedure(f,a) address external;
+  16   2          declare f byte, a address;
+  17   2          end mon3;
+
+                  /********** SYSTEM FUNCTION CALLS *********************/
+
+  18   1      printchar: procedure(char);
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   3
+
+
+  19   2          declare char byte;
+  20   2          call mon1(2,char);
+  21   2      end printchar;
+
+  22   1      printb: procedure;
+                                              /* print blank character */
+  23   2          call printchar(' ');
+  24   2      end printb;
+
+  25   1      printx: procedure(a);
+  26   2          declare a address;
+  27   2          declare s based a byte;
+  28   2              do while s <> 0;
+  29   3                      call printchar(s);
+  30   3                      a = a + 1;
+  31   3              end;
+  32   2      end printx;
+
+  33   1      check$con$stat: procedure byte;
+  34   2          return mon2(11,0);          /* console ready */
+  35   2      end check$con$stat;
+
+  36   1      crlf: procedure;
+  37   2          call printchar(cr);
+  38   2          call printchar(lf);
+  39   2          if check$con$stat then do; 
+  41   3              call mon1 (1,0);        /* read character */
+  42   3              call mon1 (0,0);        /* system reset */
+  43   3          end;
+  44   2      end crlf;
+
+  45   1      print: procedure(a);
+  46   2          declare a address;
+                                      /* print the string starting at address a until the
+                                         next 0 is encountered */
+  47   2          call crlf;
+  48   2          call printx(a);
+  49   2      end print;
+
+  50   1      get$version: procedure address;
+                                      /* returns current cp/m version # */
+  51   2          return mon3(12,0);
+  52   2      end get$version;
+
+
+  53   1      conin: procedure byte;
+  54   2          return mon2(6,0fdh);
+  55   2      end conin;
+
+
+  56   1      open: procedure(fcb) byte;
+  57   2          declare fcb address;
+  58   2          return mon2(15,fcb);
+  59   2      end open;
+
+  60   1      close: procedure(fcb) byte;
+  61   2              declare fcb     address;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   4
+
+
+  62   2              return mon2(16,fcb);
+  63   2      end close;
+
+  64   1      make: procedure(fcb) byte;
+  65   2              declare fcb     address;
+  66   2              return mon2(22,fcb);
+  67   2      end make;
+
+  68   1              declare ioflag  address,
+                               nrecs  byte;
+
+  69   1      mread: procedure(fcb);           /* multi sector read - returns # recs*/
+  70   2              declare fcb     address;
+
+  71   2              ioflag = mon3(20,fcb);
+  72   2              readflag = low(ioflag);         /* if = 255 then error */
+  73   2              nrecs = high(ioflag);           /* if 0 -> multi sector count */
+
+  74   2      end mread;
+
+
+  75   1      setmulti: procedure(nsects);            /* set multi sector count */
+  76   2              declare nsects  byte;
+
+  77   2              flag = mon2(44,nsects);
+
+  78   2      end setmulti;
+
+
+  79   1      readsq: procedure(fcb) byte;
+  80   2              declare fcb     address;
+  81   2              return mon2(20,fcb);
+  82   2      end readsq;
+
+  83   1      writesq: procedure(fcb) byte;
+  84   2              declare fcb     address;
+  85   2              return mon2(21,fcb);
+  86   2      end writesq;
+
+  87   1      rename: procedure(fcb) byte;
+  88   2              declare fcb     address;
+  89   2              return mon2(23,fcb);
+  90   2      end rename;
+
+  91   1      delete: procedure(fcb) byte;
+  92   2              declare fcb     address;
+  93   2              return mon2(19,fcb);
+  94   2      end delete;
+
+  95   1      setdma: procedure(dma);
+  96   2          declare dma address;
+  97   2          call mon1(26,dma);
+  98   2      end setdma;
+
+  99   1      return$errors:                  /* 0ff => return BDOS errors */
+                  procedure(mode);
+ 100   2          declare mode byte;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   5
+
+
+ 101   2            call mon1 (45,mode);      
+ 102   2      end return$errors;
+
+              /******************************************************/
+
+ 103   1      terminate: procedure;
+ 104   2          call crlf;
+ 105   2          call mon1 (0,0);
+ 106   2      end terminate;
+
+ 107   1      parse: procedure(pfcb) address external;
+ 108   2              declare pfcb address;
+
+ 109   2      end parse;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   6
+
+
+              $eject
+
+ 110   1              declare
+
+                              options(*) byte data
+                                           ('NULL0LOADER0SCB',0FFH),
+                              off$opt(*) byte data(0,5,12,15),
+                              end$list        byte data (0ffh),
+                              end$of$string   byte data (0),
+
+                              delimiters(*) byte data (0,'[]=, :;<>%\|"()/#!@&+-*?',0,0ffh),
+                              SPACE           byte data(5),   /* delim        space */
+                              COMMA           byte data(4),   /*    "         comma */
+                              LPAREN          byte data(14),  /*    "         left paren */
+
+                              opt$map(23)     byte,
+
+                              j               byte initial(0),
+                              buf$ptr         address,
+                              opt$index       byte,
+                              endbuf          byte,
+                              delimiter       byte;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   7
+
+
+              $ eject
+
+
+ 111   1              declare
+                              true            literally '1',
+                              false           literally '0',
+                              punchSCB        byte initial (false),
+                              COMonly         byte initial (false),
+                              revert          byte initial (false),
+                              build           byte initial (false),
+                              replace         byte initial (false),
+                              empty           byte initial (false),
+                              hex             byte initial (false),
+
+                              oldSCB          byte initial (false),
+
+                              incount         byte initial (0),
+                              ret$inst        byte data (0c9h),
+                              BLANK           byte data (020h),
+                              (readflag,writeflag)    byte,
+                              flag            byte,
+                              (rsx,old,fill)  byte,
+                              maxrcd          byte data(32),
+
+                              deletes         byte,
+                              which(15)       byte,
+
+                              comoff          address,
+                              comsize         address,
+                              totbyte         address,
+                              rsxrec          address,
+                              oldrsx          address,
+                              offsets(15)     address,
+                              length$rsx(15)  address,
+                              testvers        address,
+
+                              comtype(3)      byte data ('COM'),
+                              hextype(3)      byte data ('HEX'),
+                              rsxtype(3)      byte data ('RSX'),
+
+                              tempfcb(33)     byte initial(0,'TEMP    $$$',0,0,0,0,0),
+                              errfcb(14)      byte,
+
+                            files(16)       structure ( pass(8) byte),
+                              len$pass(16)    byte,
+
+                              parse$struc     structure(
+                                 name$addr    address,
+                                 fcb$addr     address),
+
+                              optmark         based buf$ptr byte,
+                              NULL            byte initial(0),
+                              LOAD            byte initial(0),
+                              SCB             byte initial(0),
+
+                              fcbs(16)        structure(
+                                 file(33)       byte),
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   8
+
+
+
+                              test$ptr        address,
+                              allfcbs(16)     address,
+                              fcbp            address,
+                              comptr          address,
+                              comfcb          based comptr (1) byte,
+                              testfcb         based test$ptr (1) byte,
+                              gen$fcb         based fcbp (1) byte;
+
+              /*              RSX COM FILE HEADER FORMAT              */
+
+ 112   1              declare
+                              head$ptr        address,
+                              head            based head$ptr structure(
+                               retinst        byte,   /* return instruction 0C9h */
+                               progsize       address,/* program size:orig com prog */
+                               SCBjmp         byte,
+                               SCBaddr        address,
+                               RESERVED2(7)   byte,
+                               LOADER         byte,
+                               nscb           byte,
+                               nrsx           byte);  /* number of RSX modules in file */
+
+ 113   1              declare
+                              subptr          address,
+                              rsx$sub$head    based subptr structure(
+                               off            address,
+                               len            address,
+                               NONBANK        byte,
+                               RESERVED3      byte,
+                               name(8)        byte,
+                               RESERVED4      address),
+
+                              scbvect         based subptr structure(
+                                pad1          byte,
+                                smark         byte,
+                                pad2          address,
+                                svect(12)     byte),
+
+                              head$byte       based head$ptr byte,
+
+                              head$buffer(384)        byte,
+                              iobuff(4096)            byte,
+
+                              nextptr         address,
+                              next            based nextptr structure(
+                               off            address,
+                               len            address,
+                               NONBANK        byte,
+                               RESERVED3      byte,
+                               name(8)        byte,
+                               RESERVED4      address),
+
+                              nbank(16)       byte initial(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),
+                              newoff(16)      address,
+                              newlen(16)      address,
+                              actlen(15)      address,
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE   9
+
+
+                              new(15)         structure(
+                                name(8)       byte),
+
+                              soff(20)        byte,
+                              sval(20)        byte,
+                              nscbs           byte initial(0);
+
+ 114   1              declare
+                              SCBbuff(256)    byte,
+                              SCBcode(23)     byte data(011h,018h,00,0d5h,0eh,031h,0cdh,5,0,
+                                                        0e1h,23h,23h,23h,7eh,0feh,
+                                                        0ffh,0e5h,0ebh,0c2h,4,0,0e1h,0c9h),
+                              SCBpos          address;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  10
+
+
+              $eject
+
+ 115   1              declare
+                              ERRORM(*)               byte data ('ERROR: ',0),
+                              FILEM(*)                byte data ('FILE: ',0),
+                              err$notfnd(*)           byte data ('File not found.',0),
+                              err$msg$make(*)         byte data ('No directory space.',0),
+                              err$msg$parse(*)        byte data ('Invalid file name.',0),
+                              err$msg$first(*)        byte data ('First submitted file must be
+
+               a COM file.',0),
+                              err$msg$dup1(*)         byte data ('Duplicate input RSX...',0),
+                              err$msg$dup2(*)         byte data ('Duplicate RSX in header.',
+                                                                  ' Replacing old by new.',0),
+
+                              err$msg$rsxval(*)       byte data ('Invalid RSX type.',0),
+                              err$msg$no$rsx(*)       byte data ('No more RSX files to be used
+
+              .',0),
+                              err$msg$copy(*)         byte data ('Error on copy.',0),
+                              err$msg$rsx$slot(*)     byte data ('There are not enough availab
+
+              le RSX slots.',0),
+                              err$msg$read(*)         byte data ('Disk read.',0),
+                              err$msg$write(*)        byte data ('Disk write.',0),
+                              err$msg$toobig(*)       byte data ('Total file size exceeds 64K.
+
+              ',0),
+                              err$NULL(*)     byte data ('COM file found and NULL option.',0),
+
+                              errSTRIP(*)     byte data ('No header or RSXs to strip.',0),
+
+                              errIFCB(*)      byte data ('Invalid FCB.',0),
+                              errMEDIA(*)     byte data ('Media change occurred.',0),
+                              errDIO(*)       byte data ('Disk I/O error.',0),
+                              errDRIVE(*)     byte data ('Invalid drive error.',0),
+
+                              errscboff(*)    byte data ('Invalid SCB offset',0),
+                              errscbclose(*)  byte data('Missing right parenthesis.',0),
+                              errscbnoval(*)  byte data ('Missing SCB value.',0),
+                              errscbpar(*)    byte data ('Missing left parenthesis.',0),
+                              err$unrecopt(*) byte data ('Unrecognized option.',0),
+                              err$notscb(*)   byte data ('No modifier for this option.',0);
+
+
+
+ 116   1      closeall: procedure;
+ 117   2              declare i       byte;
+
+ 118   2              do i = 0 to incount;
+ 119   3                      readflag = close(allfcbs(i));   /* close input files */
+ 120   3              end;
+ 121   2              readflag = close(.tempfcb);
+ 122   2              readflag = delete(.tempfcb);
+
+ 123   2      end closeall;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  11
+
+
+ 124   1      get$errfcb: procedure;
+ 125   2              declare (i,j)   byte;
+
+ 126   2              do i = 1 to 14;
+ 127   3                      errfcb(i) = 0;
+ 128   3              end;
+ 129   2              errfcb(0) = 9;                  /* tab */
+
+ 130   2              i = 1;
+ 131   2              j = 1;
+ 132   2              do while i < 9 and gen$fcb(j) <> 32;            /* 32 = space */
+ 133   3                      errfcb(i) = gen$fcb(j);
+ 134   3                      i = i + 1;
+ 135   3                      j = j + 1;
+ 136   3              end;
+
+ 137   2      ge1:    errfcb(i) = 46;                 /* dot */
+ 138   2              j = 9;
+ 139   2              do while i < 12 and gen$fcb(j) <> 32;
+ 140   3                      i = i + 1;
+ 141   3                      errfcb(i) = gen$fcb(j);
+ 142   3                      j = j + 1;
+ 143   3              end;
+ 144   2      end get$errfcb;
+
+
+ 145   1      e$print1: procedure(message);
+ 146   2              declare message address;
+
+ 147   2              call get$errfcb;
+ 148   2              call print(.ERRORM);
+ 149   2              call printx(message);
+
+ 150   2      end e$print1;
+
+ 151   1      e$print2: procedure;
+
+ 152   2              call print(.FILEM);
+ 153   2              call printx(.errfcb);
+ 154   2              call crlf;
+
+ 155   2      end e$print2;
+
+
+ 156   1      err$print: procedure(message);
+ 157   2              declare message address;
+
+ 158   2              call e$print1(message);
+ 159   2              call e$print2;
+
+ 160   2              call closeall;
+ 161   2              call terminate;
+
+ 162   2      end err$print;
+
+
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  12
+
+
+ 163   1      bdoserr: procedure;
+ 164   2              declare (lflag,hflag)   byte;
+
+ 165   2              lflag = low(ioflag);
+ 166   2              hflag = high(ioflag);
+
+ 167   2              if lflag = 9 then call err$print(.errIFCB);
+ 169   2              if lflag = 10 then call err$print(.errMEDIA);
+ 171   2              if lflag = 255 then do;
+ 173   3                      if hflag = 1 then call err$print(.errDIO);
+ 175   3                      if hflag = 4 then call err$print(.errDRIVE);
+ 177   3              end;
+
+ 178   2      end bdoserr;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  13
+
+
+              $ eject
+
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  14
+
+
+              $eject
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                  * * *  Option scanner  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+ 179   1      separator: procedure(character) byte;
+
+                                                      /* determines if character is a 
+                                                         delimiter and which one */
+ 180   2              declare k       byte,
+                              character       byte;
+
+ 181   2              k = 1;
+ 182   2      loop:   if delimiters(k) = end$list then return(0);
+ 184   2              if delimiters(k) = character then return(k);    /* null = 25 */
+ 186   2                      k = k + 1;
+ 187   2                      go to loop;
+
+ 188   2      end separator;
+
+ 189   1      opt$scanner:    procedure(list$ptr,off$ptr,idx$ptr);
+                                                      /* scans the list pointed at by idxptr
+                                                         for any strings that are in the 
+                                                         list pointed at by list$ptr.
+                                                         Offptr points at an array that 
+                                                         contains the indices for the known
+                                                         list. Idxptr points at the index 
+                                                         into the list. If the input string
+                                                         is unrecognizable then the index is
+                                                         0, otherwise > 0.
+
+                                                      First, find the string in the known
+                                                      list that starts with the same first 
+                                                      character.  Compare up until the next
+                                                      delimiter on the input. if every input
+                                                      character matches then check for 
+                                                      uniqueness.  Otherwise try to find 
+                                                      another known string that has its first
+                                                      character match, and repeat.  If none
+                                                      can be found then return invalid.
+
+                                                      To test for uniqueness, start at the 
+                                                      next string in the knwon list and try
+                                                      to get another match with the input.
+                                                      If there is a match then return invalid.
+
+                                                      else move pointer past delimiter and 
+                                                      return.
+
+                                              P.Balma         */
+
+ 190   2              declare
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  15
+
+
+                              buff            based buf$ptr (1) byte,
+                              idx$ptr         address,
+                              off$ptr         address,
+                              list$ptr        address;
+
+ 191   2              declare
+                              i               byte,
+                              j               byte,
+                              list            based list$ptr (1) byte,
+                              offsets         based off$ptr (1) byte,
+                              wrd$pos         byte,
+                              character       byte,
+                              letter$in$word  byte,
+                              found$first     byte,
+                              start           byte,
+                              index           based idx$ptr byte,
+                              save$index      byte,
+                              (len$new,len$found)     byte,
+                              valid           byte;
+
+              /*****************************************************************************/
+              /*                      internal subroutines                                 */
+              /*****************************************************************************/
+
+ 192   2      check$in$list: procedure;
+                                              /* find known string that has a match with 
+                                                 input on the first character.  Set index
+                                                 = invalid if none found.   */
+                                      
+ 193   3              declare i       byte;
+
+ 194   3              i = start;
+ 195   3              wrd$pos = offsets(i);
+ 196   3              do while list(wrd$pos) <> end$list;
+ 197   4                      i = i + 1;
+ 198   4                      index = i;
+ 199   4                      if list(wrd$pos) = character then return;
+ 201   4                      wrd$pos = offsets(i);
+ 202   4              end;
+                                      /* could not find character */
+ 203   3              index = 0;
+ 204   3              return;
+ 205   3      end check$in$list;
+
+ 206   2      setup:  procedure;
+ 207   3              character = buff(0);
+ 208   3              call check$in$list;
+ 209   3              letter$in$word = wrd$pos;
+                                      /* even though no match may have occurred, position
+                                         to next input character.  */
+ 210   3              i = 1;
+ 211   3              character = buff(1);
+ 212   3      end setup;
+
+ 213   2      test$letter:    procedure;
+                                      /* test each letter in input and known string */
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  16
+
+
+ 214   3              letter$in$word = letter$in$word + 1;
+
+                                                      /* too many chars input? 0 means
+                                                         past end of known string */
+ 215   3              if list(letter$in$word) = end$of$string then valid = false;
+                      else
+ 217   3              if list(letter$in$word) <> character then valid = false;
+
+                      i = i + 1;
+ 220   3              character = buff(i);
+
+ 221   3      end test$letter;
+
+ 222   2      skip:   procedure;
+                                                      /* scan past the offending string;
+                                                         position buf$ptr to next string...
+                                                         skip entire offending string;
+                                                         ie., falseopt=mod, [note: comma or
+                                                         space is considered to be group 
+                                                         delimiter] */
+ 223   3              character = buff(i);
+ 224   3              delimiter = separator(character);
+ 225   3              do while ((delimiter <> 2) and (delimiter <> 4) and (delimiter <> 5)
+                                 and (delimiter <> 25));
+ 226   4                      i = i + 1;
+ 227   4                      character = buff(i);
+ 228   4                      delimiter = separator(character);
+ 229   4              end;
+ 230   3              endbuf = i;
+ 231   3              buf$ptr = buf$ptr + endbuf + 1;
+ 232   3              return;
+ 233   3      end skip;
+
+ 234   2      eat$blanks: procedure;
+
+ 235   3              declare charac  based buf$ptr byte;
+
+
+ 236   3              do while(delimiter := separator(charac)) = SPACE;
+ 237   4                      bufptr = buf$ptr + 1;
+ 238   4              end;
+
+ 239   3      end eat$blanks;
+
+              /*****************************************************************************/
+              /*                      end of internals                                     */
+              /*****************************************************************************/
+
+
+                                                      /* start of procedure */
+ 240   2              call eat$blanks;
+ 241   2              start = 0;
+ 242   2              call setup;
+
+                                                      /* match each character with the option
+                                                         for as many chars as input 
+                                                         Please note that due to the array
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  17
+
+
+                                                         indices being relative to 0 and the
+                                                         use of index both as a validity flag
+                                                         and as a index into the option/mods
+                                                         list, index is forced to be +1 as an
+                                                         index into array and 0 as a flag*/
+
+ 243   2              do while index <> 0;
+ 244   3                      start = index;
+ 245   3                      delimiter = separator(character);
+
+                                                      /* check up to input delimiter */
+
+ 246   3                      valid = true;           /* test$letter resets this */
+ 247   3                      do while delimiter = 0;
+ 248   4                              call test$letter;
+ 249   4                              if not valid then go to exit1;
+ 251   4                              delimiter = separator(character);
+ 252   4                      end;
+
+ 253   3                      go to good;
+
+                                                      /* input ~= this known string;
+                                                         get next known string that 
+                                                         matches */
+ 254   3      exit1:          call setup;
+ 255   3              end;
+                                                      /* fell through from above, did
+                                                         not find a good match*/
+ 256   2              endbuf = i;                     /* skip over string & return*/
+ 257   2              call skip;
+ 258   2              return;
+
+                                                      /* is it a unique match in options
+                                                         list? */
+ 259   2      good:   endbuf = i;
+ 260   2              len$found = endbuf;
+ 261   2              save$index = index;
+ 262   2              valid = false;
+ 263   2      next$opt:
+                              start = index;
+ 264   2                      call setup;
+ 265   2                      if index = 0 then go to finished;
+
+                                                      /* look at other options and check
+                                                         uniqueness */
+
+ 267   2                      len$new = offsets(index + 1) - offsets(index) - 1;
+ 268   2                      if len$new = len$found then do;
+ 270   3                              valid = true;
+ 271   3                              do j = 1 to len$found;
+ 272   4                                      call test$letter;
+ 273   4                                      if not valid then go to next$opt;
+ 275   4                              end;
+ 276   3                      end;
+ 277   2                      else go to nextopt;
+                                                      /* fell through...found another valid
+                                                         match --> ambiguous reference */
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  18
+
+
+ 278   2              index = 0;
+ 279   2              call skip;              /* skip input field to next delimiter*/
+ 280   2              return;
+
+ 281   2      finished:                       /* unambiguous reference */
+                      index = save$index;
+ 282   2              buf$ptr = buf$ptr + endbuf;
+ 283   2              call eat$blanks;
+ 284   2              if delimiter <> 0 then  buf$ptr = buf$ptr + 1;
+ 286   2              else delimiter = SPACE;
+
+ 287   2      end opt$scanner;
+
+ 288   1      error$prt:      procedure;
+ 289   2              declare i       byte,
+                              t       address,
+                              char    based t byte;
+
+ 290   2              t = buf$ptr - endbuf - 1;
+ 291   2              do i = 1 to endbuf;
+ 292   3                      call printchar(char);
+ 293   3                      t = t + 1;
+ 294   3              end;
+
+ 295   2      end error$prt;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  19
+
+
+              $eject
+
+ 296   1      e$print3: procedure(message);
+
+ 297   2              declare message address;
+
+ 298   2              call print(.ERRORM);
+ 299   2              call printx(message);
+ 300   2              call terminate;
+
+ 301   2      end e$print3;
+
+
+ 302   1      aschex: procedure(ahbyte,albyte) byte;
+
+ 303   2              declare (ahbyte,albyte) address,
+                              hbyte           based ahbyte byte,
+                              lbyte           based albyte byte;
+
+ 304   2       conv: procedure(abyte);
+ 305   3              declare abyte   address,
+                              b       based abyte byte;
+
+ 306   3              if b > 39h then b = b - 37h;
+ 308   3              else b = b - 30h;
+
+ 309   3       end conv;
+
+ 310   2              call conv(ahbyte);
+ 311   2              call conv(albyte);
+ 312   2              hbyte = shl(hbyte,4);
+
+ 313   2              return(hbyte or lbyte);
+
+ 314   2      end aschex;
+
+              /**************************************************************************/
+
+ 315   1      valoff: procedure(high,low,achar);
+ 316   2              declare (high,low)      byte,
+                              achar           address,
+                              char            based achar byte;
+
+ 317   2              if (char > high) or (char < low) then
+ 318   2                      call e$print3(.errscboff);
+
+ 319   2      end valoff;
+
+              /**************************************************************************/
+
+              /**************************************************************************/
+
+ 320   1      getoption: procedure;
+
+ 321   2              declare char            based buf$ptr byte,
+                              bufptr1         address,
+                              nextchar        based bufptr1 byte,
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  20
+
+
+                              index           byte,
+                              zero            byte;
+
+                      /************************************************/
+
+ 322   2      getscbval: procedure;
+
+ 323   3              bufptr1 = buf$ptr + 1;
+
+ 324   3              if (delimiter := separator(nextchar)) = 0 then do;
+ 326   4                      sval(nscbs) = aschex(buf$ptr,buf$ptr1);         /* 2 chars */
+ 327   4                      buf$ptr = buf$ptr + 2;
+ 328   4              end;
+ 329   3              else do;
+ 330   4                      sval(nscbs) = aschex(.zero,buf$ptr);            /* 1 char */
+ 331   4                      buf$ptr = bufptr1;
+ 332   4              end;
+
+ 333   3              nscbs = nscbs + 1;
+
+ 334   3              if (delimiter := separator(char)) <> 15 then            /* ) */
+ 335   3                      call e$print3(.errscbclose);
+
+ 336   3              buf$ptr = buf$ptr + 1;
+
+ 337   3              delimiter = separator(char);                    /* set delimiter */
+ 338   3              if delimiter <> 0 then buf$ptr = buf$ptr + 1;
+
+ 340   3      end getscbval;
+
+                      /******************************************************/
+
+ 341   2      checkval: procedure;
+
+ 342   3              delimiter = separator(char);
+ 343   3              if delimiter = SPACE then go to cv0;
+ 345   3              if delimiter <> COMMA then
+ 346   3                      call e$print3(.err$scbnoval);
+
+ 347   3      cv0:    buf$ptr = buf$ptr + 1;
+
+ 348   3      end checkval;
+
+                      /******************************************************/
+
+
+ 349   2      getscboff: procedure;
+
+ 350   3              if (delimiter := separator(char)) = LPAREN then do;
+
+ 352   4                      buf$ptr = buf$ptr + 1;
+ 353   4                      call valoff(39h,30h,buf$ptr);           /* valid char ? */
+
+ 354   4                      bufptr1 = buf$ptr + 1;
+
+ 355   4                      delimiter = separator(nextchar);
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  21
+
+
+ 356   4                      if delimiter = SPACE then go to gs1;
+ 358   4                      if delimiter = COMMA then go to gs1;
+                                                                      /* 2 char input */
+ 360   4                              call valoff(36h,30h,buf$ptr);
+ 361   4                              call valoff(46h,30h,bufptr1);   /* valid ? */
+ 362   4                              soff(nscbs) = aschex(buf$ptr,bufptr1);
+ 363   4                              buf$ptr = buf$ptr + 2;
+ 364   4                              call checkval;
+ 365   4                              return;
+
+                                                                      /* single char in */
+ 366   4      gs1:                    soff(nscbs) = aschex(.zero,buf$ptr);
+ 367   4                              buf$ptr = bufptr1 + 1;
+ 368   4              end;
+ 369   3              else call e$print3(.errscbpar);
+
+ 370   3      end getscboff;
+
+                      /******************************************************/
+
+ 371   2              zero = 30h;
+ 372   2              delimiter = 1;
+ 373   2              index = 0;
+ 374   2              buf$ptr = buf$ptr + 1;          /* move off [ delimiter */
+
+                                                      /* while not eos */
+
+ 375   2      gto0:           call opt$scanner(.options,.off$opt,.index);
+ 376   2                      if index = 0 then do;
+ 378   3                              call print(.ERRORM);
+ 379   3                              call printx(.err$unrecopt);
+ 380   3                              call print(.('OPTION: ',0));
+ 381   3                              call error$prt;
+ 382   3                      end;
+
+ 383   2                      if index = 1 then NULL = true;
+ 385   2                      else if index = 2 then LOAD = true;
+
+                              if delimiter = 2 then return;
+ 389   2                      if delimiter = 25 then return;
+
+ 391   2                              if delimiter = 3 then do;               /* = */
+ 393   3                                      if index <> 3 then do;
+ 395   4                                              call print(.ERRORM);
+ 396   4                                              call printx(.err$notscb);
+ 397   4                                              call opt$scanner(.options,.offopt,
+                                                                       .index);
+ 398   4                                              go to gto1;
+ 399   4                                      end;
+
+ 400   3                                      call getscboff;         /* buf$ptr -> value */
+ 401   3                                      call getscbval;
+ 402   3                                      SCB = true;
+ 403   3                              end;
+
+ 404   2      gto1:   if delimiter = 0 then return;
+ 406   2              if delimiter = 2 then return;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  22
+
+
+ 408   2              if delimiter = 25 then return;
+
+ 410   2              go to gto0;
+
+ 411   2      end getoption;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  23
+
+
+              $ eject
+
+
+ 412   1      opener: procedure(fcb);
+ 413   2              declare fcb     address;
+
+ 414   2              if open(fcb) > 3 then do;
+ 416   3                      fcbp = fcb;
+ 417   3                      call err$print(.err$notfnd);
+ 418   3              end;
+
+ 419   2      end opener;
+
+
+ 420   1      closer: procedure(fcb);
+ 421   2              declare fcb     address;
+
+ 422   2              if close(fcb) > 3 then do;
+ 424   3                      fcbp = fcb;
+ 425   3                      call err$print(.err$notfnd);
+ 426   3              end;
+ 427   2      end closer;
+
+ 428   1      maker: procedure(fcb);
+ 429   2              declare fcb     address;
+
+ 430   2              flag = make(fcb);
+ 431   2              if flag > 3 then do;
+ 433   3                      fcbp = fcb;
+ 434   3                      call err$print(.err$msg$make);
+ 435   3              end;
+
+ 436   2      end maker;
+
+ 437   1      deleter: procedure;
+
+ 438   2              if (comfcb(8) and 80h) = 80h then return;       /* user 0 file ? */
+
+ 440   2              if delete(comptr) > 0 then do;
+ 442   3                      fcbp = comptr;
+ 443   3              end;
+
+ 444   2      end deleter;
+
+
+ 445   1      parser: procedure(fcb$ptr);
+
+ 446   2              declare fcb$ptr address;
+
+ 447   2              parse$struc.name$addr = buf$ptr;
+ 448   2              parse$struc.fcb$addr = fcb$ptr;
+ 449   2              test$ptr = buf$ptr;
+
+ 450   2      pa1:    buf$ptr = parse(.parse$struc);  /* parse command tail */
+
+ 451   2      pa2:    if buf$ptr = 0ffffh then do;
+ 453   3                      fcbp = test$ptr;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  24
+
+
+ 454   3                      call err$print(.err$msg$parse);
+ 455   3              end;
+
+ 456   2      end parser;
+
+
+ 457   1      copypass$dma: procedure(index);
+ 458   2              declare index   byte,
+                              i       byte;
+
+ 459   2              do i = 0 to 7;
+ 460   3                      buff(i) = files(index).pass(i);
+ 461   3              end;
+
+ 462   2      end copypass$dma;
+
+ 463   1      renamer: procedure;
+
+ 464   2              declare
+                              (i,j)           byte,
+                              renbuf(32)      byte;
+
+ 465   2              do i = 12 to 15;
+ 466   3                      j = i + 16;
+ 467   3                      renbuf(i) = 0;
+ 468   3                      renbuf(j) = 0;
+ 469   3              end;
+
+ 470   2              do i = 0 to 11;         /* set up buffer */
+ 471   3                      j = i + 16;
+ 472   3                      renbuf(i) = tempfcb(i);
+ 473   3                      renbuf(j) = comfcb(i);
+ 474   3              end;
+
+ 475   2      re1:    flag = rename(.renbuf);
+
+ 476   2              if flag > 0 then do;    
+ 478   3                      fcbp = allfcbs(0);              /*GLITCH?????????*/
+ 479   3              end;
+ 480   2      end renamer;
+
+ 481   1      clearfcb: procedure(fcb);
+
+ 482   2              declare fcb     address,
+                              f       based fcb (1) byte,
+                              i       byte;
+
+ 483   2              do i = 12 to 33;
+ 484   3                      f(i) = 0;
+ 485   3              end;
+
+ 486   2      end clearfcb;
+
+
+              /****************************************************************************/
+
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  25
+
+
+ 487   1      copy: procedure(recsize);
+ 488   2              declare recsize                 address;
+ 489   2              declare recs                    based recsize address;
+ 490   2              declare 
+                              i                       byte,
+                              flag                    address;
+
+ 491   2              call setmulti(maxrcd);
+ 492   2              call mread(fcbp);
+
+ 493   2      co2:            if readflag <> 0 then do;
+ 495   3                              if readflag = 1 then do;
+ 497   4                                 if nrecs = 0 then  return;    /* EOF */
+ 499   4                              end;
+ 500   3                              else call bdoserr;
+ 501   3                      end;
+
+ 502   2                      i = maxrcd;
+ 503   2                      if nrecs <> 0 then do;          /* read less than maxrcd */
+ 505   3                              call setmulti(nrecs);
+ 506   3                              i = nrecs;
+ 507   3                      end;
+
+ 508   2                      writeflag = writesq(.tempfcb);
+
+ 509   2                      do while i <> 0;
+ 510   3                              recs = recs + 128;      /* this is in bytes */
+ 511   3                              i = i - 1;
+ 512   3                      end;
+                                                              /* record count <= 64K */
+ 513   2                      if recs > 0ffffh then call err$print(.err$msg$toobig);
+
+ 515   2                      if nrecs <> 0 then return;
+
+ 517   2                      call mread(fcbp);
+
+ 518   2                      go to co2;
+
+ 519   2      end copy;
+
+
+              /*************************************************************************/
+
+
+ 520   1      copy2: procedure(nrcds,skip);
+                                                      /* read/write in min(maxrcd,nrcds)
+                                                         units. */
+
+ 521   2              declare nrcds   address,
+                              skip    byte,
+                              set     byte,
+                              savin   address;
+
+ 522   2              savin = nrcds;
+
+ 523   2      cp20:   if savin > maxrcd then set = maxrcd;
+ 525   2              else set = savin;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  26
+
+
+
+ 526   2              call setmulti(set);
+ 527   2              flag = readsq(comptr);                          /* get nrcds units */
+
+ 528   2      cp21:   if skip = 0 then flag = writesq(.tempfcb);     /* while savin > 0 */
+ 530   2              savin = savin - set;
+
+ 531   2              if savin = 0 then return;
+
+ 533   2              if savin > maxrcd then set = maxrcd;
+ 535   2              else set = savin;
+
+ 536   2              call setmulti(set);
+ 537   2              flag = readsq(comptr);
+
+ 538   2              go to cp21;
+
+ 539   2      end copy2;
+
+
+              /****************************************************************************/
+
+
+ 540   1      reopen$temp: procedure;
+ 541   2              declare i       byte;
+
+ 542   2              call closer(.tempfcb);
+ 543   2              call clearfcb(.tempfcb);
+ 544   2              call opener(.tempfcb);
+
+ 545   2              call setmulti(2);
+
+ 546   2              readflag = readsq(.tempfcb);
+
+ 547   2      end reopen$temp;
+
+
+              /***************************************************************************/
+
+
+ 548   1      get$off: procedure(xrecs,index);
+ 549   2              declare index   byte,
+                              xrecs   address,
+                              i       based xrecs address;
+ 550   2              declare (temp,sum)      address;
+
+ 551   2      gt0:    temp = offsets(index - 1);
+ 552   2              sum = temp + i;
+ 553   2      gt1:    if sum < temp then call err$print(.err$msg$toobig);
+
+ 555   2              offsets(index) = sum;
+
+ 556   2      end get$off;
+
+ 557   1      zapRSX: procedure;
+
+ 558   2              declare dRSX    based subptr (16) byte,
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  27
+
+
+                              i       byte;
+
+ 559   2              do i = 0 to 15;
+ 560   3                      dRSX(i) = 0;
+ 561   3              end;
+
+ 562   2              subptr = subptr + 16;
+
+ 563   2      end zapRSX;
+
+
+              /************************************************************************/
+
+
+ 564   1      addrsx: procedure;
+ 565   2              declare i               byte,
+                              prlptr          address,
+                              rsxlen          based prlptr address;
+
+ 566   2                      i = 1;
+ 567   2      next$rsx:       fcbp = allfcbs(i);              /* while i <= incount */
+
+ 568   2                      call setmulti(2);               /* get header */
+ 569   2                      readflag = readsq(fcbp);
+ 570   2                      prlptr = .iobuff(1);            /* get program length */
+ 571   2      ad1:            length$rsx(i) = rsxlen;
+
+ 572   2                      call setmulti(1);
+ 573   2                      readflag = readsq(fcbp);
+
+ 574   2                      if iobuff(15) <> 0 then iobuff(14) = 0ffh;
+ 576   2                      nbank(i) = iobuff(15);          /* only non-banked ? */
+ 577   2                      iobuff(10) = 6;
+ 578   2                      iobuff(12) = 7;
+ 579   2                      iobuff(24) = 0;
+
+ 580   2                      writeflag = writesq(.tempfcb);
+
+ 581   2                      rsxrec = 128;
+ 582   2                      call copy(.rsxrec);
+
+ 583   2      ad2:            totbyte = totbyte + rsxrec;
+
+ 584   2                      i = i + 1;
+
+ 585   2                      if i > incount then go to fini;
+
+ 587   2                      call get$off(.rsxrec,i);
+ 588   2                      go to next$rsx;
+
+ 589   2      fini:   end addrsx;
+
+
+              /*****************************************************************************/
+
+
+ 590   1      putSCBcode: procedure(ptrfcb);
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  28
+
+
+ 591   2              declare (i,j)   byte,
+                              ptrfcb  address,
+                              fixup   address,
+                              fa      based fixup address;
+
+ 592   2              if not SCB  and not oldSCB then return;
+
+ 594   2              totbyte = totbyte + 256;        /* rel to 100h */
+
+ 595   2              call setdma(.SCBbuff);
+ 596   2              call setmulti(2);
+
+ 597   2              if oldscb then i = SCBbuff(23); /* next open slot */
+ 599   2              else if SCB then do;            /* must initialze buffer with code */
+
+ 601   3                      do i = 0 to 255;
+ 602   4                              SCBbuff(i) = 0ffh;
+ 603   4                      end;
+
+ 604   3      ps0:            fixup = .SCBcode(1);
+ 605   3                      fa = fa + totbyte;
+ 606   3                      fixup = .SCBcode(19);
+ 607   3                      fa = fa + totbyte;
+
+ 608   3      ps1:            call move(23,.SCBcode,.SCBbuff(0));
+ 609   3                      i = 24;
+ 610   3              end;
+
+              ps2:    if nscbs > 0 then do;
+ 613   3                 do j = 0 to nscbs-1;
+ 614   4                      SCBbuff(i) = soff(j);
+ 615   4                      SCBbuff(i+2) = sval(j);
+ 616   4                      i = i + 3;
+ 617   4                 end;
+ 618   3              end;
+
+ 619   2              SCBbuff(23) = i;                /* next available scb init */
+
+ 620   2      ps3:    if oldSCB then 
+ 621   2                      if ptrfcb = comptr then comfcb(32) = comfcb(32) - 2;
+
+ 623   2              writeflag = writesq(ptrfcb);
+ 624   2              call setdma(.iobuff);
+
+ 625   2      end putSCBcode;
+
+              /***************************************************************************/
+
+
+ 626   1      update$head: procedure;
+ 627   2              declare (i,j,k)         byte,
+                              (olds,temp)     byte;
+
+
+ 628   2       possub: procedure;
+
+ 629   3              subptr = .iobuff(16);           /* start of RSX info in header */
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  29
+
+
+
+ 630   3              i = 1;                          /* skip old rsx heads */
+ 631   3              do while i <= old;
+ 632   4                      subptr = subptr + 16;
+ 633   4                      i = i + 1;
+ 634   4              end;
+ 635   3      end possub;
+
+                      /************************************************************/
+
+
+ 636   2              call possub;                    /* set subptr to end of RSX */
+ 637   2              head$ptr = .iobuff;
+
+ 638   2              if not COMonly then do;
+ 640   3                      if build then head.progsize = comsize;
+ 642   3      up1:            k = old;
+
+ 643   3                      do i = 1 to incount;
+ 644   4                              k = k + 1;
+ 645   4                              rsx$sub$head.off = offsets(i);
+ 646   4                              rsx$sub$head.len = length$rsx(i);
+ 647   4                              rsx$sub$head.NONBANK = nbank(i);
+ 648   4                              fcbp = allfcbs(i);
+ 649   4                              do j = 0 to 7;
+ 650   5                                      rsx$sub$head.name(j) = gen$fcb(j + 1);
+ 651   5                              end;
+
+ 652   4                              subptr = subptr + 16;
+ 653   4                      end;
+ 654   3              end;                            /* COMonly... */
+ 655   2              else head.progsize = comsize;
+
+ 656   2      up2:    if LOAD then head.LOADER = 1;
+ 658   2              if SCB or oldSCB then call move(2,.totbyte,.iobuff(4));
+
+ 660   2              tempfcb(32) = 0;                        /* backup CR to re-write rcd */
+
+ 661   2              writeflag = writesq(.tempfcb);
+ 662   2              call closer(.tempfcb);
+
+ 663   2              if not NULL then call deleter;          /* erase old file */
+ 665   2              call renamer;
+
+ 666   2      end update$head;
+
+
+              /***********************************************************************/
+
+
+ 667   1      tear$down: procedure;
+
+                                                      /* remove header from file */
+ 668   2              head$ptr = .iobuff(0);
+ 669   2              comsize = head.progsize/128;
+
+ 670   2      tr1:    call copy2(comsize,0);          /* copies com to temp */
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  30
+
+
+
+ 671   2              call closer(comptr);
+ 672   2              call closer(.tempfcb);
+                                                      /* set up pass if any */
+ 673   2              if len$pass(0) > 0 then call copypass$dma(0);
+ 675   2              call deleter;                   /* delete com file*/
+ 676   2              call renamer;
+
+ 677   2      end tear$down;
+
+
+              /***************************************************************************/
+
+ 678   1      create2: procedure;
+
+
+ 679   2              if not COMonly then do;
+
+ 681   3                      offsets(0) = 256;               /* starting pos in bytes */
+ 682   3      cr4:            call get$off(.comsize,1);
+ 683   3                      call addrsx;                    /* copy RSX to temp */
+ 684   3              end;
+
+ 685   2              call putSCBcode(.tempfcb);
+
+ 686   2              call reopen$temp;
+
+ 687   2      cr5:    old = 0;
+ 688   2              call update$head;
+
+ 689   2      end create2;
+
+
+              /***************************************************************************/
+
+
+ 690   1      create: procedure;
+ 691   2              declare i       byte;
+
+ 692   2              do i = 0 to 384;                        /* clear the header buffer */
+ 693   3                      head$buffer(i) = 0;
+ 694   3              end;
+ 695   2              do i = 0 to incount;                    /* clear offsets */
+ 696   3                      offsets(i) = 0;
+ 697   3              end;
+
+ 698   2              head$ptr = .head$buffer;
+ 699   2              head.retinst = ret$inst;
+ 700   2              if not SCB then head.SCBjmp = ret$inst;
+ 702   2              else head.SCBjmp = 0c3h;
+
+ 703   2              head.nrsx = incount;
+
+ 704   2              totbyte = 256;
+ 705   2              if NULL then do;
+ 707   3                      head$buffer(256) = ret$inst;
+ 708   3                      call setmulti(3);
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  31
+
+
+ 709   3              end;
+
+ 710   2      cr1:    call setdma(head$ptr);                  /* move dma to header */
+ 711   2              writeflag = writesq(.tempfcb);
+ 712   2              if writeflag > 0 then do;
+ 714   3                      fcbp = .tempfcb;
+ 715   3                      call err$print(.err$msg$write);
+ 716   3              end;
+
+ 717   2              call setdma(.iobuff);
+
+ 718   2              if not NULL then do;
+
+ 720   3                      if readflag <> 1 then do;               /* if size of COM = 1
+                                                                         then read in setup
+                                                                         found EOF, no need
+                                                                         to copy; if flag > 1
+                                                                         then setup catches */
+
+ 722   4                              writeflag = writesq(.tempfcb);  /* first 2 COM rcds */
+
+ 723   4                              fcbp = comptr;
+ 724   4                              comsize = 256;
+ 725   4      cr2:                    call copy(.comsize);            /* COM->temp */
+ 726   4                      end;
+ 727   3                      else do;
+ 728   4                              call setmulti(1);
+ 729   4                              writeflag = writesq(.tempfcb);
+ 730   4                              comsize = 128;
+ 731   4                      end;
+ 732   3              end;
+ 733   2              else comsize = 128;
+
+ 734   2              totbyte = totbyte + comsize;
+
+ 735   2              call create2;
+
+ 736   2      end create;
+
+              /*****************************************************************************/
+
+
+ 737   1      SCBget: procedure(skip);
+ 738   2              declare  skip   byte;
+                                                      /* where in record units is beginning
+                                                         of SCB initialization code?
+                                                         Record numbering is rel to 0 */
+
+ 739   2                      comsize = shr(SCBpos,7) - 4;
+ 740   2                      call copy2(comsize,skip);  /* do not copy SCB code */
+ 741   2                      totbyte = shl(comsize,7);
+
+ 742   2                      readflag = readsq(comptr);
+ 743   2                      call move(256,.iobuff,.SCBbuff);
+
+ 744   2      end SCBget;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  32
+
+
+              /*****************************************************************************/
+
+
+ 745   1      remover: procedure;
+                                                      /* remove old RSX in gencommed file */
+
+ 746   2      getname: procedure(j);
+
+ 747   3              declare (j,k)   byte;
+
+ 748   3              do k = 0 to 7;
+ 749   4                      new(j).name(k) = rsx$sub$head.name(k);
+ 750   4              end;
+ 751   3      end getname;
+
+
+ 752   2              declare (i,j,k,l)       byte,
+                              zeroes          based subptr (1) byte,
+                              tot             address;
+
+
+ 753   2              fcbp = comptr;
+ 754   2      rp1:    subptr = .iobuff(16);                   /* prepare to collapse header..
+                                                                 compute actual lengths,
+                                                                 & save start bit map */
+ 755   2              nextptr = .iobuff(32);
+ 756   2              do j = 1 to old;
+ 757   3                      newlen(j) = rsx$sub$head.len;   /* save len & name */
+ 758   3                      call getname(j);
+ 759   3                      actlen(j) = next.off - rsx$sub$head.off;
+ 760   3                      nbank(j) = rsx$sub$head.NONBANK;
+
+ 761   3                      subptr = nextptr;
+ 762   3                      nextptr = nextptr + 16;
+ 763   3              end;
+ 764   2              actlen(old) = 0;
+
+ 765   2      rp2:    subptr = .iobuff(16);                   /* start copying current COM
+                                                                 file, skipping dup entries*/
+ 766   2              writeflag = writesq(.tempfcb);          /* header */
+ 767   2              tot = shr(head.progsize,7);             /* # 80h units to copy */
+ 768   2              call copy2(tot,0);                      /* copies COM to temp */
+ 769   2              tot = tot + 2;
+
+ 770   2      rp3:    j = 1;                                  /* now copy each valid RSX */
+ 771   2              do i = 1 to old;
+ 772   3                      comsize = shr(actlen(i),7);     /* convert to 80h units */
+ 773   3                      if which(i) = i then do;        /* duplicate */
+ 775   4                              if i <> old then        /* don't skip last */
+ 776   4                                call copy2(comsize,1);
+ 777   4                      end;
+ 778   3                      else do;                        /* copy RSX & setup new offsets
+                                                                 lengths */
+ 779   4      rpx:                    newoff(j) = shl(tot,7);
+ 780   4                              nbank(j) = nbank(i);
+                                                              /* if last RSX then we have no
+                                                                 way of knowing the actual 
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  33
+
+
+                                                                 length...so write until EOF,
+                                                                 else write comsize # rcds */
+ 781   4                              if i = old then call copy(.tot);
+ 783   4                              else do;
+ 784   5                                      tot = tot + comsize;
+ 785   5                                      call copy2(comsize,0);
+ 786   5                              end;
+
+ 787   4                              newlen(j) = newlen(i);          /* i > j always */
+ 788   4                              do k = 0 to 7;
+ 789   5                                      new(j).name(k) = new(i).name(k);
+ 790   5                              end;
+ 791   4                              j = j + 1;
+ 792   4                      end;
+ 793   3              end;
+
+                                                              /* now rebuild header */
+ 794   2              call reopen$temp;
+
+ 795   2              j = j - 1;
+ 796   2              subptr = .iobuff(16);
+ 797   2              do i = 1 to j;                     /* j = # good RSX */
+ 798   3                      rsx$sub$head.off = newoff(i);
+ 799   3                      rsx$sub$head.len = newlen(i);
+ 800   3                      rsx$sub$head.NONBANK = nbank(i);
+ 801   3                      nbank(i) = 0;
+ 802   3                      do k = 0 to 7;
+ 803   4                              rsx$sub$head.name(k) = new(i).name(k);
+ 804   4                      end;
+ 805   3                      subptr = subptr + 16;
+ 806   3              end;
+
+ 807   2              do i = j + 1 to old;                    /* clear out header */
+ 808   3                      call zapRSX;
+ 809   3              end;
+
+ 810   2      rp4:    head.nrsx = j;
+ 811   2              old = j;
+
+ 812   2              tempfcb(32) = 0;                        /* CR = 0 */
+ 813   2              flag = writesq(.tempfcb);
+
+ 814   2              call closer(.tempfcb);                  /* close and rename */
+ 815   2              call deleter;                           /* delete com file */
+ 816   2              call renamer;
+
+ 817   2              call clearfcb(comptr);
+ 818   2              call clearfcb(.tempfcb);
+ 819   2              call maker(.tempfcb);
+ 820   2      rp9:    call opener(comptr);                    /* prepare return to concat */
+ 821   2      rp7:    readflag = readsq(comptr);
+
+ 822   2      end remover;
+
+
+              /***************************************************************************/
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  34
+
+
+
+ 823   1      dup$RSX: procedure byte;
+                                                      /* check for duplications in header and
+                                                         input.  Remove old entry if found,
+                                                         or if all are duplicated then strip
+                                                         everything off. */
+
+ 824   2              declare (i,j,k,l)       byte,
+                              temp            address;
+
+ 825   2              subptr = .iobuff(16);
+ 826   2              deletes = 0;
+
+ 827   2              do i = 1 to old;
+ 828   3                      which(i) = 0;
+
+ 829   3                      do j = 1 to incount;            /* compare names */
+ 830   4                              fcbp = allfcbs(j);
+ 831   4                              do k = 0 to 7;
+ 832   5                                      if rsx$sub$head.name(k) <> gen$fcb(k+1)
+                                                      then go to dp1;
+ 834   5                              end;
+                                                              /* duplicate RSX's */
+ 835   4                              which(i) = i;
+ 836   4                              deletes = deletes + 1;
+
+ 837   4                              call e$print1(.err$msg$dup2);
+ 838   4                              call e$print2;
+
+ 839   4                              go to dp2;              /* no need to scan rest of
+                                                                 input names- checked input
+                                                                 for dups already */
+ 840   4      dp1:            end;
+ 841   3      dp2:            subptr = subptr + 16;
+ 842   3              end;
+
+ 843   2              if deletes = 0 then return(false);
+ 845   2      dp4:    if deletes >= old then do;              /* replace all ? */
+ 847   3                      subptr = .iobuff(16);
+ 848   3                      do i = 1 to old;
+ 849   4                              call zapRSX;
+ 850   4                      end;
+
+ 851   3                      temp = head.progsize;           /* get size of COM in rcds */
+
+ 852   3                      if oldSCB then do;
+ 854   4                              call SCBget(1);
+ 855   4                              comfcb(32) = 0;
+ 856   4                              call setmulti(2);
+ 857   4                              readflag = readsq(comptr);
+ 858   4                      end;
+
+ 859   3                      comsize = shr(temp,7);
+ 860   3                      writeflag = writesq(.tempfcb);  /* copy header to temp */
+ 861   3                      call copy2(comsize,0);          /* copy COM file */
+
+ 862   3                      comsize = temp;                 /* back to byte count */
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  35
+
+
+ 863   3                      call create2;
+
+ 864   3                      return(true);
+ 865   3              end;
+
+ 866   2              call remover;                           /* selective replace */
+
+ 867   2              return(false);                          /* return and add new RSX */
+
+ 868   2      end dup$RSX;
+
+
+              /***************************************************************************/
+
+
+ 869   1      concat: procedure;
+                                                      /* add new, replace old */
+
+ 870   2              declare i       byte;
+
+ 871   2              head$ptr = .iobuff;
+ 872   2              if (old := head.nrsx) <> 0 then do;
+ 874   3      yy:             if dup$RSX then return;         /* true  : did a create
+                                                                 false : add new RSX,
+                                                                         might have collapsed
+                                                                         old header...*/
+
+ 876   3              end;
+
+ 877   2              head.nrsx = head.nrsx + incount;
+ 878   2              fcbp = comptr;
+
+ 879   2      cc1:    if head.nrsx > 15 then
+ 880   2                      call err$print(.err$msg$rsx$slot);
+
+ 881   2              flag = writesq(.tempfcb);       /* write header */
+
+ 882   2              if oldSCB then call SCBget(0);
+ 884   2              else do;                        /* no SCB...copy to EOF */
+ 885   3                      comsize = 256;
+ 886   3                      call copy(.comsize);
+ 887   3              end;
+
+                                                      /* comsize = size of file in bytes
+                                                         +1 = offset of first new RSX */
+ 888   2              offsets(0) = 0;
+ 889   2              call getoff(.comsize,1);
+
+ 890   2              totbyte = comsize;
+
+ 891   2              call closer(fcbp);              /*close old file */
+
+ 892   2              call addrsx;
+
+ 893   2              call putSCBcode(.tempfcb);
+
+ 894   2              call reopen$temp;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  36
+
+
+ 895   2              call update$head;
+
+ 896   2      end concat;
+
+
+              /***********************************************************************/
+
+ 897   1      setSCB: procedure;
+
+                                              /* read in gencommed file and set scb values
+                                                 from command line */
+
+ 898   2              head$ptr = .iobuff;
+
+ 899   2              fcbp = comptr;
+ 900   2              totbyte = 2;
+
+ 901   2              if LOAD then do;                /* write out loader flag */
+ 903   3                      if oldSCB or not SCB then do;
+ 905   4                              iobuff(13) = 1;
+ 906   4                              comfcb(32) = 0;
+ 907   4                              writeflag = writesq(.comfcb);
+ 908   4                              if writeflag <> 0 then call err$print(.err$msg$write);
+ 910   4                              totbyte = 0;
+ 911   4                      end;
+ 912   3              end;
+
+ 913   2              if SCB then do;
+ 915   3                      if oldSCB then call SCBget(1);
+ 917   3                      else do;
+ 918   4                           if readflag <> 1 then do;          /* 1 rcd com file ? */
+ 920   5                              call setmulti(32);
+ 921   5                              call mread(comptr);
+ 922   5                              do while readflag <> 1;
+ 923   6                                      totbyte = totbyte + nrecs;
+ 924   6                                      call mread(comptr);
+ 925   6                              end;
+ 926   5                           end;
+
+ 927   4                              totbyte = totbyte + nrecs;
+ 928   4                              totbyte= shl(totbyte,7);        /* change to bytes */
+ 929   4                      end;
+
+ 930   3                      call putSCBcode(comptr);
+
+ 931   3                      if not oldSCB then do;                  /* must update header
+                                                                         for new SCB's */
+ 933   4                              call closer(comptr);
+ 934   4                              call setmulti(1);
+ 935   4                              call clearfcb(comptr);
+ 936   4                              call opener(comptr);
+ 937   4                              readflag = readsq(comptr);
+ 938   4                              call move(2,.totbyte,.iobuff(4));
+ 939   4                              if LOAD then iobuff(13) = 1;
+ 941   4                              iobuff(3) = ret$inst;
+ 942   4                              comfcb(32) = 0;
+ 943   4                              writeflag = writesq(.comfcb);
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  37
+
+
+ 944   4                              if writeflag <> 0 then call err$print(.err$msg$write);
+ 946   4                      end;
+ 947   3              end;
+
+ 948   2              call closer(comptr);
+
+ 949   2      end setSCB;
+
+
+              /***********************************************************************/
+
+
+ 950   1      setuper: procedure;
+
+                                              /*      1. get each file (process passwords)
+                                                      2. check for proper type
+                                                      3. check for duplicate RSX on input
+                                                      4. open files and make temp
+                                              */
+
+ 951   2              declare (i,j,k,l)       byte;
+
+ 952   2      init:   procedure;
+
+ 953   3              fcbp,allfcbs(i) = .fcbs(i).file(0);
+ 954   3              do j = 0 to 32;
+ 955   4                      fcbs(i).file(j) = 0;
+ 956   4              end;
+ 957   3      end init;
+
+ 958   2      RSX$errprint: procedure;
+
+
+ 959   3              call e$print1(.('This file was not used.',0));
+ 960   3              call e$print2;
+ 961   3              call crlf;
+
+ 962   3              which(deletes) = i;
+ 963   3              deletes = deletes + 1;
+
+ 964   3      end RSX$errprint;
+
+ 965   2      fill$type: procedure(typea);
+ 966   3              declare typea   address,
+                              type    based typea (1) byte;
+
+ 967   3              k = 0;
+ 968   3              do l = 9 to 11;
+ 969   4                      gen$fcb(l) = type(k);
+ 970   4                      k = k + 1;
+ 971   4              end;
+
+ 972   3      end fill$type;
+
+
+ 973   2      checktype: procedure(typea) byte;
+ 974   3              declare typea   address,
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  38
+
+
+                              type    based typea (1) byte;
+
+ 975   3              if gen$fcb(9) = BLANK then              /* any type ? */
+ 976   3                      call fill$type(typea);
+
+ 977   3              else do;                                /* check input type */
+ 978   4                      k = 0;
+ 979   4                      do l = 9 to 11;
+ 980   5                              if gen$fcb(l) <> type(k) then return(false);
+ 982   5                              k = k + 1;
+ 983   5                      end;
+ 984   4              end;
+
+ 985   3              return(true);
+
+ 986   3      end checktype;
+
+
+
+ 987   2              buf$ptr = .buff(1);                     /* get files */
+ 988   2              i = 0;
+ 989   2              do while buf$ptr <> 0;
+ 990   3                      call init;
+ 991   3                      call parser(fcbp);
+
+ 992   3                      if optmark = '[' then go to sb1;/* no more names, options */
+
+                                                              /* any PASSWORDS !!!! */
+ 994   3                      k = gen$fcb(26);                /* length of password */
+ 995   3                      if k > 0 then do;
+ 997   4                              l = 16;                 /* start of password */
+ 998   4                              do j = 0 to k - 1;
+ 999   5                                      files(i).pass(j) = gen$fcb(l);
+1000   5                                      l = l + 1;
+1001   5                              end;
+1002   4                              len$pass(i) = k;
+1003   4                      end;
+1004   3                      i = i + 1;
+1005   3              end;
+
+1006   2      sb1:    incount = i - 1;
+
+1007   2              if optmark = '[' then do;
+1009   3                      incount = i;
+1010   3                      call getoption;
+1011   3              end;
+
+1012   2              comptr = allfcbs(0);
+                                                                      /* check COM */
+1013   2      sb2:            fcbp = comptr;
+1014   2                      if not checktype(.comtype) then do;     /* bad input */
+1016   3                        if not NULL then do;    
+1018   4                              call print(.err$msg$first);
+1019   4                              call terminate;
+1020   4                        end;
+1021   3                      end;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  39
+
+
+1022   2                      if len$pass(0) > 0 then call copypass$dma(0);
+1024   2                      if open(fcbp) > 3 then do;             /* something awry */
+1026   3                        if not NULL then do;
+1028   4                              call err$print(.err$notfnd);
+1029   4                              call e$print1(.err$msg$first);
+1030   4                              call terminate;
+1031   4                        end;
+1032   3                      end;
+                              else
+1033   2                      if NULL then 
+1034   2                      if (comfcb(8) and 80h) <> 80h then
+1035   2                              call err$print(.err$NULL); /* NULL and COM file*/
+
+                              if NULL then do;
+1038   3      sb3:            i = (incount := incount + 1);   /* move fcbs up */
+1039   3                      allfcbs(i) = .fcbs(i);
+1040   3                      do j = 0 to incount - 1;
+1041   4                              do k = 0 to 32;
+1042   5                                      fcbs(i).file(k) = fcbs(i-1).file(k);
+1043   5                              end;
+1044   4                              i = i - 1;
+1045   4                      end;
+                                                              /* dummy COM name = 1st RSX */
+1046   3                      call fill$type(.comtype);
+1047   3                      fcbp = allfcbs(1);              /* restore type to RSX */
+1048   3                      call fill$type(.rsxtype);
+1049   3              end;
+
+1050   2      sb4:   if incount > 0 then do;
+1052   3                      deletes = 0;                    /* now check RSX's */
+1053   3                      do i = 1 to incount;
+1054   4                              fcbp = allfcbs(i);      /* point to RSX fcb */
+
+1055   4                              if not checktype(.rsxtype) then do;
+1057   5                                      call e$print1(.err$msg$rsxval);
+1058   5                                      call RSX$errprint;
+1059   5                              end;
+
+1060   4                              else do;                /* try to open file */
+1061   5                                      if len$pass(i) > 0 then
+1062   5                                         call copypass$dma(i);
+
+1063   5                                      flag = open(fcbp);
+1064   5                                      if flag > 3 then do;
+1066   6                                              call e$print1(.err$notfnd);
+1067   6                                              call RSX$errprint;
+1068   6                                      end;
+                                              else            /* Duplicate input RSX ? */
+1069   5                                           do j = i+1 to incount;
+1070   6                                              test$ptr = allfcbs(j);
+1071   6                                              do l = 1 to 8;
+1072   7                                                 if genfcb(l) <> testfcb(l)
+                                                              then go to sb5;
+1074   7                                              end;
+1075   6                                              call e$print1(.err$msg$dup1);
+1076   6                                              call RSX$errprint;
+1077   6      sb5:                                 end;
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  40
+
+
+1078   5                              end;
+1079   4                      end;                            /* ends i = incount...*/
+
+                                                              /* have any RSX's left? */
+1080   3                      if deletes >= incount then do;
+1082   4                         call print(.err$msg$no$rsx);
+1083   4                         call terminate;
+1084   4                      end;
+
+1085   3                      i = 0;
+1086   3      sb6:            do while i < deletes;   /* collapse allfcbs */
+1087   4                              j = which(i);
+1088   4                              incount = incount - 1;
+                      
+1089   4                              do l = j to incount;
+1090   5                                      allfcbs(l) = allfcbs(l + 1);
+1091   5                              end;
+
+1092   4                              i = i + 1;
+1093   4                      end;
+
+1094   3                      rsx = true;
+1095   3              end;                            /* if incount> 0...*/
+
+1096   2      sb7:
+                      call setdma(.iobuff);
+1097   2              call setmulti(2);                       /* read header if any */
+
+1098   2              if not NULL then do;
+1100   3                      fcbp = comptr;
+1101   3                      call mread(comptr);
+1102   3                      if readflag > 1 then call err$print(.err$msg$read);
+
+                                                              /* is this already gencommed*/
+1104   3      sb8:            if iobuff(0) = ret$inst then do;
+                                                              /* first byte = return */
+1106   4                              if rsx then replace = true;
+1108   4                              else do;
+1109   5                                      if SCB or LOAD then punchSCB = true;
+1111   5                                      else revert = true;
+1112   5                              end;
+
+                                                              /* do we need to move old SCB
+                                                                 initialization code ? */
+1113   4                              if iobuff(3) <> 0c9h then do;
+1115   5                                      oldSCB = true;
+1116   5                                      call move(2,.iobuff(4),.SCBpos);
+1117   5                              end;
+1118   4                      end;
+1119   3                      else do;
+1120   4                              if rsx then build = true;
+1122   4                              else if SCB or LOAD then COMonly = true;
+1124   4                              else call err$print(.errSTRIP);
+1125   4                      end;
+1126   3              end;
+1127   2              else build = true;
+
+PL/M-80 COMPILER    CPM 3.0 --- GENCOM 1.0                                                                                  PAGE  41
+
+
+1128   2      sb9:    if not punchSCB then do;
+1130   3                      call clearfcb(.tempfcb);
+1131   3                      flag = delete(.tempfcb);
+1132   3                      tempfcb(0) = comfcb(0);         /* init temp drive */
+1133   3      sb0:            call maker(.tempfcb);
+1134   3              end;
+
+1135   2      end setuper;
+
+
+
+              /*                      MAIN PROGRAM                    */
+
+
+1136   1      plm:
+
+                      testvers = get$version;
+1137   1              if high(testvers) = 1 then go to err$vers;
+1139   1              if low(testvers) < 30h then go to err$vers;
+
+1141   1              call return$errors(254);
+
+1142   1              call setuper;
+
+1143   1              if revert then call tear$down;
+                      else
+1145   1              if build then call create;
+                      else
+1147   1              if punchSCB then call setscb;
+1149   1              else if COMonly then call create;
+1151   1              else call concat;
+
+1152   1              call closeall;
+
+1153   1              call print(.('GENCOM completed.',0));
+1154   1              call terminate;
+
+1155   1      err$vers:
+                      call print(.ERRORM);
+1156   1              call printx(.('Requires CP/M 3 or higher.',0));
+1157   1              call terminate;
+
+
+1158   1      end gencomer;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 20A8H   8360D
+     VARIABLE AREA SIZE = 17CDH   6093D
+     MAXIMUM STACK SIZE = 0018H     24D
+     1999 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

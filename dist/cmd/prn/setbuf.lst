@@ -1,0 +1,1152 @@
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SETUPBUFFERS
+OBJECT MODULE PLACED IN SETBUF.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 SETBUF.PLM DEBUG OPTIMIZE
+
+
+
+              $title ('GENCPM - Buffer allocation module')
+   1          setup$buffers:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+                  Revised:
+                    09 Dec 82  by Bruce Skidmore
+              */
+
+   2   1        declare true literally '0FFH';
+   3   1        declare false literally '0';
+   4   1        declare forever literally 'while true';
+   5   1        declare boolean literally 'byte';
+   6   1        declare cr literally '0dh';
+   7   1        declare lf literally '0ah';
+
+              /*
+                  D a t a    S t r u c t u r e s
+              */
+
+   8   1        declare query boolean external;
+   9   1        declare quest(155) boolean external;
+
+  10   1        declare offset byte external;
+  11   1        declare prgsiz address external;
+  12   1        declare bufsiz address external;
+  13   1        declare codsiz address external;
+  14   1        declare bios$pg byte external;
+  15   1        declare scb$pg byte external;
+  16   1        declare res$pg byte external;
+  17   1        declare bnk$pg byte external;
+  18   1        declare bnk$off byte external;
+  19   1        declare res$len byte external;
+  20   1        declare non$bnk byte external;
+
+  21   1        declare dma address external;
+  22   1        declare lnbfr (14) byte external;
+
+  23   1        declare bios$atts(3) address external;
+  24   1        declare res$atts(3) address external;
+  25   1        declare bnk$atts(3) address external;
+
+  26   1        declare res$bios$len byte external;
+  27   1        declare res$base byte external;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   2
+
+
+  28   1        declare pg$dif byte external;
+  29   1        declare xmove$implemented boolean external;
+
+  30   1        declare mem$top byte external;
+  31   1        declare common$len byte external;
+  32   1        declare bnk$top byte external;
+  33   1        declare banked$len byte external;
+  34   1        declare sys$entry address external;
+  35   1        declare bnk$swt boolean external;
+
+  36   1        declare drvtbl$adr address external;
+  37   1        declare drvtbl based drvtbl$adr (16) address;
+
+  38   1        declare dph$adr address external;
+  39   1        declare dph based dph$adr structure (
+                  xlt         address,
+                  scratch1(4) address,
+                  scratch2    byte,
+                  mf          byte,
+                  dpb         address,
+                  csv         address,
+                  alv         address,
+                  dirbcb      address,
+                  dtabcb      address,
+                  hash        address,
+                  hbank       byte);
+
+  40   1        declare dpb$adr address external;
+  41   1        declare dpb based dpb$adr structure (
+                  spt         address,
+                  bsh         byte,
+                  blm         byte,
+                  exm         byte,
+                  dsm         address,
+                  drm         address,
+                  al0         byte,
+                  al1         byte,
+                  cks         address,
+                  off         address,
+                  psh         byte,
+                  phm         byte);
+
+  42   1        declare mem$tbl (17) structure(
+                  base        byte,
+                  len         byte,
+                  bank        byte,
+                  attr        address) external;
+
+  43   1        declare num$seg byte external;
+               
+  44   1        declare record(16) structure(
+                  size        address,
+                  attr        byte,
+                  altbnks     byte,
+                  no$dirrecs  byte,
+                  no$dtarecs  byte,
+                  ovlydir$dr  byte,
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   3
+
+
+                  ovlydta$dr  byte,
+                  dir$resp    byte,
+                  dta$resp    byte) external;
+
+  45   1        declare hash$data(16) address external;
+  46   1        declare hash$space address external;
+  47   1        declare hash(16) boolean external;
+  48   1        declare alloc(16) address external;
+  49   1        declare alloc$space address external;
+  50   1        declare chk(16) address external;
+  51   1        declare chk$space address external;
+
+              /*
+                    B D O S  P r o c e d u r e   &   F u n c t i o n    C a l l s
+              */
+
+  52   1        system$reset:
+                  procedure external;
+  53   2          end system$reset;
+
+  54   1        write$console:
+                  procedure (char) external;
+  55   2            declare char byte;
+  56   2          end write$console;
+
+  57   1        print$console$buffer:
+                  procedure (buffer$address) external;
+  58   2            declare buffer$address address;
+  59   2          end print$console$buffer;
+
+  60   1        read$console$buffer:
+                  procedure (buffer$address) external;
+  61   2            declare buffer$address address;
+  62   2            declare buf based buffer$address (1) byte;
+  63   2          end read$console$buffer;
+
+              /*
+                    L o c a l    P r o c e d u r e s
+              */
+
+  64   1        shift$left:
+                  procedure (pattern, count) address external;
+  65   2            declare count byte;
+  66   2            declare pattern address;
+  67   2         end shift$left;
+
+  68   1        crlf:
+                  procedure external;
+  69   2          end crlf;
+
+  70   1      error:
+                procedure (term$code,err$type,err$msg$adr) external;
+  71   2          declare (term$code,err$type) byte;
+  72   2          declare err$msg$adr address;
+  73   2        end error;
+
+  74   1      upper:
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   4
+
+
+                procedure (b) byte external;
+  75   2          declare b byte;
+  76   2        end upper;
+
+  77   1      valid$drive:
+                procedure(drv) boolean external;
+  78   2          declare drv byte;
+  79   2        end valid$drive;
+
+  80   1      get$response:
+                procedure (val$adr) external;
+  81   2          declare val$adr address;
+  82   2        end get$response;
+
+  83   1      dsply$hex$adr:
+                procedure (val) external;
+  84   2          declare val address;
+  85   2        end dsply$hex$adr;
+
+  86   1      get$param:
+                procedure (string$adr,val$adr,pbase) external;
+  87   2          declare (string$adr,val$adr) address;
+  88   2          declare pbase byte;
+  89   2        end get$param;
+
+  90   1      get$seg:
+                procedure(type,record$size) byte external;
+  91   2          declare type byte;
+  92   2          declare record$size address;
+  93   2        end get$seg;
+
+  94   1      setbuf:
+                procedure public;
+  95   2          declare (i,j,k,ii,save,data$cnt,temp) byte;
+  96   2          declare (first$dir,first$dta,first$drive,other$banks) boolean;
+  97   2          declare (ok,perm$media,printed) boolean;
+  98   2          declare (link$cnt,seg$no,dir$data$field) byte;
+  99   2          declare mem$sav$tbl(17) address;
+ 100   2          declare sav$mem$len (17) byte;
+ 101   2          declare (rec$siz,drives,save$dph$adr,save$bcb$adr) address;
+ 102   2          declare (bcb$cnt,bcb$buf$siz,buff$space) address;
+ 103   2          declare (data$adr,l$buf$adr,act$buf$adr,l$head$adr) address;
+ 104   2          declare (max$dir$buf,max$attr,tpa,defined$drives) address;
+ 105   2          declare l$head based l$head$adr address;
+                  
+ 106   2          declare bcb$len byte;
+ 107   2          declare bcb$buf$cnt address;
+ 108   2          declare bcb$buf$ptr byte;
+
+ 109   2          declare bcb$adr address;
+ 110   2          declare bcb based bcb$adr structure(
+                    drv         byte,
+                    rec$no(3)   byte,
+                    wflag       byte,
+                    seq$no      byte,
+                    track       address,
+                    sector      address,
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   5
+
+
+                    buff$adr    address,
+                    bank        byte,
+                    link        address);
+
+ 111   2          declare psect (16) structure(
+                    size    address,
+                    drives  address);
+
+ 112   2          disp$space:
+                    procedure;
+ 113   3              declare (seg0,obanks) address;
+ 114   3              declare ii byte;
+
+ 115   3              seg0, obanks = 0;
+ 116   3              do ii = 1 to num$seg;
+ 117   4                if mem$tbl(ii).bank = 0 then
+ 118   4                  seg0 = seg0 + shr(mem$tbl(ii).attr,8);
+                        else
+ 119   4                  obanks = obanks + shr(mem$tbl(ii).attr,8);
+ 120   4              end;
+ 121   3              call print$console$buffer(.(lf,cr,'     ',
+                                                'Available space in 256 byte pages:',
+                                                  lf,cr,'     ','$'));
+                     
+ 122   3              call print$console$buffer(.('TPA =$'));
+ 123   3              call dsply$hex$adr(shr(tpa,8));
+ 124   3              if bnk$swt then
+ 125   3                do;
+ 126   4                  call print$console$buffer(.(', Bank 0 =$'));
+ 127   4                  call dsply$hex$adr(seg0);
+ 128   4                  if xmove$implemented then
+ 129   4                    do;
+ 130   5                       call print$console$buffer(.(', Other banks =$'));
+ 131   5                       call dsply$hex$adr(obanks);
+ 132   5                    end;
+ 133   4                  if (obanks <> 0) or (seg0 <> 0) then
+ 134   4                    other$banks = true;
+                          else
+ 135   4                    other$banks = false;
+ 136   4                end;
+ 137   3              call crlf;
+ 138   3              call crlf;
+ 139   3            end disp$space;
+
+ 140   2          get$space:
+                    procedure(index,parm) byte;
+ 141   3              declare (index,parm,count,ii) byte;
+ 142   3              declare (i,j,k,save) byte;
+ 143   3              declare seg$no byte;
+ 144   3              declare rsize address;
+
+ 145   3              rsize = record(index).size;
+ 146   3              if not bnk$swt then
+ 147   3                do;
+ 148   4                   tpa = tpa - (rsize + bcb$len);
+ 149   4                end;
+                      else
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   6
+
+
+ 150   3                do;
+ 151   4                  bcb$buf$ptr = bcb$buf$ptr - 2;
+ 152   4                  if parm = 1 then /* directory records */
+ 153   4                    do;
+ 154   5                      count = record(index).no$dirrecs;
+ 155   5                      do ii = 1 to count;
+ 156   6                        if bcb$buf$ptr < bcb$len then
+ 157   6                          do;
+ 158   7                            bcb$buf$ptr = 0ffh;
+ 159   7                            bcb$buf$cnt = bcb$buf$cnt + 1;
+ 160   7                            j = 0ffh;
+ 161   7                            save = 0;
+ 162   7                            do i = 1 to num$seg;
+ 163   8                              k = mem$tbl(i).len + mem$tbl(i).base;
+ 164   8                              if (mem$tbl(i).bank = 0) and k > save then
+ 165   8                                do;
+ 166   9                                   j = i;
+ 167   9                                   save = k;  /* pre allocate space for BCBs */
+ 168   9                                end;
+ 169   8                            end;
+ 170   7                            mem$tbl(j).attr = mem$tbl(j).attr - 100h;
+ 171   7                          end;
+                                else
+ 172   6                          bcb$buf$ptr = bcb$buf$ptr - bcb$len;
+                    
+ 173   6                        if (seg$no := get$seg(1,rsize)) = 0ffh then
+ 174   6                          do;
+ 175   7                             call error(false,0,
+                                          .('Unable to allocate Dir deblocking ',
+                                            'buffer space.$'));
+ 176   7                             return false;
+ 177   7                          end;
+                                else
+ 178   6                          mem$tbl(seg$no).attr = mem$tbl(seg$no).attr - rsize;
+ 179   6                      end;
+ 180   5                    end;
+                          else   /* data records */
+ 181   4                    do;
+ 182   5                      count = record(index).no$dtarecs;
+ 183   5                      do ii = 1 to count;
+ 184   6                        if bcb$buf$ptr < bcb$len then
+ 185   6                          do;
+ 186   7                            bcb$buf$ptr = 0ffh;
+ 187   7                            bcb$buf$cnt = bcb$buf$cnt + 1;
+ 188   7                            j = 0ffh;
+ 189   7                            save = 0;
+ 190   7                            do i = 1 to num$seg;
+ 191   8                              k = mem$tbl(i).len + mem$tbl(i).base;
+ 192   8                              if (mem$tbl(i).bank = 0) and k > save then
+ 193   8                                do;
+ 194   9                                   j = i;
+ 195   9                                   save = k;  /* pre allocate space for BCBs */
+ 196   9                                end;
+ 197   8                            end;
+ 198   7                            mem$tbl(j).attr = mem$tbl(j).attr - 100h;
+ 199   7                          end;
+                                else
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   7
+
+
+ 200   6                          bcb$buf$ptr = bcb$buf$ptr - bcb$len;
+ 201   6                        if not record(index).altbnks then
+ 202   6                          do;
+ 203   7                            tpa = tpa - rsize;
+ 204   7                            if shr(tpa,8) < bnk$top then
+ 205   7                              do;
+ 206   8                                call error(false,0,
+                                               .('Unable to allocate Data ',
+                                                 'deblocking buffer space.$'));
+ 207   8                                return false;
+ 208   8                              end;
+ 209   7                          end;
+                                else
+ 210   6                          do;
+ 211   7                            if (seg$no := get$seg(2,rsize)) = 0ffh then
+ 212   7                              do;
+ 213   8                                call error(false,0,
+                                               .('Unable to allocate Data deblocking ',
+                                                 'buffer space.$'));
+ 214   8                                return false;
+ 215   8                              end;
+                                    else
+ 216   7                              mem$tbl(seg$no).attr = mem$tbl(seg$no).attr - rsize;
+ 217   7                          end;
+ 218   6                      end;
+ 219   5                    end;
+ 220   4                end;
+ 221   3                return true;
+ 222   3            end get$space;
+
+ 223   2         drive$not$defined:
+                   procedure(val) boolean;
+ 224   3             declare val byte;
+ 225   3             if (defined$drives and shift$left(double(1),val)) <> 0 then
+ 226   3               return false;
+ 227   3             call error(false,0,.('Drive specified has not ',
+                                          'been defined. $'));
+ 228   3             return true;
+ 229   3           end drive$not$defined;
+
+ 230   2         do i = 0 to 15;
+ 231   3           if drvtbl(i) <> 0 then
+ 232   3             do;
+ 233   4               dph$adr = drvtbl(i) + .memory;
+ 234   4               if (dph.dirbcb = 0fffeh) or (dph.dtabcb = 0fffeh) then
+ 235   4                 do;
+ 236   5                   dpb$adr = dph.dpb + .memory;
+ 237   5                   record(i).size = shift$left(double(128),dpb.psh);
+ 238   5                   record(i).attr = 0;
+ 239   5                 end;
+ 240   4               if dph.dirbcb = 0ffffh then
+ 241   4                 do;
+ 242   5                   call error(true,0,.('0FFFFH is an invalid value in the',
+                                      cr,lf,
+                                     'DPH directory BCB address field.$'));
+
+ 243   5                 end;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   8
+
+
+ 244   4             end;
+ 245   3         end;
+
+ 246   2         do j = 0 to 15;
+ 247   3           rec$siz = 0;
+ 248   3           do i = 0 to 15;
+ 249   4             if (record(i).size > rec$siz) and (record(i).attr = 0) then
+ 250   4               rec$siz = record(i).size;
+ 251   4           end;
+ 252   3           psect(j).size = rec$siz;
+ 253   3           psect(j).drives = 0;
+ 254   3           do i = 0 to 15;
+ 255   4             if (record(i).size = rec$siz) and (rec$siz <> 0) then
+ 256   4               do;
+ 257   5                 psect(j).drives = psect(j).drives or shift$left(double(1),i);
+ 258   5                 record(i).attr = 0ffh;
+ 259   5               end;
+ 260   4           end;
+ 261   3         end;
+
+
+ 262   2         do i = 0 to 16;
+ 263   3           mem$sav$tbl(i) = mem$tbl(i).attr;
+ 264   3           sav$mem$len(i) = mem$tbl(i).len;
+ 265   3         end;
+
+
+ 266   2         if bnk$swt then
+ 267   2           bcb$len = 15;
+                 else
+ 268   2           bcb$len = 12;
+
+ 269   2         ok = false;
+ 270   2         do while not ok;
+
+ 271   3           bcb$buf$ptr = bcb$len - 1;
+ 272   3           bcb$buf$cnt = 0;
+ 273   3           defined$drives = 0;
+ 274   3           data$cnt = 0;
+ 275   3           first$drive = true;
+ 276   3           tpa = shl(double(res$pg),8) - hash$space;
+ 277   3           if not bnk$swt then
+ 278   3             tpa = tpa - alloc$space - chk$space;
+
+ 279   3           do i = 0 to 15;
+ 280   4             mem$tbl(i+1).attr = mem$sav$tbl(i+1);
+ 281   4             record(i).attr = 0;
+ 282   4           end;
+
+ 283   3           printed = false;
+ 284   3           first$dir, first$dta = true;
+
+ 285   3           ii = 0;
+ 286   3           drives = psect(ii).drives;
+ 287   3           do while (psect(ii).size <> 0) and (ii < 16);
+
+ 288   4             if not printed then
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE   9
+
+
+ 289   4               do;
+ 290   5                 call print$console$buffer(.(lf,cr,'Setting up ',
+                                                     'Blocking/Deblocking buffers:',
+                                                     lf,cr,'$'));
+ 291   5                 printed = true;
+ 292   5               end;
+
+ 293   4             call print$console$buffer(
+                                .(cr,lf,'The physical record size is$'));
+ 294   4             call dsply$hex$adr(psect(ii).size);
+ 295   4             call print$console$buffer(.(':',lf,cr,'$'));
+                 
+ 296   4             i = 0;
+ 297   4             do while((drives and 1) <> 1) and (i < 16);
+ 298   5               drives = shr(drives,1);
+ 299   5               i = i + 1;
+ 300   5             end;
+ 301   4             drives = shr(drives,1);
+ 302   4             do while (i <> 16);
+ 303   5               dph$adr = drvtbl(i) + .memory;
+ 304   5               dpb$adr = dph.dpb + .memory;
+ 305   5               max$dir$buf = shr(dpb.drm + 4,2);
+ 306   5               if (dpb.cks = 08000h) then
+ 307   5                 perm$media = true;
+                       else
+ 308   5                 perm$media = false;
+ 309   5               if dph.dirbcb = 0fffeh then
+ 310   5                 do;
+ 311   6                   call disp$space;
+ 312   6                   record(i).attr = record(i).attr or 1;
+ 313   6                   if not bnk$swt then
+ 314   6                     do;
+ 315   7                       if first$dir then
+ 316   7                         do;
+ 317   8                           first$dir = false;
+ 318   8                           record(i).no$dirrecs = 1;
+ 319   8                           call print$console$buffer(
+                                        .('     ',
+                                          '*** Directory buffer required  ***',
+                                          cr,lf,'     ',
+                                          '*** and allocated for drive $'));
+ 320   8                           call write$console('A'+i);
+ 321   8                           call print$console$buffer(.(': ***',cr,lf,'$'));
+ 322   8                         end;
+                               else
+ 323   7                         do;
+ 324   8                           query = quest(123 + i);
+ 325   8                           call print$console$buffer(
+                                        .('               ',
+                                        'Overlay Directory buffer for drive $'));
+ 326   8                           call write$console('A'+i);
+ 327   8                           call print$console$buffer(.(': $'));
+ 328   8                           call get$response(.record(i).dir$resp);
+ 329   8                           call crlf;
+ 330   8                           if not record(i).dir$resp then
+ 331   8                             do;
+ 332   9                               record(i).no$dirrecs = 1;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  10
+
+
+ 333   9                             end;
+                                   else
+ 334   8                             record(i).no$dirrecs = 0;
+ 335   8                         end;
+ 336   7                     end;
+                           else
+ 337   6                     do;                       
+ 338   7                       query = quest(59 + i);
+ 339   7                       call print$console$buffer(
+                                          .('               ',
+                                            'Number of directory buffers for drive $'));
+ 340   7                       call write$console('A'+i);
+ 341   7                       call get$param(.(': $'),.record(i).no$dirrecs,10);
+ 342   7                       if first$dir then
+ 343   7                         do;
+ 344   8                           first$dir = false;
+ 345   8                           do while (record(i).no$dirrecs = 0);
+ 346   9                             call error(false,0,
+                                           .('Minumum number of buffers is 1. $'));
+ 347   9                             call print$console$buffer(
+                                           .('               ',
+                                             'Number of directory buffers for drive $'));
+ 348   9                             call write$console('A'+i);
+ 349   9                             call get$param(.(': $'),.record(i).no$dirrecs,10);
+ 350   9                           end;
+ 351   8                         end;
+ 352   7                     end;
+
+ 353   6                   if record(i).no$dirrecs > max$dir$buf then
+ 354   6                     do;
+ 355   7                       call print$console$buffer(
+                                         .(cr,lf,'*** Maximum number of directory buffers ***',
+                                           cr,lf,'*** for the current drive is$'));
+ 356   7                       call dsply$hex$adr(max$dir$buf);
+ 357   7                       call print$console$buffer(.('.     ***',
+                                           cr,lf,'*** Number of directory buffers reduced ***',
+                                           cr,lf,'*** accordingly.                        ***',
+                                           cr,lf,'$'));
+ 358   7                       record(i).no$dirrecs = max$dir$buf;
+ 359   7                     end;
+
+ 360   6                   if record(i).no$dirrecs = 0 then
+ 361   6                     do;
+ 362   7                       query = quest(91 + i);
+ 363   7               err4:
+                               call print$console$buffer(
+                                        .('               ',
+                                          'Share buffer(s) with which drive ($'));
+ 364   7                       call write$console('A'+record(i).ovlydir$dr);
+ 365   7                       call print$console$buffer(.(':) ? $'));
+ 366   7                       call read$console$buffer(.lnbfr);
+ 367   7                       if lnbfr(1) <> 0 then
+ 368   7                         do;
+ 369   8                           temp = upper(lnbfr(2))-'A';
+ 370   8                           if not valid$drive(temp) then
+ 371   8                             goto err4;
+ 372   8                           if drive$not$defined(temp) then
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  11
+
+
+ 373   8                             goto err4;
+ 374   8                           record(i).ovlydir$dr = temp;
+ 375   8                         end;
+ 376   7                       call crlf;
+ 377   7                    end;
+                           else
+ 378   6                     if (get$space(i,1) = 0) then
+ 379   6                       goto notok;
+                         end;
+                
+ 381   5               if (dph.dtabcb = 0fffeh) then
+ 382   5                 do;
+ 383   6                   dir$data$field = 0;
+ 384   6                   if record(i).size = 80h then
+ 385   6                     do;
+ 386   7                       dph.dtabcb = 0ffffh;
+ 387   7                       record(i).no$dtarecs = 0;
+ 388   7                     end;
+                           else
+ 389   6                     do;
+ 390   7                       call disp$space;
+ 391   7                       record(i).attr = record(i).attr or 2;
+ 392   7                       if not bnk$swt then
+ 393   7                         do;
+ 394   8                           if data$cnt <> 2 then
+ 395   8                             do;
+ 396   9                               if not perm$media then
+ 397   9                                 do;
+ 398  10                                   data$cnt = 2;
+ 399  10                                   dir$data$field = 0ffh;
+ 400  10                                   record(i).no$dtarecs = 1;
+ 401  10                                   call print$console$buffer(
+                                                .('     ',
+                                                  '*** Data buffer required and ***',
+                                                  cr,lf,'     ',
+                                                  '*** allocated for drive $'));
+ 402  10                                   call write$console('A'+i);
+ 403  10                                   call print$console$buffer(.(':   ***',cr,lf,'$'));
+ 404  10                                 end;
+                                       else
+ 405   9                                 do;
+ 406  10                                   if first$dta then
+ 407  10                                      dir$data$field = 10h;
+ 408  10                                 end;
+ 409   9                             end;
+
+ 410   8                           first$dta = false;
+ 411   8                           if dir$data$field <> 0ffh then
+ 412   8                             do;
+ 413   9                                query = quest(139 + i);
+ 414   9                                call print$console$buffer(
+                                                 .('               ',
+                                                   'Overlay Data buffer for drive $'));
+ 415   9                                call write$console('A'+i);
+ 416   9                                call print$console$buffer(.(': $'));
+ 417   9                                call get$response(.record(i).dta$resp);
+ 418   9                                call crlf;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  12
+
+
+ 419   9                                if record(i).dta$resp then /* Y */
+ 420   9                                  record(i).no$dtarecs = 0;
+                                        else
+ 421   9                                  do;
+ 422  10                                    record(i).no$dtarecs = 1;
+ 423  10                                    data$cnt = 2;
+ 424  10                                  end;
+ 425   9                              end;
+ 426   8                         end;
+                               else
+ 427   7                         do;
+ 428   8                           query = quest(75 + i);
+ 429   8                           call print$console$buffer(
+                                            .('               ',
+                                              'Number of data buffers for drive $'));
+ 430   8                           call write$console('A'+i);
+ 431   8                           call get$param(.(': $'),.record(i).no$dtarecs,10);
+ 432   8                           record(i).attr = record(i).attr or 2;
+ 433   8                           if first$dta then
+ 434   8                             do;
+ 435   9                               first$dta = false;
+ 436   9                               do while (record(i).no$dtarecs = 0);
+ 437  10                                 call error(false,0,
+                                             .('Minumum number of buffers is 1. $'));
+ 438  10                                 call print$console$buffer(
+                                              .('               ',
+                                                'Number of data buffers for drive $'));
+ 439  10                                 call write$console('A'+i);
+ 440  10                                 call get$param(.(': $'),.record(i).no$dtarecs,10);
+ 441  10                               end;
+ 442   9                             end;
+ 443   8                         end;
+
+ 444   7                       if record(i).no$dtarecs = 0 then
+ 445   7                         do;
+ 446   8                           if first$drive then
+ 447   8                             do;
+ 448   9                               first$drive = false;
+ 449   9                               record(i).ovlydta$dr = i;
+ 450   9                             end;
+                                   else
+ 451   8                             do;
+ 452   9                               query = quest(107 + i);
+ 453   9                        err5:
+                                       call print$console$buffer(
+                                               .('               ',
+                                                 'Share buffer(s) with which drive ($'));
+ 454   9                               call write$console('A'+record(i).ovlydta$dr);
+ 455   9                               call print$console$buffer(.(':) ? $'));
+ 456   9                               call read$console$buffer(.lnbfr);
+ 457   9                               if lnbfr(1) <> 0 then
+ 458   9                                 do;
+ 459  10                                   temp = upper(lnbfr(2))-'A';
+ 460  10                                   if not valid$drive(temp) then
+ 461  10                                     goto err5;
+ 462  10                                   if drive$not$defined(temp) then
+ 463  10                                     goto err5;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  13
+
+
+ 464  10                                   record(i).ovlydta$dr = temp;
+ 465  10                                 end;
+ 466   9                               call crlf;
+ 467   9                             end;
+ 468   8                           record(i).ovlydta$dr = record(i).ovlydta$dr
+                                                          or dir$data$field;
+ 469   8                         end;
+                               else
+ 470   7                         do;
+ 471   8                           if (other$banks and xmove$implemented) then
+ 472   8                             do;
+ 473   9                               query = quest(43 + i);
+ 474   9                               call print$console$buffer(
+                                              .('               ',
+                                                'Allocate buffers outside of Common $'));
+ 475   9                               call get$response(.record(i).altbnks);
+ 476   9                               call crlf;
+ 477   9                             end;
+ 478   8                           if (get$space(i,2) = 0) then
+ 479   8                             goto notok;
+ 480   8                         end;
+ 481   7                     end;
+ 482   6                 end;
+ 483   5               first$drive = false;
+ 484   5               defined$drives = defined$drives or shift$left(double(1),i);
+ 485   5               i = i + 1;
+ 486   5               do while((drives and 1) <> 1) and (i < 16);
+ 487   6                 drives = shr(drives,1);
+ 488   6                 i = i + 1;
+ 489   6               end;
+ 490   5               drives = shr(drives,1);
+ 491   5             end;
+ 492   4             ii = ii + 1;
+ 493   4             drives = psect(ii).drives;
+ 494   4           end;
+
+ 495   3           query = false;
+ 496   3           ok = true;
+ 497   3           if printed then
+ 498   3             do;
+ 499   4               call disp$space;
+ 500   4               call print$console$buffer(.
+                                 (cr,lf,'Accept new buffer definitions $'));
+ 501   4               call get$response(.ok);
+ 502   4               call crlf;
+ 503   4             end;
+
+ 504   3           notok:  /*** start over here upon error ***/
+                 end;  /*** do while not ok ***/
+
+                        /* calculate BCB requirements */
+
+ 505   2         bcb$cnt,link$cnt,buff$space = 0;
+ 506   2         do i = 0 to 15;
+ 507   3           if record(i).attr <> 0 then
+ 508   3             do;
+ 509   4               if (record(i).no$dirrecs <> 0) and
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  14
+
+
+                          ((record(i).attr and 1) = 1) then
+ 510   4                 do;
+ 511   5                   if bnk$swt then
+ 512   5                     link$cnt = link$cnt + 1;
+                           else
+ 513   5                     buff$space = buff$space +
+                                          (record(i).size * record(i).no$dirrecs);
+ 514   5                   bcb$cnt = bcb$cnt + record(i).no$dirrecs;
+ 515   5                 end;
+ 516   4               if (record(i).no$dtarecs <> 0) and
+                          ((record(i).attr and 2) = 2) then
+ 517   4                 do;
+ 518   5                   if bnk$swt then
+ 519   5                     do;
+ 520   6                       link$cnt = link$cnt + 1;
+ 521   6                       if not record(i).altbnks then
+ 522   6                         buff$space = buff$space + record(i).size
+                                                         * record(i).no$dtarecs;
+ 523   6                     end;
+                           else
+ 524   5                     buff$space = buff$space +
+                                          (record(i).size * record(i).no$dtarecs);
+ 525   5                   bcb$cnt = bcb$cnt + record(i).no$dtarecs;
+ 526   5                 end;
+ 527   4             end;
+ 528   3         end;
+ 529   2         bcb$buf$siz = bcb$cnt * bcb$len + link$cnt * 2;
+
+                     /*** allocate deblocking buffers ***/
+
+ 530   2         if not bnk$swt then       /* for non-banked system */
+ 531   2           do;
+ 532   3             bcb$adr = bios$atts(0) + .memory;
+ 533   3             pg$dif = bios$pg - (mem$top - high(bios$atts(0) + bcb$buf$siz +
+                                             buff$space + hash$space +
+                                             chk$space + alloc$space + 255));
+ 534   3             bios$pg = bios$pg - pg$dif;
+ 535   3             res$pg = res$pg - pg$dif;
+ 536   3             scb$pg = scb$pg - pg$dif;
+ 537   3             res$bios$len = high(bios$atts(0) + bcb$buf$siz + 255);
+ 538   3             mem$top = bios$pg + res$bios$len;
+ 539   3             dma = bios$atts(0) + bcb$buf$siz + .memory;
+ 540   3             act$buf$adr = shl(double(bios$pg),8) + bios$atts(0);
+ 541   3             data$adr = act$buf$adr + bcb$buf$siz;
+
+                     /*** zero memory for the BCB buffers ***/
+
+ 542   3             max$attr = prgsiz;
+ 543   3             do while(.memory(max$attr) < dma);
+ 544   4               memory(max$attr) = 0;
+ 545   4               max$attr = max$attr + 1;
+ 546   4             end;
+
+ 547   3             ii = 0;
+ 548   3             drives = psect(ii).drives;
+ 549   3             do while (psect(ii).size <> 0) and (ii < 16);
+ 550   4               i = 0;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  15
+
+
+ 551   4               do while((drives and 1) <> 1) and (i < 16);
+ 552   5                 drives = shr(drives,1);
+ 553   5                 i = i + 1;
+ 554   5               end;
+ 555   4               drives = shr(drives,1);
+ 556   4                 do while(i <> 16);
+ 557   5                   dph$adr = drvtbl(i) + .memory;
+ 558   5                   if (record(i).attr and 1) = 1 then
+ 559   5                     do;
+ 560   6                       if record(i).no$dirrecs <> 0 then
+ 561   6                         do;
+ 562   7                           bcb.drv = 0ffh;
+ 563   7                           bcb.buff$adr = data$adr;
+ 564   7                           data$adr = data$adr + record(i).size;
+ 565   7                           dph.dirbcb = act$buf$adr;
+ 566   7                           act$buf$adr = act$buf$adr + bcb$len;
+ 567   7                           bcb$adr = bcb$adr + bcb$len;
+ 568   7                         end;
+                               else
+ 569   6                         do;
+ 570   7                           save$dph$adr = dph$adr;
+ 571   7                           dph$adr = drvtbl(record(i).ovlydir$dr) + .memory;
+ 572   7                           save$bcb$adr = dph.dirbcb;
+ 573   7                           dph$adr = save$dph$adr;
+ 574   7                           dph.dirbcb = save$bcb$adr;
+ 575   7                         end;
+ 576   6                     end;
+
+ 577   5                   if (record(i).attr and 2) = 2 then
+ 578   5                     do;
+ 579   6                       if record(i).no$dtarecs <> 0 then
+ 580   6                         do;
+ 581   7                           bcb.drv = 0ffh;
+ 582   7                           bcb.buff$adr = data$adr;
+ 583   7                           data$adr = data$adr + record(i).size;
+ 584   7                           dph.dtabcb = act$buf$adr;
+ 585   7                           act$buf$adr = act$buf$adr + bcb$len;
+ 586   7                           bcb$adr = bcb$adr + bcb$len;
+ 587   7                         end;
+                               else
+ 588   6                         do;
+ 589   7                           save$dph$adr = dph$adr;
+ 590   7                           dph$adr = drvtbl((record(i).ovlydta$dr) and 0fh) + .memory;
+ 591   7                           if (record(i).ovlydta$dr and 10h) <> 0 then
+ 592   7                             save$bcb$adr = dph.dirbcb;
+                                   else
+ 593   7                             save$bcb$adr = dph.dtabcb;
+ 594   7                           dph$adr = save$dph$adr;
+ 595   7                           dph.dtabcb = save$bcb$adr;
+ 596   7                         end;
+ 597   6                     end;
+ 598   5                   i = i + 1;
+ 599   5                   do while((drives and 1) <> 1) and (i < 16);
+ 600   6                     drives = shr(drives,1);
+ 601   6                     i = i + 1;
+ 602   6                   end;
+ 603   5                   drives = shr(drives,1);
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  16
+
+
+ 604   5                 end;
+ 605   4                 ii = ii + 1;
+ 606   4                 drives = psect(ii).drives;
+ 607   4             end;
+
+ 608   3             do i = 0 to 15;             /* allocate hash for non-bank system */
+ 609   4               if hash$data(i) <> 0 then
+ 610   4                 do;
+ 611   5                   dph$adr = drvtbl(i) + .memory;
+ 612   5                   dph.hash = data$adr;
+ 613   5                   data$adr = data$adr + hash$data(i);
+ 614   5                 end;
+ 615   4             end;
+
+ 616   3             do i = 0 to 15;             /* allocate allocation vectors and */
+                                                 /* checksub vectors for non-bank system */
+ 617   4               dph$adr = drvtbl(i) + .memory;
+ 618   4               if alloc(i) <> 0 then
+ 619   4                 do;
+ 620   5                   dph.alv = data$adr;
+ 621   5                   data$adr = data$adr + alloc(i);
+ 622   5                 end;
+ 623   4               if chk(i) <> 0 then
+ 624   4                 do;
+ 625   5                   dph.csv = data$adr;
+ 626   5                   data$adr = data$adr + chk(i);
+ 627   5                 end;
+ 628   4             end;
+
+ 629   3           end;
+                 else        /* allocate deblocking buffers for banked system */
+ 630   2           do;
+                         /* restore memory table */
+ 631   3             do i = 0 to 16;
+ 632   4               mem$tbl(i).attr = mem$sav$tbl(i);
+ 633   4             end;
+               
+ 634   3             bcb$buf$siz = bcb$buf$siz + chk$space + alloc$space;
+ 635   3             if (bios$atts(2) = 0) or (bios$atts(0) = bios$atts(2)) then
+ 636   3               pg$dif = bios$pg - (mem$top - high(bios$atts(0) + buff$space + 255));
+                     else
+ 637   3               pg$dif = bios$pg - (mem$top - high(bios$atts(2) + buff$space + 255));
+ 638   3             bios$pg = bios$pg - pg$dif;
+ 639   3             res$pg = res$pg - pg$dif;
+ 640   3             scb$pg = scb$pg - pg$dif;
+ 641   3             mem$top = mem$top - pg$dif;
+ 642   3             max$attr = bios$atts(0) - (bios$atts(2) + low(256-low(bios$atts(2))));
+ 643   3             if (bios$atts(2) = 0) or (bios$atts(0) = bios$atts(2)) then
+ 644   3               do;
+ 645   4                 bnk$off = bnk$top - high(bcb$buf$siz + 255);
+ 646   4                 l$head$adr = bios$atts(0) + low(256-low(bios$atts(0))) + .memory;
+ 647   4                 l$buf$adr = shl(double(bnk$off),8);
+ 648   4                 data$adr = shl(double(bios$pg),8) + bios$atts(0);
+ 649   4               end;
+                     else
+ 650   3               do;
+ 651   4                 bnk$off = bnk$top - high(max$attr + bcb$buf$siz + 255);
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  17
+
+
+ 652   4                 l$head$adr = bios$atts(0) + .memory;
+ 653   4                 l$buf$adr = shl(double(bnk$off),8) + max$attr;
+ 654   4                 data$adr = shl(double(bios$pg),8) + bios$atts(2);
+ 655   4               end;
+ 656   3             dma = l$head$adr + bcb$buf$siz;
+ 657   3             bnk$pg = bnk$off - high(bnk$atts(0) + 255);
+ 658   3             bcb$adr = l$head$adr + link$cnt * 2;
+ 659   3             act$buf$adr = l$buf$adr + link$cnt * 2;
+ 660   3             bios$atts(0) = dma - .memory;
+
+                     /*** zero memory for the BCB buffers ***/
+
+ 661   3             max$attr = prgsiz;
+ 662   3             do while(.memory(max$attr) < dma);
+ 663   4               memory(max$attr) = 0;
+ 664   4               max$attr = max$attr + 1;
+ 665   4             end;
+
+                        /*** allocate memory table space for BCB's ***/
+ 666   3             j = 0ffh;
+ 667   3             save = 0;
+ 668   3             do i = 1 to num$seg;
+ 669   4               k = mem$tbl(i).len + mem$tbl(i).base;
+ 670   4               if (mem$tbl(i).bank = 0) and (k > save) then
+ 671   4                 do;
+ 672   5                   j = i;
+ 673   5                   save = k;
+ 674   5                 end;
+ 675   4             end;
+ 676   3             mem$tbl(0).base = bnk$pg;
+ 677   3             mem$tbl(0).len = bnk$top - bnk$pg;
+ 678   3             if j <> 0ffh then
+ 679   3               do;
+ 680   4                  if  (mem$tbl(j).len + mem$tbl(j).base) > bnk$pg then
+ 681   4                    do;
+ 682   5                      max$attr = shl(double(mem$tbl(j).len),8) - mem$tbl(j).attr;
+ 683   5                      mem$tbl(j).len = bnk$pg - mem$tbl(j).base;
+ 684   5                      mem$tbl(j).attr = shl(double(mem$tbl(j).len),8) - max$attr;
+ 685   5                    end;
+ 686   4               end;
+
+                       /*** allocate directory buffers for banked system ***/
+
+ 687   3             ii = 0;
+ 688   3             drives = psect(ii).drives;
+ 689   3             do while (psect(ii).size <> 0) and (ii < 16);
+ 690   4               i = 0;
+ 691   4               do while((drives and 1) <> 1) and (i < 16);
+ 692   5                 drives = shr(drives,1);
+ 693   5                 i = i + 1;
+ 694   5               end;
+ 695   4               drives = shr(drives,1);
+ 696   4                 do while (i <> 16);
+ 697   5                   dph$adr = drvtbl(i) + .memory;
+ 698   5                   if (record(i).attr and 1) = 1 then
+ 699   5                    do;
+ 700   6                      if record(i).no$dirrecs = 0 then
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  18
+
+
+ 701   6                        do;
+ 702   7                          save$dph$adr = dph$adr;
+ 703   7                          dph$adr = drvtbl(record(i).ovlydir$dr) + .memory;
+ 704   7                          save$bcb$adr = dph.dirbcb;
+ 705   7                          dph$adr = save$dph$adr;
+ 706   7                          dph.dirbcb = save$bcb$adr;
+ 707   7                        end;
+                              else
+ 708   6                        do;
+ 709   7                          l$head = act$buf$adr;  /*** set up list head ***/
+ 710   7                          dph.dirbcb = l$buf$adr;
+ 711   7                          l$buf$adr = l$buf$adr + 2;
+ 712   7                          l$head$adr = l$head$adr + 2;
+                                     /*** create bcbs ***/
+ 713   7                          do j = 1 to record(i).no$dirrecs;
+ 714   8                            seg$no = get$seg(1,record(i).size);
+ 715   8                            bcb.drv = 0ffh;
+ 716   8                            bcb.buff$adr = shl(double(mem$tbl(seg$no).base),8) +
+                                                      (shl(double(mem$tbl(seg$no).len),8) -
+                                                       mem$tbl(seg$no).attr);
+ 717   8                            bcb.bank = 0;
+ 718   8                            mem$tbl(seg$no).attr = mem$tbl(seg$no).attr -
+                                                           record(i).size;
+ 719   8                            act$buf$adr = act$buf$adr + bcb$len;
+ 720   8                            bcb.link = act$buf$adr;
+ 721   8                            bcb$adr = bcb$adr + bcb$len;
+ 722   8                          end;
+ 723   7                          bcb$adr = bcb$adr - bcb$len;
+ 724   7                          bcb.link = 0;
+ 725   7                          bcb$adr = bcb$adr + bcb$len;
+ 726   7                        end;
+ 727   6                    end;
+
+                       /*** allocate data deblocking buffers for banked system ***/
+
+ 728   5                  if (record(i).attr and 2) = 2 then
+ 729   5                    do;
+ 730   6                      if record(i).no$dtarecs = 0 then
+ 731   6                        do;
+ 732   7                          save$dph$adr = dph$adr;
+ 733   7                          dph$adr = drvtbl(record(i).ovlydta$dr) + .memory;
+ 734   7                          save$bcb$adr = dph.dtabcb;
+ 735   7                          dph$adr = save$dph$adr;
+ 736   7                          dph.dtabcb = save$bcb$adr;
+ 737   7                        end;
+                              else
+ 738   6                        do;
+ 739   7                          l$head = act$buf$adr;  /*** set up list head ***/
+ 740   7                          dph.dtabcb = l$buf$adr;
+ 741   7                          l$buf$adr = l$buf$adr + 2;
+ 742   7                          l$head$adr = l$head$adr + 2;
+                                     /*** create bcbs ***/
+ 743   7                          do j = 1 to record(i).no$dtarecs;
+ 744   8                            if record(i).altbnks then
+ 745   8                              do;
+ 746   9                                seg$no = get$seg(2,record(i).size);
+ 747   9                                bcb.drv = 0ffh;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  19
+
+
+ 748   9                                bcb.buff$adr = shl(double(mem$tbl(seg$no).base),8)
+                                                     + (shl(double(mem$tbl(seg$no).len),8)
+                                                     - mem$tbl(seg$no).attr);
+ 749   9                                bcb.bank = mem$tbl(seg$no).bank;
+ 750   9                                mem$tbl(seg$no).attr = mem$tbl(seg$no).attr -
+                                                               record(i).size;
+ 751   9                              end;
+                                    else
+ 752   8                              do;
+ 753   9                                bcb.drv = 0ffh;
+ 754   9                                bcb.buff$adr = data$adr;
+ 755   9                                data$adr = data$adr + record(i).size;
+ 756   9                                bcb.bank = 0;
+ 757   9                              end;
+ 758   8                            act$buf$adr = act$buf$adr + bcb$len;
+ 759   8                            bcb.link = act$buf$adr;
+ 760   8                            bcb$adr = bcb$adr + bcb$len;
+ 761   8                          end;
+ 762   7                          bcb$adr = bcb$adr - bcb$len;
+ 763   7                          bcb.link = 0;
+ 764   7                          bcb$adr = bcb$adr + bcb$len;
+ 765   7                        end;
+ 766   6                    end;
+ 767   5                   i = i + 1;
+ 768   5                   do while((drives and 1) <> 1) and (i < 16);
+ 769   6                     drives = shr(drives,1);
+ 770   6                     i = i + 1;
+ 771   6                   end;
+ 772   5                   drives = shr(drives,1);
+ 773   5                 end;
+ 774   4                 ii = ii + 1;
+ 775   4                 drives = psect(ii).drives;
+ 776   4             end;
+
+ 777   3             do i = 0 to 16;
+ 778   4                mem$tbl(i).len = sav$mem$len(i);
+ 779   4             end;
+
+ 780   3             do i = 0 to 15;             /* allocate allocation vectors and */
+                                                /* checksum vectors for banked system */
+ 781   4               dph$adr = drvtbl(i) + .memory;
+ 782   4               if alloc(i) <> 0 then
+ 783   4                 do;
+ 784   5                   dph.alv = act$buf$adr;
+ 785   5                   act$buf$adr = act$buf$adr + alloc(i);
+ 786   5                 end;
+ 787   4               if chk(i) <> 0 then
+ 788   4                 do;
+ 789   5                   dph.csv = act$buf$adr;
+ 790   5                   act$buf$adr = act$buf$adr + chk(i);
+ 791   5                 end;
+ 792   4             end;
+
+ 793   3           end;
+
+ 794   2        end setbuf;
+ 795   1      end setup$buffers;
+PL/M-80 COMPILER    GENCPM - BUFFER ALLOCATION MODULE                                                           PAGE  20
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 2153H   8531D
+     VARIABLE AREA SIZE = 00B9H    185D
+     MAXIMUM STACK SIZE = 0006H      6D
+     1077 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

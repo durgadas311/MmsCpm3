@@ -1,0 +1,1363 @@
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SUB
+OBJECT MODULE PLACED IN SUBMIT.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 SUBMIT.PLM XREF PAGEWIDTH(100) DEBUG OPTIMIZE
+
+
+
+              $ TITLE('CP/M 3.0 --- SUBMIT')
+   1          sub:
+              do;
+              $include (copyrt.lit)
+          =
+          =   /*
+          =     Copyright (C) 1982
+          =     Digital Research
+          =     P.O. Box 579
+          =     Pacific Grove, CA 93950
+          =   */
+          =
+              /*
+                Revised:
+                  26 July 79  for CP/M 2.0
+                  01 July 82  for CP/M 3.0 by John Knight
+                  23 Aug  82  for CP/M 3.0 by Doug Huskey
+                  11 Sept 82  for CP/M 3.0 by Doug Huskey
+                   1 Nov  82  for CP/M 3.0 by Doug Huskey
+
+              */
+
+              /*
+                  generation procedure 
+
+              seteof submit.plm
+              seteof copyrt.lit
+              is14
+              asm80 mcd80a.asm debug
+              asm80 getf.asm debug
+              asm80 parse.asm debug
+              plm80 submit.plm pagewidth(100) debug optimize
+              link mcd80a.obj,submit.obj,parse.obj,getf.obj,plm80.lib to submit.mod
+              locate submit.mod code(0100H) stacksize(100)
+              era submit.mod
+              cpm
+              objcpm submit
+              rmac getrsx
+              xref getrsx
+              link getrsx[op]
+              era get.rsx
+              ren get.rsx=getrsx.prl
+              gencom submit.com get.rsx 
+
+              */
+
+   2   1      declare plm label public;
+
+
+              /*********************************
+              *                                *                               
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   2
+
+
+              *  B D O S    I N T E R F A C E  *
+              *                                *
+              *********************************/
+
+   3   1      declare
+                  sfcb(33)  byte external,    /* default fcb */
+                  buff(128) byte external;    /* default buffer */
+
+   4   1        declare cmdrv     byte    external;   /* command drive      */
+   5   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+   6   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+   7   1        declare pass0     address external;   /* 1st password ptr   */
+   8   1        declare len0      byte    external;   /* 1st passwd length  */
+   9   1        declare pass1     address external;   /* 2nd password ptr   */
+  10   1        declare len1      byte    external;   /* 2nd passwd length  */
+  11   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+  12   1      mon1: procedure(f,a) external;
+  13   2          declare f byte, a address;
+                  /* bdos interface, no returned value */
+  14   2          end mon1;
+
+  15   1      mon2a: procedure(f,a) external;
+  16   2          declare f byte, a byte;
+                  /* bdos interface, no returned value */
+  17   2          end mon2a;
+
+  18   1      mon2: procedure(f,a) byte external;
+  19   2          declare f byte, a address;
+                  /* bdos interface, return byte value */
+  20   2          end mon2;
+
+  21   1      mon3: procedure(func,info) address external;
+  22   2          declare func byte;
+  23   2          declare info address;
+  24   2          end mon3;
+
+  25   1      parse:
+                 procedure (pfcb) address external;
+  26   2           declare pfcb address;
+  27   2      end parse;
+
+  28   1      getf:
+                 procedure (input$type) external; /* does submit file processing */
+  29   2           declare input$type address;
+  30   2      end getf;
+
+              /************************************
+              *                                   *
+              *          L I T E R A L S          *
+              *                                   *
+              ************************************/
+
+  31   1       declare lit literally 'literally',
+                  dcl lit 'declare',
+                  proc lit 'procedure',
+                  addr lit 'address',
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   3
+
+
+                  ctll lit '0ch',
+                  lca  lit '110$0001b',  /* lower case a */
+                  lcz  lit '111$1010b',  /* lower case z */
+                  endfile lit '1ah',    /* cp/m end of file */
+                  sysin$endfile lit '0ffh',
+                  true literally '1',
+                  false literally '0',
+                  forever literally 'while true',
+                  cr literally '13',
+                  lf literally '10',
+                  what literally '63',
+                  temp$file$drive$offset literally '50h',
+                  con$type literally '0',
+                  cpmversion literally '30h',
+                  ctrli literally '09h';
+
+              /****************************************
+              *                                       *
+              *    G L O B A L   V A R I A B L E S    *
+              *                                       *
+              ****************************************/
+
+  32   1      declare
+                  ln(9) byte initial('00001 : $'),
+                  ln1 byte at(.ln(0)),
+                  ln2 byte at(.ln(1)),
+                  ln3 byte at(.ln(2)),
+                  ln4 byte at(.ln(3)),
+                  ln5 byte at(.ln(4)),
+                  dfcb(36) byte initial(0,'SYSIN   $$$',0,0,0),
+                  drec byte at(.dfcb(32)),  /* current record */
+                  drrec address at(.dfcb(33)),  /* random record */
+                  drr2 byte at(.dfcb(35)),   /* random record byte 3 */
+                  dcnt byte,
+                  get$init$pb byte initial(128),  /* getrsx sub-functions */
+                  get$kill$pb byte initial(129),
+                  get$fcb$pb  byte initial(130),
+                  sstring(128) byte,  /* substitute string */
+                  sbp byte,   /* source buffer pointer */
+                  ssbp byte,  /* sub string buffer pointer */
+                  ver address,
+                  a address,  /* calling program's stack pointer */
+                  prog$flag based a address;
+
+  33   1      declare scbpd structure
+                 (offset byte,
+                  set    byte,
+                  value  address);
+
+  34   1      declare parse$fn structure
+                 (buff$adr address,
+                  fcb$adr  address);
+
+  35   1      declare subpb structure
+                (io$type       byte,
+                 echo$flag     byte,
+                 filtered$flag byte,
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   4
+
+
+                 program$flag  byte)
+                 initial (con$type,true,true,false);
+
+
+  36   1      declare
+                  ctrlc           literally '3',
+                  ctrlx           literally '18h',
+                  bksp            literally '8',
+                  submit$file$drv literally '15';
+                  
+
+              /****************************************
+              *                                       *
+              * B D O S   F U N C T I O N   C A L L S *
+              *                                       *
+              ****************************************/
+
+
+
+  37   1      printchar: 
+                  procedure(char);
+  38   2          declare char byte;
+  39   2          call mon1(2,char);
+  40   2          end printchar;
+
+  41   1      conin:
+                  procedure byte;
+  42   2          return mon2(6,0fdh);
+  43   2          end conin;
+
+  44   1      print: procedure(a);
+  45   2          declare a address;
+                  /* print the string starting at address a until the
+                  next dollar sign is encountered */
+  46   2          call mon1(9,a);
+  47   2          end print;
+
+  48   1      read$console$buf: procedure (buffer$address,max) byte;
+  49   2          declare buffer$address address;
+  50   2          declare new$max based buffer$address address;
+  51   2          declare max byte;
+  52   2          new$max = max;
+  53   2          call mon1(10,buffer$address);
+  54   2          buffer$address = buffer$address + 1;
+  55   2          return new$max; /* actually number of characters input */
+  56   2      end read$console$buf;
+
+  57   1      version: procedure address;
+                  /* returns current cp/m version */
+  58   2          return mon3(12,0);
+  59   2          end version;
+
+  60   1      open: procedure(fcb) address;
+  61   2          declare fcb address;
+  62   2          return (mon3(15,fcb));
+  63   2          end open;
+
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   5
+
+
+  64   1      close: procedure(fcb);
+  65   2          declare fcb address;
+  66   2          dcnt = mon2(16,fcb);
+  67   2          end close;
+
+  68   1      delete: procedure(fcb);
+  69   2          declare fcb address;
+  70   2          call mon1(19,fcb);
+  71   2          end delete;
+
+  72   1      diskread: procedure(fcb) byte;
+  73   2          declare fcb address;
+  74   2          return mon2(20,fcb);
+  75   2          end diskread;
+
+  76   1      diskwrite: procedure(fcb) byte;
+  77   2          declare fcb address;
+  78   2          return mon2(21,fcb);
+  79   2          end diskwrite;
+
+
+  80   1      ranread: procedure(fcb) byte;
+  81   2          declare fcb address;
+  82   2          return mon2(33,fcb);
+  83   2          end ranread;
+
+  84   1      make: procedure(fcb);
+  85   2          declare fcb address;
+  86   2          dcnt = mon2(22,fcb);
+  87   2          end make;
+
+  88   1      setdma: procedure(dma);
+  89   2        declare dma address;
+  90   2        call mon1(26,dma);
+  91   2        end setdma;
+
+  92   1      errormode: procedure(mode);
+  93   2        declare mode byte;
+  94   2        call mon2a(45,mode);
+  95   2        end errormode;
+
+  96   1      getscbbyte: procedure (offset) byte;
+  97   2          declare offset byte;
+  98   2          scbpd.offset = offset;
+  99   2          scbpd.set = 0;
+ 100   2          return mon2(49,.scbpd);
+ 101   2      end getscbbyte;
+
+ 102   1      setscbbyte:
+                  procedure (offset,value);
+ 103   2          declare offset byte;
+ 104   2          declare value byte;
+ 105   2          scbpd.offset = offset;
+ 106   2          scbpd.set = 0ffh;
+ 107   2          scbpd.value = double(value);
+ 108   2          call mon1(49,.scbpd);
+ 109   2       end setscbbyte;
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   6
+
+
+
+ 110   1      rsx$call: procedure (rsxpb) address;
+              /* call Resident System Extension */
+ 111   2        declare rsxpb address;
+ 112   2        return mon3(60,rsxpb);
+ 113   2      end rsx$call;
+
+              /*************************************************
+              *                                                *
+              *         M A I N    S U B R O U T I N E S       *
+              *                                                *
+              *************************************************/
+
+ 114   1      move: procedure(s,d,n);
+ 115   2          declare (s,d) address, n byte;
+ 116   2          declare a based s byte, b based d byte;
+ 117   2              do while (n := n - 1) <> 255;
+ 118   3              b = a; s = s + 1; d = d + 1;
+ 121   3              end;
+ 122   2          end move;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 123   1      crlf:   proc;
+ 124   2          call printchar(cr);
+ 125   2          call printchar(lf);
+ 126   2          end crlf;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 127   1      bad$file:  proc;
+ 128   2         call print(.('Invalid file name $'));
+ 129   2         call mon1(0,0);
+ 130   2      end bad$file;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+              /* fill string @ s for c bytes with f */
+ 131   1      fill: procedure(s,f,c);
+ 132   2        declare s address;
+ 133   2        declare (f,c) byte;
+ 134   2        declare a based s byte;
+ 135   2        do while (c:=c-1) <> 255;
+ 136   3          a=f;
+ 137   3          s=s+1;
+ 138   3        end;
+ 139   2      end fill;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 140   1      error: procedure(a);
+ 141   2          declare a address;
+ 142   2          call crlf;
+ 143   2          call print(.('Error On Line $'));
+ 144   2          call print(.ln1);
+ 145   2          call print(a);
+ 146   2          call move(.dfcb(0),.sfcb(0),33);
+ 147   2          call delete(.sfcb(0));  /* cleanup before exit */
+ 148   2          call mon1(0,0);
+                  /* return to ccp */
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   7
+
+
+ 149   2          end error;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 150   1      ucase: procedure (char) byte;
+ 151   2        declare char byte;
+ 152   2        if char >= 'a' then
+ 153   2          if char < '{' then
+ 154   2            return (char-20h);
+ 155   2        return char;
+ 156   2      end ucase;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 157   1      getucase: procedure byte;
+ 158   2        declare c byte;
+ 159   2        c = ucase(conin);
+ 160   2        return c;
+ 161   2      end getucase;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 162   1      getpasswd: procedure;
+ 163   2        declare (i,c) byte;
+ 164   2        call crlf;
+ 165   2        call crlf;
+ 166   2        call print(.('Enter Password: $'));
+ 167   2      retry:
+                call fill(.fcb16,' ',8);
+ 168   2        do i=0 to 7;
+ 169   3      nxtchr:
+                if (c:=getucase) >= ' ' then
+ 170   3          fcb16(i)=c;
+ 171   3        if c = cr then 
+ 172   3          return;
+ 173   3        if c = ctrlx then
+ 174   3          go to retry;
+ 175   3        if c = bksp then do;
+ 177   4          if i < 1 then
+ 178   4            goto retry;
+ 179   4          else do;
+ 180   5            fcb16(i := i - 1) = ' ';
+ 181   5            goto nxtchr;
+ 182   5            end;
+ 183   4          end;
+ 184   3        if c = 3 then
+ 185   3          call mon1(0,0);
+ 186   3        end;
+ 187   2      end getpasswd;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 188   1      deblankparm: procedure;
+                  /* clear to next non-blank substitute string */
+ 189   2          do while (sstring(ssbp) = ' ' or sstring(ssbp) = ctrli);
+ 190   3             ssbp = ssbp + 1;
+ 191   3          end;
+ 192   2      end deblankparm;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   8
+
+
+ 193   1      try$open: procedure;
+ 194   2        declare error$code address;
+ 195   2        call fill(.fcb16,' ',8);  /* blank storage for password */
+ 196   2        if len0 <> 0 then
+ 197   2            call move(pass0,.fcb16,len0);
+ 198   2        call error$mode(0feh);
+ 199   2        call setdma(.fcb16);  /* set dma to password */
+ 200   2        error$code = open(.sfcb);
+ 201   2        if low(error$code) = 0ffh then
+ 202   2          if high(error$code) = 7 then do;
+ 204   3            call getpasswd;
+ 205   3            call crlf;
+ 206   3            call setdma(.fcb16);
+ 207   3            call error$mode(0);
+ 208   3            error$code=open(.sfcb);
+ 209   3          end;
+ 210   2          else do;
+ 211   3            if high(error$code) = 0 then
+ 212   3              call print(.('ERROR: No ''SUB'' File Found$'));
+ 213   3            call mon1(0,0);
+ 214   3          end;
+ 215   2        call setdma(.buff(0));
+ 216   2        call error$mode(0);
+ 217   2      end try$open;
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 218   1      setup: procedure;
+ 219   2          declare no$chars byte;
+ 220   2          declare pstatus address;
+ 221   2          declare b byte;
+                  /* move buffer to substitute string */
+ 222   2          call move(.buff(1),.sstring(0),127);
+ 223   2          sstring(buff(0))=0; /* mark end of string */
+                  /* check to see if there are parameters */
+ 224   2          ssbp = 0;
+ 225   2          call deblankparm;   /* skip over leading spaces */
+ 226   2          if sstring(ssbp) = 0 then do;   /* no sub file, prompt for it */
+ 228   3             call print(.('CP/M 3 SUBMIT Version 3.0',cr,lf,'$'));
+ 229   3             call print(.('Enter File to SUBMIT: $'));
+ 230   3             no$chars = read$console$buf(.buff(0),40);
+ 231   3             buff(no$chars+2)=0;  /* mark end of input */
+ 232   3             call crlf;
+ 233   3             parse$fn.buff$adr = .buff(2);
+ 234   3             parse$fn.fcb$adr = .sfcb(0);
+ 235   3             pstatus = parse(.parse$fn);
+ 236   3             if pstatus = 0FFFFh then 
+ 237   3                call bad$file;
+ 238   3             call move(.buff(2),.sstring(0),127);
+ 239   3          end;
+ 240   2          call move(.('SUB'),.sfcb(9),3); /* set file type to SUB */
+ 241   2          if sfcb(0) = 0 then 
+ 242   2             if (b:=getscbbyte(submit$file$drv)) > 0 then do;
+ 244   3                sfcb(0)=b;      /* set file drive to that saved by CCP */
+ 245   3                call setscbbyte(submit$file$drv,0);
+ 246   3                end; 
+ 247   2          call try$open;
+ 248   2          do while (sstring(ssbp) <> ' ' and sstring(ssbp) <> 0 
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE   9
+
+
+                  and sstring(ssbp) <> ctrli); 
+ 249   3             ssbp = ssbp + 1; /* skip over file name */
+ 250   3          end;
+ 251   2          call deblankparm;   /* skip over any spaces */
+ 252   2          b = sstring(ssbp);
+                  /* File is open if this point reached */
+ 253   2          sbp = 128; /* causes read below */
+
+ 254   2          end setup;
+
+ 255   1      getsource: procedure byte;
+                  /* read the next source character */
+ 256   2          declare b byte;
+ 257   2          if sbp > 127 then
+ 258   2              do; if diskread(.sfcb(0)) <> 0 then
+ 260   3                  return endfile;
+ 261   3              sbp = 0;
+ 262   3              end;
+ 263   2          if (b := buff((sbp:=sbp+1)-1)) = cr then do;
+                    /* increment line */
+ 265   3            if (ln5:=ln5+1) > '9' then do;
+ 267   4              ln5 = '0';
+ 268   4              if (ln4:=ln4+1) > '9' then do;
+ 270   5                ln4 = '0';
+ 271   5                if (ln3:=ln3+1) > '9' then do;             
+ 273   6                  ln3 = '0';
+ 274   6                  if (ln2:=ln2+1) > '9' then do;
+ 276   7                    ln2 = '0';
+ 277   7                    ln1 = ln1 + 1;
+ 278   7                  end;
+ 279   6                end;
+ 280   5              end;
+ 281   4            end;
+ 282   3          end;
+ 283   2          return b;
+ 284   2          end getsource;
+
+ 285   1      writebuff: procedure;
+                  /* write the contents of the buffer to disk */
+ 286   2          if diskwrite(.dfcb) <> 0 then /* error */
+ 287   2              call error(.('Disk Write Error$'));
+ 288   2          end writebuff;
+
+ 289   1      declare rbuff(2048) byte, /* jcl buffer */
+                  rbp address,      /* jcl buffer pointer */
+                  rlen byte;     /* length of current command */
+
+ 290   1      fillrbuff: procedure;
+ 291   2          declare s byte;  /* sub string buffer pointer */
+
+ 292   2          notend: procedure byte;
+                      /* look at next character in sstring, return
+                      true if not at the end of the string - char passed
+                      back in 's' */
+ 293   3              if not ((s := sstring(ssbp)) = ' ' or s = 0) then
+ 294   3                  do;
+ 295   4                  ssbp = ssbp + 1;
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  10
+
+
+ 296   4                  return true;
+ 297   4                  end;
+ 298   3              return false;
+ 299   3              end notend;
+
+ 300   2          write$rbuff: procedure;
+ 301   3            declare j byte;
+ 302   3            declare i address;
+ 303   3            rbp=0; i=0;
+ 305   3            do while (i < 2048);
+ 306   4              do j=0 to 127;
+ 307   5                if rbuff(i+j)=sysin$endfile
+                          then goto close$file;
+ 309   5              end;
+ 310   4              call setdma(.rbuff(i));
+ 311   4              call writebuff;
+ 312   4              i=i+128;
+ 313   4            end;
+ 314   3            call setdma(.buff(0));
+ 315   3            return;
+
+ 316   3          close$file: 
+                    call setdma(.rbuff(i));
+ 317   3            call writebuff;
+ 318   3            call setdma(.buff(0));
+ 319   3            drrec, drr2 = 0;          /* set to 1st record in file */
+ 320   3            dcnt = ranread(.dfcb);        /* read to position at start */
+ 321   3            if dcnt <> 0 then
+ 322   3               call error(.('Random Read $'));
+ 323   3            goto exit$from$process;
+ 324   3          end write$rbuff;
+
+ 325   2        putrbuff: procedure(b);
+ 326   3             declare b byte;
+ 327   3              if (rbp > last(rbuff)) then do;
+ 329   4                call print(.('.$'));
+ 330   4                call write$rbuff;
+ 331   4              end;
+ 332   3              rbuff(rbp) = b;
+ 333   3              if b = sysin$endfile then
+ 334   3                call write$rbuff;
+ 335   3              rbp = rbp + 1;
+ 336   3          end putrbuff;
+
+ 337   2          declare (reading,b,newline,progline) byte;
+                  /* fill the jcl buffer */
+ 338   2          rbp = 0;
+ 339   2          reading = true;
+ 340   2              do while reading;
+ 341   3              rlen = 0; /* reset command length */
+ 342   3              newline,progline = true;
+ 343   3                  do while (b:=getsource) <> endfile and b <> cr;
+ 344   4                  if b <> lf then
+ 345   4                      do; if b = sysin$endfile then
+ 347   5                            call error(.('Invalid ASCII Character$'));
+ 348   5                          if newline then do; /* program input begins with < */
+ 350   6                            newline = false;
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  11
+
+
+ 351   6                            if b <> '<' then
+ 352   6                              progline = false;
+ 353   6                          end;
+ 354   5                          if b = '$' then /* copy substitute string */
+ 355   5                            do; if (b:=getsource) = '$' then
+                                       /* $$ replaced by $ */
+ 357   6                               call putrbuff(b); else
+ 358   6                            if (b := b - '0') > 9 then
+ 359   6                               call error(.('Parameter Error$')); else
+ 360   6                               do; /* find string 'b' in sstring */
+ 361   7                               ssbp = 0; call deblankparm; /* ready to scan string */
+ 363   7                                  do while b <> 0; b = b - 1;
+                                          /* clear next parameter */
+ 365   8                                      do while notend;
+ 366   9                                      end;
+ 367   8                                  call deblankparm;
+ 368   8                                  end;
+                                     /* ready to copy substitute string from position ssbp */
+ 369   7                                  do while notend;
+ 370   8                                  call putrbuff(s);
+ 371   8                                  end;
+ 372   7                             end;
+ 373   6                         end; else /* not a '$' */
+ 374   5                      if b = '^' then do; /* possible control character */
+ 376   6                        b=getsource;
+ 377   6                        if b = '^' then
+ 378   6                          call putrbuff('^'); /* '^^' ==> '^' */
+ 379   6                        else do;
+ 380   7                          if b < '@' then /* number symbols */
+ 381   7                            call putrbuff(b-' ');
+                                  else 
+ 382   7                            if b < '`' then   /* upper case */
+ 383   7                              call putrbuff(b-'@');
+                                    else
+ 384   7                              call putrbuff(b-'`');   /* lower case */
+ 385   7                        end;
+ 386   6                      end;
+                              /* check for multiple commands <com>!<com>!<com> */
+ 387   5                      else if b = '!' and not progline then do;
+ 389   6                        call putrbuff(cr); /* mark eoln with cr, lf */
+ 390   6                        call putrbuff(lf);
+ 391   6                      end;
+                              else /* not $ or ^ */
+ 392   5                        call putrbuff(b);
+ 393   5                    end;
+ 394   4                  end; /* of line or input file - compute length */
+ 395   3              reading = b = cr;
+ 396   3              call putrbuff(cr); /* mark eoln with cr, lf */
+ 397   3              call putrbuff(lf);
+ 398   3              end;
+                  /* entire file has been read and processed */
+ 399   2          rbp = rbp - 2;  /* back up; too many cr,lf's on last line */
+ 400   2          call putrbuff(sysin$endfile);   /* mark end of file */
+ 401   2          end fillrbuff;
+
+ 402   1      makefile: procedure;
+ 403   2          declare i byte;
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  12
+
+
+ 404   2          declare rsxadr addr;
+ 405   2          declare rsxbase based rsxadr addr;
+
+ 406   2          rsxadr = rsx$call(.get$init$pb);    
+ 407   2          i = high(rsxbase);      /* rsxbase = addr of kill flag */
+ 408   2          i = shr(i,2);
+ 409   2          dfcb(6) = i/10 + '0';
+ 410   2          dfcb(7) = i mod 10 + '0';
+ 411   2          call errormode(0ffh);   /* set to return errors */
+ 412   2          drec = 0; /* zero the next record to write */
+ 413   2          call make(.dfcb);
+ 414   2          if dcnt = 255 then do;
+ 416   3             call delete(.dfcb);  /* file might exist */
+ 417   3             call errormode(0);
+ 418   3             call make(.dfcb);    /* try make again */
+ 419   3             if dcnt = 255 then do;   
+ 421   4                call print(.('ERROR: Directory Full$'));
+ 422   4                call mon1(0,0);
+ 423   4                end;
+ 424   3             end;
+ 425   2          call errormode(0);
+ 426   2      end makefile;
+
+              /*************************************************
+              *                                                *
+              *           M A I N   P R O G R A M              *
+              *                                                *
+              *************************************************/
+
+ 427   1      plm: 
+                   ver = version;
+ 428   1           if (low(ver) < cpmversion) or (high(ver) = 1) then do;
+ 430   2             call print(.('Requires CP/M 3.0 $'));
+ 431   2             call mon1(0,0);
+ 432   2           end;
+ 433   1           dfcb(0)=getscbbyte(temp$file$drive$offset);
+ 434   1           call setup;
+ 435   1           call makefile;
+ 436   1           call fillrbuff;
+ 437   1      exit$from$process:
+                   /* check if GET is above us and about to abort */
+                   a = rsx$call(.get$fcb$pb);
+ 438   1           if a <> 0ffh then do;
+ 440   2             a = a - 2;
+ 441   2             if prog$flag then
+ 442   2               a = rsx$call(.get$kill$pb);
+ 443   2           end;
+ 444   1           call move(.dfcb(0),.sfcb(0),33);   /* move to fcb @ 5ch */
+ 445   1           call getf(.subpb);     /* GETF also does submit processing */
+ 446   1      end sub;
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  13
+
+
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  14
+
+
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+*** ERROR #2, STATEMENT #446, NEAR 'SUB',   UNPRINTABLE ASCII CHARACTER IGNORED
+              
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  15
+
+
+CROSS-REFERENCE LISTING
+-----------------------
+
+
+   DEFN  ADDR  SIZE  NAME, ATTRIBUTES, AND REFERENCES
+  ----- ----- -----  --------------------------------
+
+
+     44 00C4H     2  A                       ADDRESS PARAMETER
+                                               45   46 
+
+    116 0000H     1  A                       BYTE BASED(S)
+                                              118 
+
+     12 0000H     2  A                       ADDRESS PARAMETER
+                                               13 
+
+     15 0000H     1  A                       BYTE PARAMETER
+                                               16 
+
+    140 00E8H     2  A                       ADDRESS PARAMETER
+                                              141  145 
+
+    134 0000H     1  A                       BYTE BASED(S)
+                                              136 
+
+     32 00B5H     2  A                       ADDRESS
+                                               32  437  438  440  442 
+
+     18 0000H     2  A                       ADDRESS PARAMETER
+                                               19 
+
+     31              ADDR                    LITERALLY
+                                              404  405 
+
+    256 00F4H     1  B                       BYTE
+                                              263  283 
+
+    116 0000H     1  B                       BYTE BASED(D)
+                                              118 
+
+    325 08FCH     1  B                       BYTE PARAMETER
+                                              326  332  333 
+
+    337 08FEH     1  B                       BYTE
+                                              343  344  346  351  354  356  357  358  363  364
+                                              374  376  377  380  381  382  383  384  387  392
+                                              395 
+
+    221 00F3H     1  B                       BYTE
+                                              242  244  252 
+
+    127 02F0H    15  BADFILE                 PROCEDURE STACK=0004H
+                                              237 
+
+     36              BKSP                    LITERALLY
+                                              175 
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  16
+
+
+      3 0000H   128  BUFF                    BYTE ARRAY(128) EXTERNAL(1)
+                                              215  222  223  230  231  233  238  263  314  318
+
+     34 0000H     2  BUFFADR                 ADDRESS MEMBER(PARSEFN)
+                                              233 
+
+     48 00C6H     2  BUFFERADDRESS           ADDRESS PARAMETER
+                                               49   50   53   54 
+
+    163 00EDH     1  C                       BYTE
+                                              169  170  171  173  175  184 
+
+    158 00EBH     1  C                       BYTE
+                                              159  160 
+
+    131 00E7H     1  C                       BYTE PARAMETER
+                                              133  135 
+
+    150 00EAH     1  CHAR                    BYTE PARAMETER
+                                              151  152  153  154  155 
+
+     37 00C3H     1  CHAR                    BYTE PARAMETER
+                                               38   39 
+
+     64 01E0H    19  CLOSE                   PROCEDURE STACK=0002H
+
+    316 085AH        CLOSEFILE               LABEL
+                                              308 
+
+      4 0000H     1  CMDRV                   BYTE EXTERNAL(2)
+
+     41 0187H     9  CONIN                   PROCEDURE BYTE STACK=0002H
+                                              159 
+
+     31              CONTYPE                 LITERALLY
+                                               35 
+
+     31              CPMVERSION              LITERALLY
+                                              428 
+
+     31              CR                      LITERALLY
+                                              124  171  228  263  343  389  395  396 
+
+    123 02E5H    11  CRLF                    PROCEDURE STACK=0004H
+                                              142  164  165  205  232 
+
+     31              CTLL                    LITERALLY
+
+     36              CTRLC                   LITERALLY
+
+     31              CTRLI                   LITERALLY
+                                              189  248 
+
+     36              CTRLX                   LITERALLY
+                                              173 
+
+    114 00E1H     2  D                       ADDRESS PARAMETER
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  17
+
+
+                                              115  116  120 
+
+     31              DCL                     LITERALLY
+
+     32 002DH     1  DCNT                    BYTE
+                                               66   86  320  321  414  419 
+
+    188 041DH    37  DEBLANKPARM             PROCEDURE STACK=0002H
+                                              225  251  362  367 
+
+     68 01F3H    16  DELETE                  PROCEDURE STACK=0002H
+                                              147  416 
+
+     32 0009H    36  DFCB                    BYTE ARRAY(36) INITIAL
+                                               32  146  286  320  409  410  413  416  418  433
+                                              444 
+
+     72 0203H    16  DISKREAD                PROCEDURE BYTE STACK=0002H
+                                              259 
+
+     76 0213H    16  DISKWRITE               PROCEDURE BYTE STACK=0002H
+                                              286 
+
+     88 00D7H     2  DMA                     ADDRESS PARAMETER
+                                               89   90 
+
+                     DOUBLE                  BUILTIN
+                                              107 
+
+     32 0029H     1  DREC                    BYTE AT
+                                              412 
+
+     32 002CH     1  DRR2                    BYTE AT
+                                              319 
+
+     32 002AH     2  DRREC                   ADDRESS AT
+                                              319 
+
+     35 0001H     1  ECHOFLAG                BYTE MEMBER(SUBPB)
+
+     31              ENDFILE                 LITERALLY
+                                              260  343 
+
+    140 032AH    56  ERROR                   PROCEDURE STACK=0006H
+                                              287  322  347  359 
+
+    194 00EEH     2  ERRORCODE               ADDRESS
+                                              200  201  202  208  211 
+
+     92 0256H    14  ERRORMODE               PROCEDURE STACK=0002H
+                                              198  207  216  411  417  425 
+
+    437 0135H        EXITFROMPROCESS         LABEL
+                                              323 
+
+     15 0000H     1  F                       BYTE PARAMETER
+                                               16 
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  18
+
+
+    131 00E6H     1  F                       BYTE PARAMETER
+                                              133  136 
+
+     12 0000H     1  F                       BYTE PARAMETER
+                                               13 
+
+     18 0000H     1  F                       BYTE PARAMETER
+                                               19 
+
+     31              FALSE                   LITERALLY
+                                               35  298  350  352 
+
+     76 00D1H     2  FCB                     ADDRESS PARAMETER
+                                               77   78 
+
+     72 00CFH     2  FCB                     ADDRESS PARAMETER
+                                               73   74 
+
+     68 00CDH     2  FCB                     ADDRESS PARAMETER
+                                               69   70 
+
+     64 00CBH     2  FCB                     ADDRESS PARAMETER
+                                               65   66 
+
+     60 00C9H     2  FCB                     ADDRESS PARAMETER
+                                               61   62 
+
+      5 0000H     1  FCB                     BYTE ARRAY(1) EXTERNAL(3)
+
+     84 00D5H     2  FCB                     ADDRESS PARAMETER
+                                               85   86 
+
+     80 00D3H     2  FCB                     ADDRESS PARAMETER
+                                               81   82 
+
+      6 0000H     1  FCB16                   BYTE ARRAY(1) EXTERNAL(4)
+                                              167  170  180  195  197  199  206 
+
+     34 0002H     2  FCBADR                  ADDRESS MEMBER(PARSEFN)
+                                              234 
+
+    131 02FFH    43  FILL                    PROCEDURE STACK=0002H
+                                              167  195 
+
+    290 0653H   376  FILLRBUFF               PROCEDURE STACK=000EH
+                                              436 
+
+     35 0002H     1  FILTEREDFLAG            BYTE MEMBER(SUBPB)
+
+     31              FOREVER                 LITERALLY
+
+     21 0000H     1  FUNC                    BYTE PARAMETER
+                                               22 
+
+     28 0000H        GETF                    PROCEDURE EXTERNAL(15) STACK=0000H
+                                              445 
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  19
+
+
+     32 0030H     1  GETFCBPB                BYTE INITIAL
+                                              437 
+
+     32 002EH     1  GETINITPB               BYTE INITIAL
+                                              406 
+
+     32 002FH     1  GETKILLPB               BYTE INITIAL
+                                              442 
+
+    162 038EH   143  GETPASSWD               PROCEDURE STACK=0006H
+                                              204 
+
+     96 0264H    24  GETSCBBYTE              PROCEDURE BYTE STACK=0002H
+                                              242  433 
+
+    255 05C4H   125  GETSOURCE               PROCEDURE BYTE STACK=0004H
+                                              343  356  376 
+
+    157 0380H    14  GETUCASE                PROCEDURE BYTE STACK=0004H
+                                              169 
+
+                     HIGH                    BUILTIN
+                                              202  211  407  428 
+
+    403 0901H     1  I                       BYTE
+                                              407  408  409  410 
+
+    163 00ECH     1  I                       BYTE
+                                              168  170  177  180 
+
+    302 08FAH     2  I                       ADDRESS
+                                              304  305  307  310  312  316 
+
+     21 0000H     2  INFO                    ADDRESS PARAMETER
+                                               23 
+
+     28 0000H     2  INPUTTYPE               ADDRESS PARAMETER
+                                               29 
+
+     35 0000H     1  IOTYPE                  BYTE MEMBER(SUBPB)
+
+    301 08F9H     1  J                       BYTE
+                                              306  307 
+
+                     LAST                    BUILTIN
+                                              327 
+
+     31              LCA                     LITERALLY
+
+     31              LCZ                     LITERALLY
+
+      8 0000H     1  LEN0                    BYTE EXTERNAL(6)
+                                              196  197 
+
+     10 0000H     1  LEN1                    BYTE EXTERNAL(8)
+
+     31              LF                      LITERALLY
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  20
+
+
+                                              125  228  344  390  397 
+
+     31              LIT                     LITERALLY
+                                               31 
+
+     32 0000H     9  LN                      BYTE ARRAY(9) INITIAL
+                                               32 
+
+     32 0000H     1  LN1                     BYTE AT
+                                              144  277 
+
+     32 0001H     1  LN2                     BYTE AT
+                                              274  276 
+
+     32 0002H     1  LN3                     BYTE AT
+                                              271  273 
+
+     32 0003H     1  LN4                     BYTE AT
+                                              268  270 
+
+     32 0004H     1  LN5                     BYTE AT
+                                              265  267 
+
+                     LOW                     BUILTIN
+                                              201  428 
+
+     84 0233H    19  MAKE                    PROCEDURE STACK=0002H
+                                              413  418 
+
+    402 08CBH   129  MAKEFILE                PROCEDURE STACK=0004H
+                                              435 
+
+     48 00C8H     1  MAX                     BYTE PARAMETER
+                                               51   52 
+
+        0000H        MEMORY                  BYTE ARRAY(0)
+
+     92 00D9H     1  MODE                    BYTE PARAMETER
+                                               93   94 
+
+     12 0000H        MON1                    PROCEDURE EXTERNAL(10) STACK=0000H
+                                               39   46   53   70   90  108  129  148  185  213
+                                              422  431 
+
+     18 0000H        MON2                    PROCEDURE BYTE EXTERNAL(12) STACK=0000H
+                                               42   66   74   78   82   86  100 
+
+     15 0000H        MON2A                   PROCEDURE EXTERNAL(11) STACK=0000H
+                                               94 
+
+     21 0000H        MON3                    PROCEDURE ADDRESS EXTERNAL(13) STACK=0000H
+                                               58   62  112 
+
+    114 02AEH    55  MOVE                    PROCEDURE STACK=0002H
+                                              146  197  222  238  240  444 
+
+    114 00E3H     1  N                       BYTE PARAMETER
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  21
+
+
+                                              115  117 
+
+    337 08FFH     1  NEWLINE                 BYTE
+                                              342  348  350 
+
+     50 0000H     2  NEWMAX                  ADDRESS BASED(BUFFERADDRESS)
+                                               52   55 
+
+    219 00F0H     1  NOCHARS                 BYTE
+                                              230  231 
+
+    292 07CBH    44  NOTEND                  PROCEDURE BYTE STACK=0002H
+                                              365  369 
+
+    169 03B3H        NXTCHR                  LABEL
+                                              181 
+
+     33 0000H     1  OFFSET                  BYTE MEMBER(SCBPD)
+                                               98  105 
+
+    102 00DBH     1  OFFSET                  BYTE PARAMETER
+                                              103  105 
+
+     96 00DAH     1  OFFSET                  BYTE PARAMETER
+                                               97   98 
+
+     60 01D0H    16  OPEN                    PROCEDURE ADDRESS STACK=0002H
+                                              200  208 
+
+     25 0000H        PARSE                   PROCEDURE ADDRESS EXTERNAL(14) STACK=0000H
+                                              235 
+
+     34 00BBH     4  PARSEFN                 STRUCTURE
+                                              233  234  235 
+
+      7 0000H     2  PASS0                   ADDRESS EXTERNAL(5)
+                                              197 
+
+      9 0000H     2  PASS1                   ADDRESS EXTERNAL(7)
+
+     25 0000H     2  PFCB                    ADDRESS PARAMETER
+                                               26 
+
+      2 00F8H        PLM                     LABEL PUBLIC
+                                              427 
+
+     44 0190H    16  PRINT                   PROCEDURE STACK=0002H
+                                              128  143  144  145  166  212  228  229  329  421
+                                              430 
+
+     37 0177H    16  PRINTCHAR               PROCEDURE STACK=0002H
+                                              124  125 
+
+     31              PROC                    LITERALLY
+                                              123  127 
+
+     32 0000H     2  PROGFLAG                ADDRESS BASED(A)
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  22
+
+
+                                              441 
+
+    337 0900H     1  PROGLINE                BYTE
+                                              342  352  387 
+
+     35 0003H     1  PROGRAMFLAG             BYTE MEMBER(SUBPB)
+
+    220 00F1H     2  PSTATUS                 ADDRESS
+                                              235  236 
+
+    325 0894H    55  PUTRBUFF                PROCEDURE STACK=000CH
+                                              357  370  378  381  383  384  389  390  392  396
+                                              397  400 
+
+     80 0223H    16  RANREAD                 PROCEDURE BYTE STACK=0002H
+                                              320 
+
+    289 08F5H     2  RBP                     ADDRESS
+                                              303  327  332  335  338  399 
+
+    289 00F5H  2048  RBUFF                   BYTE ARRAY(2048)
+                                              307  310  316  327  332 
+
+     48 01A0H    39  READCONSOLEBUF          PROCEDURE BYTE STACK=0002H
+                                              230 
+
+    337 08FDH     1  READING                 BYTE
+                                              339  340  395 
+
+    167 039AH        RETRY                   LABEL
+                                              174  178 
+
+    289 08F7H     1  RLEN                    BYTE
+                                              341 
+
+    404 0902H     2  RSXADR                  ADDRESS
+                                              405  406 
+
+    405 0000H     2  RSXBASE                 ADDRESS BASED(RSXADR)
+                                              407 
+
+    110 029EH    16  RSXCALL                 PROCEDURE ADDRESS STACK=0002H
+                                              406  437  442 
+
+    110 00DDH     2  RSXPB                   ADDRESS PARAMETER
+                                              111  112 
+
+    291 08F8H     1  S                       BYTE
+                                              293  370 
+
+    131 00E4H     2  S                       ADDRESS PARAMETER
+                                              132  134  137 
+
+    114 00DFH     2  S                       ADDRESS PARAMETER
+                                              115  116  119 
+
+     32 00B1H     1  SBP                     BYTE
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  23
+
+
+                                              253  257  261  263 
+
+     33 00B7H     4  SCBPD                   STRUCTURE
+                                               98   99  100  105  106  107  108 
+
+     33 0001H     1  SET                     BYTE MEMBER(SCBPD)
+                                               99  106 
+
+     88 0246H    16  SETDMA                  PROCEDURE STACK=0002H
+                                              199  206  215  310  314  316  318 
+
+    102 027CH    34  SETSCBBYTE              PROCEDURE STACK=0002H
+                                              245 
+
+    218 04C9H   251  SETUP                   PROCEDURE STACK=000AH
+                                              434 
+
+      3 0000H    33  SFCB                    BYTE ARRAY(33) EXTERNAL(0)
+                                              146  147  200  208  234  240  241  244  259  444
+
+                     SHR                     BUILTIN
+                                              408 
+
+     32 00B2H     1  SSBP                    BYTE
+                                              189  190  224  226  248  249  252  293  295  361
+
+     32 0031H   128  SSTRING                 BYTE ARRAY(128)
+                                              189  222  223  226  238  248  252  293 
+
+      1 00F5H   130  SUB                     PROCEDURE STACK=0010H
+
+     36              SUBMITFILEDRV           LITERALLY
+                                              242  245 
+
+     35 00BFH     4  SUBPB                   STRUCTURE INITIAL
+                                              445 
+
+     31              SYSINENDFILE            LITERALLY
+                                              307  333  346  400 
+
+     11 0000H     1  TBUFF                   BYTE ARRAY(1) EXTERNAL(9)
+
+     31              TEMPFILEDRIVEOFFSET     LITERALLY
+                                              433 
+
+     31              TRUE                    LITERALLY
+                                               35  296  339  342 
+
+    193 0442H   135  TRYOPEN                 PROCEDURE STACK=0008H
+                                              247 
+
+    150 0362H    30  UCASE                   PROCEDURE BYTE STACK=0000H
+                                              159 
+
+     33 0002H     2  VALUE                   ADDRESS MEMBER(SCBPD)
+                                              107 
+PL/M-80 COMPILER    CP/M 3.0 --- SUBMIT                                                     PAGE  24
+
+
+    102 00DCH     1  VALUE                   BYTE PARAMETER
+                                              104  107 
+
+     32 00B3H     2  VER                     ADDRESS
+                                              427  428 
+
+     57 01C7H     9  VERSION                 PROCEDURE ADDRESS STACK=0002H
+                                              427 
+
+     31              WHAT                    LITERALLY
+
+    285 0641H    18  WRITEBUFF               PROCEDURE STACK=0008H
+                                              311  317 
+
+    300 07F7H   157  WRITERBUFF              PROCEDURE STACK=000AH
+                                              330  334 
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 094CH   2380D
+     VARIABLE AREA SIZE = 0904H   2308D
+     MAXIMUM STACK SIZE = 0010H     16D
+     672 LINES READ
+     74 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

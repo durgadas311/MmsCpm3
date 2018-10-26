@@ -1,0 +1,377 @@
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE GETSYSDEFAULTS
+OBJECT MODULE PLACED IN GETDEF.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 GETDEF.PLM DEBUG OPTIMIZE
+
+
+
+              $title('GENCPM Token File parser')
+   1          get$sys$defaults:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+                  Revised:
+                    20 Sept 82  by Bruce Skidmore
+              */
+
+   2   1        declare true literally '0FFH';
+   3   1        declare false literally '0';
+   4   1        declare forever literally 'while true';
+   5   1        declare boolean literally 'byte';
+   6   1        declare cr literally '0dh';
+   7   1        declare lf literally '0ah';
+   8   1        declare tab literally '09h';
+
+              /*
+                  D a t a    S t r u c t u r e s
+              */
+
+   9   1        declare data$fcb (36) byte external;
+
+  10   1        declare quest (156) boolean external;
+
+  11   1        declare display boolean external;
+
+  12   1        declare symbol (8) byte;
+                
+  13   1        declare lnbfr (14) byte external;
+
+  14   1        declare buffer (128) byte at (.memory);
+               
+  15   1        declare symtbl (20) structure(
+                  token(8) byte,
+                  len      byte,
+                  flags    byte,
+                  qptr     byte,
+                  ptr      address) external;
+
+  16   1        mon1:
+                  procedure (func,info) external;
+  17   2            declare func byte;
+  18   2            declare info address;
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   2
+
+
+  19   2          end mon1;
+
+  20   1        mon2:
+                  procedure (func,info) byte external;
+  21   2            declare func byte;
+  22   2            declare info address;
+  23   2          end mon2;
+
+              /*
+                   B D O S    P r o c e d u r e   &   F u n c t i o n    C a l l s
+              */
+
+  24   1        system$reset:
+                  procedure external;
+  25   2          end system$reset;
+
+  26   1        write$console:
+                  procedure (char) external;
+  27   2            declare char byte;
+  28   2          end write$console;
+
+  29   1        print$console$buffer:
+                  procedure (buffer$address) external;
+  30   2            declare buffer$address address;
+  31   2          end print$console$buffer;
+
+  32   1        open$file:
+                  procedure (fcb$address) byte external;
+  33   2            declare fcb$address address;
+  34   2            declare fcb based fcb$address (1) byte;
+  35   2          end open$file;
+
+  36   1        close$file:
+                  procedure (fcb$address) external;
+  37   2            declare fcb$address address;
+  38   2          end close$file;
+
+  39   1        set$DMA$address:
+                  procedure (DMA$address) external;
+  40   2            declare DMA$address address;
+  41   2          end set$DMA$address;
+
+  42   1        crlf:
+                  procedure external;
+  43   2          end crlf;
+
+  44   1        dsply$dec$adr:
+                  procedure (val) external;
+  45   2            declare val address;
+  46   2          end dsply$dec$adr;
+                  
+              /*
+                   M a i n   G E T D E F   P r o c e d u r e
+              */
+  47   1       getdef: 
+                procedure public;
+
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   3
+
+
+  48   2        declare buffer$index byte;
+  49   2        declare index byte;
+  50   2        declare end$of$file byte;
+  51   2        declare line$count address;
+
+  52   2        err:
+                  procedure(term$code,msg$adr);
+  53   3            declare (term$code,save$display) byte;
+  54   3            declare msg$adr address;
+
+  55   3            save$display = display;
+  56   3            display = true;
+  57   3            call print$console$buffer(.('ERROR:  $'));
+  58   3            call print$console$buffer(msg$adr);
+  59   3            call print$console$buffer(.(' at line $'));
+  60   3            call dsply$dec$adr(line$count);
+  61   3            if term$code then
+  62   3              call system$reset;
+  63   3            call crlf;
+  64   3            display = save$display;
+  65   3          end err;
+
+  66   2        inc$ptr:
+                  procedure;
+
+  67   3            if buffer$index = 127 then
+  68   3              do;
+  69   4                buffer$index = 0;
+  70   4                if mon2(20,.data$fcb) <> 0 then
+  71   4                  end$of$file = true;
+  72   4              end;
+                    else
+  73   3              buffer$index = buffer$index + 1;
+  74   3          end inc$ptr;
+
+  75   2        get$char:
+                  procedure byte;
+  76   3           declare char byte;
+
+  77   3           call inc$ptr;
+  78   3           char = buffer(buffer$index);
+  79   3           do while (char = ' ') or (char = tab) or (char = lf);
+  80   4             if char = lf then
+  81   4               line$count = line$count + 1;
+  82   4             call inc$ptr;
+  83   4             char = buffer(buffer$index);
+  84   4           end;
+  85   3           if (char >= 'a') and (char <= 'z') then
+  86   3             char = char and 0101$1111b;  /* force upper case */
+  87   3           if char = 1ah then
+  88   3             end$of$file = true;
+  89   3           return char;
+  90   3         end get$char;
+
+  91   2       get$sym:
+                 procedure;
+  92   3           declare (i,sym$char) byte;
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   4
+
+
+  93   3           declare got$sym boolean;
+
+  94   3           got$sym = false;
+  95   3           do while (not got$sym) and (not end$of$file);
+  96   4             do i = 0 to 7;
+  97   5               symbol(i) = ' ';
+  98   5             end;
+  99   4             sym$char = get$char;
+ 100   4             i = 0;
+ 101   4             do while (i < 8) and (sym$char <> '=') and 
+                              (sym$char <> cr) and (not end$of$file);
+ 102   5               symbol(i) = sym$char;
+ 103   5               sym$char = get$char;
+ 104   5               i = i + 1;
+ 105   5             end;
+ 106   4             do while (sym$char <> '=') and (sym$char <> cr) and (not end$of$file);
+ 107   5               sym$char = get$char;
+ 108   5             end;
+ 109   4             if not end$of$file then
+ 110   4               do;
+ 111   5                 if (sym$char = '=') and (i > 0) then
+ 112   5                   got$sym = true;
+                         else
+ 113   5                   do;
+ 114   6                     if (sym$char = '=') then
+ 115   6                       call err(false,.('Missing parameter variable$'));
+                             else
+ 116   6                       if i <> 0 then
+ 117   6                         call err(false,.('Equals (=) delimiter missing$'));
+                             do while (sym$char <> cr) and (not end$of$file);
+ 119   7                       sym$char = get$char;
+ 120   7                     end;
+ 121   6                   end;
+ 122   5               end;
+ 123   4           end;
+ 124   3         end get$sym;
+
+ 125   2       get$val:
+                 procedure;
+ 126   3           declare (flags,i,val$char) byte;
+ 127   3           declare val$adr address;
+ 128   3           declare val based val$adr byte;
+ 129   3           declare (base,inc,lnbfr$index) byte;
+
+ 130   3           val$char = get$char;
+ 131   3           i = 0;
+ 132   3           do while (i < lnbfr(0)) and (val$char <> cr) and (not end$of$file);
+ 133   4             lnbfr(i+2) = val$char;
+ 134   4             i = i + 1;
+ 135   4             lnbfr(1) = i;
+ 136   4             val$char = get$char;
+ 137   4           end;
+ 138   3           do while (val$char <> cr) and (not end$of$file);
+ 139   4             val$char = get$char;
+ 140   4           end;
+ 141   3           inc = 0;
+ 142   3           lnbfr$index = 2;
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   5
+
+
+ 143   3           if i > 0 then
+ 144   3             do;
+ 145   4               val$adr = symtbl(index).ptr;
+ 146   4               flags = symtbl(index).flags;
+ 147   4               if (flags and 8) <> 0 then
+ 148   4                 do;
+ 149   5                   if (flags and 10h) <> 0 then
+ 150   5                     inc = symbol(7) - 'A';
+                           else
+ 151   5                     if (symbol(7) >= '0') and (symbol(7) <= '9') then
+ 152   5                       inc = symbol(7) - '0';
+                             else
+ 153   5                       inc = 10 + (symbol(7) - 'A');
+ 154   5                   val$adr = val$adr + (inc * symtbl(index).len);
+ 155   5                 end;
+ 156   4               if lnbfr(lnbfr$index) = '?' then
+ 157   4                 do;
+ 158   5                   quest(inc+symtbl(index).qptr) = true;
+ 159   5                   display = true;
+ 160   5                   lnbfr$index = lnbfr$index + 1;
+ 161   5                   lnbfr(1) = lnbfr(1) - 1;
+ 162   5                 end;
+ 163   4               if lnbfr(1) > 0 then
+ 164   4                 do;
+ 165   5                   if (flags and 1) <> 0 then
+ 166   5                     do;
+ 167   6                        if (lnbfr(lnbfr$index) >= 'A') and 
+                                   (lnbfr(lnbfr$index) <= 'P') then
+ 168   6                          val = lnbfr(lnbfr$index) - 'A';
+                                else
+ 169   6                          call err(false,.('Invalid drive ignored$'));
+ 170   6                     end;
+                           else
+ 171   5                     if (flags and 2) <> 0 then
+ 172   5                       do;
+ 173   6                         val = (lnbfr(lnbfr$index) = 'Y');
+ 174   6                       end;
+                             else
+ 175   5                       do;
+ 176   6                         base = 16;
+ 177   6                         val = 0;
+ 178   6                         do i = 0 to lnbfr(1) - 1;
+ 179   7                           val$char = lnbfr(i+lnbfr$index);
+ 180   7                           if val$char = ',' then
+ 181   7                             do;
+ 182   8                               val$adr = val$adr + 1;
+ 183   8                               val = 0;
+ 184   8                               base = 16;
+ 185   8                             end;
+                                   else
+ 186   7                             do;
+ 187   8                               if val$char = '#' then
+ 188   8                                 base = 10;
+                                       else
+ 189   8                                 do;
+ 190   9                                   val$char = val$char - '0';
+ 191   9                                   if (base = 16) and (val$char > 9) then
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   6
+
+
+ 192   9                                     do;
+ 193  10                                       if val$char > 16 then
+ 194  10                                         val$char = val$char - 7;
+                                               else
+ 195  10                                         val$char = 0ffh;
+ 196  10                                     end;
+ 197   9                                   if val$char < base then
+ 198   9                                     val = val * base + val$char;
+                                           else
+ 199   9                                     call err(false,.('Invalid character$'));
+ 200   9                                 end;
+ 201   8                             end;
+ 202   7                         end;
+ 203   6                       end;
+ 204   5                 end;
+ 205   4            end;
+ 206   3          end get$val;
+
+ 207   2       compare$sym:
+                procedure byte;
+ 208   3          declare (i,j) byte;
+ 209   3          declare found boolean;
+
+ 210   3          found = false;
+ 211   3          i = 0;
+ 212   3          do while ((i < 22) and (not found));
+ 213   4            j = 0;
+ 214   4            do while ((j < 7) and (symtbl(i).token(j) = symbol(j)));
+ 215   5              j = j + 1;
+ 216   5            end;
+ 217   4            if j = 7 then
+ 218   4              found = true;
+                    else
+ 219   4              i = i + 1;
+ 220   4          end;
+ 221   3          if not found then
+ 222   3            return 0ffh;
+                  else
+ 223   3            return i;
+ 224   3        end compare$sym;
+                  
+ 225   2          line$count = 1;
+ 226   2          call set$dma$address(.buffer);
+ 227   2          buffer$index = 127;
+ 228   2          end$of$file = false;
+ 229   2          do while (not end$of$file);
+ 230   3            call get$sym;
+ 231   3            if not end$of$file then
+ 232   3              do;
+ 233   4                index = compare$sym;
+ 234   4                if index <> 0ffh then
+ 235   4                  call get$val;
+                        else
+ 236   4                  call err(false,.('Invalid parameter variable$'));
+ 237   4              end;
+ 238   3          end;
+
+PL/M-80 COMPILER    GENCPM TOKEN FILE PARSER                                                                    PAGE   7
+
+
+ 239   2        end getdef;
+ 240   1      end get$sys$defaults;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 05D6H   1494D
+     VARIABLE AREA SIZE = 0020H     32D
+     MAXIMUM STACK SIZE = 0008H      8D
+     338 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

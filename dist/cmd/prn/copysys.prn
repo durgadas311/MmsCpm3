@@ -1,0 +1,940 @@
+CP/M MACRO ASSEM 2.0	#001	Copysys - updated sysgen program 6/82
+
+                	TITLE	'Copysys - updated sysgen program 6/82'
+                ; SYSTEM GENERATION PROGRAM
+ 001E =         VERS	EQU	30		;VERSION X.X FOR CP/M X.X
+                ;
+                ;**********************************************************
+                ;*							  *
+                ;*							  *
+                ;*		COPYSYS SOURCE CODE			  *
+                ;*							  *
+                ;*							  *
+                ;**********************************************************
+                ;
+ 0000 =         FALSE	EQU	0
+ FFFF =         TRUE	EQU	NOT FALSE
+                ;
+                ;
+ 001A =         NSECTS	EQU	26		;NO. OF SECTORS
+ 0002 =         NTRKS	EQU	2		;NO. OF SYSTEMS TRACKS
+ 0004 =         NDISKS	EQU	4		;NO. OF DISKS DRIVES
+ 0080 =         SECSIZ	EQU	128		;SIZE OF SECTOR
+ 0007 =         LOG2SEC	EQU	7		;LOG2 128
+ 0002 =         SKEW	EQU	2		;SKEW SECTOR FACTOR
+                ;
+ 005C =         FCB	EQU	005CH		;LOCATION OF FCB
+ 007C =         FCBCR	EQU	FCB+32		;CURRENT RECORD LOCATION
+ 0100 =         TPA	EQU	0100H		;TRANSIENT PROGRAM AREA
+ 1000 =         LOADP	EQU	1000H		;LOAD POINT FOR SYSTEM
+ 0005 =         BDOS	EQU	05H		;DOS ENTRY POINT
+ 0000 =         BOOT	EQU	00H		;REBOOT FOR SYSTEM
+ 0001 =         CONI	EQU	1H		;CONSOLE INPUT FUNCTION
+ 0002 =         CONO	EQU	2H		;CONSOLE OUTPUT FUNCTION
+ 000E =         SELD	EQU	14		;SELECT A DISK
+ 000F =         OPENF	EQU	15 		;DISK OPEN FUNCTION
+ 0010 =         CLOSEF	EQU	16		;OPEN A FILE
+ 0015 =         DWRITF	EQU	21		;WRITE FUNC
+ 0016 =         MAKEF	EQU	22		;MAE A FILE
+ 0013 =         DELTEF 	EQU	19		;DELETE A FILE
+ 0014 =         DREADF	EQU	20		;DISK READ FUNCTION
+ 0032 =         DRBIOS	EQU	50		;DIRECT BIOS CALL FUNCTION
+ 0080 =         EIGHTY	EQU	080H		;VALUE OF 80
+ 0003 =         CTLC	EQU	'C'-'@'		;CONTROL C
+ 0059 =         Y	EQU	89		;ASCII VALUE OF Y
+                ;
+ 0001 =         MAXTRY	EQU	01		;MAXIMUM NUMBER OF TRIES
+ 000D =         CR	EQU	0DH		;CARRIAGE RETURN
+ 000A =         LF	EQU	0AH		;LINE FEED
+ 0016 =         STACKSIZE EQU	016H		;SIZE OF LOCAL STACK
+                ;
+ 0001 =         WBOOT	EQU	01		;ADDRESS OF WARM BOOT
+                ;
+ 0009 =         SELDSK	EQU	9		;BIOS FUNC #9 SELECT DISK
+ 000A =         SETTRK	EQU	10		;BIOS FUNC #10 SET TRACK
+ 000B =         SETSEC	EQU	11		;BIOS FUNC #11 SET SECTOR
+ 000C =         SETDMA	EQU	12		;BIOS FUNC #12 SET DMA ADDRESS
+ 000D =         READF	EQU	13		;BIOS FUNC #13 READ SELECTED SECTOR
+ 000E =         WRITF	EQU	14		;BIOS FUNC #14 WRITE SELECTED SECTOR
+CP/M MACRO ASSEM 2.0	#002	Copysys - updated sysgen program 6/82
+
+                
+                ;
+ 0100           	ORG	TPA		;TRANSIENT PROGRAM AREA
+ 0100 C35704    	JMP	START
+ 0103 0000000000	DW	0,0,0,0,0,0,0,0
+ 0113 0000000000	DW	0,0,0,0,0,0,0,0
+ 0123 0000000000	DW	0,0,0,0,0,0,0,0
+ 0133 0000000000	DW	0,0,0,0,0,0,0,0
+ 0143 0000000000	DW	0,0,0,0,0
+ 014D 000000    	DB	0,0,0
+ 0150 434F505952	DB	'COPYRIGHT 1982, '
+ 0160 4449474954	DB	'DIGITAL RESEARCH'
+ 0170 3135313238	DB	'151282'
+ 0176 00000000  	DB	0,0,0,0
+ 017A 3635343332	DB	'654321'
+                ;
+                ; TRANSLATE TABLE-SECTOR NUMBERS ARE TRANSLATED HERE TO DECREASE
+                ; THE SYSTEN TIE FOR MISSED SECTORS WHEN SLOW CONTROLLERS ARE
+                ; INVOLVED.  TRANSLATE TAKES PLACE ACCORDING TO THE "SKEW" FACTOR
+                ; SET ABOVE.
+                ;
+ 0180 02        OST:	DB	NTRKS		;OPERATING SYSTEM TRACKS
+ 0181 1A        SPT:	DB	NSECTS		;SECTORS PER TRACK
+                TRAN:
+ 0001 #         TRELT	SET	1
+ 0001 #         TRBASE	SET	1
+                	REPT	NSECTS
+                	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+                TRELT	SET	TRELT+SKEW
+                	IF	TRELT GT NSECTS
+                TRBASE	SET	TRBASE+1
+                TRELT	SET	TRBASE
+                	ENDIF
+                	ENDM
+ 0182+01        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0183+03        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0184+05        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0185+07        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0186+09        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0187+0B        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0188+0D        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0189+0F        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018A+11        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018B+13        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018C+15        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018D+17        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018E+19        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 018F+02        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0190+04        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0191+06        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0192+08        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0193+0A        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0194+0C        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0195+0E        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0196+10        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0197+12        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+CP/M MACRO ASSEM 2.0	#003	Copysys - updated sysgen program 6/82
+
+ 0198+14        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 0199+16        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 019A+18        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+ 019B+1A        	DB	TRELT		;GENERATE FIRST/NEXT SECTOR
+                ;
+                ; NOW LEAVE SPACE FOR EXTENSIONS TO TRANSLATE TABLE
+                ;
+                	IF	NSECTS LT 64
+                	REPT	64-NSECTS
+                	DB	0
+                	ENDM
+ 019C+00        	DB	0
+ 019D+00        	DB	0
+ 019E+00        	DB	0
+ 019F+00        	DB	0
+ 01A0+00        	DB	0
+ 01A1+00        	DB	0
+ 01A2+00        	DB	0
+ 01A3+00        	DB	0
+ 01A4+00        	DB	0
+ 01A5+00        	DB	0
+ 01A6+00        	DB	0
+ 01A7+00        	DB	0
+ 01A8+00        	DB	0
+ 01A9+00        	DB	0
+ 01AA+00        	DB	0
+ 01AB+00        	DB	0
+ 01AC+00        	DB	0
+ 01AD+00        	DB	0
+ 01AE+00        	DB	0
+ 01AF+00        	DB	0
+ 01B0+00        	DB	0
+ 01B1+00        	DB	0
+ 01B2+00        	DB	0
+ 01B3+00        	DB	0
+ 01B4+00        	DB	0
+ 01B5+00        	DB	0
+ 01B6+00        	DB	0
+ 01B7+00        	DB	0
+ 01B8+00        	DB	0
+ 01B9+00        	DB	0
+ 01BA+00        	DB	0
+ 01BB+00        	DB	0
+ 01BC+00        	DB	0
+ 01BD+00        	DB	0
+ 01BE+00        	DB	0
+ 01BF+00        	DB	0
+ 01C0+00        	DB	0
+ 01C1+00        	DB	0
+                	ENDIF
+                ;
+                ; UTILITY SUBROUTINES
+                ;
+                MLTBY3:
+                ;MULTIPLY THE CONTENTS OF REGE TO GET JMP ADDRESS
+ 01C2 7B        	MOV	A,E		;ACC = E
+CP/M MACRO ASSEM 2.0	#004	Copysys - updated sysgen program 6/82
+
+ 01C3 D601      	SUI	1
+ 01C5 5F        	MOV	E,A		;GET READY FOR MULTIPLY
+ 01C6 83        	ADD	E
+ 01C7 83        	ADD	E
+ 01C8 5F        	MOV	E,A
+ 01C9 C9        	RET			;BACK AT IT
+                ;
+                SEL:
+ 01CA 323706    	STA	TEMP
+ 01CD 3A3606    	LDA	V3FLG
+ 01D0 FEFF      	CPI	TRUE
+ 01D2 3A3706    	LDA	TEMP
+ 01D5 C2EE01    	JNZ	SEL2
+                ;
+ 01D8 32E805    	STA	CREG		;CREG = SELECTED REGISTER
+ 01DB 210000    	LXI	H,0000H
+ 01DE 22EA05    	SHLD	EREG		;FOR FIRST TIME
+                
+ 01E1 3E09      	MVI	A,SELDSK
+ 01E3 32E605    	STA	BIOSFC		;STORE IT IN FUNC SPACE
+ 01E6 0E32      	MVI	C,DRBIOS
+ 01E8 11E605    	LXI	D,BIOSPB
+ 01EB C30500    	JMP	BDOS
+                SEL2:
+ 01EE 4F        	MOV	C,A
+ 01EF 2A0100    	LHLD	WBOOT
+ 01F2 110900    	LXI	D,SELDSK
+ 01F5 CDC201    	CALL	MLTBY3
+ 01F8 19        	DAD	D
+ 01F9 E9        	PCHL
+                ;
+                TRK:
+                ; SET UP TRACK
+ 01FA 323706    	STA	TEMP
+ 01FD 3A3606    	LDA	V3FLG
+ 0200 FEFF      	CPI	TRUE
+ 0202 3A3706    	LDA	TEMP
+ 0205 C21E02    	JNZ	TRK2
+                
+                ;
+ 0208 3E00      	MVI	A,00H
+ 020A 32E905    	STA	BREG		;ZERO OUT B REGISTER
+ 020D 79        	MOV	A,C		;ACC = TRACK #
+ 020E 32E805    	STA	CREG		;SET UP PB
+ 0211 3E0A      	MVI	A,SETTRK	;SETTRK FUNC #
+ 0213 32E605    	STA	BIOSFC
+ 0216 0E32      	MVI	C,DRBIOS
+ 0218 11E605    	LXI	D,BIOSPB
+ 021B C30500    	JMP	BDOS
+                TRK2:
+ 021E 2A0100    	LHLD	WBOOT
+ 0221 110A00    	LXI	D,SETTRK
+ 0224 CDC201    	CALL	MLTBY3
+ 0227 19        	DAD	D
+ 0228 E9        	PCHL			;GONE TO SET TRACK
+                ;
+CP/M MACRO ASSEM 2.0	#005	Copysys - updated sysgen program 6/82
+
+                SEC:
+                ; SET UP SECTOR NUMBER
+ 0229 323706    	STA	TEMP
+ 022C 3A3606    	LDA	V3FLG
+ 022F FEFF      	CPI	TRUE
+ 0231 3A3706    	LDA	TEMP
+ 0234 C24D02    	JNZ	SEC2
+                ;
+ 0237 3E00      	MVI	A,00H
+ 0239 32E905    	STA	BREG		;ZERO OUT BREG
+ 023C 79        	MOV	A,C		; ACC = C
+ 023D 32E805    	STA	CREG		;CREG = SECTOR #
+ 0240 3E0B      	MVI	A,SETSEC
+ 0242 32E605    	STA	BIOSFC		;SET UP BIOS CALL
+ 0245 0E32      	MVI	C,DRBIOS
+ 0247 11E605    	LXI	D,BIOSPB
+ 024A C30500    	JMP	BDOS
+                SEC2:
+ 024D 2A0100    	LHLD	WBOOT
+ 0250 110B00    	LXI	D,SETSEC
+ 0253 CDC201    	CALL	MLTBY3
+ 0256 19        	DAD	D
+ 0257 E9        	PCHL
+                ;
+                DMA:
+                ; SET DMA ADDRESS TO VALUE OF BC
+ 0258 323706    	STA	TEMP
+ 025B 3A3606    	LDA	V3FLG
+ 025E FEFF      	CPI	TRUE
+ 0260 3A3706    	LDA	TEMP
+ 0263 C27B02    	JNZ	DMA2
+                ;
+ 0266 78        	MOV	A,B		;
+ 0267 32E905    	STA	BREG		;
+ 026A 79        	MOV	A,C		;SET UP THE BC
+ 026B 32E805    	STA	CREG		;REGISTER PAIR
+ 026E 3E0C      	MVI	A,SETDMA	;
+ 0270 32E605    	STA	BIOSFC		;SET UP BIOS #
+ 0273 0E32      	MVI	C,DRBIOS
+ 0275 11E605    	LXI	D,BIOSPB
+ 0278 C30500    	JMP	BDOS
+                DMA2:
+ 027B 2A0100    	LHLD	WBOOT
+ 027E 110C00    	LXI	D,SETDMA
+ 0281 CDC201    	CALL	MLTBY3
+ 0284 19        	DAD	D
+ 0285 E9        	PCHL
+                ;
+                READ:
+                ; PERFORM READ OPERATION
+ 0286 323706    	STA	TEMP
+ 0289 3A3606    	LDA	V3FLG
+ 028C FEFF      	CPI	TRUE
+ 028E 3A3706    	LDA	TEMP
+ 0291 C2A102    	JNZ	READ2
+                ;
+CP/M MACRO ASSEM 2.0	#006	Copysys - updated sysgen program 6/82
+
+ 0294 3E0D      	MVI	A,READF
+ 0296 32E605    	STA	BIOSFC
+ 0299 0E32      	MVI	C,DRBIOS
+ 029B 11E605    	LXI	D,BIOSPB
+ 029E C30500    	JMP	BDOS
+                READ2:
+ 02A1 2A0100    	LHLD	WBOOT
+ 02A4 110D00    	LXI	D,READF
+ 02A7 CDC201    	CALL	MLTBY3
+ 02AA 19        	DAD	D
+ 02AB E9        	PCHL
+                ;
+                WRITE:
+                ; PERFORM WRITE OPERATION
+ 02AC 323706    	STA	TEMP
+ 02AF 3A3606    	LDA	V3FLG
+ 02B2 FEFF      	CPI	TRUE
+ 02B4 3A3706    	LDA	TEMP
+ 02B7 C2C702    	JNZ	WRITE2
+                ;
+ 02BA 3E0E      	MVI	A,WRITF
+ 02BC 32E605    	STA	BIOSFC		;SET UP BIOS #
+ 02BF 0E32      	MVI	C,DRBIOS
+ 02C1 11E605    	LXI	D,BIOSPB
+ 02C4 C30500    	JMP	BDOS
+                WRITE2:
+ 02C7 2A0100    	LHLD	WBOOT
+ 02CA 110E00    	LXI	D,WRITF
+ 02CD CDC201    	CALL	MLTBY3
+ 02D0 19        	DAD	D
+ 02D1 E9        	PCHL
+                ;
+                MULTSEC:
+                ; MULTIPLY THE SECTOR # IN RA BY THE SECTOR SIZE
+ 02D2 6F        	MOV	L,A
+ 02D3 2600      	MVI	H,0		;SECTOR IN HL
+                	REPT	LOG2SEC
+                	DAD	H
+                	ENDM
+ 02D5+29        	DAD	H
+ 02D6+29        	DAD	H
+ 02D7+29        	DAD	H
+ 02D8+29        	DAD	H
+ 02D9+29        	DAD	H
+ 02DA+29        	DAD	H
+ 02DB+29        	DAD	H
+ 02DC C9        	RET			;WITH HL - SECTOR*SECTORSIZE
+                ;
+                GETCHAR:
+                ; READ CONSOLE CHARACTER TO RA
+ 02DD 0E01      	MVI	C,CONI
+ 02DF CD0500    	CALL	BDOS
+                ; CONVERT TO UPPER CASE
+ 02E2 FE61      	CPI	'A' OR 20H
+ 02E4 D8        	RC
+ 02E5 FE7B      	CPI	('Z' OR 20H)+1
+CP/M MACRO ASSEM 2.0	#007	Copysys - updated sysgen program 6/82
+
+ 02E7 D0        	RNC
+ 02E8 E65F      	ANI	05FH
+ 02EA C9        	RET
+                ;
+                PUTCHAR:
+                ; WRITE CHARACTER FROM RA TO CONSOLE
+ 02EB 5F        	MOV	E,A
+ 02EC 0E02      	MVI	C,CONO
+ 02EE CD0500    	CALL	BDOS
+ 02F1 C9        	RET
+                ;
+                CRLF:
+                ; SEND CARRIAGE RETURN, LINE FEED
+ 02F2 3E0D      	MVI	A,CR
+ 02F4 CDEB02    	CALL	PUTCHAR
+ 02F7 3E0A      	MVI	A,LF
+ 02F9 CDEB02    	CALL	PUTCHAR
+ 02FC C9        	RET
+                ;
+                
+                CRMSG:
+                ; PRINT MESSAGE ADDRESSED BY THE HL UNTIL ZERO WITH LEADING CRLF
+ 02FD D5        	PUSH	D
+ 02FE CDF202    	CALL	CRLF
+ 0301 D1        	POP	D		;DROP THROUGH TO OUTMSG
+                OUTMSG:
+ 0302 0E09      	MVI	C,9
+ 0304 C30500    	JMP	BDOS
+                ;
+                SELCT:
+                ; SELECT DISK GIVEN BY RA
+ 0307 0E0E      	MVI	C,0EH
+ 0309 C30500    	JMP	BDOS
+                ;
+                DWRITE:
+                ; WRITE FOR FILE COPY
+ 030C 0E15      	MVI	C,DWRITF
+ 030E C30500    	JMP	BDOS
+                ;
+                DREAD:
+                ; DISK READ FUNCTION
+ 0311 0E14      	MVI	C,DREADF
+ 0313 C30500    	JMP	BDOS
+                ;
+                OPEN:
+                ; FILE OPEN FUNCTION
+ 0316 0E0F      	MVI	C,OPENF
+ 0318 C30500    	JMP	BDOS
+                ;
+                CLOSE:
+ 031B 0E10      	MVI	C,CLOSEF
+ 031D C30500    	JMP	BDOS
+                ;
+                MAKE:
+ 0320 0E16      	MVI	C,MAKEF
+ 0322 C30500    	JMP	BDOS
+CP/M MACRO ASSEM 2.0	#008	Copysys - updated sysgen program 6/82
+
+                ;
+                DELETE:	
+ 0325 0E13      	MVI	C,DELTEF
+ 0327 C30500    	JMP	BDOS
+                ;
+                ;
+                ;
+                DSTDMA:
+ 032A 0E1A      	MVI	C,26
+ 032C C30500    	JMP	BDOS
+                ;
+                SOURCE:
+ 032F 116006    	LXI	D,GETPRM	;ASK USER FOR SOURCE DRIVE
+ 0332 CDFD02    	CALL	CRMSG
+ 0335 CDDD02    	CALL	GETCHAR		;OBTAIN RESPONSE
+ 0338 FE0D      	CPI	CR		;IS IT CR?
+ 033A CA5D03    	JZ	DFLTDR		;SKIP IF CR ONLY
+ 033D FE03      	CPI	CTLC		;ISIT ^C?
+ 033F CAD405    	JZ	REBOOT
+                ;
+ 0342 D641      	SUI	'A'		;NORMALIZE DRIVE #
+ 0344 FE04      	CPI	NDISKS		;VALID DRIVE?
+ 0346 DA4F03    	JC	GETC		;SKIP TO GETC IF SO
+                ;
+                ; INVALID DRIVE
+ 0349 CDDF05    	CALL	BADDISK		;TELL USER BAD DRIVE
+ 034C C32F03    	JMP	SOURCE		;TRY AGAIN
+                ;
+                GETC:
+                ; SELECT DISK GIVEN BY ACC.
+ 034F C641      	ADI	'A'
+ 0351 329506    	STA	GDISK		;STORE SOURCE DISK
+ 0354 D641      	SUI	'A'
+ 0356 5F        	MOV	E,A		;MOVE DISK INTO E FOR SELECT FUNC
+ 0357 CDCA01    	CALL	SEL		;SELECT THE DISK
+ 035A C37303    	JMP	GETVER
+                ;
+                DFLTDR:
+ 035D 0E19      	MVI	C,25		;FUNC 25 FOR CURRENT DISK
+ 035F CD0500    	CALL	BDOS		;GET CURDSK
+ 0362 C641      	ADI	'A'
+ 0364 329506    	STA	GDISK
+ 0367 CDF202    	CALL	CRLF
+ 036A 118B06    	LXI	D,VERGET
+ 036D CD0203    	CALL	OUTMSG
+ 0370 C37C03    	JMP	VERCR
+                ;
+                GETVER:	
+                ; GETSYS SET R/W TO READ AND GET THE SYSTEM
+ 0373 CDF202    	CALL	CRLF
+ 0376 118B06    	LXI	D,VERGET	;VERIFY SOURCE DISK
+ 0379 CD0203    	CALL	OUTMSG
+ 037C CDDD02    VERCR:	CALL	GETCHAR
+ 037F FE0D      	CPI	CR
+ 0381 C2D405    	JNZ	REBOOT		;JMP ONLY IF NOT VERIFIED
+ 0384 CDF202    	CALL	CRLF
+CP/M MACRO ASSEM 2.0	#009	Copysys - updated sysgen program 6/82
+
+ 0387 C9        	RET
+                ;
+                DESTIN:
+ 0388 11A906    	LXI	D,PUTPRM	;ADDRESS OF MESSAGE
+ 038B CDFD02    	CALL	CRMSG		;PRINT IT
+ 038E CDDD02    	CALL	GETCHAR		;GET ANSWER
+ 0391 FE0D      	CPI	CR
+ 0393 CAD405    	JZ	REBOOT		;ALL DONE
+ 0396 D641      	SUI	'A'
+ 0398 FE04      	CPI	NDISKS			;VALID DISK
+ 039A DAA303    	JC	PUTC
+                ;
+                ; INVALID DRIVE
+ 039D CDDF05    	CALL	BADDISK		;TELL USER BAD DRIVE
+ 03A0 C3C204    	JMP	PUTSYS		;TO TRY AGAIN
+                ;
+                PUTC:
+                ; SET DISK FRON RA
+ 03A3 C641      	ADI	'A'
+ 03A5 32E606    	STA	PDISK		;MESSAGE SENT
+ 03A8 D641      	SUI	'A'
+ 03AA 5F        	MOV	E,A		;DISK # IN E
+ 03AB CDCA01    	CALL	SEL		;SELECT DESTINATION DRIVE
+                ; PUT SYSTEM, SET R/W TO WRITE
+ 03AE 11D706    	LXI	D,VERPUT	;VERIFY DEST PRMPT
+ 03B1 CDFD02    	CALL	CRMSG		;PRINT IT OUT
+ 03B4 CDDD02    	CALL	GETCHAR		;RETRIEVE ANSWER
+ 03B7 FE0D      	CPI	CR	
+ 03B9 C2D405    	JNZ	REBOOT		;EXIT TO SYSTEM IF ERROR
+ 03BC CDF202    	CALL	CRLF
+ 03BF C9        	RET
+                ;
+                ;
+                GETPUT:
+                ; GET OR PUT CP/M (RW = 0 FOR READ, 1 FOR WRITE)
+                ; DISK IS ALREADY SELECTED
+ 03C0 210010    	LXI	H,LOADP		;LOAD POINT IN RAM FOR DMA ADDRESS
+ 03C3 224006    	SHLD	DMADDR
+                ;
+                ;
+                ;
+                
+                ;
+                ; CLEAR TRACK 00
+ 03C6 3EFF      	MVI	A,-1		;
+ 03C8 323C06    	STA	TRACK
+                ;
+                RWTRK: 
+                ; READ OR WRITE NEXT TRACK
+ 03CB 213C06    	LXI	H,TRACK
+ 03CE 34        	INR	M		;TRACK = TRACK+1
+ 03CF 3A8001    	LDA	OST		;# OF OS TRACKS
+ 03D2 BE        	CMP	M		;=TRACK # ?
+ 03D3 CA5604    	JZ	ENDRW		;END OF READ/WRITE
+                ;
+                ; OTHERWISE NOT DONE
+CP/M MACRO ASSEM 2.0	#010	Copysys - updated sysgen program 6/82
+
+ 03D6 4E        	MOV	C,M		;TRACK NUMBER
+ 03D7 CDFA01    	CALL	TRK		;SET TO TRACK
+ 03DA 3EFF      	MVI	A,-1		;COUNTS 0,1,2,...,25
+ 03DC 323E06    	STA	SECTOR
+                ;
+                RWSEC:
+                ; READ OR WRITE A SECTOR
+ 03DF 3A8101    	LDA	SPT		;SECTORS PER TRACK
+ 03E2 213E06    	LXI	H,SECTOR	
+ 03E5 34        	INR	M		;SET TO NEXT SECTOR
+ 03E6 BE        	CMP	M		;A=26 AND M=0,1,..,25
+ 03E7 CA4504    	JZ	ENDTRK
+                ;
+                ; READ OR WRITE SECTOR TO OR FROM CURRENT DMA ADDRESS
+ 03EA 213E06    	LXI	H,SECTOR
+ 03ED 5E        	MOV	E,M		;SECTOR NUMBER
+ 03EE 1600      	MVI	D,0		;TO DE
+ 03F0 218201    	LXI	H,TRAN	
+ 03F3 46        	MOV	B,M		;TRAN(0) IN B
+ 03F4 19        	DAD	D		;SECTOR TRANSLATED
+ 03F5 4E        	MOV	C,M		;VALUE TO C READY FOR SELECT
+ 03F6 C5        	PUSH	B		;SAVE TRAN(0)
+ 03F7 CD2902    	CALL 	SEC
+ 03FA C1        	POP	B		;RECALL TRAN(0),TRAN(SECTOR)
+ 03FB 79        	MOV	A,C		;TRAN(SECTOR)
+ 03FC 90        	SUB	B		;--TRAN(SECTOR)
+ 03FD CDD202    	CALL	MULTSEC		;*SECTOR SIZE
+ 0400 EB        	XCHG			;TO DE
+ 0401 2A4006    	LHLD	DMADDR		;BASE DMA
+ 0404 19        	DAD	D
+ 0405 44        	MOV	B,H
+ 0406 4D        	MOV	C,L		;TO SET BC FOR SEC CALL
+ 0407 CD5802    	CALL	DMA		;DMA ADDRESS SET FROM BC
+ 040A AF        	XRA	A
+ 040B 324206    	STA	RETRY		;TO SET ZERO RETRIES
+                ;
+                TRYSEC:
+                ; TRY TO READ OR WRITE CURRENT SECTOR
+ 040E 3A4206    	LDA	RETRY
+ 0411 FE01      	CPI	MAXTRY
+ 0413 DA2A04    	JC	TRYOK
+                ;
+                ; PAST MAXTRY, MESSAGE AND IGNORE
+ 0416 11C507    	LXI	D,ERRMSG
+ 0419 CD0203    	CALL	OUTMSG
+ 041C CDDD02    	CALL	GETCHAR
+ 041F FE0D      	CPI	CR
+ 0421 C2D405    	JNZ	REBOOT
+                ;
+                ; TYPED A CR, OK TO IGNORE
+ 0424 CDF202    	CALL	CRLF
+ 0427 C3DF03    	JMP	RWSEC
+                ;
+                TRYOK:
+                ; OK TO TYR READ WRITE
+ 042A 3C        	INR	A
+CP/M MACRO ASSEM 2.0	#011	Copysys - updated sysgen program 6/82
+
+ 042B 324206    	STA	RETRY	
+ 042E 3A3F06    	LDA	RW
+ 0431 B7        	ORA	A
+ 0432 CA3B04    	JZ	TRYREAD
+                ;
+                ; MUST BE WRITE
+ 0435 CDAC02    	CALL	WRITE
+ 0438 C33E04    	JMP	CHKRW
+                TRYREAD:
+ 043B CD8602    	CALL	READ
+                CHKRW:
+ 043E B7        	ORA	A
+ 043F CADF03    	JZ	RWSEC		;ZERO FLAG IF READ/WRITE OK
+                ;
+                ;ERROR, RETRY OPERATION
+ 0442 C30E04    	JMP	TRYSEC
+                ;
+                ; END OF TRACK
+                ENDTRK:
+ 0445 3A8101    	LDA	SPT		;SECTORS PER TRACK
+ 0448 CDD202    	CALL	MULTSEC		;*SECSIZE
+ 044B EB        	XCHG			; TO DE
+ 044C 2A4006    	LHLD	DMADDR		;BASE DMA FOR THIS TRACK
+ 044F 19        	DAD	D		;+SPT*SECSIZE
+ 0450 224006    	SHLD	DMADDR		;READY FOR NEXT TRACK
+ 0453 C3CB03    	JMP	RWTRK		;FOR ANOTHER TRACK
+                ;
+                ENDRW:
+                ; END OF READ OR WRITE
+ 0456 C9        	RET
+                ;
+                ;*******************
+                ;*
+                ;*	MAIN ROUTINE
+                ;*
+                ;*
+                ;*******************
+                ;
+                START:
+                
+ 0457 316908    	LXI	SP,STACK
+ 045A 114306    	LXI	D,SIGNON
+ 045D CD0203    	CALL	OUTMSG
+                ;
+                ;GET VERSION NUMBER TO CHECK COMPATABILITY
+ 0460 0E0C      	MVI	C,12		;VERSION CHECK
+ 0462 CD0500    	CALL	BDOS
+ 0465 7D        	MOV	A,L		;VERSION IN ACC
+ 0466 FE30      	CPI	30H		;VERSION 3 OR NEWER?
+ 0468 DA7304    	JC	OLDRVR		;
+ 046B 3EFF      	MVI	A,TRUE
+ 046D 323606    	STA	V3FLG		;
+ 0470 C37804    	JMP	FCBCHK
+                OLDRVR:	
+ 0473 3E00      	MVI	A,FALSE
+ 0475 323606    	STA	V3FLG
+CP/M MACRO ASSEM 2.0	#012	Copysys - updated sysgen program 6/82
+
+                ;
+                
+                ; CHECK FOR DEFAULT FILE LIAD INSTEAD OF GET
+ 0478 3A5D00    FCBCHK:	LDA	FCB+1		;BLANK IF NO FILE
+ 047B FE20      	CPI	' '
+ 047D CAB204    	JZ	GETSYS		;SKIP TO SYSTEM MESSAGE
+ 0480 115C00    	LXI	D,FCB		;TRY TO OPEN IT
+ 0483 CD1603    	CALL	OPEN
+ 0486 3C        	INR	A		;255 BECOMES 00
+ 0487 C29304    	JNZ	RDOK
+                ;
+                ; FILE NOT PRESENT
+ 048A 115907    	LXI	D,NOFILE
+ 048D CDFD02    	CALL	CRMSG
+ 0490 C3D405    	JMP	REBOOT
+                ;
+                ;FILE PRESENT
+                RDOK:
+ 0493 AF        	XRA	A
+ 0494 327C00    	STA	FCBCR		;CURRENT RECORD = 0
+ 0497 210010    	LXI	H,LOADP
+                RDINP:
+ 049A E5        	PUSH	H
+ 049B 44        	MOV	B,H
+ 049C 4D        	MOV	C,L
+ 049D CD5802    	CALL	DMA		;DMA ADDRESS SET
+ 04A0 115C00    	LXI	D,FCB		;READY FR READ
+ 04A3 CD1103    	CALL	DREAD
+ 04A6 E1        	POP	H		;RECALL
+ 04A7 B7        	ORA	A		;00 IF READ OK
+ 04A8 C2C204    	JNZ	PUTSYS		;ASSUME EOF IF NOT
+                ; MORE TO READ CONTINUE
+ 04AB 118000    	LXI	D,SECSIZ 
+ 04AE 19        	DAD	D		;HL IS NEW LOAD ADDRESS
+ 04AF C39A04    	JMP	RDINP
+                ;
+                GETSYS:
+ 04B2 CD2F03    	CALL	SOURCE		;FIND OUT SOURCE DRIVE
+                ;
+ 04B5 AF        	XRA	A		;ZERO OUT A
+ 04B6 323F06    	STA	RW		;RW = 0 TO SIGNIFY READ
+ 04B9 CDC003    	CALL	GETPUT		;GET OR READ SYSTEM
+ 04BC 111907    	LXI	D,DONE		;END MESSAGE OF GET OR READ FUNC
+ 04BF CD0203    	CALL	OUTMSG		;PRINT IT OUT
+                ;
+                ; PUT THE SYSTEM
+                PUTSYS:
+ 04C2 CD8803    	CALL	DESTIN		;GET DEST DRIVE
+                ;
+ 04C5 213F06    	LXI	H,RW		;LOAD ADDRESS
+ 04C8 3601      	MVI	M,1
+ 04CA CDC003    	CALL	GETPUT		;TO PUT SYSTEM BACK ON DISK
+ 04CD 111907    	LXI	D,DONE
+ 04D0 CD0203    	CALL	OUTMSG		;PRINT OUT END PROMPT
+                ;
+                ;	FILE COPY FOR CPM.SYS
+CP/M MACRO ASSEM 2.0	#013	Copysys - updated sysgen program 6/82
+
+                ;
+                CPYCPM:
+                ; PROMPT THE USER FOR THE SOURCE OF CP/M3.SYS
+                ;
+ 04D3 11FA06    	LXI	D,CPYMSG	;PRINT COPYS PROMPT
+ 04D6 CDFD02    	CALL	CRMSG		;PRINT IT
+ 04D9 CDDD02    	CALL	GETCHAR		;OBTAIN REPLY
+ 04DC FE59      	CPI	Y		;IS IT YES?
+ 04DE C2D405    	JNZ	REBOOT		;IF NOT EXIT
+                				;ELSE
+                ;
+                ;
+ 04E1 0E0D      	MVI	C,13		;FUNC # FOR RESET
+ 04E3 CD0500    	CALL	BDOS		;
+ 04E6 3C        	INR	A
+                
+ 04E7 11C507    	LXI	D,ERRMSG
+ 04EA CCD105    	CZ	FINIS
+                ;
+ 04ED CD2F03    	CALL	SOURCE		;GET SOURCE DISK FOR CPM3.SYS
+                CNTNUE:
+ 04F0 3A9506    	LDA	GDISK		;ACC = SOURCE DISK
+ 04F3 D641      	SUI	'A'
+ 04F5 1600      	MVI	D,00H
+ 04F7 5F        	MOV	E,A		;DE = SELECTED DISK
+ 04F8 CD0703    	CALL	SELCT
+                ; NOW COPY THE FCBS
+ 04FB 0E24      	MVI	C,36		;FOR COPY
+ 04FD 11EE05    	LXI	D,SFCB		;SOURCE FILE
+ 0500 211206    	LXI	H,DFCB		;DESTINATION FILE
+                MFCB:
+                
+ 0503 1A        	LDAX	D
+ 0504 13        	INX	D		;READY NEXT
+ 0505 77        	MOV	M,A
+ 0506 23        	INX	H		;READY NEXT DEST
+ 0507 0D        	DCR	C		;DECREMENT COUN
+ 0508 C20305    	JNZ	MFCB
+                ;
+ 050B 3A9506    	LDA	GDISK		;ACC = SOURCE DISK
+ 050E D640      	SUI	40H		;CORRECT DISK
+ 0510 21EE05    	LXI	H,SFCB
+ 0513 77        	MOV	M,A		;SFCB HAS SOURCE DISK #
+ 0514 3AE606    	LDA 	PDISK		;GET THE DEST. DISK
+ 0517 211206    	LXI	H,DFCB		;
+ 051A D640      	SUI	040H		;NORMALIZE DISK
+ 051C 77        	MOV	M,A
+                ;
+ 051D AF        	XRA	A		;ZERO OUT A
+ 051E 323206    	STA	DFCBCR		;CURRENT REC = 0
+                ;
+                ; SOURCE AND DESTINATION FCB'S READY
+                ;
+ 0521 11EE05    	LXI	D,SFCB		;
+ 0524 CD1603    	CALL	OPEN		;OPEN THE FILE
+ 0527 115907    	LXI	D,NOFILE	;ERROR MESSG
+CP/M MACRO ASSEM 2.0	#014	Copysys - updated sysgen program 6/82
+
+ 052A 3C        	INR	A		;255 BECOMES 0
+ 052B CCD105    	CZ	FINIS		;DONE IF NO FILE
+                ;
+                ; SOURCE FILE IS PRESENT AND OPEN
+ 052E 110010    	LXI	D,LOADP		;GET DMA ADDRESS
+ 0531 EB        	XCHG			;MOVE ADDRESS TO HL REGS
+ 0532 223906    	SHLD	BEGIN		;SAVE FOR BEGIN OF WRITE
+                ;
+ 0535 3A3906    	LDA	BEGIN		;GET LOW BYTE OF
+ 0538 6F        	MOV	L,A		;DMA ADDRESS INTO L
+ 0539 3A3A06    	LDA	BEGIN+1		;
+ 053C 67        	MOV	H,A		;INTO H ALSO
+                COPY1:
+ 053D EB        	XCHG			;DE = ADDRESS OF DMA
+ 053E CD2A03    	CALL	DSTDMA		;
+                ;
+ 0541 11EE05    	LXI	D,SFCB		;
+ 0544 CD1103    	CALL	DREAD		;READ NEXT RECORD
+ 0547 B7        	ORA	A		;END OF FILE?
+ 0548 C26405    	JNZ	EOF		;SKIP WRITE IF SO
+                ;
+ 054B 3A3D06    	LDA	CRNREC
+ 054E 3C        	INR	A		;BUMP IT
+ 054F 323D06    	STA	CRNREC
+                ;
+ 0552 3A3906    	LDA	BEGIN
+ 0555 6F        	MOV	L,A
+ 0556 3A3A06    	LDA	BEGIN+1
+ 0559 67        	MOV	H,A
+ 055A 118000    	LXI	D,EIGHTY
+ 055D 19        	DAD	D		;ADD EIGHTY TO BEGIN ADDRESS
+ 055E 223906    	SHLD	BEGIN
+ 0561 C33D05    	JMP	COPY1		;LOOP UNTIL EOF
+                ;
+                EOF:
+ 0564 111907    	LXI	D,DONE
+ 0567 CD0203    	CALL	OUTMSG
+                ;
+                COPY2:
+ 056A CD8803    	CALL	DESTIN		;GET DESTINATION DRIVE FOR CPM3.SYS
+ 056D 111206    	LXI	D,DFCB		;SET UP DEST FCB
+ 0570 EB        	XCHG	
+ 0571 3AE606    	LDA	PDISK
+ 0574 D640      	SUI	040H		;NORMALIZE DISK
+ 0576 77        	MOV	M,A		;CORRECT DISK FOR DEST
+ 0577 EB        	XCHG			;DE = DFCB
+ 0578 CD2503    	CALL	DELETE		;DELETE FILE IF THERE
+                ;
+ 057B 111206    	LXI	D,DFCB		;
+ 057E CD2003    	CALL	MAKE		;MAKE A NEW ONE
+ 0581 117807    	LXI	D,NODIR
+ 0584 3C        	INR	A		;CHECK DIRECTORY SPACE
+ 0585 CCD105    	CZ	FINIS		;END IF NONE
+                ;
+ 0588 110010    	LXI	D,LOADP
+ 058B EB        	XCHG
+CP/M MACRO ASSEM 2.0	#015	Copysys - updated sysgen program 6/82
+
+ 058C 223906    	SHLD	BEGIN
+                ;
+ 058F 3A3906    	LDA	BEGIN
+ 0592 6F        	MOV	L,A
+ 0593 3A3A06    	LDA	BEGIN+1
+ 0596 67        	MOV	H,A
+                LOOP2:
+ 0597 EB        	XCHG
+ 0598 CD2A03    	CALL	DSTDMA
+ 059B 111206    	LXI	D,DFCB
+ 059E CD0C03    	CALL	DWRITE
+ 05A1 119307    	LXI	D,FSPACE
+ 05A4 B7        	ORA	A
+ 05A5 C4D105    	CNZ	FINIS
+ 05A8 3A3D06    	LDA	CRNREC
+ 05AB 3D        	DCR	A
+ 05AC 323D06    	STA	CRNREC
+ 05AF FE00      	CPI	0
+ 05B1 CAC605    	JZ	FNLMSG
+ 05B4 3A3906    	LDA	BEGIN
+ 05B7 6F        	MOV	L,A
+ 05B8 3A3A06    	LDA	BEGIN+1
+ 05BB 67        	MOV	H,A
+ 05BC 118000    	LXI	D,EIGHTY
+ 05BF 19        	DAD	D
+ 05C0 223906    	SHLD	BEGIN
+ 05C3 C39705    	JMP	LOOP2
+                ; COPY OPERATION COMPLETE
+                FNLMSG:
+ 05C6 111206    	LXI	D,DFCB
+ 05C9 0E10      	MVI	C,CLOSEF
+ 05CB CD0500    	CALL	BDOS
+                ;
+ 05CE 111907    	LXI	D,DONE
+                ;
+                FINIS:
+                ; WRITE MESSAGE GIVEN BY DE, REBOOT
+ 05D1 CD0203    	CALL	OUTMSG
+                ;
+                REBOOT:
+ 05D4 0E0D      	MVI	C,13
+ 05D6 CD0500    	CALL	BDOS
+ 05D9 CDF202    	CALL	CRLF
+ 05DC C30000    	JMP	BOOT
+                ;
+                BADDISK:
+ 05DF 112B07    	LXI	D,QDISK
+ 05E2 CDFD02    	CALL	CRMSG
+ 05E5 C9        	RET
+                ;****************************
+                ;*
+                ;*
+                ;*	DATA STRUCTURES     
+                ;*
+                ;*
+                ;****************************
+CP/M MACRO ASSEM 2.0	#016	Copysys - updated sysgen program 6/82
+
+                ;
+                BIOSPB:
+                ; BIOS PARAMETER BLOCK
+ 05E6 00        BIOSFC:	DB	0		;BIOS FUNCTION NUMBER
+ 05E7 00        AREG:	DB	0		;A REGISTER CONTENTS
+ 05E8 00        CREG:	DB	0		;C REGISTER CONTENTS
+ 05E9 00        BREG:	DB	0		;B REGISTER CONTENTS
+ 05EA 00        EREG:	DB	0		;E REGISTER CONTENTS
+ 05EB 00        DREG:	DB	0		;D REGISTER CONTENTS
+ 05EC 0000      HLREG:	DW	0		;HL REGISTER CONTENTS
+                ;
+                SFCB:
+ 05EE           DR:	DS	1
+ 05EF 43504D3320F1F8:	DB	'CPM3    '
+ 05F7 535953    T1T3:	DB	'SYS'
+ 05FA 00        EXT:	DB	0
+ 05FB 00        CS:	DB	0
+ 05FC 00        RS:	DB	0
+ 05FD 00        RCC:	DB	0
+ 05FE           D0D15:	DS	16
+ 060E 00        CCR:	DB	0
+ 060F           R0R2:	DS	3
+                ;
+ 0612           DFCB:	DS	36
+ 0632 =         DFCBCR	EQU	DFCB+32
+                ;
+                ;
+ 0636 00        V3FLG:	DB	0		;FLAG FOR VERSION #
+ 0637 00        TEMP:	DB	0
+ 0638           SDISK:	DS	1		;SELECTED DISK
+ 0639 0000      BEGIN:	DW	0
+ 063B 00        DFLAG:	DB	0
+ 063C           TRACK:	DS	1		;CURRENT TRACK
+ 063D 00        CRNREC:	DB	0		;CURRENT REC COUNT
+ 063E           SECTOR:	DS	1		;CURRENT SECTOR
+ 063F           RW:	DS	1		;READ IF 0 WRITE IF 1
+ 0640           DMADDR:	DS	2		;CURRENT DMA ADDRESS
+ 0642           RETRY:	DS	1		;NUMBER OF TRIES ON THIS SECTOR
+ 0643 43502F4D20SIGNON:	DB	'CP/M 3 COPYSYS - Version '
+ 065C 332E30    	DB	VERS/10+'0','.',VERS MOD 10 +'0'
+ 065F 24        	DB	'$'
+ 0660 536F757263GETPRM:	DB	'Source drive name (or return for default) $'
+ 068B 536F757263VERGET:	DB	'Source on '
+ 0695           GDISK:	DS	1
+ 0696 207468656E	DB	' then type return $'
+ 06A9 4465737469PUTPRM:	DB	'Destination drive name (or return to reboot) $'
+ 06D7 4465737469VERPUT:	DB	'Destination on '
+ 06E6           PDISK:	DS	1
+ 06E7 207468656E	DB	' then type return $'
+ 06FA 446F20796FCPYMSG:	DB	'Do you wish to copy CPM3.SYS? $'
+ 0719 46756E6374DONE:	DB	'Function complete$'
+                ;
+                ; ERROR MESSAGES......
+                ;
+ 072B 4552524F52QDISK:	DB	'ERROR: Invalid drive name (Use A, B, C, or D)$'
+ 0759 4552524F52NOFILE:	DB	'ERROR: No source file on disk.$'
+CP/M MACRO ASSEM 2.0	#017	Copysys - updated sysgen program 6/82
+
+ 0778 4552524F52NODIR:	DB	'ERROR: No directory space.$'
+ 0793 4552524F52FSPACE:	DB	'ERROR: Out of data space.$'
+ 07AD 4552524F52WRPROT:	DB	'ERROR: Write protected?$'
+ 07C5 4552524F52ERRMSG: DB	'ERROR: Possible incompatible disk format.'
+ 07EE 0D0A205479	DB	CR,LF,' Type return to ignore.$' 
+ 0808 4552524F52CLSERR:	DB	'ERROR: Close operation failed.$'
+                ;
+ 0827           	DS	STACKSIZE * 3
+                STACK:
+ 0869           	END

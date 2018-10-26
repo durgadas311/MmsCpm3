@@ -1,0 +1,536 @@
+                ;Function 100 RSX (set/create directory label
+                ;       Only for Non banked systems
+                ;
+                ;       Procedure:
+                ;               1. If this BDOS call ~= f100 then go to NEXT
+                ;               2. select the current disk for BIOS calls
+                ;               3. search for current label
+                ;               4. if no label then do
+                ;                  a. find first empty dir slot
+                ;                  b. if no empties then return error
+                ;                  c. create dir label from user FCB in DE
+                ;                  d. call update SFCB
+                ;                  e. return
+                ;               5. if password protected then ok = password()
+                ;               6. if ~ok then return error
+                ;               7. update label from user info
+                ;               8. call update SFCB
+                ;               9. return
+                ;
+                ;                                       P. Balma
+                
+                ;
+                ;                       RSX     PREFIX
+                ;
+ 0000 0000000000serial:         db      0,0,0,0,0,0
+ 0006 C31B00    jmp1:           jmp     ftest
+ 0009 C3        NEXTj:          db      0c3h            ; next RSX or BDOS
+ 000A 0000      NEXTa:          db      0,0             ; next address
+ 000C 0000      prev:           dw      0               ; where from
+ 000E FF        remove:         db      0ffh            ; remove RSX at warm start
+ 000F FF        nbank:          db      0FFh            ; non banked RSX 
+ 0010 4449524C42rsxname:        db      'DIRLBL  '
+ 0018 0000      space:          dw      0
+ 001A 00        patch:          db      0
+                ;
+                ;
+                ftest:
+ 001B F5                push a                          ;save user regs
+ 001C 79                mov a,c
+ 001D FE64              cpi 64h                         ;compare BDOS func 100
+ 001F CA2700            jz func100
+ 0022 F1                pop a                           ;some other BDOS call
+                goto$next:
+ 0023 2A0A00            lhld NEXTa                      ; go to next and don't return
+ 0026 E9                pchl
+                
+                        ; Set directory label
+                        ; de -> .fcb
+                        ;       drive location
+                        ;       name & type fields user's discretion
+                        ;       extent field definition
+                        ;               bit 1 (80h): enable passwords on drive
+                        ;               bit 2 (40h): enable file access         
+                        ;               bit 3 (20h): enable file update stamping
+                        ;               bit 4 (10h): enable file create stamping
+                        ;               bit 8 (01h): assign new password to dir lbl
+                
+                func100:
+ 0027 F1                pop a
+ 0028 2100003922        lxi h,0 ! dad sp ! shld ret$stack       ; save user stack
+ 002F 311E04            lxi sp,loc$stack
+                
+ 0032 EB22A503EB        xchg ! shld info ! xchg
+ 0037 0E19CD2300        mvi c,19h ! call goto$next ! sta curdsk ; get current disk
+                
+ 003F 0E1DCD2300        mvi c,1dh ! call goto$next              ; is drive R/O ?
+ 0044 3A92034FCD        lda curdsk ! mov c,a ! call hlrotr
+ 004B 7DE601C22A        mov a,l ! ani 01h ! jnz read$only
+                
+ 0051 2AA503CD49        lhld info ! call getexta ! push a       ; if user tries to set time
+ 0058 E670329303        ani 0111$0000b ! sta set$time           ; stamps and no SFCB's...error
+ 005D 7EE67F77          mov a,m ! ani 7fh ! mov m,a             ; mask off password bit
+ 0061 E601329503        ani 1 ! sta newpass                     ; but label can have password
+                
+ 0066 0E69D51199        mvi c,69h ! push d ! lxi d,stamp        ; get time for possible
+ 006C CD2300D1          call goto$next ! pop d                  ; update later
+                
+ 0070 0E3111BD03        mvi c,31h ! lxi d,SCBPB ! call goto$next; get BDOS current dma
+ 0078 22B303            shld curdma
+                
+ 007B 3A9203CD52        lda curdsk ! call dsksel                ; BIOS select and sets
+                                                                ; disk parameters
+                                                                ; Does dir lbl exist on drive?
+ 0081 CDB601            call search                             ; return if found or
+ 0084 E50600            push h ! mvi b,0                        ; successfully made
+ 0087 1120003A9E        lxi d,20h ! lda nfcbs ! mov c,a         ; Are there SFCB's in directory
+ 008E 197EFE21CA main0: dad d ! mov a,m ! cpi 21h ! jz main1
+ 0095 043A9F033C        inr b ! lda i ! inr a ! sta i ! cmp c
+ 009E C28E00            jnz main0
+                
+ 00A1 3A9303B7C2        lda set$time ! ora a ! jnz no$SFCB      ; no, but user wants to set
+                                                                ; time stamp
+ 00A8 32A103            sta SFCB                                ; SFCB = false
+                
+ 00AB 22A3037832 main1: shld SFCB$addr ! mov a,b ! sta j ! lhld info
+ 00B5 EBE1E523          xchg ! pop h ! push h ! inx h           ; HL => dir FCB, DE => user FCB
+ 00B9 130E0C            inx d ! mvi c,0ch                       ; prepare to move DE to HL
+ 00BC CD4F033A95        call move ! lda newpass                 ; find out if new password ?
+ 00C2 B7                ora a 
+ 00C3 C4BC02            cnz scramble                            ; scramble user pass & put in
+                                                                ; dFCB
+                
+ 00C6 3AA1033CC2        lda SFCB ! inr a ! jnz mainx1           ; any SFCB's
+                
+                
+                 main2:                                         ; update time & date stamp
+ 00CD 3AA003473E        lda j ! mov b,a ! mvi a,2               ; j = FCB position from  SFCB
+ 00D3 90                sub b                                   ; in 4 FCB sector (0,1,2), thus
+                                                                ;  FCBx - 2
+                                                                ;  FCBy - 1
+                                                                ;  FCBz - 0
+                                                                ;  SFCB
+                                                                ; So, 2-j gives FCB offset in
+                                                                ; SFCB
+                
+ 00D4 06004F2AA3        mvi b,0 ! mov c,a ! lhld SFCB$addr
+ 00DA 23110A000C        inx h ! lxi d,0ah ! inr c
+ 00DF 0DCAE700  mainx0: dcr c ! jz mainx1
+ 00E3 19C3DF00          dad d ! jmp mainx0
+                
+ 00E7 D1D5E5    mainx1: pop d ! push d ! push h                 ; HL => dFCB
+ 00EA EB11180019        xchg ! lxi d,18h ! dad d                ; HL => dfcb(24) (TS field)
+ 00EF EBE1D5            xchg ! pop h ! push d                   ; of DIR LABEL
+                                                                ; HL => Time/stamp pos in SFCB
+ 00F2 3A9D033CC2        lda NEW ! inr a ! jnz st0               ; did we create a new DL?
+ 00F9 CD7403C30D        call stamper ! jmp st1                  ; yes
+                
+ 00FF 11040019   st0:   lxi d,4 ! dad d                         ; update time stamp
+ 0103 D1E5EB1104        pop d ! push h ! xchg ! lxi d,4         ; DFCB position
+ 0109 19EBE1D5          dad d ! xchg ! pop h ! push d
+ 010D CD7403     st1:   call stamper
+ 0110 E1                pop h
+                
+ 0111 E1CD4903F6mainr: pop h ! call getexta ! ori 1 ! mov m,a  ; set lsb extent
+ 0118 CDFD02            call write$dir
+ 011B AF210000C3        xra a ! lxi h,0 !jmp goback             ; no SFCB, so finished
+                
+                
+                no$SFCB:
+ 0122 3EFF21FF00        mvi a,0ffh ! lxi h,0ffh ! jmp goback
+                
+                read$only:
+ 012A 3EFF21FF02        mvi a,0ffh ! lxi h,02ffh 
+                
+ 012F E52AB50336goback: push h ! lhld aDIRBCB ! mvi m,0ffh      ; tell BDOS not to use buffer
+                                                                ; contents
+ 0135 F5                push a
+                
+ 0136 0E0DCD2300        mvi c,0dh ! call goto$next              ; BDOS reset
+ 013B 3A92035F0E        lda curdsk ! mov e,a ! mvi c,0eh
+ 0141 CD2300            call goto$next
+ 0144 3A9203CDC1        lda curdsk ! call seldsk                ; restore BDOS environment
+ 014A F1D1              pop a ! pop d
+ 014C 2AFC03F9          lhld ret$stack ! sphl                   ; restore user stack
+ 0150 EB                xchg                                    ; move error return to h
+ 0151 C9                ret
+                
+                
+                dsksel:                                 ; select disk and get parameters
+                
+ 0152 CDC103            call seldsk                             ; Bios select disk
+ 0155 CD5903            call gethl                              ; DE = XLT addr
+ 0158 22AB03EB          shld XLT ! xchg
+ 015C 010A0009          lxi b,0ah ! dad b                       ; HL = addr DPB
+ 0160 CD5903            call gethl
+ 0163 22B703EB          shld aDPB ! xchg
+ 0167 01040009          lxi b,4 ! dad b                         ; HL = addr DIR BCB
+ 016B CD590322B5        call gethl ! shld aDIRBCB
+ 0171 010A0009          lxi b,0ah ! dad b                       ; Hl => DIR buffer
+ 0175 22AD03            shld bufptr                             ; use BDOS buffer for
+                                                                ; BIOS reads & writes
+                                                                ; must jam FF into it to
+                                                                ; signal don't use when done
+ 0178 2AB703            lhld aDPB
+ 017B CD5903            call gethl                              ; get [HL]
+ 017E 22AF03EB          shld spt ! xchg
+ 0182 2323232323        inx h! inx h! inx h ! inx h! inx h!     ; HL => dirmax
+ 0187 CD590322BB        call gethl ! shld dirmax ! xchg
+ 018E 2323              inx h ! inx h !
+ 0190 CD590322A7        call gethl ! shld checkv ! xchg
+ 0197 CD590322A9        call gethl ! shld offset ! xchg
+                                                                ; HL => phys shift
+ 019E CD5903EB          call gethl ! xchg                       ; E = physhf, D = phymsk
+ 01A2 147A              inr d ! mov a,d                         ; phys mask+1 = # 128 byte rcd
+                                                                ; phymsk * 4 = nfcbs/rcd
+ 01A4 B717B717          ora a ! ral ! ora a ! ral               ; clear carry & shift phymsk
+ 01A8 329E03            sta nfcbs
+                
+ 01AB 2AAF03            lhld spt                                ; spt = spt/phymsk
+ 01AE 4BCD6703          mov c,e ! call hlrotr                   ; => spt = shl(spt,physhf)
+ 01B2 22AF03            shld spt
+ 01B5 C9                ret
+                
+                search:                                         ; search dir for pattern in 
+                                                                ; info of length in c
+ 01B6 AF32970332        xra a ! sta sect ! sta empty
+ 01BD 21000022B1        lxi h,0 ! shld dcnt
+                
+ 01C3 2AAD03444D        lhld bufptr ! mov b,h ! mov c,l         ; set BIOS dma
+ 01C8 CDEE03            call setdma
+                
+ 01CB CDF302     src0:  call read$dir
+ 01CE FE00C23602        cpi 0 ! jnz oops                        ; if A ~= 0 then BIOS error
+                
+ 01D3 06003A9E03        mvi b,0 ! lda nfcbs ! mov c,a           ; BC always = nfcbs
+                
+ 01D9 2AAD031120        lhld bufptr ! lxi d,20h                 ; start of buffer and FCB
+ 01DF AF                xra a                                   ; do i = 0 to nfcbs - 1
+ 01E0 329F037E   src1:  sta i ! mov a,m                         ; user #
+ 01E4 FE20C2FA01        cpi 20h ! jnz src2                      ; dir label mark 
+                
+ 01E9 E511100019        push h ! lxi d,10h ! dad d ! mov a,m    ; found label, move to DM to
+ 01EF B7E1C8            ora a ! pop h ! rz                      ; check if label is pass prot
+ 01F2 E5FE20E1C2        push h ! cpi 20h ! pop h ! jnz checkpass
+ 01F9 C9                ret
+                
+ 01FA 3A98033CCA src2:  lda empty ! inr a ! jz src3             ; record first sect with empty
+ 0201 7E                mov a,m
+ 0202 FEE5C21202        cpi 0e5h ! jnz src3 ! lda sect          ; save sector #
+ 020A 32A2033EFF        sta savsect ! mvi a,0ffh ! sta empty    ; set empty found = true 
+ 0212 19         src3:  dad d                                   ; position to next FCB
+ 0213 3A9F033C          lda i ! inr a                           ; while i < nfcbs
+ 0217 B9C2E001          cmp c ! jnz src1
+                
+ 021B 2ABB03EB2A        lhld dirmax ! xchg ! lhld dcnt          ; while (dcnt < dirmax) &
+                                                                ; dir label not found 
+ 0222 0922B103CD        dad b ! shld dcnt ! call subdh          ; is dcnt <= dirmax ?
+ 0229 DA3F02            jc not$found                            ; no
+ 022C 3A97033C32        lda sect ! inr a ! sta sect ! jmp src0
+                
+ 0236 3EFF21FF01oops:   mvi a,0ffh ! lxi h,1ffh
+ 023B C1C32F01          pop b ! jmp goback                      ; return perm. error
+                
+                not$found:                                      ; must make a label
+                
+ 023F 3A98033CC2        lda empty ! inr a ! jnz no$space        ; if empty = false...
+ 0246 3AA2033297        lda savsect ! sta sect
+ 024C CDF302            call read$dir                           ; get sector
+ 024F 2AAD031120        lhld bufptr ! lxi d,20h ! mvi c,0       ; C = FCB offset in buffer
+ 0257 7EFEE5CA62 nf0:   mov a,m ! cpi 0e5h ! jz nf1
+ 025D 190CC35702        dad d ! inr c !jmp nf0                  ; know that empty occurs here
+                                                                ; so don't need bounds test
+ 0262 362079329F nf1:   mvi m,20h ! mov a,c ! sta i
+ 0268 3E00E50E20        mvi a,0 ! push h ! mvi c,32             ; clear fcb to spaces
+ 026D 230DCA7602 nf2:   inx h ! dcr c ! jz nf3
+ 0272 77C36D02          mov m,a ! jmp nf2
+ 0276 E1         nf3:   pop h 
+ 0277 3EFF329D03        mvi a,0ffh ! sta NEW
+ 027C C9                ret                                     ; HL => dir FCB
+                
+ 027D 3EFF21FF00no$space: mvi a,0ffh ! lxi h,0ffh ! pop b ! jmp goback
+                
+                check$pass:                     ; Dir is password protected, check dma for
+                                                ; proper password
+                
+ 0286 E5                push h                          ; save addr dir FCB
+ 0287 110D00194E        lxi d,0dh ! dad d ! mov c,m     ; get XOR sum in S1, C = S1
+ 028C 110A0019          lxi d,0ah ! dad d               ; position to last char in label pass
+ 0290 0608              mvi b,8                         ; # chars in pass
+ 0292 EB2AB303EB        xchg ! lhld curdma ! xchg       ; DE => user pass, HL => label pass
+                
+ 0297 7EA9C5     cp0:   mov a,m ! xra c ! push b        ; HL = XOR(HL,C)
+ 029A 4F1AB9            mov c,a ! ldax d ! cmp c        ; compare user and label passwords
+ 029D C2B202            jnz wrong$pass
+ 02A0 C1132B05          pop b ! inx d ! dcx h ! dcr b
+ 02A4 C29702            jnz cp0
+                
+ 02A7 EB22B303          xchg ! shld curdma              ; curdma => 2nd pass in field if there
+ 02AB E1                pop h                           ; restore dir FCB addr
+ 02AC 3EFF329403        mvi a,0ffh ! sta oldpass
+ 02B1 C9                ret
+                
+                wrong$pass:
+ 02B2 3EFF21FF07        mvi a,0ffh ! lxi h,07ffh ! pop b ! pop b
+ 02B9 C32F01            jmp goback
+                
+                scramble:                               ; encrypt password at curdma
+                                                        ; 1. sum each char of pass.
+                                                        ; 2. XOR each char with sum
+                                                        ; 3. reverse order of encrypted pass
+                
+ 02BC 0108002AB3        lxi b,8 ! lhld curdma                   ;checkpass sets to 2nd pos if
+ 02C2 3A94033CCA        lda oldpass ! inr a ! jz scr0           ;old pass else must move dma
+ 02C9 0922B303          dad b ! shld curdma
+                                                                ; B = sum, C = max size of pass
+ 02CD 7E80470D   scr0:  mov a,m ! add b ! mov b,a ! dcr c
+ 02D1 23C2CD02          inx h ! jnz scr0
+                
+                
+ 02D5 D1E1D5            pop d ! pop h ! push d                  ; H => dFCB, D was return 
+ 02D8 110D001970        lxi d,0dh ! dad d ! mov m,b             ; S1 = sum
+ 02DD 110A0019          lxi d,0ah ! dad d                       ; position to last char in pass
+ 02E1 0E08EB2AB3        mvi c,8 ! xchg ! lhld curdma
+ 02E7 7EA8EB77   scr1:  mov a,m ! xra b ! xchg ! mov m,a        ; XOR(char) => dFCB
+ 02EB EB231B0DC2        xchg ! inx h ! dcx d ! dcr c ! jnz scr1
+                
+ 02F2 C9                ret
+                
+                
+                read$dir:                               ; read directory into bufptr
+                
+ 02F3 CD0A03            call track
+ 02F6 CD1903            call sector
+ 02F9 CDD803            call rdsec
+ 02FC C9                ret
+                
+                writedir:                               ; write directory from bufptr
+ 02FD 3A9703            lda sect
+ 0300 CD0A03            call track
+ 0303 CD1903            call sector
+ 0306 CDDE03            call wrsec
+ 0309 C9                ret
+                
+                track:                                  ; set the track for the BIOS call
+                
+ 030A 2AAF03CD38        lhld spt ! call intdiv                  ; E = integer(sect/spt)
+ 0310 2AA90319EB        lhld offset ! dad d ! xchg ! call settrk
+ 0318 C9                ret
+                
+                sector:                                 ; set the sector for the BIOS
+ 0319 3A9703            lda sect
+ 031C 2AAF03CD38        lhld spt ! call intdiv          ; get mod(sect,spt)
+ 0322 7995              mov a,c ! sub l                 ; D = x * spt such that D > sect
+                                                        ; D - spt = least x*spt s.t. D < sect
+ 0324 4F3A970391        mov c,a ! lda sect ! sub c      ; a => remainder of sect/spt
+ 0329 06004F2AAB        mvi b,0 ! mov c,a ! lhld XLT    ; BC = logical sector #, DE = translate
+ 032F EBCDE403          xchg ! call sectrn              ; table address
+ 0333 EBCDD003          xchg ! call setsec              ; BC = physical sector #
+ 0337 C9                ret
+                
+                
+                intdiv:                                 ; compute the integer division of A/L
+                
+ 0338 0E00110000        mvi c,0 ! lxi d,0
+ 033D F5         int0:  push a                          ; compute the additive sum of L such
+ 033E 7D814F            mov a,l ! add c ! mov c,a       ; that C = E*L where C = 1,2,3,...
+ 0341 F1                pop a
+                
+ 0342 B91CD23D03        cmp C ! inr e ! jnc int0        ; if A < E*L then return E - 1
+ 0347 1D                dcr e
+ 0348 C9                ret
+                
+                getexta:
+                                        ; Get current extent field address to hl
+ 0349 110C0019          lxi d,0ch ! dad d               ; hl=.fcb(extnum)
+ 034D 7E                mov a,m
+ 034E C9                ret
+                
+                move:                   ; Move data length of length c from source de to
+                                        ; destination given by hl
+                
+ 034F 0C                inr c                                   ; in case it is zero
+                        move0:
+ 0350 0DC8                      dcr c! rz                       ; more to move
+ 0352 1A77                      ldax d! mov m,a                 ; one byte moved
+ 0354 1323                      inx d! inx h                    ; to next byte
+ 0356 C35003                    jmp move0
+                
+                gethl:                                  ; get the word pointed at by HL
+ 0359 5E235623          mov e,m ! inx h ! mov d,m ! inx h
+ 035D EBC9              xchg ! ret
+                
+                subdh:                          ; HL = DE - HL
+                
+ 035F B7                ora a                                   ; clear carry
+ 0360 7B956F            mov a,e ! sub l ! mov l,a
+ 0363 7A9C67            mov a,d ! sbb h ! mov h,a
+ 0366 C9                ret
+                
+                hlrotr:
+                                                        ; rotate HL right by amount c
+ 0367 0C                inr c                                   ; in case zero
+ 0368 0DC8       hlr:   dcr c! rz                               ; return when zero
+ 036A 7CB71F67          mov a,h! ora a! rar! mov h,a            ; high byte
+ 036E 7D1F6F            mov a,l! rar! mov l,a                   ; low byte
+ 0371 C36803            jmp hlr
+                
+                stamper:                                ; move time stamp into SFCB & FCB
+ 0374 3AA1033C          lda SFCB ! inr a                ; no SFCB, update DL only
+ 0378 CC8903C1D1        cz stmp ! pop b ! pop d ! push h ! xchg
+ 037F C5CD8903C1        push b ! call stmp ! pop b ! xchg ! pop h ! push d
+ 0387 C5                push b
+ 0388 C9                ret
+ 0389 1199030E04stmp:   lxi d,stamp ! mvi c,4 ! call move
+ 0391 C9                ret
+                
+                ;**********************************************************************
+                
+ 0392 00        curdsk:         db      0
+ 0393 00        set$time:       db      0
+ 0394 00        oldpass:        db      0
+ 0395 00        newpass:        db      0
+ 0396 00        pass$prot       db      0
+ 0397 00        sect:           db      0
+ 0398 00        empty:          db      0
+ 0399           stamp:          ds      4
+ 039D 00        NEW:            db      0
+ 039E 00        nfcbs:          db      0
+ 039F 00        i:              db      0
+ 03A0 00        j:              db      0
+ 03A1 FF        SFCB:           db      0ffh
+ 03A2 00        savsect:        db      0
+                
+ 03A3 0000      SFCB$addr:      dw      0
+ 03A5 0000      info:           dw      0
+ 03A7 0000      checkv          dw      0
+ 03A9 0000      offset:         dw      0
+ 03AB 0000      XLT:            dw      0
+ 03AD 0000      bufptr:         dw      0
+ 03AF 0000      spt:            dw      0
+ 03B1 0000      dcnt:           dw      0
+ 03B3 0000      curdma:         dw      0
+ 03B5 0000      aDIRBCB         dw      0
+ 03B7 0000      aDPB:           dw      0
+ 03B9 0000      dFCB:           dw      0
+ 03BB 0000      dirmax:         dw      0
+                
+                SCBPB:
+ 03BD 3C        Soff:           db      3ch
+ 03BE 00        Sset:           db      0
+ 03BF 0000      Svalue:         dw      0
+                
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;*      bios calls from for track, sector io               *
+                ;*                                                         *
+                ;***********************************************************
+                ;***********************************************************
+                ;*                                                         *
+                ;*        equates for interface to cp/m bios               *
+                ;*                                                         *
+                ;***********************************************************
+                ;
+                ;
+ 0000 =         base    equ     0
+ 0001 =         wboot   equ     base+1h ;warm boot entry point stored here
+ 0018 =         sdsk    equ     18h     ;bios select disk entry point
+ 001B =         strk    equ     1bh     ;bios set track entry point
+ 001E =         ssec    equ     1eh     ;bios set sector entry point
+ 0021 =         stdma   equ     21h
+ 0024 =         read    equ     24h     ;bios read sector entry point
+ 0027 =         write   equ     27h     ;bios write sector entry point
+ 002D =         stran   equ     2dh     ;bios sector translation entry point
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                seldsk: ;select drive number 0-15, in C
+                        ;1-> drive no.
+                        ;returns-> pointer to translate table in HL
+ 03C1 4F                mov c,a         ;c = drive no.
+ 03C2 111800            lxi d,sdsk
+ 03C5 C3F403            jmp gobios
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                settrk: ;set track number 0-76, 0-65535 in BC
+                        ;1-> track no.
+ 03C8 42                mov b,d
+ 03C9 4B                mov c,e         ;bc = track no.
+ 03CA 111B00            lxi d,strk
+ 03CD C3F403            jmp gobios
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                setsec: ;set sector number 1 - sectors per track
+                        ;1-> sector no.
+ 03D0 42                mov b,d
+ 03D1 4B                mov c,e         ;bc = sector no.
+ 03D2 111E00            lxi d,ssec
+ 03D5 C3F403            jmp gobios
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                rdsec:  ;read current sector into sector at dma addr
+                        ;returns in A register: 0 if no errors 
+                        ;                       1 non-recoverable error
+ 03D8 112400            lxi d,read
+ 03DB C3F403            jmp gobios
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                wrsec:  ;writes contents of sector at dma addr to current sector
+                        ;returns in A register: 0 errors occured
+                        ;                       1 non-recoverable error
+ 03DE 112700            lxi d,write
+ 03E1 C3F403            jmp gobios
+                ;
+                ;***********************************************************
+                ;*                                                         *
+                ;***********************************************************
+                sectrn: ;translate sector number
+                        ;1-> logical sector number (fixed(15))
+                        ;2-> pointer to translate table
+                        ;returns-> physical sector number
+ 03E4 D5                push d
+ 03E5 112D00            lxi d,stran
+ 03E8 2A0100            lhld wboot
+ 03EB 19                dad d           ;hl = sectran entry point
+ 03EC D1                pop d
+ 03ED E9                pchl
+                ;
+                ;
+                setdma:                         ; set dma
+                        ; 1 -> BC = dma address
+                
+ 03EE 112100            lxi d,stdma
+ 03F1 C3F403            jmp gobios
+                ;
+                ;
+                ;***********************************************************
+                ;***********************************************************
+                ;***********************************************************
+                ;*                                                         *
+                ;*       compute offset from warm boot and jump to bios    *
+                ;*                                                         *
+                ;***********************************************************
+                ;
+                ;
+                gobios: ;jump to bios entry point
+                        ;de ->  offset from warm boot entry point
+ 03F4 2A0100            lhld    wboot
+ 03F7 19                dad     d
+ 03F8 110000            lxi     d,0
+ 03FB E9                pchl
+                ;
+                
+ 03FC 0000      ret$stack:      dw      0
+ 03FE                           ds      32
+                loc$stack:
+ 041E           end
+

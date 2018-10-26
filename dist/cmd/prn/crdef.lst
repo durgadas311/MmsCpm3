@@ -1,0 +1,231 @@
+PL/M-80 COMPILER    GENCPM TOKEN FILE CREATOR                                                                   PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE CREATEDEFAULTS
+OBJECT MODULE PLACED IN CRDEF.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 CRDEF.PLM DEBUG OPTIMIZE
+
+
+
+              $title('GENCPM Token File Creator')
+   1          create$defaults:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+                  Revised:
+                    20 Sept 82  by Bruce Skidmore
+              */
+
+   2   1        declare true literally '0FFH';
+   3   1        declare false literally '0';
+   4   1        declare forever literally 'while true';
+   5   1        declare boolean literally 'byte';
+   6   1        declare cr literally '0dh';
+   7   1        declare lf literally '0ah';
+   8   1        declare tab literally '09h';
+
+              /*
+                  D a t a    S t r u c t u r e s
+              */
+
+   9   1        declare data$fcb (36) byte external;
+
+  10   1        declare obuf (128) byte at (.memory);
+               
+  11   1        declare hexASCII (16) byte external;
+
+  12   1        declare symtbl (20) structure(
+                  token(8) byte,
+                  len      byte,
+                  flags    byte,
+                  qptr     byte,
+                  ptr      address) external;
+
+              /*
+                   B D O S    P r o c e d u r e   &   F u n c t i o n    C a l l s
+              */
+
+  13   1        delete$file:
+                  procedure (fcb$address) external;
+  14   2            declare fcb$address address;
+  15   2          end delete$file;
+
+  16   1        create$file:
+PL/M-80 COMPILER    GENCPM TOKEN FILE CREATOR                                                                   PAGE   2
+
+
+                  procedure (fcb$address) external;
+  17   2            declare fcb$address address;
+  18   2          end create$file;
+
+  19   1        close$file:
+                  procedure (fcb$address) external;
+  20   2            declare fcb$address address;
+  21   2          end close$file;
+
+  22   1        write$record:
+                  procedure (fcb$address) external;
+  23   2            declare fcb$address address;
+  24   2          end write$record;
+
+  25   1        set$DMA$address:
+                  procedure (DMA$address) external;
+  26   2            declare DMA$address address;
+  27   2          end set$DMA$address;
+
+              /*
+                   M a i n   C R T D E F   P r o c e d u r e
+              */
+  28   1       crtdef: 
+                procedure public;
+  29   2          declare (flags,symbol$done,i,j,obuf$index,inc) byte;
+  30   2          declare val$adr address;
+  31   2          declare val based val$adr byte;
+
+  32   2          inc$obuf$index:
+                    procedure;
+
+  33   3              if obuf$index = 7fh then
+  34   3                do;
+  35   4                  call write$record(.data$fcb);
+  36   4                  do obuf$index = 0 to 7fh;
+  37   5                    obuf(obuf$index) = 1ah;
+  38   5                  end;
+  39   4                  obuf$index = 0;
+  40   4                end;
+                      else
+  41   3                obuf$index = obuf$index + 1;
+
+  42   3            end inc$obuf$index;
+
+  43   2         emit$ascii$hex:
+                   procedure(dig);
+  44   3             declare dig byte;
+
+  45   3             call inc$obuf$index;
+  46   3             obuf(obuf$index) = hexASCII(shr(dig,4));
+  47   3             call inc$obuf$index;
+  48   3             obuf(obuf$index) = hexASCII(dig and 0fh);
+
+  49   3           end emit$ascii$hex;
+
+  50   2          call set$dma$address(.obuf);
+  51   2          call delete$file(.data$fcb);
+PL/M-80 COMPILER    GENCPM TOKEN FILE CREATOR                                                                   PAGE   3
+
+
+  52   2          call create$file(.data$fcb);  
+
+  53   2          obuf$index = 0ffh;
+
+  54   2          do i = 0 to 21;
+
+  55   3            symbol$done = false;
+  56   3            flags = symtbl(i).flags;
+  57   3            inc = 0;
+  58   3            do while (inc < 16) and (not symbol$done);
+
+  59   4              do j = 0 to 7;
+  60   5                call inc$obuf$index;
+  61   5                obuf(obuf$index) = symtbl(i).token(j);
+  62   5              end;
+
+  63   4              if (flags and 8) = 0 then
+  64   4                symbol$done = true;
+                      else
+  65   4                do;
+  66   5                  if (flags and 10h) <> 0 then
+  67   5                    obuf(obuf$index) = 'A' + inc;
+                          else
+  68   5                    do;
+  69   6                      if inc < 10 then
+  70   6                        do;
+  71   7                          obuf(obuf$index) = '0' + inc;
+  72   7                        end;
+                              else
+  73   6                        do;
+  74   7                          obuf(obuf$index) = 'A' + inc - 10;
+  75   7                        end;
+  76   6                    end;
+  77   5                end;
+
+  78   4              call inc$obuf$index;
+  79   4              obuf(obuf$index) = ' ';
+  80   4              call inc$obuf$index;
+  81   4              obuf(obuf$index) = '=';
+  82   4              call inc$obuf$index;
+  83   4              obuf(obuf$index) = ' ';
+
+  84   4              val$adr = symtbl(i).ptr + (inc * symtbl(i).len);
+
+  85   4              if (flags and 1) <> 0 then
+  86   4                do;
+  87   5                  call inc$obuf$index;
+  88   5                  obuf(obuf$index) = 'A' + val;
+  89   5                end;
+                      else
+  90   4                do;
+  91   5                  if (flags and 2) <> 0 then
+  92   5                    do;
+  93   6                      call inc$obuf$index;
+  94   6                      if val then
+  95   6                        obuf(obuf$index) = 'Y';
+                              else
+PL/M-80 COMPILER    GENCPM TOKEN FILE CREATOR                                                                   PAGE   4
+
+
+  96   6                        obuf(obuf$index) = 'N';
+  97   6                    end;
+                          else
+  98   5                    do;
+  99   6                      call emit$ascii$hex(val);
+ 100   6                      if (flags and 18h) = 8 then
+ 101   6                        do;
+ 102   7                          call inc$obuf$index;
+ 103   7                          obuf(obuf$index) = ',';
+ 104   7                          val$adr = val$adr + 1;
+ 105   7                          call emit$ascii$hex(val);
+ 106   7                          call inc$obuf$index;
+ 107   7                          obuf(obuf$index) = ',';
+ 108   7                          val$adr = val$adr + 1;
+ 109   7                          call emit$ascii$hex(val);
+ 110   7                        end;
+ 111   6                    end;
+ 112   5                end;
+
+ 113   4              call inc$obuf$index;
+ 114   4              obuf(obuf$index) = cr;
+ 115   4              call inc$obuf$index;
+ 116   4              obuf(obuf$index) = lf;
+
+ 117   4              inc = inc + 1;
+
+ 118   4            end;      
+
+ 119   3          end;
+
+ 120   2          if obuf$index <= 7fh then
+ 121   2            call write$record(.data$fcb);
+ 122   2          call close$file(.data$fcb);
+
+ 123   2        end crtdef;
+ 124   1      end create$defaults;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0298H    664D
+     VARIABLE AREA SIZE = 0009H      9D
+     MAXIMUM STACK SIZE = 0006H      6D
+     201 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

@@ -1,0 +1,1650 @@
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE GET
+OBJECT MODULE PLACED IN GET.OBJ
+COMPILER INVOKED BY:  :F1:PLM80 GET.PLM XREF PAGEWIDTH(100) DEBUG OPTIMIZE
+
+
+
+              $ TITLE('CP/M 3.0 --- GET user interface')
+   1          get:
+              do;
+
+              /*
+                Copyright (C) 1982
+                Digital Research
+                P.O. Box 579
+                Pacific Grove, CA 93950
+              */
+
+              /*
+              Written:  30 July 82  by John Knight 
+                        12 Sept 82  by Doug Huskey
+              */
+
+              /********************************************
+              *                                           *
+              *       LITERALS AND GLOBAL VARIABLES       *
+              *                       *
+              ********************************************/
+
+   2   1      declare
+                  true            literally '1',
+                  false           literally '0',
+                  forever         literally 'while true',
+                  lit             literally 'literally',
+                  proc            literally 'procedure',
+                  dcl             literally 'declare',
+                  addr            literally 'address',
+                  cr              literally '13',
+                  lf              literally '10',
+                  ctrlc           literally '3',
+                  ctrlx           literally '18h',
+                  bksp            literally '8',
+                  con$type        literally '0',
+                  aux$type        literally '1',
+                  con$width$offset    literally '1ah',
+                  ccp$flag$offset literally '18h',
+                  get$rsx$init        literally '128',
+                  get$rsx$kill        literally '129',
+                  get$rsx$fcb         literally '130',
+                  cpmversion      literally '30h';
+                  
+   3   1        declare ccp$flag byte;
+   4   1        declare con$width byte;
+   5   1        declare i byte;
+   6   1        declare begin$buffer address;
+   7   1        declare buf$length byte;
+   8   1        declare no$chars byte;
+   9   1        declare get$init$pb byte initial(get$rsx$init);
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   2
+
+
+  10   1        declare get$kill$pb byte initial(get$rsx$kill);
+  11   1        declare get$fcb$pb byte initial(get$rsx$fcb);
+  12   1        declare input$type byte;
+               
+  13   1        declare
+                  sub$fcb (*)   byte data (0,'SYSIN   $$$'),
+                  get$msg (*)   byte data ('Getting console input from $');
+
+                /* scanner variables and data */
+  14   1        declare
+                  options(*) byte data
+                      ('INPUT~FROM~FILE~STATUS~CONDITIONAL~',
+                       'FALSE~TRUE~CONSOLE~CONIN:~AUXILIARY~',
+                       'AUXIN:~END~CON:~AUX:~NOT~ECHO~FILTERED~SYSTEM~PROGRAM',0FFH),
+                      
+                  options$offset(*) byte data
+                      (0,6,11,16,23,35,41,46,54,61,71,78,82,87,92,96,101,110,117,124),
+
+                  end$list    byte data (0ffh),
+
+                  delimiters(*) byte data (0,'[]=, ./;',0,0ffh),
+
+                  SPACE   byte data(5),
+
+                  buf$ptr address,
+                  index   byte,
+                  endbuf  byte,
+                  j       byte initial(0),
+                  delimiter   byte;
+                  
+  15   1          declare end$of$string byte initial ('~');
+
+  16   1        declare getpb structure
+                  (input$type   byte,
+                   echo$flag     byte,
+                   filtered$flag byte,
+                   program$flag  byte)
+                  initial(con$type,true,true,true);
+
+  17   1        declare scbpd structure
+                  (offset byte,
+                   set    byte,
+                   value  address);
+
+  18   1        declare parse$fn structure
+                  (buff$adr address,
+                   fcb$adr  address);
+
+  19   1       declare plm label public;
+               
+                /**************************************
+                 *                                    *
+                 *       B D O S   INTERFACE          *
+                 *                                    *
+                 **************************************/
+
+
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   3
+
+
+  20   1        mon1:
+                  procedure (func,info) external;
+  21   2            declare func byte;
+  22   2            declare info address;
+  23   2          end mon1;
+
+  24   1        mon2:
+                  procedure (func,info) byte external;
+  25   2            declare func byte;
+  26   2            declare info address;
+  27   2          end mon2;
+
+  28   1        mon3:
+                  procedure (func,info) address external;
+  29   2            declare func byte;
+  30   2            declare info address;
+  31   2          end mon3;
+
+  32   1        declare cmdrv     byte    external;   /* command drive      */
+  33   1        declare fcb (1)   byte    external;   /* 1st default fcb    */
+  34   1        declare fcb16 (1) byte    external;   /* 2nd default fcb    */
+  35   1        declare pass0     address external;   /* 1st password ptr   */
+  36   1        declare len0      byte    external;   /* 1st passwd length  */
+  37   1        declare pass1     address external;   /* 2nd password ptr   */
+  38   1        declare len1      byte    external;   /* 2nd passwd length  */
+  39   1        declare tbuff (1) byte    external;   /* default dma buffer */
+
+                /**************************************
+                 *                                    *
+                 *       B D O S   Externals          *
+                 *                                    *
+                 **************************************/
+
+  40   1        printchar: 
+                  procedure(char);
+  41   2          declare char byte;
+  42   2          call mon1(2,char);
+  43   2          end printchar;
+
+  44   1        conin:
+                  procedure byte;
+  45   2          return mon2(6,0fdh);
+  46   2          end conin;
+
+  47   1        print$buf:
+                  procedure (buffer$address);
+  48   2            declare buffer$address address;
+  49   2            call mon1 (9,buffer$address);
+  50   2          end print$buf;
+
+  51   1        read$console$buf:
+                  procedure (buffer$address,max) byte;
+  52   2          declare buffer$address address;
+  53   2          declare new$max based buffer$address address;
+  54   2          declare max byte;
+  55   2          new$max = max;
+  56   2          call mon1(10,buffer$address);
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   4
+
+
+  57   2          buffer$address = buffer$address + 1;
+  58   2          return new$max; /* actually number of characters input */
+  59   2        end read$console$buf;
+
+  60   1        version: procedure address;
+                  /* returns current cp/m version # */
+  61   2          return mon3(12,0);
+  62   2          end version;
+
+  63   1        check$con$stat: procedure byte;
+  64   2          return mon2(11,0);
+  65   2        end check$con$stat;
+
+  66   1        open$file:
+                  procedure (fcb$address) address;
+  67   2          declare fcb$address address;
+  68   2          return mon3(15,fcb$address);
+  69   2        end open$file;
+
+  70   1        set$dma: procedure(dma);
+  71   2          declare dma address;
+  72   2          call mon1(26,dma);
+  73   2        end set$dma;
+
+                /* 0ffh ==> return BDOS errors */
+  74   1        return$errors: procedure (mode);
+  75   2          declare mode byte;
+  76   2          call mon1(45,mode);
+  77   2        end return$errors;
+
+  78   1        getscbbyte: procedure (offset) byte;
+  79   2          declare offset byte;
+  80   2          scbpd.offset = offset;
+  81   2          scbpd.set = 0;
+  82   2          return mon2(49,.scbpd);
+  83   2        end getscbbyte;
+
+  84   1        setscbbyte:
+                  procedure (offset,value);
+  85   2          declare offset byte;
+  86   2          declare value byte;
+  87   2          scbpd.offset = offset;
+  88   2          scbpd.set = 0ffh;
+  89   2          scbpd.value = double(value);
+  90   2          call mon1(49,.scbpd);
+  91   2        end setscbbyte;
+
+  92   1      get$console$mode: procedure address;
+              /* returns console mode */
+  93   2        return mon3(6dh,0ffffh);
+  94   2      end get$console$mode;
+
+  95   1      set$console$mode: procedure (new$value);
+  96   2        declare new$value address;
+  97   2        call mon1(6dh,new$value);
+  98   2      end set$console$mode;
+
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   5
+
+
+  99   1      rsx$call: procedure (rsxpb) address;
+              /* call Resident System Extension */
+ 100   2        declare rsxpb address;
+ 101   2        return mon3(60,rsxpb);
+ 102   2      end rsx$call;
+
+ 103   1      parse: procedure (pfcb) address external;
+ 104   2        declare pfcb address;
+ 105   2      end parse;
+
+ 106   1      getf: procedure (input$type) external;
+ 107   2              declare input$type address;
+ 108   2      end getf;
+
+                /**************************************
+                 *                                    *
+                 *       S U B R O U T I N E S        *
+                 *                                    *
+                 **************************************/
+
+
+              /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                                  * * *  Option scanner  * * *
+
+
+               * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+ 109   1      separator: procedure(character) byte;
+
+                                  /* determines if character is a 
+                                     delimiter and which one */
+ 110   2          declare k   byte,
+                      character   byte;
+
+ 111   2          k = 1;
+ 112   2      loop:   if delimiters(k) = end$list then return(0);
+ 114   2          if delimiters(k) = character then return(k);    /* null = 25 */
+ 116   2              k = k + 1;
+ 117   2              go to loop;
+
+ 118   2      end separator;
+
+ 119   1      opt$scanner:    procedure(list$ptr,off$ptr,idx$ptr);
+                                  /* scans the list pointed at by idxptr
+                                     for any strings that are in the 
+                                     list pointed at by list$ptr.
+                                     Offptr points at an array that 
+                                     contains the indices for the known
+                                     list. Idxptr points at the index 
+                                     into the list. If the input string
+                                     is unrecognizable then the index is
+                                     0, otherwise > 0.
+
+                                  First, find the string in the known
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   6
+
+
+                                  list that starts with the same first 
+                                  character.  Compare up until the next
+                                  delimiter on the input. if every input
+                                  character matches then check for 
+                                  uniqueness.  Otherwise try to find 
+                                  another known string that has its first
+                                  character match, and repeat.  If none
+                                  can be found then return invalid.
+
+                                  To test for uniqueness, start at the 
+                                  next string in the knwon list and try
+                                  to get another match with the input.
+                                  If there is a match then return invalid.
+
+                                  else move pointer past delimiter and 
+                                  return.
+
+                              P.Balma     */
+
+ 120   2          declare
+                      buff        based buf$ptr (1) byte,
+                      idx$ptr     address,
+                      off$ptr     address,
+                      list$ptr    address;
+
+ 121   2          declare
+                      i       byte,
+                      j       byte,
+                      list        based list$ptr (1) byte,
+                      offsets     based off$ptr (1) byte,
+                      wrd$pos     byte,
+                      character   byte,
+                      letter$in$word  byte,
+                      found$first byte,
+                      start       byte,
+                      index       based idx$ptr byte,
+                      save$index  byte,
+                      (len$new,len$found) byte,
+                      valid       byte;
+
+              /*****************************************************************************/
+              /*          internal subroutines                     */
+              /*****************************************************************************/
+
+ 122   2      check$in$list: procedure;
+                              /* find known string that has a match with 
+                                 input on the first character.  Set index
+                                 = invalid if none found.   */
+                          
+ 123   3          declare i   byte;
+
+ 124   3          i = start;
+ 125   3          wrd$pos = offsets(i);
+ 126   3          do while list(wrd$pos) <> end$list;
+ 127   4              i = i + 1;
+ 128   4              index = i;
+ 129   4              if list(wrd$pos) = character then return;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   7
+
+
+ 131   4              wrd$pos = offsets(i);
+ 132   4          end;
+                          /* could not find character */
+ 133   3          index = 0;
+ 134   3          return;
+ 135   3      end check$in$list;
+
+ 136   2      setup:  procedure;
+ 137   3          character = buff(0);
+ 138   3          call check$in$list;
+ 139   3          letter$in$word = wrd$pos;
+                          /* even though no match may have occurred, position
+                             to next input character.  */
+ 140   3          i = 1;
+ 141   3          character = buff(1);
+ 142   3      end setup;
+
+ 143   2      test$letter:    procedure;
+                          /* test each letter in input and known string */
+
+ 144   3          letter$in$word = letter$in$word + 1;
+
+                                  /* too many chars input? 0 means
+                                     past end of known string */
+ 145   3          if list(letter$in$word) = end$of$string then valid = false;
+                  else
+ 147   3          if list(letter$in$word) <> character then valid = false;
+
+                  i = i + 1;
+ 150   3          character = buff(i);
+
+ 151   3      end test$letter;
+
+ 152   2      skip:   procedure;
+                                  /* scan past the offending string;
+                                     position buf$ptr to next string...
+                                     skip entire offending string;
+                                     ie., falseopt=mod, [note: comma or
+                                     space is considered to be group 
+                                     delimiter] */
+ 153   3          character = buff(i);
+ 154   3          delimiter = separator(character);
+                  /* No skip for GET */
+ 155   3              do while ((delimiter < 1) or (delimiter > 9));
+ 156   4              i = i + 1;
+ 157   4              character = buff(i);
+ 158   4              delimiter = separator(character);
+ 159   4          end;
+ 160   3          endbuf = i;
+ 161   3          buf$ptr = buf$ptr + endbuf + 1;
+ 162   3          return;
+ 163   3      end skip;
+
+ 164   2      eat$blanks: procedure;
+
+ 165   3          declare charac  based buf$ptr byte;
+
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   8
+
+
+
+ 166   3          do while ((delimiter := separator(charac)) = SPACE);
+ 167   4              buf$ptr = buf$ptr + 1;
+ 168   4          end;
+
+ 169   3      end eat$blanks;
+
+              /*****************************************************************************/
+              /*          end of internals                     */
+              /*****************************************************************************/
+
+
+                                  /* start of procedure */
+ 170   2          if delimiter = 9 then
+ 171   2              return;
+ 172   2          call eat$blanks;
+ 173   2          start = 0;
+ 174   2          call setup;
+
+                                  /* match each character with the option
+                                     for as many chars as input 
+                                     Please note that due to the array
+                                     indices being relative to 0 and the
+                                     use of index both as a validity flag
+                                     and as a index into the option/mods
+                                     list, index is forced to be +1 as an
+                                     index into array and 0 as a flag*/
+
+ 175   2          do while index <> 0;
+ 176   3              start = index;
+ 177   3              delimiter = separator(character);
+
+                                  /* check up to input delimiter */
+
+ 178   3              valid = true;       /* test$letter resets this */
+ 179   3              do while delimiter = 0;
+ 180   4                  call test$letter;
+ 181   4                  if not valid then go to exit1;
+ 183   4                  delimiter = separator(character);
+ 184   4              end;
+
+ 185   3              go to good;
+
+                                  /* input ~= this known string;
+                                     get next known string that 
+                                     matches */
+ 186   3      exit1:      call setup;
+ 187   3          end;
+                                  /* fell through from above, did
+                                     not find a good match*/
+ 188   2          endbuf = i;         /* skip over string & return*/
+ 189   2          call skip;
+ 190   2          return;
+
+                                  /* is it a unique match in options
+                                     list? */
+ 191   2      good:   endbuf = i;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE   9
+
+
+ 192   2          len$found = endbuf;
+ 193   2          save$index = index;
+ 194   2          valid = false;
+ 195   2      next$opt:
+                      start = index;
+ 196   2              call setup;
+ 197   2              if index = 0 then go to finished;
+
+                                  /* look at other options and check
+                                     uniqueness */
+
+ 199   2              len$new = offsets(index + 1) - offsets(index) - 1;
+ 200   2              if len$new = len$found then do;
+ 202   3                  valid = true;
+ 203   3                  do j = 1 to len$found;
+ 204   4                      call test$letter;
+ 205   4                      if not valid then go to next$opt;
+ 207   4                  end;
+ 208   3              end;
+ 209   2              else go to nextopt;
+                                  /* fell through...found another valid
+                                     match --> ambiguous reference */
+ 210   2          index = 0;
+ 211   2          call skip;      /* skip input field to next delimiter*/
+ 212   2          return;
+
+ 213   2      finished:           /* unambiguous reference */
+                  index = save$index;
+ 214   2          buf$ptr = buf$ptr + endbuf;
+ 215   2          call eat$blanks;
+ 216   2          if delimiter <> 0 then
+ 217   2                buf$ptr = buf$ptr + 1;
+                      else
+ 218   2                delimiter = 5;
+ 219   2          return;
+
+ 220   2      end opt$scanner;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 221   1      crlf:   proc;
+ 222   2          call printchar(cr);
+ 223   2          call printchar(lf);
+ 224   2          end crlf;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* fill string @ s for c bytes with f */
+ 225   1      fill: procedure(s,f,c);
+ 226   2        declare s address;
+ 227   2        declare (f,c) byte;
+ 228   2        declare a based s byte;
+ 229   2        do while (c:=c-1) <> 255;
+ 230   3          a=f;
+ 231   3          s=s+1;
+ 232   3        end;
+ 233   2      end fill;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  10
+
+
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+              /* The error processor.  This routine prints the command line
+                with a carot '^' under the offending delimiter, or sub-string.
+                The code passed to the routine determines the error message
+                to be printed beneath the command string.                  */
+
+ 234   1      error: procedure (code);
+ 235   2        declare (code,i,j,nlines,rem) byte;
+ 236   2        declare (string$ptr,tstring$ptr) address;
+ 237   2        declare chr1 based string$ptr byte;
+ 238   2        declare chr2 based tstring$ptr byte;
+ 239   2        declare carot$flag byte;
+
+ 240   2      print$command: procedure (size);
+ 241   3        declare size byte;
+ 242   3        do j=1 to size;   /* print command string */
+ 243   4          call printchar(chr1);
+ 244   4          string$ptr = string$ptr + 1;
+ 245   4        end;
+ 246   3        call crlf;
+ 247   3        do j=1 to size;   /* print carot if applicable */
+ 248   4          if .chr2 = buf$ptr then do;
+ 250   5            carot$flag = true;
+ 251   5            call printchar('^');
+ 252   5          end;
+                  else
+ 253   4            call printchar(' ');
+ 254   4          tstring$ptr = tstring$ptr + 1;
+ 255   4        end;
+ 256   3        call crlf;
+ 257   3      end print$command;
+
+ 258   2        carot$flag = false;
+ 259   2        string$ptr,tstring$ptr = begin$buffer;
+ 260   2        con$width = getscbbyte(con$width$offset);
+ 261   2        if con$width < 40 then con$width = 40;
+ 263   2        nlines = buf$length / con$width;  /* num lines to print */
+ 264   2        rem = buf$length mod con$width;   /* num extra chars to print */
+ 265   2        if code <> 2 then do;
+ 267   3          if ((code = 1) or (code = 4)) then  /* adjust carot pointer */
+ 268   3            buf$ptr = buf$ptr - 1;    /* for delimiter errors */
+ 269   3          else if code <> 5 then
+ 270   3            buf$ptr = buf$ptr - endbuf - 1;   /* all other errors */
+                end;
+ 272   2        call crlf;
+ 273   2        do i=1 to nlines;
+ 274   3          tstring$ptr = string$ptr;
+ 275   3          call print$command(con$width);
+ 276   3        end;
+ 277   2        call print$command(rem);
+ 278   2        if carot$flag then
+ 279   2          call print$buf(.('Error at the ''^'': $'));
+                else
+ 280   2          call print$buf(.('Error at end of line: $'));
+ 281   2        if con$width < 65 then
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  11
+
+
+ 282   2          call crlf;
+ 283   2        do case code;
+ 284   3          call print$buf(.('Invalid option or modifier$'));
+ 285   3          call print$buf(.('End of line expected$'));
+ 286   3          call print$buf(.('Invalid file specification$'));
+ 287   3          call print$buf(.('Invalid command$'));
+ 288   3          call print$buf(.('Invalid delimiter$'));
+ 289   3          call print$buf(.('File not found$'));
+ 290   3        end;
+ 291   2        call crlf;
+ 292   2        call mon1(0,0);
+ 293   2      end error;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 294   1      ucase: procedure (char) byte;
+ 295   2        declare char byte;
+ 296   2        if char >= 'a' then
+ 297   2          if char < '{' then
+ 298   2            return (char-20h);
+ 299   2        return char;
+ 300   2      end ucase;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 301   1      getucase: procedure byte;
+ 302   2        declare c byte;
+ 303   2        c = ucase(conin);
+ 304   2        return c;
+ 305   2      end getucase;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 306   1      getpasswd: procedure;
+ 307   2        declare (i,c) byte;
+ 308   2        call crlf;
+ 309   2        call crlf;
+ 310   2        call print$buf(.('Enter Password: $'));
+ 311   2      retry:
+                call fill(.fcb16,' ',8);
+ 312   2        do i=0 to 7;
+ 313   3      nxtchr:
+                if (c:=getucase) >= ' ' then
+ 314   3          fcb16(i)=c;
+ 315   3        if c = cr then 
+ 316   3          go to exit;
+ 317   3        if c = ctrlx then
+ 318   3          go to retry;
+ 319   3        if c = bksp then do;
+ 321   4          if i < 1 then
+ 322   4            goto retry;
+ 323   4          else do;
+ 324   5            fcb16(i := i - 1) = ' ';
+ 325   5            goto nxtchr;
+ 326   5            end;
+ 327   4          end;
+ 328   3        if c = 3 then
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  12
+
+
+ 329   3          call mon1(0,0);
+ 330   3        end;
+ 331   2      exit:
+                c = check$con$stat;   /* clear raw i/o mode */
+ 332   2      end getpasswd;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 333   1      print$fn: procedure (fcb$ad);
+ 334   2        declare k byte;
+ 335   2        declare fcb$ad address;
+ 336   2        declare driv based fcb$ad byte;
+ 337   2        declare fn based fcb$ad (12) byte;
+
+ 338   2        call print$buf(.('file: $'));
+ 339   2        if driv <> 0 then do;
+ 341   3          call printchar('@'+driv);
+ 342   3          call printchar(':');
+ 343   3        end;
+ 344   2        do k=1 to 11;
+ 345   3          if k=9 then
+ 346   3            call printchar('.');
+ 347   3          if fn(k) <> ' ' then
+ 348   3            call printchar(fn(k) and 07fh);
+ 349   3        end;
+ 350   2      end print$fn;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 351   1      try$open: procedure;
+ 352   2        declare (error$code,a) address;
+ 353   2        declare prog$flag based a byte;
+ 354   2        declare code byte;
+
+                
+ 355   2        error$code = rsx$call(.get$fcb$pb);
+ 356   2        if error$code <> 0ffh then do; /* 0ffh means no active get */
+ 358   3          a = error$code - 2;
+ 359   3          if prog$flag then            /* program input only? */
+ 360   3            error$code = rsx$call(.get$kill$pb); /* kill if so */
+ 361   3        end;
+ 362   2        call setdma(.fcb16);  /* set dma to password */
+ 363   2        call return$errors(0ffh);
+ 364   2        error$code = open$file(.fcb);
+ 365   2        call return$errors(0);
+ 366   2        if low(error$code) = 0ffh then
+ 367   2          if (code := high(error$code)) <> 0 then do;
+ 369   3            if code = 7 then do;
+ 371   4              call getpasswd;
+ 372   4              call crlf;
+ 373   4              call setdma(.fcb16);
+ 374   4            end;
+ 375   3            error$code=open$file(.fcb);
+ 376   3          end;
+ 377   2          else do;
+ 378   3            buf$ptr = parse$fn.buff$adr;  /* adjust pointer to file */
+ 379   3            call error(5);    /* file not found */
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  13
+
+
+ 380   3          end;
+ 381   2        call print$buf(.get$msg);
+ 382   2        if getscbbyte(26) < 48 then
+ 383   2          call crlf;              /* console width */
+ 384   2        call print$fn(.fcb);
+ 385   2        call getf(.getpb);
+ 386   2      end try$open;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 387   1      submit: procedure(adr) byte;
+ 388   2        declare adr address;
+ 389   2        declare fn based adr (12) byte;
+ 390   2        declare (i,match) byte;
+
+ 391   2        compare: procedure(j);
+ 392   3          dcl j byte;
+ 393   3          if (fn(j) and 07fh) = sub$fcb(j) then
+ 394   3            return;
+ 395   3          match = false;
+ 396   3        end compare;
+
+ 397   2        match = true;
+ 398   2          do i = 1 to 3;  /* sub = SYS     $$$ */
+ 399   3          call compare(i);
+ 400   3          call compare(i+8);
+ 401   3          end;
+ 402   2        return match;
+ 403   2      end submit;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 404   1      kill$rsx: procedure;
+ 405   2        declare (fcb$adr,a) address;
+
+ 406   2        if delimiter <> 9 then    /* check for eoln */
+ 407   2          call error(1);
+                /* remove SUBMIT & GET rsx modules */
+ 408   2        do while (fcb$adr:=rsx$call(.get$fcb$pb)) <> 0ffh;
+ 409   3          a = rsx$call(.get$kill$pb);
+ 410   3          if submit(fcb$adr) then
+ 411   3            call print$buf(.('SUBMIT of $'));
+                  else
+ 412   3            call print$buf(.('GET  from $'));
+ 413   3          call print$fn(fcb$adr);
+ 414   3          call print$buf(.(' stopped$'));
+ 415   3          call crlf;
+ 416   3        end;
+ 417   2        call print$buf(.get$msg);
+ 418   2        call print$buf(.('console$'));
+ 419   2        call mon1(0,0);
+ 420   2      end kill$rsx;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 421   1      end$rsx: procedure;
+ 422   2        declare (a,fcb$adr) address;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  14
+
+
+
+ 423   2        if delimiter <> 9 then    /* check for eoln */
+ 424   2          call error(1);
+ 425   2        if (fcb$adr := rsx$call(.get$fcb$pb)) <> 0ffh then 
+ 426   2          if not submit(fcb$adr) then do;
+ 428   3            a = rsx$call(.get$kill$pb);
+ 429   3            call print$buf(.('GET  from $'));
+ 430   3            call print$fn(fcb$adr);
+ 431   3            call print$buf(.(' stopped$'));
+ 432   3            call crlf;
+ 433   3          end;
+
+                /* determine where console input comes from now */
+ 434   2        call print$buf(.get$msg);
+ 435   2        fcb$adr = rsx$call(.get$fcb$pb);
+ 436   2        if fcb$adr = 0ffh then
+ 437   2          call print$buf(.('console$'));
+ 438   2        else do;
+ 439   3          if getscbbyte(26) < 48 then
+ 440   3            call crlf;                /* console width */
+ 441   3          call print$fn(fcb$adr);
+ 442   3        end;
+ 443   2        call mon1(0,0);
+ 444   2      end end$rsx;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 445   1      set$rsx$mode: procedure (bit$value);
+ 446   2        declare bit$value byte;
+ 447   2        declare temp address;
+ 448   2        temp = get$console$mode;
+ 449   2        temp = temp and 111111$00$11111111b;  /* mask off bits to be set */
+ 450   2        if bit$value <> 0 then
+ 451   2          temp = temp or (255 + bit$value);
+ 452   2        call set$console$mode(temp);
+ 453   2      end set$rsx$mode;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 454   1      process$file: procedure(buf$adr);
+ 455   2        declare negate byte;
+ 456   2        declare status address;
+ 457   2        declare buf$adr address;
+ 458   2        declare char based status byte;
+ 459   2        parse$fn.buff$adr = buf$adr;
+ 460   2        parse$fn.fcb$adr = .fcb;
+ 461   2        status = parse(.parse$fn);
+ 462   2        if status = 0ffffh then
+ 463   2          call error(2);  /* bad file */
+ 464   2        if status = 0 then    /* eoln */
+ 465   2          call try$open;  /* try$open does not return */
+                else
+ 466   2          buf$ptr = status + 1;   /* position buf$ptr past '[' */
+ 467   2        if char <> '[' then       /* PROCESS OPTIONS */
+ 468   2          call error(4);
+ 469   2        do while ((delimiter<>2) and (delimiter<>9));
+ 470   3          call opt$scanner(.options(0),.options$offset(0),.index);
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  15
+
+
+ 471   3          if index = 4 then do;   /* STATUS */
+ 473   4            if delimiter <> 3 then    /* '=' */
+ 474   4              call error(4);
+ 475   4            call opt$scanner(.options(0),.options$offset(0),.index);
+ 476   4            if index = 5 then     /* CONDITIONAL */
+ 477   4              call set$rsx$mode(0);
+ 478   4            else if index = 6 then    /* FALSE */
+ 479   4              call set$rsx$mode(1);
+ 480   4            else if index = 7 then    /* TRUE */
+ 481   4              call set$rsx$mode(2);
+                    else 
+ 482   4              call error(0);      /* Not a valid option */
+ 483   4          end;
+ 484   3          else do;    /* ECHO, FILTER, & SYSTEM  options */
+ 485   4            negate=false;
+ 486   4            if index = 15 then do;
+ 488   5              negate = true;
+ 489   5              call opt$scanner(.options(0),.options$offset(0),.index);
+ 490   5            end;
+ 491   4            if index = 16 then do;            /* ECHO */
+ 493   5              if negate then
+ 494   5                getpb.echo$flag = false;
+                      else
+ 495   5                getpb.echo$flag = true;
+ 496   5            end;
+ 497   4            else if index = 17 then do;       /* FILTER */
+ 499   5              if negate then
+ 500   5                getpb.filtered$flag = false;
+                      else
+ 501   5                getpb.filtered$flag = true;
+ 502   5            end;
+ 503   4            else if index = 18 then do;       /* SYSTEM */
+ 505   5              if negate then
+ 506   5                getpb.program$flag = true;
+                      else
+ 507   5                getpb.program$flag = false;
+ 508   5            end;
+ 509   4            else if index = 19 then do;       /* PROGRAM */
+ 511   5              if negate then
+ 512   5                getpb.program$flag = false;
+                      else
+ 513   5                getpb.program$flag = true;
+ 514   5            end;
+                    else
+ 515   4              call error(0);
+ 516   4          end;
+ 517   3        end;
+ 518   2        call try$open;    /* all set up, so do open */
+ 519   2      end process$file;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+ 520   1      input$found: procedure (buffer$adr) byte;
+ 521   2        declare buffer$adr address;
+ 522   2        declare char based buffer$adr byte;
+ 523   2        do while (char = ' ') or (char = 9); /* tabs & spaces */
+ 524   3          buffer$adr = buffer$adr + 1;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  16
+
+
+ 525   3        end;
+ 526   2        if char = 0 then  /* eoln */
+ 527   2          return false;   /* input not found */
+                else
+ 528   2          return true;    /* input found */
+ 529   2      end input$found;
+
+              /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               
+              /*********************************
+              *                                *
+              *    M A I N   P R O G R A M     *
+              *                                *
+              *********************************/
+
+ 530   1      plm:
+                do;
+ 531   2          if (low(version) < cpmversion) or (high(version)=1) then do;
+ 533   3            call print$buf(.('Requires CP/M 3.0$'));
+ 534   3            call mon1(0,0);
+ 535   3          end;
+ 536   2          if not input$found(.tbuff(1)) then do;  /* just GET */
+ 538   3            call print$buf(.('CP/M 3 GET Version 3.0',cr,lf,'$'));
+ 539   3            call print$buf(.('Get console input from a file',cr,lf,'$'));
+ 540   3            call print$buf(.('Enter file: $'));
+ 541   3            no$chars = read$console$buf(.tbuff(0),128);
+ 542   3            call crlf;
+ 543   3            tbuff(1) = ' ';       /* blank out nc field */
+ 544   3            tbuff(no$chars+2) = 0;    /* mark eoln */
+ 545   3            if not input$found(.tbuff(1)) then    /* quit, no file name */
+ 546   3              call mon1(0,0);
+ 547   3            do i=1 to no$chars;   /* make input capitals */
+ 548   4              tbuff(i+1) = ucase(tbuff(i+1));
+ 549   4            end;
+ 550   3            begin$buffer = .tbuff(2);
+ 551   3            buf$length = no$chars;
+ 552   3            buf$ptr = .tbuff(2);
+ 553   3            call process$file(.tbuff(2));
+ 554   3          end;
+ 555   2          else do;    /* Get with input */
+ 556   3            i = 1;            /* skip over leading spaces */
+ 557   3            do while (tbuff(i) = ' ');
+ 558   4              i = i + 1;
+ 559   4            end;
+ 560   3            begin$buffer = .tbuff(1); /* note beginning of input */
+ 561   3            buf$length = tbuff(0);    /* note length of input */
+ 562   3            buf$ptr = .tbuff(i);  /* set up for scanner */
+ 563   3            index = 0;
+ 564   3            delimiter = 1;
+ 565   3            call opt$scanner(.options(0),.options$offset(0),.index);
+ 566   3            if (index=10) or (index=11) or (index=14) then do;    /* AUX */
+ 568   4              call opt$scanner(.options(0),.options$offset(0),.index);
+ 569   4              if index = 1 then   /* INPUT */
+ 570   4                call opt$scanner(.options(0),.options$offset(0),.index);
+ 571   4              if index = 2 then   /* FROM */
+ 572   4                call opt$scanner(.options(0),.options$offset(0),.index);
+ 573   4              if index = 3 then do;   /* FILE */
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  17
+
+
+ 575   5                getpb.input$type=aux$type;
+ 576   5                call process$file(buf$ptr);
+ 577   5              end;
+ 578   4              else do;
+ 579   5                if (index=10) or (index=11) or (index=14) then    /* AUX */
+ 580   5                  call kill$rsx;
+                        else
+ 581   5                  call error(3);
+ 582   5              end;
+ 583   4            end;
+ 584   3            else do;  /* not AUX */
+ 585   4              if index = 12 then  /* END  */
+ 586   4                call end$rsx; 
+ 587   4              if (index=8) or (index=9) or (index=13) then do;    /* CONSOLE */
+ 589   5                if delimiter = 9 then
+ 590   5                  call kill$rsx;
+                        else
+ 591   5                  call opt$scanner(.options(0),.options$offset(0),.index);
+ 592   5              end;
+ 593   4              if index = 1 then   /* INPUT */
+ 594   4                call opt$scanner(.options(0),.options$offset(0),.index);
+ 595   4              if index = 2 then   /* FROM */
+ 596   4                call opt$scanner(.options(0),.options$offset(0),.index);
+ 597   4              if index = 3 then   /* FILE */
+ 598   4                call process$file(buf$ptr);
+ 599   4              if (index=8) or (index=9) or (index=13) then    /* CONIN:, CONSOLE */
+ 600   4                call kill$rsx;
+                      else
+ 601   4                call error(3);
+ 602   4            end;
+ 603   3          end;
+ 604   2        end;
+ 605   1      end get;
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  18
+
+
+CROSS-REFERENCE LISTING
+-----------------------
+
+
+   DEFN  ADDR  SIZE  NAME, ATTRIBUTES, AND REFERENCES
+  ----- ----- -----  --------------------------------
+
+
+    352 005CH     2  A                  ADDRESS
+                                         353  358 
+
+    405 0066H     2  A                  ADDRESS
+                                         409 
+
+    228 0000H     1  A                  BYTE BASED(S)
+                                         230 
+
+    422 0068H     2  A                  ADDRESS
+                                         428 
+
+      2              ADDR               LITERALLY
+
+    387 005FH     2  ADR                ADDRESS PARAMETER
+                                         388  389 
+
+      2              AUXTYPE            LITERALLY
+                                         575 
+
+      6 0003H     2  BEGINBUFFER        ADDRESS
+                                         259  550  560 
+
+    445 006CH     1  BITVALUE           BYTE PARAMETER
+                                         446  450  451 
+
+      2              BKSP               LITERALLY
+                                         319 
+
+    454 006FH     2  BUFADR             ADDRESS PARAMETER
+                                         457  459 
+
+    120 0000H     1  BUFF               BYTE BASED(BUFPTR) ARRAY(1)
+                                         137  141  150  153  157 
+
+     18 0000H     2  BUFFADR            ADDRESS MEMBER(PARSEFN)
+                                         378  459 
+
+     51 0021H     2  BUFFERADDRESS      ADDRESS PARAMETER
+                                          52   53   56   57 
+
+     47 001FH     2  BUFFERADDRESS      ADDRESS PARAMETER
+                                          48   49 
+
+    520 0074H     2  BUFFERADR          ADDRESS PARAMETER
+                                         521  522  524 
+
+      7 0005H     1  BUFLENGTH          BYTE
+                                         263  264  551  561 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  19
+
+
+     14 000BH     2  BUFPTR             ADDRESS
+                                         120  161  165  167  214  217  248  268  270  378  466
+                                         552  562  576  598 
+
+    307 0056H     1  C                  BYTE
+                                         313  314  315  317  319  328  331 
+
+    302 0054H     1  C                  BYTE
+                                         303  304 
+
+    225 0047H     1  C                  BYTE PARAMETER
+                                         227  229 
+
+    239 0051H     1  CAROTFLAG          BYTE
+                                         250  258  278 
+
+      3 0000H     1  CCPFLAG            BYTE
+
+      2              CCPFLAGOFFSET      LITERALLY
+
+    294 0053H     1  CHAR               BYTE PARAMETER
+                                         295  296  297  298  299 
+
+     40 001EH     1  CHAR               BYTE PARAMETER
+                                          41   42 
+
+    522 0000H     1  CHAR               BYTE BASED(BUFFERADR)
+                                         523  526 
+
+    458 0000H     1  CHAR               BYTE BASED(STATUS)
+                                         467 
+
+    165 0000H     1  CHARAC             BYTE BASED(BUFPTR)
+                                         166 
+
+    121 003BH     1  CHARACTER          BYTE
+                                         129  137  141  147  150  153  154  157  158  177  183
+
+    109 0030H     1  CHARACTER          BYTE PARAMETER
+                                         110  114 
+
+     63 04D7H     9  CHECKCONSTAT       PROCEDURE BYTE STACK=0002H
+                                         331 
+
+    122 06D9H    86  CHECKINLIST        PROCEDURE STACK=0000H
+                                         138 
+
+    237 0000H     1  CHR1               BYTE BASED(STRINGPTR)
+                                         243 
+
+    238 0000H     1  CHR2               BYTE BASED(TSTRINGPTR)
+                                         248 
+
+     32 0000H     1  CMDRV              BYTE EXTERNAL(3)
+
+    354 005EH     1  CODE               BYTE
+                                         367  369 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  20
+
+
+    234 0048H     1  CODE               BYTE PARAMETER
+                                         235  265  267  269  283 
+
+    391 0BDBH    37  COMPARE            PROCEDURE STACK=0000H
+                                         399  400 
+
+     44 048EH     9  CONIN              PROCEDURE BYTE STACK=0002H
+                                         303 
+
+      2              CONTYPE            LITERALLY
+                                          16 
+
+      4 0001H     1  CONWIDTH           BYTE
+                                         260  261  262  263  264  275  281 
+
+      2              CONWIDTHOFFSET     LITERALLY
+                                         260 
+
+      2              CPMVERSION         LITERALLY
+                                         531 
+
+      2              CR                 LITERALLY
+                                         222  315  538  539 
+
+    221 0805H    11  CRLF               PROCEDURE STACK=0004H
+                                         246  256  272  282  291  308  309  372  383  415  432
+                                         440  542 
+
+      2              CTRLC              LITERALLY
+
+      2              CTRLX              LITERALLY
+                                         317 
+
+      2              DCL                LITERALLY
+
+     14 0010H     1  DELIMITER          BYTE
+                                         154  155  158  166  170  177  179  183  216  218  406
+                                         423  469  473  564  589 
+
+     14 00BAH    11  DELIMITERS         BYTE ARRAY(11) DATA
+                                         112  114 
+
+     70 0026H     2  DMA                ADDRESS PARAMETER
+                                          71   72 
+
+                     DOUBLE             BUILTIN
+                                          89 
+
+    336 0000H     1  DRIV               BYTE BASED(FCBAD)
+                                         339  341 
+
+    164 07E9H    28  EATBLANKS          PROCEDURE STACK=0002H
+                                         172  215 
+
+     16 0001H     1  ECHOFLAG           BYTE MEMBER(GETPB)
+                                         494  495 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  21
+
+
+     14 000EH     1  ENDBUF             BYTE
+                                         160  161  188  191  192  214  270 
+
+     14 00B9H     1  ENDLIST            BYTE DATA
+                                         112  126 
+
+     15 0011H     1  ENDOFSTRING        BYTE INITIAL
+                                         145 
+
+    421 0C6CH   141  ENDRSX             PROCEDURE STACK=000AH
+                                         586 
+
+    234 083BH   308  ERROR              PROCEDURE STACK=0008H
+                                         379  407  424  463  468  474  482  515  581  601 
+
+    352 005AH     2  ERRORCODE          ADDRESS
+                                         355  356  358  360  364  366  367  375 
+
+    331 0A96H        EXIT               LABEL
+                                         316 
+
+    186 0613H        EXIT1              LABEL
+                                         182 
+
+    225 0046H     1  F                  BYTE PARAMETER
+                                         227  230 
+
+      2              FALSE              LITERALLY
+                                         146  148  194  258  395  485  494  500  507  512  527
+
+     33 0000H     1  FCB                BYTE ARRAY(1) EXTERNAL(4)
+                                         364  375  384  460 
+
+     34 0000H     1  FCB16              BYTE ARRAY(1) EXTERNAL(5)
+                                         311  314  324  362  373 
+
+    333 0057H     2  FCBAD              ADDRESS PARAMETER
+                                         335  336  337 
+
+     66 0024H     2  FCBADDRESS         ADDRESS PARAMETER
+                                          67   68 
+
+    422 006AH     2  FCBADR             ADDRESS
+                                         425  426  430  435  436  441 
+
+     18 0002H     2  FCBADR             ADDRESS MEMBER(PARSEFN)
+                                         460 
+
+    405 0064H     2  FCBADR             ADDRESS
+                                         408  410  413 
+
+    225 0810H    43  FILL               PROCEDURE STACK=0002H
+                                         311 
+
+     16 0002H     1  FILTEREDFLAG       BYTE MEMBER(GETPB)
+                                         500  501 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  22
+
+
+    213 06A9H        FINISHED           LABEL
+                                         198 
+
+    337 0000H    12  FN                 BYTE BASED(FCBAD) ARRAY(12)
+                                         347  348 
+
+    389 0000H    12  FN                 BYTE BASED(ADR) ARRAY(12)
+                                         393 
+
+      2              FOREVER            LITERALLY
+
+    121 003DH     1  FOUNDFIRST         BYTE
+
+     20 0000H     1  FUNC               BYTE PARAMETER
+                                          21 
+
+     24 0000H     1  FUNC               BYTE PARAMETER
+                                          25 
+
+     28 0000H     1  FUNC               BYTE PARAMETER
+                                          29 
+
+      1 021FH   607  GET                PROCEDURE STACK=000EH
+
+     92 054AH     9  GETCONSOLEMODE     PROCEDURE ADDRESS STACK=0002H
+                                         448 
+
+    106 0000H        GETF               PROCEDURE EXTERNAL(12) STACK=0000H
+                                         385 
+
+     11 0009H     1  GETFCBPB           BYTE INITIAL
+                                         355  408  425  435 
+
+      9 0007H     1  GETINITPB          BYTE INITIAL
+
+     10 0008H     1  GETKILLPB          BYTE INITIAL
+                                         360  409  428 
+
+     13 000CH    28  GETMSG             BYTE ARRAY(28) DATA
+                                         381  417  434 
+
+    306 0A06H   151  GETPASSWD          PROCEDURE STACK=0006H
+                                         371 
+
+     16 0012H     4  GETPB              STRUCTURE INITIAL
+                                         385  494  495  500  501  506  507  512  513  575 
+
+      2              GETRSXFCB          LITERALLY
+                                          11 
+
+      2              GETRSXINIT         LITERALLY
+                                           9 
+
+      2              GETRSXKILL         LITERALLY
+                                          10 
+
+     78 0510H    24  GETSCBBYTE         PROCEDURE BYTE STACK=0002H
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  23
+
+
+                                         260  382  439 
+
+    301 09F8H    14  GETUCASE           PROCEDURE BYTE STACK=0004H
+                                         313 
+
+    191 0623H        GOOD               LABEL
+                                         185 
+
+                     HIGH               BUILTIN
+                                         367  531 
+
+    390 0061H     1  I                  BYTE
+                                         398  399  400 
+
+    307 0055H     1  I                  BYTE
+                                         312  314  321  324 
+
+      5 0002H     1  I                  BYTE
+                                         547  548  556  557  558  562 
+
+    235 0049H     1  I                  BYTE
+                                         273 
+
+    123 0043H     1  I                  BYTE
+                                         124  125  127  128  131 
+
+    121 0038H     1  I                  BYTE
+                                         140  149  150  153  156  157  160  188  191 
+
+    119 0036H     2  IDXPTR             ADDRESS PARAMETER
+                                         120  121 
+
+     14 000DH     1  INDEX              BYTE
+                                         470  471  475  476  478  480  486  489  491  497  503
+                                         509  563  565  566  568  569  570  571  572  573  579
+                                         585  587  591  593  594  595  596  597  599 
+
+    121 0000H     1  INDEX              BYTE BASED(IDXPTR)
+                                         128  133  175  176  193  195  197  199  210  213 
+
+     24 0000H     2  INFO               ADDRESS PARAMETER
+                                          26 
+
+     28 0000H     2  INFO               ADDRESS PARAMETER
+                                          30 
+
+     20 0000H     2  INFO               ADDRESS PARAMETER
+                                          22 
+
+    520 0EABH    55  INPUTFOUND         PROCEDURE BYTE STACK=0002H
+                                         536  545 
+
+     12 000AH     1  INPUTTYPE          BYTE
+
+     16 0000H     1  INPUTTYPE          BYTE MEMBER(GETPB)
+                                         575 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  24
+
+
+    106 0000H     2  INPUTTYPE          ADDRESS PARAMETER
+                                         107 
+
+    235 004AH     1  J                  BYTE
+                                         242  247 
+
+    391 0063H     1  J                  BYTE PARAMETER
+                                         392  393 
+
+    121 0039H     1  J                  BYTE
+                                         203 
+
+     14 000FH     1  J                  BYTE INITIAL
+
+    334 0059H     1  K                  BYTE
+                                         344  345  347  348 
+
+    110 0031H     1  K                  BYTE
+                                         111  112  114  115  116 
+
+    404 0C00H   108  KILLRSX            PROCEDURE STACK=000AH
+                                         580  590  600 
+
+     36 0000H     1  LEN0               BYTE EXTERNAL(7)
+
+     38 0000H     1  LEN1               BYTE EXTERNAL(9)
+
+    121 0041H     1  LENFOUND           BYTE
+                                         192  200  203 
+
+    121 0040H     1  LENNEW             BYTE
+                                         199  200 
+
+    121 003CH     1  LETTERINWORD       BYTE
+                                         139  144  145  147 
+
+      2              LF                 LITERALLY
+                                         223  538  539 
+
+    121 0000H     1  LIST               BYTE BASED(LISTPTR) ARRAY(1)
+                                         126  129  145  147 
+
+    119 0032H     2  LISTPTR            ADDRESS PARAMETER
+                                         120  121 
+
+      2              LIT                LITERALLY
+
+    112 057CH        LOOP               LABEL
+                                         117 
+
+                     LOW                BUILTIN
+                                         366  531 
+
+    390 0062H     1  MATCH              BYTE
+                                         395  397  402 
+
+     51 0023H     1  MAX                BYTE PARAMETER
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  25
+
+
+                                          54   55 
+
+        0000H        MEMORY             BYTE ARRAY(0)
+
+     74 0028H     1  MODE               BYTE PARAMETER
+                                          75   76 
+
+     20 0000H        MON1               PROCEDURE EXTERNAL(0) STACK=0000H
+                                          42   49   56   72   76   90   97  292  329  419  443
+                                         534  546 
+
+     24 0000H        MON2               PROCEDURE BYTE EXTERNAL(1) STACK=0000H
+                                          45   64   82 
+
+     28 0000H        MON3               PROCEDURE ADDRESS EXTERNAL(2) STACK=0000H
+                                          61   68   93  101 
+
+    455 0071H     1  NEGATE             BYTE
+                                         485  488  493  499  505  511 
+
+     53 0000H     2  NEWMAX             ADDRESS BASED(BUFFERADDRESS)
+                                          55   58 
+
+     95 002CH     2  NEWVALUE           ADDRESS PARAMETER
+                                          96   97 
+
+    195 0638H        NEXTOPT            LABEL
+                                         206  209 
+
+    235 004BH     1  NLINES             BYTE
+                                         263  273 
+
+      8 0006H     1  NOCHARS            BYTE
+                                         541  544  547  551 
+
+    313 0A2BH        NXTCHR             LABEL
+                                         325 
+
+    119 0034H     2  OFFPTR             ADDRESS PARAMETER
+                                         120  121 
+
+     84 002AH     1  OFFSET             BYTE PARAMETER
+                                          85   87 
+
+     78 0029H     1  OFFSET             BYTE PARAMETER
+                                          79   80 
+
+     17 0000H     1  OFFSET             BYTE MEMBER(SCBPD)
+                                          80   87 
+
+    121 0000H     1  OFFSETS            BYTE BASED(OFFPTR) ARRAY(1)
+                                         125  131  199 
+
+     66 04E0H    16  OPENFILE           PROCEDURE ADDRESS STACK=0002H
+                                         364  375 
+
+     14 0028H   125  OPTIONS            BYTE ARRAY(125) DATA
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  26
+
+
+                                         470  475  489  565  568  570  572  591  594  596 
+
+     14 00A5H    20  OPTIONSOFFSET      BYTE ARRAY(20) DATA
+                                         470  475  489  565  568  570  572  591  594  596 
+
+    119 05AAH   303  OPTSCANNER         PROCEDURE STACK=0004H
+                                         470  475  489  565  568  570  572  591  594  596 
+
+    103 0000H        PARSE              PROCEDURE ADDRESS EXTERNAL(11) STACK=0000H
+                                         461 
+
+     18 001AH     4  PARSEFN            STRUCTURE
+                                         378  459  460  461 
+
+     35 0000H     2  PASS0              ADDRESS EXTERNAL(6)
+
+     37 0000H     2  PASS1              ADDRESS EXTERNAL(8)
+
+    103 0000H     2  PFCB               ADDRESS PARAMETER
+                                         104 
+
+     19 0222H        PLM                LABEL PUBLIC
+                                         530 
+
+     47 0497H    16  PRINTBUF           PROCEDURE STACK=0002H
+                                         279  280  284  285  286  287  288  289  310  338  381
+                                         411  412  414  417  418  429  431  434  437  533  538
+                                         539  540 
+
+     40 047EH    16  PRINTCHAR          PROCEDURE STACK=0002H
+                                         222  223  243  251  253  341  342  346  348 
+
+    240 096FH   107  PRINTCOMMAND       PROCEDURE STACK=0006H
+                                         275  277 
+
+    333 0A9DH   104  PRINTFN            PROCEDURE STACK=0004H
+                                         384  413  430  441 
+
+      2              PROC               LITERALLY
+                                         221 
+
+    454 0D31H   378  PROCESSFILE        PROCEDURE STACK=000CH
+                                         553  576  598 
+
+    353 0000H     1  PROGFLAG           BYTE BASED(A)
+                                         359 
+
+     16 0003H     1  PROGRAMFLAG        BYTE MEMBER(GETPB)
+                                         506  507  512  513 
+
+     51 04A7H    39  READCONSOLEBUF     PROCEDURE BYTE STACK=0002H
+                                         541 
+
+    235 004CH     1  REM                BYTE
+                                         264  277 
+
+    311 0A12H        RETRY              LABEL
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  27
+
+
+                                         318  322 
+
+     74 0500H    16  RETURNERRORS       PROCEDURE STACK=0002H
+                                         363  365 
+
+     99 0563H    16  RSXCALL            PROCEDURE ADDRESS STACK=0002H
+                                         355  360  408  409  425  428  435 
+
+     99 002EH     2  RSXPB              ADDRESS PARAMETER
+                                         100  101 
+
+    225 0044H     2  S                  ADDRESS PARAMETER
+                                         226  228  231 
+
+    121 003FH     1  SAVEINDEX          BYTE
+                                         193  213 
+
+     17 0016H     4  SCBPD              STRUCTURE
+                                          80   81   82   87   88   89   90 
+
+    109 0573H    55  SEPARATOR          PROCEDURE BYTE STACK=0000H
+                                         154  158  166  177  183 
+
+     17 0001H     1  SET                BYTE MEMBER(SCBPD)
+                                          81   88 
+
+     95 0553H    16  SETCONSOLEMODE     PROCEDURE STACK=0002H
+                                         452 
+
+     70 04F0H    16  SETDMA             PROCEDURE STACK=0002H
+                                         362  373 
+
+    445 0CF9H    56  SETRSXMODE         PROCEDURE STACK=0004H
+                                         477  479  481 
+
+     84 0528H    34  SETSCBBYTE         PROCEDURE STACK=0002H
+
+    136 072FH    30  SETUP              PROCEDURE STACK=0002H
+                                         174  186  196 
+
+    240 0052H     1  SIZE               BYTE PARAMETER
+                                         241  242  247 
+
+    152 078DH    92  SKIP               PROCEDURE STACK=0002H
+                                         189  211 
+
+     14 00C5H     1  SPACE              BYTE DATA
+                                         166 
+
+    121 003EH     1  START              BYTE
+                                         124  173  176  195 
+
+    456 0072H     2  STATUS             ADDRESS
+                                         458  461  462  464  466 
+
+    236 004DH     2  STRINGPTR          ADDRESS
+                                         237  244  259  274 
+PL/M-80 COMPILER    CP/M 3.0 --- GET USER INTERFACE                                         PAGE  28
+
+
+     13 0000H    12  SUBFCB             BYTE ARRAY(12) DATA
+                                         393 
+
+    387 0BA9H    50  SUBMIT             PROCEDURE BYTE STACK=0002H
+                                         410  426 
+
+     39 0000H     1  TBUFF              BYTE ARRAY(1) EXTERNAL(10)
+                                         536  541  543  544  545  548  550  552  553  557  560
+                                         561  562 
+
+    447 006DH     2  TEMP               ADDRESS
+                                         448  449  451  452 
+
+    143 074DH    64  TESTLETTER         PROCEDURE STACK=0000H
+                                         180  204 
+
+      2              TRUE               LITERALLY
+                                          16  178  202  250  397  488  495  501  506  513  528
+
+    351 0B05H   164  TRYOPEN            PROCEDURE STACK=000AH
+                                         465  518 
+
+    236 004FH     2  TSTRINGPTR         ADDRESS
+                                         238  254  259  274 
+
+    294 09DAH    30  UCASE              PROCEDURE BYTE STACK=0000H
+                                         303  548 
+
+    121 0042H     1  VALID              BYTE
+                                         146  148  178  181  194  202  205 
+
+     84 002BH     1  VALUE              BYTE PARAMETER
+                                          86   89 
+
+     17 0002H     2  VALUE              ADDRESS MEMBER(SCBPD)
+                                          89 
+
+     60 04CEH     9  VERSION            PROCEDURE ADDRESS STACK=0002H
+                                         531 
+
+    121 003AH     1  WRDPOS             BYTE
+                                         125  126  129  131  139 
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 0EE2H   3810D
+     VARIABLE AREA SIZE = 0076H    118D
+     MAXIMUM STACK SIZE = 000EH     14D
+     939 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

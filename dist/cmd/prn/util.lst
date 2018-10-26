@@ -1,0 +1,215 @@
+PL/M-80 COMPILER    SDIR - UTILITY ROUTINES                                                                               PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE UTILITY
+OBJECT MODULE PLACED IN UTIL
+COMPILER INVOKED BY:  :F1:PLM80 UTIL.PLM DEBUG PAGEWIDTH(130) OPTIMIZE OBJECT(UTIL)
+
+
+
+              $title('SDIR - Utility Routines')
+   1          utility:
+              do;
+
+              /* Utility Module for SDIR */
+               
+              $include(comlit.lit)
+          =
+   2   1  =   declare
+          =           lit                literally          'literally',
+          =           dcl                lit                'declare',
+          =           true               lit                '0ffh',
+          =           false              lit                '0',
+          =           boolean            lit                'byte',
+          =           forever            lit                'while true',
+          =           cr                 lit                '13',
+          =           lf                 lit                '10',
+          =           tab                lit                '9',
+          =           ctrlc              lit                '3',
+          =           ff                 lit                '12',
+          =           page$len$offset    lit                '1ch',
+          =           nopage$mode$offset lit                '2Ch',
+          =           sectorlen          lit                '128';
+
+
+              /* -------- arithmetic functions -------- */
+
+   3   1      add3byte: procedure(byte3adr,num) public;
+   4   2            dcl (byte3adr,num) address,
+                        b3 based byte3adr structure (
+                        lword address,
+                        hbyte byte),
+                        temp address;
+
+   5   2            temp = b3.lword;
+   6   2            if (b3.lword := b3.lword + num) < temp then             /* overflow */
+   7   2                b3.hbyte = b3.hbyte + 1;
+   8   2      end add3byte;
+
+                          /* add three byte number to 3 byte value structure */
+   9   1      add3byte3: procedure(totalb,numb) public;
+  10   2            dcl (totalb,numb) address,
+                        num based numb structure (
+                        lword address,
+                        hbyte byte),
+                        total based totalb structure (
+                        lword address,
+                        hbyte byte);
+
+  11   2            call add3byte(totalb,num.lword);
+  12   2            total.hbyte = num.hbyte + total.hbyte;
+PL/M-80 COMPILER    SDIR - UTILITY ROUTINES                                                                               PAGE   2
+
+
+  13   2      end add3byte3;
+
+                                                              /* divide 3 byte value by 8 */
+  14   1      shr3byte: procedure(byte3adr) public;
+  15   2          dcl byte3adr address,
+                      b3 based byte3adr structure (
+                      lword address,
+                      hbyte byte),
+                      temp1 based byte3adr (2) byte,
+                      temp2 byte;
+
+  16   2              temp2  = ror(b3.hbyte,3) and 11100000b;  /* get 3 bits              */
+  17   2              b3.hbyte = shr(b3.hbyte,3);
+  18   2              b3.lword = shr(b3.lword,3);
+  19   2              temp1(1) = temp1(1) or temp2;            /* or in 3 bits from hbyte */
+  20   2      end shr3byte;
+
+
+              /* ------- print routines -------- */
+
+  21   1      mon1: procedure(f,a) external;
+  22   2          declare f byte, a address;
+  23   2      end mon1;
+
+  24   1      break: procedure external;
+  25   2      end break;
+
+              $include(fcb.lit)
+          =
+  26   1  =   declare
+          =       f$drvusr          lit '0',        /* drive/user byte               */
+          =       f$name            lit '1',        /* file name                     */
+          =       f$namelen         lit '8',        /* file name length              */
+          =       f$type            lit '9',        /* file type field               */
+          =       f$typelen         lit '3',        /* type length                   */
+          =       f$rw              lit '9',        /* high bit is R/W attribute     */
+          =       f$dirsys          lit '10',       /* high bit is dir/sys attribute */
+          =       f$arc             lit '11',       /* high bit is archive attribute */
+          =       f$ex              lit '12',       /* extent                        */
+          =       f$s1              lit '13',       /* module byte                   */
+          =       f$rc              lit '15',       /* record count                  */
+          =       f$diskmap         lit '16',       /* file disk map                 */
+          =       diskmaplen        lit '16',       /* disk map length               */
+          =       f$drvusr2         lit '16',       /* fcb2                          */
+          =       f$name2           lit '17',
+          =       f$type2           lit '25',
+          =       f$rrec            lit '33',       /* random record                 */
+          =       f$rreco           lit '35';       /*   "      "    overflow        */
+          =
+
+              /* BDOS calls */
+
+  27   1      print$char: procedure(char) public;
+  28   2          declare char byte;
+  29   2          call mon1(2,char);
+  30   2      end print$char;
+
+PL/M-80 COMPILER    SDIR - UTILITY ROUTINES                                                                               PAGE   3
+
+
+  31   1      print: procedure(string$adr) public;
+  32   2          dcl string$adr address;
+  33   2          call mon1(9,string$adr);
+  34   2      end print;
+
+  35   1      printb: procedure public;
+  36   2          call print$char(' ');
+  37   2      end printb;
+               
+  38   1      crlf: procedure public;
+  39   2          call print$char(cr);
+  40   2          call print$char(lf);
+  41   2      end crlf;
+
+  42   1      printfn: procedure(fname$adr) public;
+  43   2          dcl fname$adr address,
+                      file$name based fname$adr (1) byte,
+                      i byte;                                /* <filename> ' ' <filetype> */
+
+  44   2          do i = 0 to f$namelen - 1;
+  45   3              call printchar(file$name(i) and 7fh);
+  46   3          end;
+  47   2          call printchar(' ');
+  48   2          do i = f$namelen to f$namelen + f$typelen - 1;
+  49   3              call printchar(file$name(i) and 7fh);
+  50   3          end;
+  51   2      end printfn;
+
+  52   1      pdecimal: procedure(v,prec,zerosup) public;
+                                       /* print value v, field size = (log10 prec) + 1  */
+                                       /* with leading zero suppression if zerosup = true */
+  53   2          declare v address,                          /* value to print           */
+                          prec address,                       /* precision                */
+                          zerosup boolean,                    /* zero suppression flag    */
+                          d byte;                             /* current decimal digit    */
+
+  54   2          do while prec <> 0;
+  55   3              d = v / prec;                           /* get next digit           */
+  56   3              v = v mod prec;                         /* get remainder back to v  */
+  57   3              prec = prec / 10;                       /* ready for next digit     */
+  58   3              if prec <> 0 and zerosup and d = 0 then
+  59   3                  call printb;
+                      else
+  60   3              do;
+  61   4                  zerosup = false;
+  62   4                  call printchar('0'+d);
+  63   4              end;
+  64   3          end;
+  65   2      end pdecimal;
+
+  66   1      p3byte: procedure(byte3adr,prec) public;
+                                                 /* print 3 byte value with 0 suppression */
+  67   2            dcl byte3adr address,        /* assume high order bit is < 10         */
+                        prec address,
+                        b3 based byte3adr structure (
+                        lword address,
+                        hbyte byte),
+PL/M-80 COMPILER    SDIR - UTILITY ROUTINES                                                                               PAGE   4
+
+
+                        i byte;
+
+                                                     /* prec = 1 for 6 chars, 2 for 7 */
+  68   2            if b3.hbyte <> 0 then
+  69   2            do;
+  70   3                call pdecimal(b3.hbyte,prec,true);  /* 3 for 8 chars printed      */
+  71   3                call pdecimal(b3.lword,10000,false);
+  72   3            end;
+                    else
+  73   2            do;
+  74   3                i = 1;
+  75   3                do while i <= prec;
+  76   4                    call printb;
+  77   4                    i = i * 10;
+  78   4                end;
+  79   3                call pdecimal(b3.lword,10000,true);
+  80   3            end;
+  81   2      end p3byte;
+
+  82   1      end utility;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 01FFH    511D
+     VARIABLE AREA SIZE = 001EH     30D
+     MAXIMUM STACK SIZE = 0008H      8D
+     185 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

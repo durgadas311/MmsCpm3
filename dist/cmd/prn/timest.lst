@@ -1,0 +1,274 @@
+PL/M-80 COMPILER    SDIR - DISPLAY TIME STAMPS                                                                            PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE TIMESTAMP
+OBJECT MODULE PLACED IN TIMEST
+COMPILER INVOKED BY:  :F1:PLM80 TIMEST.PLM DEBUG PAGEWIDTH(130) OPTIMIZE OBJECT(TIMEST)
+
+
+
+              $title('SDIR - Display Time Stamps')
+   1          timestamp:
+              do;
+                     /* Display time stamp module for extended directory */
+                     /* Time & Date ASCII Conversion Code            */
+                     /* From MP/M 1.1 TOD program                */
+
+              $include(comlit.lit)
+          =
+   2   1  =   declare
+          =           lit                literally          'literally',
+          =           dcl                lit                'declare',
+          =           true               lit                '0ffh',
+          =           false              lit                '0',
+          =           boolean            lit                'byte',
+          =           forever            lit                'while true',
+          =           cr                 lit                '13',
+          =           lf                 lit                '10',
+          =           tab                lit                '9',
+          =           ctrlc              lit                '3',
+          =           ff                 lit                '12',
+          =           page$len$offset    lit                '1ch',
+          =           nopage$mode$offset lit                '2Ch',
+          =           sectorlen          lit                '128';
+
+   3   1      print$char: procedure (char) external;
+   4   2          declare char byte;
+   5   2      end print$char;
+
+   6   1      terminate: procedure external;
+   7   2      end terminate;
+
+   8   1      declare tod$adr address;
+   9   1      declare tod based tod$adr structure (
+                opcode byte,
+                date address,
+                hrs byte,
+                min byte,
+                sec byte,
+                ASCII (21) byte );
+
+  10   1      declare string$adr address;
+  11   1      declare string based string$adr (1) byte;
+  12   1      declare index byte;
+
+  13   1      emitchar: procedure(c);
+  14   2          declare c byte;
+  15   2          string(index := index + 1) = c;
+  16   2          end emitchar;
+
+  17   1      emitn: procedure(a);
+PL/M-80 COMPILER    SDIR - DISPLAY TIME STAMPS                                                                            PAGE   2
+
+
+  18   2          declare a address;
+  19   2          declare c based a byte;
+  20   2          do while c <> '$';
+  21   3            string(index := index + 1) = c;
+  22   3            a = a + 1;
+  23   3          end;
+  24   2          end emitn;
+
+  25   1      emit$bcd: procedure(b);
+  26   2          declare b byte;
+  27   2          call emitchar('0'+b);
+  28   2          end emit$bcd;
+
+  29   1      emit$bcd$pair: procedure(b);
+  30   2          declare b byte;
+  31   2          call emit$bcd(shr(b,4));
+  32   2          call emit$bcd(b and 0fh);
+  33   2          end emit$bcd$pair;
+
+  34   1      emit$colon: procedure(b);
+  35   2          declare b byte;
+  36   2          call emit$bcd$pair(b);
+  37   2          call emitchar(':');
+  38   2          end emit$colon;
+
+  39   1      emit$bin$pair: procedure(b);
+  40   2          declare b byte;
+  41   2          call emit$bcd(b/10);    /* makes garbage if not < 10 */
+  42   2          call emit$bcd(b mod 10);
+  43   2          end emit$bin$pair;
+
+  44   1      emit$slant: procedure(b);
+  45   2          declare b byte;
+  46   2          call emit$bin$pair(b);
+  47   2          call emitchar('/');
+  48   2          end emit$slant;
+
+  49   1      declare
+                  base$year lit '78',   /* base year for computations */
+                  base$day  lit '0',    /* starting day for base$year 0..6 */
+                  month$days (*) address data
+                  /* jan feb mar apr may jun jul aug sep oct nov dec */
+                  (  000,031,059,090,120,151,181,212,243,273,304,334);
+
+  50   1      leap$days: procedure(y,m) byte;
+  51   2          declare (y,m) byte;
+                  /* compute days accumulated by leap years */
+  52   2          declare yp byte;
+  53   2          yp = shr(y,2); /* yp = y/4 */
+  54   2          if (y and 11b) = 0 and month$days(m) < 59 then
+                      /* y not 00, y mod 4 = 0, before march, so not leap yr */
+  55   2              return yp - 1;
+                  /* otherwise, yp is the number of accumulated leap days */
+  56   2          return yp;
+  57   2          end leap$days;
+
+  58   1      declare word$value address;
+PL/M-80 COMPILER    SDIR - DISPLAY TIME STAMPS                                                                            PAGE   3
+
+
+
+  59   1      get$next$digit: procedure byte;
+                  /* get next lsd from word$value */
+  60   2          declare lsd byte;
+  61   2          lsd = word$value mod 10;
+  62   2          word$value = word$value / 10;
+  63   2          return lsd;
+  64   2          end get$next$digit;
+
+  65   1      bcd:
+                procedure (val) byte;
+  66   2          declare val byte;
+  67   2          return shl((val/10),4) + val mod 10;
+  68   2        end bcd;
+
+  69   1      declare (month, day, year, hrs, min, sec) byte;
+
+  70   1      bcd$pair: procedure(a,b) byte;
+  71   2          declare (a,b) byte;
+  72   2          return shl(a,4) or b;
+  73   2          end bcd$pair;
+
+
+  74   1      compute$year: procedure;
+                  /* compute year from number of days in word$value */
+  75   2          declare year$length address;
+  76   2          year = base$year;
+  77   2              do while true;
+  78   3              year$length = 365;
+  79   3              if (year and 11b) = 0 then /* leap year */
+  80   3                  year$length = 366;
+  81   3              if word$value <= year$length then
+  82   3                  return;
+  83   3              word$value = word$value - year$length;
+  84   3              year = year + 1;
+  85   3              end;
+  86   2          end compute$year;
+
+  87   1      declare
+                  week$day  byte, /* day of week 0 ... 6 */
+                  day$list (*) byte data
+                  ('Sun$Mon$Tue$Wed$Thu$Fri$Sat$'),
+                  leap$bias byte; /* bias for feb 29 */
+
+  88   1      compute$month: procedure;
+  89   2          month = 12;
+  90   2              do while month > 0;
+  91   3              if (month := month - 1) < 2 then /* jan or feb */
+  92   3                  leapbias = 0;
+  93   3              if month$days(month) + leap$bias < word$value then return;
+  95   3              end;
+  96   2          end compute$month;
+
+  97   1      declare
+                  date$test byte,    /* true if testing date */
+                  test$value address;   /* sequential date value under test */
+
+PL/M-80 COMPILER    SDIR - DISPLAY TIME STAMPS                                                                            PAGE   4
+
+
+  98   1      get$date$time: procedure;
+                  /* get date and time */
+  99   2          hrs = tod.hrs;
+ 100   2          min = tod.min;
+ 101   2          sec = tod.sec;
+ 102   2          word$value = tod.date;
+                  /* word$value contains total number of days */
+ 103   2          week$day = (word$value + base$day - 1) mod 7;
+ 104   2          call compute$year;
+                  /* year has been set, word$value is remainder */
+ 105   2          leap$bias = 0;
+ 106   2          if (year and 11b) = 0 and word$value > 59 then
+ 107   2              /* after feb 29 on leap year */ leap$bias = 1;
+ 108   2          call compute$month;
+ 109   2          day = word$value - (month$days(month) + leap$bias);
+ 110   2          month = month + 1;
+ 111   2          end get$date$time;
+
+ 112   1      emit$date$time: procedure;
+ 113   2          if tod.opcode = 0 then
+ 114   2            do;
+ 115   3            call emitn(.day$list(shl(week$day,2)));
+ 116   3            call emitchar(' ');
+ 117   3            end;
+ 118   2          call emit$slant(month);
+ 119   2          call emit$slant(day);
+ 120   2          call emit$bin$pair(year);
+ 121   2          call emitchar(' ');
+ 122   2          call emit$colon(hrs);
+ 123   2          call emit$colon(min);
+ 124   2          if tod.opcode = 0 then
+ 125   2            call emit$bcd$pair(sec);
+ 126   2          end emit$date$time;
+
+ 127   1      tod$ASCII:
+                procedure (parameter);
+ 128   2          declare parameter address;
+ 129   2          declare ret address;
+
+ 130   2          ret = 0;
+ 131   2          tod$adr = parameter;
+ 132   2          string$adr = .tod.ASCII;
+ 133   2          if  (tod.opcode = 0) or (tod.opcode = 3) then
+ 134   2          do;
+ 135   3            call get$date$time;
+ 136   3            index = -1;
+ 137   3            call emit$date$time;
+ 138   3          end;
+                  else
+ 139   2            call terminate;             /* error */
+ 140   2      end tod$ASCII;
+
+ 141   1        declare lcltod structure (
+                  opcode byte,
+                  date address,
+                  hrs byte,
+                  min byte,
+PL/M-80 COMPILER    SDIR - DISPLAY TIME STAMPS                                                                            PAGE   5
+
+
+                  sec byte,
+                  ASCII (21) byte );
+
+ 142   1      display$time$stamp: procedure (tsadr) public;
+ 143   2          dcl tsadr address,
+                  i byte;
+
+ 144   2           lcltod.opcode = 3;     /* display time and date stamp, no seconds */
+ 145   2           call move (4,tsadr,.lcltod.date);  /* don't copy seconds */
+                      
+ 146   2           call tod$ASCII (.lcltod);
+ 147   2           do i = 0 to 13;
+ 148   3             call printchar (lcltod.ASCII(i));
+ 149   3           end;   
+ 150   2      end display$time$stamp;
+
+ 151   1      dcl last$data$byte byte initial(0);
+
+ 152   1      end timestamp;
+
+
+
+MODULE INFORMATION:
+
+     CODE AREA SIZE     = 035CH    860D
+     VARIABLE AREA SIZE = 0046H     70D
+     MAXIMUM STACK SIZE = 000CH     12D
+     241 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

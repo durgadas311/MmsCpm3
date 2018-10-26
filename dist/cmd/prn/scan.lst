@@ -1,0 +1,849 @@
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   1
+
+
+ISIS-II PL/M-80 V3.0 COMPILATION OF MODULE SCANNER
+OBJECT MODULE PLACED IN SCAN
+COMPILER INVOKED BY:  :F1:PLM80 SCAN.PLM DEBUG PAGEWIDTH(130) OPTIMIZE OBJECT(SCAN)
+
+
+
+              $title ('Utility Command Line Scanner')
+   1          scanner:
+              do;
+
+              $include(comlit.lit)
+          =
+   2   1  =   declare
+          =           lit                literally          'literally',
+          =           dcl                lit                'declare',
+          =           true               lit                '0ffh',
+          =           false              lit                '0',
+          =           boolean            lit                'byte',
+          =           forever            lit                'while true',
+          =           cr                 lit                '13',
+          =           lf                 lit                '10',
+          =           tab                lit                '9',
+          =           ctrlc              lit                '3',
+          =           ff                 lit                '12',
+          =           page$len$offset    lit                '1ch',
+          =           nopage$mode$offset lit                '2Ch',
+          =           sectorlen          lit                '128';
+              $include(mon.plm)
+          =
+          =                   /* definitions for assembly interface module        */
+   3   1  =   declare
+          =       fcb (33) byte external,        /* default file control block    */
+          =       maxb address external,         /* top of memory                 */
+          =       buff(128)byte external;        /* default buffer                */
+          =
+   4   1  =   mon1: procedure(f,a) external;
+   5   2  =       declare f byte, a address;
+   6   2  =       end mon1;
+          =
+   7   1  =   mon2: procedure(f,a) byte external;
+   8   2  =       declare f byte, a address;
+   9   2  =       end mon2;
+          =
+  10   1  =   mon3: procedure(f,a) address external;
+  11   2  =       declare f byte, a address;
+  12   2  =       end mon3;
+          =
+
+  13   1      dcl debug boolean initial (false);
+
+  14   1      dcl eob lit '0';            /* end of buffer */
+
+              $include(fcb.lit)
+          =
+  15   1  =   declare
+          =       f$drvusr          lit '0',        /* drive/user byte               */
+          =       f$name            lit '1',        /* file name                     */
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   2
+
+
+          =       f$namelen         lit '8',        /* file name length              */
+          =       f$type            lit '9',        /* file type field               */
+          =       f$typelen         lit '3',        /* type length                   */
+          =       f$rw              lit '9',        /* high bit is R/W attribute     */
+          =       f$dirsys          lit '10',       /* high bit is dir/sys attribute */
+          =       f$arc             lit '11',       /* high bit is archive attribute */
+          =       f$ex              lit '12',       /* extent                        */
+          =       f$s1              lit '13',       /* module byte                   */
+          =       f$rc              lit '15',       /* record count                  */
+          =       f$diskmap         lit '16',       /* file disk map                 */
+          =       diskmaplen        lit '16',       /* disk map length               */
+          =       f$drvusr2         lit '16',       /* fcb2                          */
+          =       f$name2           lit '17',
+          =       f$type2           lit '25',
+          =       f$rrec            lit '33',       /* random record                 */
+          =       f$rreco           lit '35';       /*   "      "    overflow        */
+          =
+
+
+              /* -------- Some routines used for diagnostics if debug mode is on -------- */
+
+  16   1      printchar: procedure(char) external;
+  17   2          declare char byte;
+  18   2      end printchar;
+
+  19   1      printb: procedure external;
+  20   2      end printb;
+
+  21   1      crlf: procedure external;
+  22   2      end crlf;
+
+  23   1      pdecimal: procedure(v,prec,zerosup) external;
+                                       /* print value v, field size = (log10 prec) + 1  */
+                                       /* with leading zero suppression if zerosup = true */
+  24   2          declare v address,                          /* value to print           */
+                          prec address,                       /* precision                */
+                          zerosup boolean,                    /* zero suppression flag    */
+                          d byte;                             /* current decimal digit    */
+
+  25   2      end pdecimal;
+
+              /*
+              show$buf: procedure;
+              dcl i byte;
+              i = 1;
+              call crlf;
+              call mon1(9,.('buff = $'));
+              do while buff(i) <> 0;
+                  i = i + 1;
+              end;
+              buff(i) = '$';
+              call mon1(9,.buff(1));
+              buff(i) = 0;
+              end show$buf; */
+
+
+              /* -------- -------- */
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   3
+
+
+
+  26   1      white$space: procedure (str$adr) byte;
+  27   2          dcl str$adr address,
+                      str based str$adr (1) byte,
+                      i byte;
+  28   2          i = 0;
+  29   2          do while (str(i) = ' ') or (str(i) = tab);
+  30   3              i = i + 1;
+  31   3          end;
+  32   2          return(i);
+  33   2      end white$space;
+
+  34   1      delimiter: procedure(char) boolean;
+  35   2          dcl char byte;
+  36   2          if char = '[' or char = ']' or char = '(' or char = ')' or
+                      char = '=' or char = ',' or char = 0 then
+  37   2              return (true);
+  38   2          return(false);
+  39   2      end delimiter;
+
+  40   1      dcl string$marker lit '05ch';
+
+  41   1      deblank: procedure(buf$adr);
+  42   2          dcl (buf$adr,dest) address,
+                      buf based buf$adr (128) byte,
+                      (i,numspaces) byte,
+                      string boolean;
+
+  43   2          string = false;
+  44   2          if (numspaces := white$space(.buf(1))) > 0 then
+  45   2              call move(buf(0) - numspaces + 1,.buf(numspaces+1),.buf(1));
+  46   2          i = 1;
+  47   2          do while buf(i) <> 0;
+                      
+              /*      call show$buf;*/
+
+  48   3              do while ((numspaces := white$space(.buf(i))) = 0 and (buf(i) <> 0))
+                            and not string;
+                     /*     call mon1(9,.(cr,lf,'2numspaces = $'));
+                          call pdecimal(numspaces,100,false);*/
+              /*          call show$buf;*/
+  49   4                  if buf(i) = '"' then
+  50   4                  do; 
+  51   5                      string = true;
+  52   5                      buf(i) = string$marker;
+  53   5                  end;
+  54   4                  i = i + 1;
+  55   4              end;
+
+  56   3              do while string and buf(i) <> 0; 
+  57   4                  if buf(i) = '"' then
+  58   4                      if buf(i+1) = '"' then
+  59   4                          call move(buf(0) - i + 1,.buf(i+1), .buf(i));
+                              else
+  60   4                      do;
+  61   5                          buf(i) = string$marker;
+  62   5                          string = false;
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   4
+
+
+  63   5                      end;
+  64   4                  i = i + 1;
+  65   4              end;
+
+  66   3              if (numspaces := white$space(.buf(i))) > 0 then
+  67   3              do;
+              /*            call mon1(9,.(cr,lf,'1numspaces = $'));
+                          call pdecimal(numspaces,100,false);*/
+  68   4                  buf(i) = ' ';
+  69   4                  dest = .buf(i+1);                    /* save space for ','    */
+  70   4                  if i > 1 then
+  71   4                      if delimiter(buf(i-1)) or delimiter(buf(i+numspaces)) then
+                                                               /* write over ' ' with   */
+  72   4                          dest = dest - 1;             /* a = [ ] ( )           */
+
+  73   4                  call move(((buf(0)+1)-(i+numspaces-1)),
+                              .buf(i+numspaces),dest);
+  74   4                  if buf(i) = '"' then
+  75   4                      string = true;
+  76   4                  i = i + 1;
+  77   4              end;
+
+  78   3          end;
+  79   2          if buf(i - 1) = ' ' then      /* no trailing blanks */
+  80   2              buf(i - 1) = 0;
+                  /* if debug then
+                      call show$buf; */
+  81   2      end deblank;
+
+  82   1      upper$case: procedure (buf$adr);
+  83   2           dcl buf$adr address,
+                       buf based buf$adr (1) byte,
+                       i byte;
+
+  84   2           i = 0;
+  85   2           do while buf(i) <> eob;
+  86   3               if buf(i) >= 'a' and buf(i) <= 'z' then
+  87   3                   buf(i) = buf(i) - ('a' - 'A');
+  88   3               i = i + 1;
+  89   3           end;
+  90   2      end upper$case;
+
+  91   1      dcl option$max lit '11';
+  92   1      dcl done$scan lit '0ffffh';
+  93   1      dcl ident$max lit '11';
+  94   1      dcl token$max lit '11';
+
+  95   1      dcl t$null lit '0',
+                  t$param  lit '1',
+                  t$option lit '2',
+                  t$modifier lit '4',
+                  t$identifier lit '8',
+                  t$string lit '16',
+                  t$numeric lit '32',
+                  t$filespec lit '64',
+                  t$error lit '128';
+
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   5
+
+
+  96   1      dcl pcb$base address;
+  97   1      dcl pcb based pcb$base structure (
+                          state address,
+                          scan$adr address,
+                          token$adr address,
+                          token$type byte,
+                          token$len byte,
+                          p$level byte,
+                          nxt$token byte);
+
+  98   1      dcl     scan$adr address,
+                      inbuf based scan$adr (1) byte,
+                      in$ptr byte,
+                      token$adr address,
+                      token based token$adr (1) byte,
+                      t$ptr byte,
+                      (char, nxtchar, tcount) byte;
+
+  99   1      digit: procedure (char) boolean;
+ 100   2          dcl char byte;
+ 101   2          return (char >= '0' and char <= '9');
+ 102   2      end digit;
+
+ 103   1      letter: procedure (char) boolean;
+ 104   2          dcl char byte;
+ 105   2          return (char >= 'A' and char <= 'Z');
+ 106   2      end letter; 
+
+ 107   1          eat$char: procedure;
+ 108   2              char = inbuf(in$ptr := inptr + 1);
+ 109   2              nxtchar = inbuf(in$ptr + 1);
+ 110   2          end eat$char;
+               
+ 111   1          put$char: procedure(charx);
+ 112   2              dcl charx byte;
+ 113   2              if pcb.token$adr <> 0ffffh then
+ 114   2                  token(t$ptr := t$ptr + 1) = charx;
+ 115   2          end put$char;
+
+ 116   1          get$identifier: procedure (max) byte;
+ 117   2              dcl max byte;
+
+ 118   2              tcount = 0;
+                   /* call mon1(9,.(cr,lf,'getindentifier$'));*/
+ 119   2              if not letter(char) and char <> '$' then
+ 120   2                  return(tcount);
+ 121   2              do while (letter(char) or digit(char) or char = '_' or
+                          char = '$' ) and tcount <= max;
+ 122   3                  call put$char(char);
+ 123   3                  call eat$char;
+ 124   3                  tcount = tcount + 1;
+ 125   3              end;
+ 126   2              do while letter(char) or digit(char) or char = '_'
+                          or char = '$' ;
+ 127   3                  call eat$char;
+ 128   3                  tcount = tcount + 1;
+ 129   3              end;
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   6
+
+
+ 130   2              pcb.token$type = t$identifier;
+              /*      call mon1(9,.(cr,lf,'end of getident$'));  */
+ 131   2              pcb.token$len = tcount;
+ 132   2              return(tcount);
+ 133   2          end get$identifier;
+
+ 134   1          file$char: procedure (x) boolean;
+ 135   2              dcl x byte;
+ 136   2              return(letter(x) or digit(x) or x = '*' or x = '?'
+                             or x = '_' or x = '$');
+ 137   2          end file$char;
+
+ 138   1          expand$wild$cards: procedure(field$size) boolean;
+ 139   2              dcl (i,leftover,field$size) byte,
+                          save$inptr address;
+
+ 140   2              field$size = field$size + t$ptr;
+ 141   2              do while filechar(char) and t$ptr < field$size;
+ 142   3                 if char = '*' then
+ 143   3                 do; leftover = t$ptr;
+ 145   4                     save$inptr = inptr;
+ 146   4                     call eatchar;
+ 147   4                     do while filechar(char);
+ 148   5                         leftover = leftover + 1;
+ 149   5                         call eatchar;
+ 150   5                     end;
+ 151   4                     if leftover >= field$size then   /* too many chars */
+ 152   4                     do; inptr = save$inptr;
+ 154   5                         return(false);
+ 155   5                     end;  
+ 156   4                     do i = 1 to field$size - leftover;
+ 157   5                         call putchar('?');
+ 158   5                     end;
+ 159   4                     inptr = save$inptr;
+ 160   4                 end;
+                         else
+ 161   3                     call putchar(char);
+ 162   3                 call eatchar;
+ 163   3              end;
+ 164   2              return(true);
+ 165   2          end expand$wild$cards;
+
+ 166   1          get$file$spec: procedure boolean;
+ 167   2              dcl i byte;
+ 168   2              do i = 1 to f$name$len + f$type$len;
+ 169   3                  token(i) = ' ';
+ 170   3              end;
+ 171   2              if nxtchar = ':' then
+ 172   2                 if char >= 'A' and char <= 'P' then
+ 173   2                 do;
+ 174   3                     call putchar(char - 'A' + 1);
+ 175   3                     call eat$char;        /* skip ':'              */ 
+ 176   3                     call eat$char;        /* 1st char of file name */
+ 177   3                 end;
+                         else
+ 178   2                     return(false);
+                      else
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   7
+
+
+ 179   2                 call putchar(0);                  /* use default drive */
+                      
+ 180   2              if not (letter(char) or char = '$' or char = '_'
+                          or char = '*' or char = '?' ) then  /* no leading numerics */
+ 181   2                  if token(0) = 0 then       /* ambiguous with numeric token */
+ 182   2                      return(false);
+
+ 183   2              if not expand$wild$cards(f$namelen) then
+ 184   2                  return(false);                   /* blank name is illegal */
+ 185   2              if char = '.' then
+ 186   2                  do; call eat$char;
+ 188   3                  if filechar(char) then
+ 189   3                      do; t$ptr = f$namelen;
+ 191   4                      if not expand$wild$cards(f$typelen) then
+ 192   4                          return(false);
+ 193   4                      end;
+ 194   3                  end;
+                     
+ 195   2              pcb.token$len = f$name$len + f$type$len + 1;
+ 196   2              pcb.token$type = t$file$spec; 
+ 197   2              return(true);
+ 198   2          end get$file$spec;       
+                  
+ 199   1          get$numeric: procedure(max) boolean;
+ 200   2              dcl max byte;
+ 201   2              if not digit(char) then
+ 202   2                   return(false);
+ 203   2              do while digit(char) and pcb.token$len <= max and
+                          char <> eob;
+ 204   3                  call putchar(char);
+ 205   3                  call eat$char;
+ 206   3                  pcb.token$len = pcb.token$len + 1;
+ 207   3              end;
+ 208   2              if char = 'H' or char = 'D' or char = 'B' then
+ 209   2                  if pcb.token$len < max then
+ 210   2                  do;
+ 211   3                       call putchar(char);
+ 212   3                       call eat$char;
+ 213   3                       pcb.token$len = pcb.token$len + 1;
+ 214   3                  end;
+                          else
+ 215   2                       return(false);   
+ 216   2              pcb.token$type = t$numeric;
+ 217   2              return(true);
+ 218   2          end get$numeric;   
+
+ 219   1          get$string: procedure(max) boolean;
+ 220   2              dcl max byte;
+ 221   2              if char <> string$marker then
+ 222   2                  return(false);
+ 223   2              call eatchar;
+ 224   2              do while char <> string$marker and char <> eob
+                          and pcb.token$len < token$max;
+ 225   3                  call putchar(char);
+ 226   3                  call eatchar;
+ 227   3                  pcb.token$len = pcb.token$len + 1;
+ 228   3              end;
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   8
+
+
+                      
+ 229   2              do while char <> string$marker and char <> eob;
+ 230   3                  call eat$char;
+ 231   3              end;
+ 232   2              if char <> string$marker then
+ 233   2                  return(false);
+ 234   2              pcb.token$type = t$string;
+ 235   2              call eat$char;
+ 236   2              return(true);
+ 237   2          end get$string;
+
+ 238   1          get$token$all: procedure boolean;
+ 239   2              dcl save$inptr byte;
+
+              /*      call mon1(9,.(cr,lf,'gettokenall$'));*/
+
+ 240   2              save$inptr = in$ptr;
+ 241   2          if get$file$spec then
+ 242   2                  return(true);
+
+              /*        call mon1(9,.(cr,lf,'gettokenall - no file$')); */
+ 243   2              in$ptr = save$inptr - 1; /* need to re-scan, reset buffer pointers */
+ 244   2              call eat$char;
+ 245   2              t$ptr = 255;
+ 246   2              call putchar(0);              /* zero drive byte */
+                      
+ 247   2              if get$identifier(token$max) = 0 then
+ 248   2                  if not get$string(token$max) then
+ 249   2                       if not get$numeric(token$max) then
+ 250   2                            return(false);
+               /*       call mon1(9,.(cr,lf,'end gettokenall$'));*/
+ 251   2              return(true);
+ 252   2         end get$token$all;
+
+ 253   1         get$modifier: procedure boolean;
+ 254   2              if char = ',' or char = ')' or char = 0 then
+ 255   2              do;
+ 256   3                  pcb.token$type = t$modifier or t$null;
+ 257   3                  return(true);
+ 258   3              end;
+ 259   2              if get$token$all then
+ 260   2              do;
+ 261   3                  pcb.token$type = pcb.token$type or t$modifier;
+ 262   3                  return(true);
+ 263   3              end;
+ 264   2              return(false);
+ 265   2          end get$modifier;
+
+ 266   1          get$option: procedure boolean;
+ 267   2              call putchar(0);
+ 268   2              if get$identifier(token$max) > 0 then
+ 269   2              do;
+ 270   3                  pcb.token$type = pcb.token$type or t$option;
+ 271   3                  if pcb.token$len > token$max then
+ 272   3                      pcb.token$len = token$max;
+ 273   3                  return(true);
+ 274   3              end;
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE   9
+
+
+ 275   2              return(false);
+ 276   2        end get$option;
+
+ 277   1         get$param: procedure boolean;
+ 278   2              if char = ',' or char = ')' or char = 0 then
+ 279   2              do;
+ 280   3                  pcb.token$type = t$param or t$null;
+ 281   3                  return(true);
+ 282   3              end;
+ 283   2              if get$token$all then
+ 284   2              do;
+ 285   3                  pcb.token$type = pcb.token$type or t$param;
+ 286   3                  return(true);
+ 287   3              end;
+ 288   2              return(false);
+ 289   2          end get$param;
+
+ 290   1          dcl gotatoken boolean;
+ 291   1          dcl parens byte initial (0);
+
+ 292   1          end$state: procedure boolean;
+ 293   2              if gotatoken then
+ 294   2              do;
+ 295   3                  pcb.state = .end$state;
+ 296   3                  return(true);
+ 297   3              end;
+ 298   2              pcb.token$type = t$null;
+ 299   2              pcb.scan$adr = 0ffffh;
+ 300   2              return(true);
+ 301   2          end end$state;
+                 
+ 302   1          state8: procedure boolean reentrant;
+ 303   2              if debug then do;
+ 305   3              call mon1(9,.(cr,lf,'state8, char = $'));
+ 306   3              call printchar(char); end;
+ 308   2              if char = 0 then
+ 309   2                  return(end$state);
+ 310   2              if char = ']' then
+ 311   2              do;
+ 312   3                  call eatchar;
+ 313   3                  if char = ',' or nxtchar = '(' or nxtchar = ')' then
+ 314   3                      return(state2);
+ 315   3                  else if char = 0 then
+ 316   3                      return(end$state);
+                          else
+ 317   3                      return(state1);
+ 318   3              end;
+ 319   2              else if char = ' ' or char = ',' then
+ 320   2              do;
+ 321   3                  call eatchar;
+ 322   3                  return(state3);
+ 323   3              end;
+                      return(state3);
+ 325   2          end state8;
+
+ 326   1          state7:procedure boolean reentrant;
+ 327   2              if debug then do;
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  10
+
+
+ 329   3              call mon1(9,.(cr,lf,'state7, char = $'));
+ 330   3              call printchar(char); end;
+ 332   2              if char = 0 then
+ 333   2                  return(end$state);
+ 334   2              if char = ' ' or char = ',' then
+ 335   2              do;
+ 336   3                  call eat$char;
+ 337   3                  return(state6);
+ 338   3              end;
+                      else
+ 339   2                  if char = ')' then
+ 340   2                  do;
+ 341   3                     call eat$char;
+ 342   3                     return(state8);
+ 343   3                  end;
+                      return(false);
+ 345   2          end state7;
+
+ 346   1          state6: procedure boolean reentrant;
+ 347   2              if debug then do;
+ 349   3              call mon1(9,.(cr,lf,'state6, char = $'));
+ 350   3              call printchar(char); end;
+ 352   2              if gotatoken then
+ 353   2              do;
+ 354   3                  pcb.state = .state6;
+ 355   3                  pcb.nxt$token = t$modifier;
+ 356   3                  return(true);
+ 357   3              end;
+ 358   2              if (gotatoken := get$modifier) then
+ 359   2                  return(state7);
+ 360   2              return(false);
+ 361   2          end state6;
+
+ 362   1          state5:procedure boolean reentrant;
+ 363   2              if debug then do;
+ 365   3              call mon1(9,.(cr,lf,'state5, nxtchar = $'));
+ 366   3              call printchar(nxtchar); end;
+ 368   2              if char = '(' then
+ 369   2              do;
+ 370   3                  call eat$char;
+ 371   3                  return(state6);
+ 372   3              end;
+ 373   2              if gotatoken then
+ 374   2              do;
+ 375   3                  pcb.state = .state5;
+ 376   3                  pcb.nxt$token = t$modifier;
+ 377   3                  return(true);
+ 378   3              end;
+ 379   2              if (gotatoken := get$modifier) then
+ 380   2                     return(state8);
+ 381   2              return(false);
+ 382   2          end state5;
+               
+ 383   1          state4: procedure boolean reentrant;
+ 384   2              dcl temp byte;
+ 385   2              if debug then do;
+ 387   3              call mon1(9,.(cr,lf,'state4, char = $'));
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  11
+
+
+ 388   3              call printchar(char); end;
+ 390   2              if char = 0 then
+ 391   2                  return(end$state);
+ 392   2              temp = char;
+ 393   2              call eatchar;
+ 394   2              if temp = ',' or temp = ' ' then
+ 395   2                  return(state3);
+ 396   2              if temp = ']' then
+ 397   2                  if char = '(' or char = ','  or char = ')' then
+ 398   2                      return(state2);
+ 399   2                  else if char = 0 then
+ 400   2                      return(end$state);
+                          else
+ 401   2                      return(state1);
+ 402   2              if temp = '=' then
+ 403   2                  return(state5);
+ 404   2              return(false);
+ 405   2          end state4;
+
+ 406   1          state3: procedure boolean reentrant;
+ 407   2             if debug then do;
+ 409   3             call mon1(9,.(cr,lf,'state3, char = $'));
+ 410   3             call printchar(char); end;
+ 412   2             if gotatoken then
+ 413   2             do;
+ 414   3                 pcb.state = .state3;
+ 415   3                 pcb.nxt$token = t$option;
+ 416   3                 return(true);
+ 417   3             end;
+ 418   2             if (pcb.plevel := parens ) > 128 then
+ 419   2                  return(false);
+ 420   2             if (gotatoken := get$option) then
+ 421   2                  return(state4);
+ 422   2             return(false);
+ 423   2          end state3;
+
+ 424   1          state2: procedure boolean reentrant;
+ 425   2              if debug then do;
+ 427   3              call mon1(9,.(cr,lf,'state2, char = $'));
+ 428   3              call printchar(char); end;
+ 430   2              do while char = ')' or char = 0;
+ 431   3                  if char = 0 then
+ 432   3                      return(end$state);
+ 433   3                  call eat$char;
+ 434   3                  parens = parens - 1;
+ 435   3              end;
+ 436   2              if char = '[' then
+ 437   2              do;
+ 438   3                  call eat$char;
+ 439   3                  return(state3);
+ 440   3              end;
+ 441   2              if char = ' ' or char = ','  or char = '(' then
+ 442   2              do;
+ 443   3                  if char = '(' then
+ 444   3                       parens = parens + 1;
+ 445   3                  call eat$char;
+ 446   3                  return(state1);
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  12
+
+
+ 447   3              end;
+ 448   2              return(state1);
+ 449   2          end state$2; 
+                  
+ 450   1          state1: procedure boolean reentrant;
+ 451   2              if debug then do; 
+ 453   3              call mon1(9,.(cr,lf,'state1, char = $'));
+ 454   3              call printchar(char); end;
+
+ 456   2              if gotatoken then
+ 457   2              do;
+ 458   3                  pcb.nxt$token = t$param;
+ 459   3                  pcb.state = .state1;
+ 460   3                  return(true);
+ 461   3              end;
+ 462   2              do while char = '(' ;
+ 463   3                  parens = parens + 1;
+ 464   3                  call eat$char;
+ 465   3              end;
+ 466   2              if (pcb.plevel := parens) > 128 then
+ 467   2                  return(false); 
+ 468   2              if (gotatoken := get$param) then
+ 469   2                  return(state2);
+ 470   2              return(false);
+ 471   2           end state1;
+
+ 472   1          start$state: procedure boolean;
+ 473   2              if char = '@' then do;
+ 475   3                 debug = true;
+ 476   3                 call eat$char;
+ 477   3                 call mon1(9,.(cr,lf,'startstate, char = $'));
+ 478   3                 call printchar(char); end;
+
+ 480   2              if char = 0 then
+ 481   2                  return(end$state);
+ 482   2              if char = ')' then
+ 483   2                  return(false);
+ 484   2              if char = '(' then
+ 485   2              do;
+ 486   3                 parens = parens + 1;
+ 487   3                 call eat$char;
+ 488   3                 return(state1);
+ 489   3              end;
+ 490   2              if char = '[' then
+ 491   2              do;
+ 492   3                  call eat$char;
+ 493   3                  return(state3);
+ 494   3              end;
+ 495   2              if (gotatoken := get$param) then
+ 496   2                  return(state2);
+ 497   2              return(false);
+ 498   2          end start$state;
+
+              /* display$all: procedure;     /* called if debug set */
+
+                  /* call mon1(9,.(cr,lf,'scanadr=$'));
+                  call pdecimal(pcb.scanadr,10000,false);
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  13
+
+
+                  call mon1(9,.(', tadr=$'));
+                  call pdecimal(pcb.token$adr,10000, false);
+                  call mon1(9,.(', tlen=$'));
+                  call pdecimal(double(pcb.token$len),100, false);
+                  call mon1(9,.(', ttype=$'));
+                  call pdecimal(double(pcb.token$type),100,false);
+                  call mon1(9,.(', plevel=$'));
+                  call pdecimal(double(pcb.plevel),100,false);
+                  call mon1(9,.(', ntok=$'));
+                  call pdecimal(double(pcb.nxt$token),100,false);
+                
+                  if (pcb.token$type and t$option) <> 0 then
+                      call mon1(9,.(cr,lf,'option  =$'));
+                  if (pcb.token$type and t$param) <> 0 then
+                      call mon1(9,.(cr,lf,'parm    =$'));
+                  if (pcb.token$type and t$modifier) <> 0 then
+                      call mon1(9,.(cr,lf,'modifier=$'));
+
+                  if (pcb.token$type and t$filespec) <> 0 then
+                  do;
+                      if fcb(0) = 0 then 
+                          call print$char('0');
+                      else call print$char(fcb(0) + 'A' - 1);
+                      call print$char(':');
+                      fcb(12) = '$';
+                      call mon1(9,.fcb(1));
+                      call mon1(9,.('         (filespec)$')); 
+                  end;
+                  if ((pcb.token$type and t$string) or (pcb.token$type and
+                      t$identifier) or (pcb.token$type and t$numeric)) <> 0 then
+                  do;
+                      fcb(pcb.token$len + 1) = '$';  
+                      call mon1(9,.fcb(1));
+                  end;
+                  if pcb.token$type = t$error then
+                  do;
+                      call mon1(9,.(cr,lf,'scanner error$'));
+                      return;
+                  end;
+
+                  if (pcb.token$type and t$identifier) <> 0 then
+                       call mon1(9,.(' (identifier)$'));
+                  if (pcb.token$type and t$string) <> 0 then
+                       call mon1(9,.(' (string)$'));
+                  if (pcb.token$type and t$numeric) <> 0 then
+                       call mon1(9,.(' (numeric)$'));
+
+                  if (pcb.nxt$token and t$option) <> 0 then
+                      call mon1(9,.(cr,lf,'nxt tok = option  $'));
+                  if (pcb.nxt$token and t$param) <> 0 then
+                      call mon1(9,.(cr,lf,'nxt tok = parm    $'));
+                  if (pcb.nxt$token and t$modifier) <> 0 then
+                      call mon1(9,.(cr,lf,'nxt tok = modifier$'));
+                  call crlf;
+
+              end display$all; */
+
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  14
+
+
+ 499   1      scan: procedure (pcb$adr) public;
+
+ 500   2          dcl status boolean,
+                      pcb$adr address;
+
+ 501   2          pcb$base = pcb$adr;
+ 502   2          scan$adr = pcb.scan$adr;
+ 503   2          token$adr = pcb.token$adr;
+
+ 504   2          in$ptr, t$ptr = 255;
+ 505   2          call eatchar;
+
+ 506   2          gotatoken = false;
+ 507   2          pcb.nxt$token = t$null;
+ 508   2          pcb.token$len = 0;
+
+ 509   2          if pcb.token$type = t$error then         /* after one error, return */
+ 510   2              return;                              /* on any following calls  */
+ 511   2          else if pcb.state = .start$state then
+ 512   2              status = start$state;
+ 513   2          else if pcb.state = .state$1 then
+ 514   2              status = state$1;
+ 515   2          else if pcb.state = .state$3 then
+ 516   2              status = state$3;
+ 517   2          else if pcb.state = .state$5 then
+ 518   2              status = state$5;
+ 519   2          else if pcb.state = .state$6 then
+ 520   2              status = state$6;
+ 521   2          else if pcb.state = .end$state then      /* repeated calls go here   */
+ 522   2              status = end$state;                  /* after first end$state    */
+                  else
+ 523   2              status = false;
+               
+ 524   2          if not status then
+ 525   2              pcb.token$type = t$error;
+
+ 526   2          if pcb.scan$adr <> 0ffffh then
+ 527   2              pcb.scan$adr = pcb.scan$adr + inptr;
+                  /* if debug then
+                      call display$all; */
+ 528   2      end scan;
+
+ 529   1      scan$init: procedure(pcb$adr) public; 
+ 530   2          dcl pcb$adr address;
+
+ 531   2          pcb$base = pcb$adr;
+ 532   2          call deblank(pcb.scan$adr);
+ 533   2          call upper$case(pcb.scan$adr := pcb.scan$adr + 1);
+ 534   2          pcb.state = .start$state;
+ 535   2      end scan$init;
+
+ 536   1      end scanner;
+
+
+
+MODULE INFORMATION:
+PL/M-80 COMPILER    UTILITY COMMAND LINE SCANNER                                                                          PAGE  15
+
+
+     CODE AREA SIZE     = 0E8DH   3725D
+     VARIABLE AREA SIZE = 0030H     48D
+     MAXIMUM STACK SIZE = 001FH     31D
+     787 LINES READ
+     0 PROGRAM ERROR(S)
+
+END OF PL/M-80 COMPILATION

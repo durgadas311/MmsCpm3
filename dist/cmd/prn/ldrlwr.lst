@@ -1,0 +1,241 @@
+:F3:ASM80 LDRLWR.ASM DEBUG
+
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         RELFIX   PAGE    1
+CP/M V3.0  Relocate and Fix Up File
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                      1 $title  ('CP/M V3.0  Relocate and Fix Up File')
+                      2         name    relfix
+                      3 ;
+                      4 ;/*
+                      5 ;  Copyright (C) 1979,1980,1981,1982
+                      6 ;  Digital Research
+                      7 ;  P.O. Box 579
+                      8 ;  Pacific Grove, CA 93950
+                      9 ;
+                     10 ;  Revised:
+                     11 ;    05 Aug 82 by Bruce Skidmore
+                     12 ;*/
+                     13 
+                     14         cseg
+                     15 
+                     16         extrn   mon1    ;BDOS entry point
+                     17         extrn   FCBin   ;FCB for input
+                     18         extrn   sctbfr  ;sector buffer
+                     19         extrn   offset  ;relocation offset
+                     20         extrn   prgsiz  ;program size
+                     21         extrn   bufsiz  ;buffer size
+                     22         extrn   bnkpg   ;bnkbdos page
+                     23         extrn   respg   ;resbdos page
+                     24         extrn   scbpg   ;System Control Block page
+                     25         extrn   biospg  ;Bios page
+                     26         extrn   reslen  ;Resident System length
+                     27         extrn   bnkoff  ;Banked System offset
+                     28         extrn   nonbnk  ;Non Banked CP/M flag
+                     29 
+                     30         public  bitmap  ;bitmap buffer
+                     31 
+                     32 RelFix:
+                     33         public  RelFix
+  0000 11E900   C    34         lxi     d,bitmap
+  0003 0E1A          35         mvi     c,26
+  0005 CD0000   E    36         call    mon1    ;set DMA address to bit map
+                     37 ;
+                     38         ;file loaded, ready for relocation
+  0008 2A0000   E    39         lhld    prgsiz
+  000B 44            40         mov     b,h
+  000C 4D            41         mov     c,l             ;BC = program size
+  000D 7D            42         mov     a,l
+  000E E67F          43         ani     127
+  0010 6F            44         mov     l,a
+  0011 C22500   C    45         jnz     nofill          ;if program size is an even number
+  0014 E5            46         push    h               ;of sectors prefill the bitmap buffer
+  0015 C5            47         push    b
+  0016 2A0000   E    48         lhld    fcbin
+  0019 EB            49         xchg
+  001A 0E14          50         mvi     c,20
+  001C CD0000   E    51         call    mon1
+  001F C1            52         pop     b
+  0020 E1            53         pop     h
+  0021 B7            54         ora     a
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         RELFIX   PAGE    2
+CP/M V3.0  Relocate and Fix Up File
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  0022 C2E300   C    55         jnz     errtn
+                     56 nofill:
+  0025 5D            57         mov     e,l             ;L = offset into bitmap buffer
+  0026 1600          58         mvi     d,0
+  0028 21E900   C    59         lxi     h,bitmap
+  002B 19            60         dad     d               ;HL = bit map base
+  002C 3E69     C    61         mvi     a,low(bitmap+128)
+  002E 326901   C    62         sta     btmptp          ;save number of relocation bytes
+                     63                                 ;in left in bitmap buffer
+  0031 110000   E    64         lxi     d,sctbfr        ;DE = base of program
+  0034 E5            65         push    h               ;save bit map base in stack
+  0035 3A0000   E    66         lda     offset
+  0038 67            67         mov     h,a             ;H = relocation offset
+                     68 pgrel0:
+  0039 78            69         mov     a,b             ;bc=0?
+  003A B1            70         ora     c
+  003B CADD00   C    71         jz      ExitRelFix
+                     72 ;
+                     73 ;       not end of the relocation,
+                     74 ;         may be into next byte of bit map
+  003E 0B            75         dcx     b       ;count length down
+  003F 7B            76         mov     a,e
+  0040 D600     E    77         sui     low(sctbfr)
+  0042 E607          78         ani     111b    ;0 causes fetch of next byte
+  0044 C26700   C    79         jnz     pgrel3
+                     80 ;       fetch bit map from stacked address
+  0047 E3            81         xthl
+  0048 3A6901   C    82         lda     btmptp
+  004B BD            83         cmp     l
+  004C C26300   C    84         jnz     pgrel2
+  004F C5            85         push    b
+  0050 D5            86         push    d
+  0051 2A0000   E    87         lhld    FCBin
+  0054 EB            88         xchg
+  0055 0E14          89         mvi     c,20
+  0057 CD0000   E    90         call    mon1
+  005A D1            91         pop     d
+  005B C1            92         pop     b
+  005C 21E900   C    93         lxi     h,bitmap
+  005F B7            94         ora     a
+  0060 C2E300   C    95         jnz     errtn   ;return with error condition
+                     96 pgrel2:
+  0063 7E            97         mov     a,m     ;next 8 bits of map
+  0064 23            98         inx     h
+  0065 E3            99         xthl            ;base address goes back to stack
+  0066 6F           100         mov     l,a     ;l holds map as 8 bytes done
+                    101 pgrel3:
+  0067 7D           102         mov     a,l
+  0068 17           103         ral             ;cy set to 1 if reloc necessary
+  0069 6F           104         mov     l,a     ;back to l for next time around
+  006A D2D900   C   105         jnc     pgrel4  ;skip relocation if cy=0
+                    106 ;
+                    107 ;       current address requires relocation
+                    108 ;
+  006D E5           109         push    h
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         RELFIX   PAGE    3
+CP/M V3.0  Relocate and Fix Up File
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+  006E 1A           110         ldax    d               ;if page = 0ffh
+  006F 3C           111         inr     a
+  0070 C27900   C   112         jnz     test2
+  0073 3A0000   E   113         lda     biospg          ;then page = bios$page
+  0076 C3D700   C   114         jmp     endt
+                    115 test2:                          ;else
+  0079 3C           116         inr     a               ;if page = 0feh
+  007A C28B00   C   117         jnz     test3
+  007D 3A0000   E   118         lda     scbpg           ;then page = SCB$page
+  0080 F5           119         push    psw
+  0081 1B           120         dcx     d               ;add 9ch to the offset(low byte)
+  0082 1A           121         ldax    d
+  0083 C69C         122         adi     09ch
+  0085 12           123         stax    d
+  0086 13           124         inx     d
+  0087 F1           125         pop     psw
+  0088 C3D700   C   126         jmp     endt
+                    127 test3:                          ;else
+  008B 3C           128         inr     a               ;if page = 0fdh
+  008C C29500   C   129         jnz     test4
+  008F 3A0000   E   130         lda     respg           ;then page = resbdos$page
+  0092 C3D700   C   131         jmp     endt
+                    132 test4:                          ;else
+  0095 3C           133         inr     a               ;if page = 0fch
+  0096 C29F00   C   134         jnz     test5
+  0099 3A0000   E   135         lda     bnkpg           ;then page = bnkbdos$page
+  009C C3D700   C   136         jmp     endt
+                    137 test5:                          ;else
+  009F 3C           138         inr     a               ;if page = 0fbh
+  00A0 C2A900   C   139         jnz     test6
+  00A3 3A0000   E   140         lda     scbpg           ;then page = scb$page
+  00A6 C3D700   C   141         jmp     endt
+                    142 test6:                          ;else
+  00A9 3A0000   E   143         lda     reslen
+  00AC 67           144         mov     h,a             ;if non$banked and page >= reslen
+  00AD 3A0000   E   145         lda     nonbnk
+  00B0 B7           146         ora     a
+  00B1 CAC400   C   147         jz      test7
+  00B4 1A           148         ldax    d
+  00B5 94           149         sub     h
+  00B6 DAD100   C   150         jc      default         ;then do;
+  00B9 1B           151         dcx     d               ;page$adr = page$adr - 1;
+  00BA 3E9A         152         mvi     a,09ah
+  00BC 12           153         stax    d               ;page = 9ah;
+  00BD 13           154         inx     d               ;page$adr = page$adr + 1;
+  00BE 3A0000   E   155         lda     scbpg           ;page = scb$pg;
+  00C1 C3D700   C   156         jmp     endt            ;end;
+                    157 test7:                          ;else
+  00C4 3A0000   E   158         lda     bnkoff
+  00C7 6F           159         mov     l,a             ;if page >= reslen
+  00C8 1A           160         ldax    d
+  00C9 94           161         sub     h
+  00CA DAD100   C   162         jc      default
+  00CD 85           163         add     l               ;then page = page - reslen
+  00CE C3D700   C   164         jmp     endt
+
+
+ISIS-II 8080/8085 MACRO ASSEMBLER, V4.1         RELFIX   PAGE    4
+CP/M V3.0  Relocate and Fix Up File
+
+  LOC  OBJ         LINE        SOURCE STATEMENT
+
+                    165 default:                        ;else
+  00D1 3A0000   E   166         lda     offset          ;page = page + offset
+  00D4 67           167         mov     h,a
+  00D5 1A           168         ldax    d
+  00D6 84           169         add     h
+                    170 endt:
+  00D7 12           171         stax    d
+  00D8 E1           172         pop     h
+                    173 pgrel4:
+  00D9 13           174         inx     d       ;to next address
+  00DA C33900   C   175         jmp     pgrel0  ;for another byte to relocate
+                    176 
+                    177 ExitRelFix:
+  00DD E1           178         pop     h
+  00DE 210000       179         lxi     h,0
+  00E1 7C           180         mov     a,h
+  00E2 C9           181         ret
+                    182 
+                    183 errtn:
+  00E3 E1           184         pop     h       ;discard return address
+  00E4 21FFFF       185         lxi     h,0ffffh
+  00E7 7C           186         mov     a,h
+  00E8 C9           187         ret             ;return with error condition
+                    188 ;
+                    189 ;       Local Data Segment
+                    190 ;
+  00E9              191 bitmap: ds      128     ;bit map buffer
+  0169              192 btmptp: ds      1       ;bit low (bitmap+128)
+                    193 
+                    194         end
+
+
+PUBLIC SYMBOLS
+BITMAP C 00E9    RELFIX C 0000    
+
+EXTERNAL SYMBOLS
+BIOSPG E 0000    BNKOFF E 0000    BNKPG  E 0000    BUFSIZ E 0000    FCBIN  E 0000    MON1   E 0000    NONBNK E 0000    
+OFFSET E 0000    PRGSIZ E 0000    RESLEN E 0000    RESPG  E 0000    SCBPG  E 0000    SCTBFR E 0000    
+
+USER SYMBOLS
+BIOSPG E 0000    BITMAP C 00E9    BNKOFF E 0000    BNKPG  E 0000    BTMPTP C 0169    BUFSIZ E 0000    DEFAUL C 00D1    
+ENDT   C 00D7    ERRTN  C 00E3    EXITRE C 00DD    FCBIN  E 0000    MON1   E 0000    NOFILL C 0025    NONBNK E 0000    
+OFFSET E 0000    PGREL0 C 0039    PGREL2 C 0063    PGREL3 C 0067    PGREL4 C 00D9    PRGSIZ E 0000    RELFIX C 0000    
+RESLEN E 0000    RESPG  E 0000    SCBPG  E 0000    SCTBFR E 0000    TEST2  C 0079    TEST3  C 008B    TEST4  C 0095    
+TEST5  C 009F    TEST6  C 00A9    TEST7  C 00C4    
+
+ASSEMBLY COMPLETE,   NO ERRORS
