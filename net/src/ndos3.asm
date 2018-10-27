@@ -871,6 +871,10 @@ CKMSC1:	; could be EOF, or some physical error
 	call	RCVPAR
 	; ignore data/error returned by CRREAD
 CKMSC3:
+	mvi	h,0	; success returns NREC=0
+	lda	RETCOD
+	ora	a
+	rz		; NDENDR
 	lda	CURMSC	; if error ended us early, need num sec completed.
 	mov	e,a	; save where SYSMSC won't destroy it
 	call	SYSMSC
