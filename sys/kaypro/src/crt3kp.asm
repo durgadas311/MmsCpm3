@@ -1,0 +1,1514 @@
+vers equ '0g' ; January 20, 1986  11:06  drm  "CRT3KP.ASM"
+;********************************************************
+; CRT module for the KAYPRO				*
+; Copyright (C) 1985 Douglas Miller			*
+;********************************************************
+	maclib Z80
+
+false	equ	0
+true	equ	not false
+
+external equ false	;actual driver in EPROM?
+
+dev0	equ	200
+ndev	equ	1
+
+sysctl	equ	014h	;status/ctrl bits
+
+ if not external
+
+line25n equ	00100000b
+
+crtadr	equ	1ch
+vidctl	equ	crtadr
+crtreg	equ	1dh
+viddat	equ	1fh
+
+sio1	equ	4
+keyb	equ	sio1+1
+
+; CRTC register addresses
+curst	equ	10
+curen	equ	11
+startH	equ	12
+startL	equ	13
+cursrH	equ	14
+cursrL	equ	15
+ramioH	equ	18
+ramioL	equ	19
+nulla	equ	31
+
+ctrlD	equ	4
+bell	equ	7
+bs	equ	8
+lf	equ	10
+ctrlK	equ	11
+ff	equ	12
+cr	equ	13
+ctrlW	equ	23
+ctrlX	equ	24
+ctrlZ	equ	26
+esc	equ	27
+rs	equ	30
+
+ endif
+
+	extrn @ctbl,@vect
+
+	cseg	;common memory, other parts in banked.
+	dw	thread
+	db	dev0,ndev
+
+	jmp	init
+	jmp	nullst
+	jmp	nullin
+	jmp	nullst
+	jmp	output
+	dw	strcrt
+	dw	tblcrt
+	dw	modcrt
+
+strcrt: db	'KAYPRO ',0,'CRT driver ',0,'v3.10'
+	dw	vers
+	db	'$'
+
+modcrt: db	00000000b,00000000b,10000000b,0
+ 
+
+thread	equ	$
+
+	dseg	;banked memory.
+tblcrt: 	;initial value only, copied by BIOS to its table.
+	db	'CRT   ',00000010b,0  ;Output, no baud, no protocal
+
+init:
+ if not external
+	LXI	H,escflg
+	MVI	B,12
+	XRA	A
+L06E0	MOV	M,A
+	INX	H
+	DJNZ	L06E0
+	lhld	0041h	;gifts from the loader...
+	shld	line
+	lhld	0044h	;
+	shld	curpos
+	lhld	0046h	;
+	shld	starta
+ endif
+	ret
+
+nullin: mvi	a,1ah
+	ret
+
+nullst: ori	true
+	ret			; return true if ready
+
+ if external
+
+output: di
+	in	sysctl
+	ani	10111111b
+	ori	10000000b
+	out	sysctl
+	call	0045h
+	in	sysctl
+	ani	00111111b
+	out	sysctl
+	ei
+	ret
+
+ else ;internal CRT driver code:
+
+;CTR controlling code
+
+output: LDA	escflg
+	ORA	A
+	JNZ	L09CB	;ESC codes
+	MOV	A,C
+	ORA	A
+	RZ		;ignore nulls
+	JM	L07AE	;Block graphics
+	CPI	' '
+	JC	L0A44	;CTRL codes
+;Displayable char
+L078F	MOV	A,C
+	LDED	curpos
+	CALL	L0998
+	CALL	L09A4
+;advance cursor
+L079A	LDA	column
+	INR	A
+	CPI	80
+	JNC	L07F7	;wrap
+	STA	column
+	LDED	curpos
+	INX	D
+	JMP	L0815
+
+;Block graphics codes
+L07AE	LDA	attrib
+	ANI	00010000b
+	JRZ	L078F	;normal char
+	LDA	LFD8C
+	ANI	01000000b
+	JRZ	L07C3
+	MOV	A,C
+	ANI	00000001b
+	STA	LFD8C
+	RET
+
+L07C3	LDA	LFD8C
+	ORA	A
+	MOV	A,C
+	JRZ	L07CB
+	CMA
+L07CB	ORI	10000000b
+	LDED	curpos
+	CALL	L0998
+	LDA	LFD8C
+	MOV	C,A
+	LDA	attrib
+	ORA	C
+	CALL	L09A7
+	MVI	A,01000000b
+	STA	LFD8C
+	JR	L079A	;advance cursor pos
+
+L07E6	LHLD	curpos
+	LDA	column
+	MOV	E,A
+	XRA	A
+	MOV	D,A
+	STA	column
+	DSBC	D
+	XCHG
+	JR	L0815
+
+;wrap to next line
+L07F7	CALL	L07E6	;
+L07FA	LDA	line
+	CPI	23
+	JRC	L0809
+L0801	CPI	24
+	RZ
+	CALL	L088A
+	JR	L080D
+
+L0809	INR	A
+	STA	line
+L080D	LHLD	curpos
+	LXI	D,80
+	DAD	D
+	XCHG
+L0815	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+	XCHG
+	SHLD	curpos
+	LBCD	starta
+	DSBC	B
+	JRNC	L0829
+	LXI	D,2048
+	DAD	D
+L0829	DAD	B
+	XCHG
+	LXI	B,crtadr + (cursrH shl 8)
+	JMP	L0981
+
+L0831	LDA	line
+	CPI	24
+	RZ
+	ORA	A
+	RZ
+	DCR	A
+	STA	line
+	LHLD	curpos
+	LXI	D,80
+	DSBC	D
+	XCHG
+	JR	L0815
+
+L0848	LDA	column
+	ORA	A
+	JRNZ	L085D
+	LDA	line
+	ORA	A
+	RZ
+	CPI	24
+	JRZ	L0868
+	DCR	A
+	STA	line
+	MVI	A,80
+L085D	DCR	A
+	STA	column
+	LDED	curpos
+	DCX	D
+	JR	L0815
+
+L0868	MVI	A,79
+	STA	column
+	LHLD	curpos
+	LXI	D,79
+	DAD	D
+	XCHG
+	JR	L0815
+
+L0877	LDA	column
+	CPI	79
+	JNC	L07F7
+	LDED	curpos
+	INX	D
+	INR	A
+	STA	column
+	JR	L0815
+
+L088A	JMP	L0A8C
+
+;set modes
+L088D	LXI	H,attrib
+	MOV	A,C
+	SUI	'0'
+	JRZ	L08AB
+	DCR	A
+	JRZ	L08B0
+	DCR	A
+	JRZ	L08B5
+	DCR	A
+	JRZ	L08BA
+	DCR	A
+	JRZ	L08BF
+	DCR	A
+	JRZ	L08C9
+	DCR	A
+	JRZ	L08D7
+	DCR	A
+	JRZ	L08DE
+	RET
+
+;Rev Vid
+L08AB	MOV	A,M
+	ORI	00000001b
+	MOV	M,A
+	RET
+
+L08B0	MOV	A,M
+	ORI	00000010b
+	MOV	M,A
+	RET
+
+L08B5	MOV	A,M
+	ORI	00000100b
+	MOV	M,A
+	RET
+
+L08BA	MOV	A,M
+	ORI	00001000b
+	MOV	M,A
+	RET
+
+;Cursor on
+L08BF	MVI	C,01100000b
+;
+L08C1	MVI	A,curst
+	OUT	crtadr
+	MOV	A,C
+	OUT	viddat
+	RET
+
+;Vid Mode
+L08C9	LDA	attrib
+	ORI	00010000b
+	STA	attrib
+	MVI	A,01000000b
+	STA	LFD8C
+	RET
+
+L08D7	LHLD	line
+	SHLD	LFD7D
+	RET
+
+L08DE	LDA	attrib
+	ORI	00100000b
+	STA	attrib
+	RET
+
+;reset mode
+L08E7	LXI	H,attrib
+	MOV	A,C
+	SUI	'0'
+	JRZ	L0905
+	DCR	A
+	JRZ	L090A
+	DCR	A
+	JRZ	L090F
+	DCR	A
+	JRZ	L0914
+	DCR	A
+	JRZ	L0919
+	DCR	A
+	JRZ	L091D
+	DCR	A
+	JRZ	L0922
+	DCR	A
+	JRZ	L0934
+	RET
+
+L0905	MOV	A,M
+	ANI	11111110b
+	MOV	M,A
+	RET
+
+L090A	MOV	A,M
+	ANI	11111101b
+	MOV	M,A
+	RET
+
+L090F	MOV	A,M
+	ANI	11111011b
+	MOV	M,A
+	RET
+
+L0914	MOV	A,M
+	ANI	11110111b
+	MOV	M,A
+	RET
+
+;Cursor off
+L0919	MVI	C,00100000b
+	JR	L08C1
+
+L091D	MOV	A,M
+	ANI	11101111b
+	MOV	M,A
+	RET
+
+;restore cursor pos
+L0922	LHLD	LFD7D
+	MOV	A,H
+	ADI	' '
+	STA	LFD7F
+	MOV	A,L
+	ADI	' '
+	STA	LFD81
+	JMP	L093D
+
+L0934	LDA	attrib
+	ANI	11011111b
+	STA	attrib
+	RET
+
+;direct cursor control
+L093D	LXI	H,0
+	MOV	C,L
+	LDA	LFD81
+	SUI	' '
+	RC
+	MOV	B,A
+	JRZ	L0953
+	CPI	25
+	RNC
+	LXI	D,80
+L0950	DAD	D
+	DJNZ	L0950
+L0953	MOV	E,A
+	LDA	LFD7F
+	SUI	' '
+	RC
+	CPI	80
+	RNC
+	MOV	C,A
+	STA	column
+	MOV	A,E
+	STA	line
+	DAD	B
+	LDED	starta
+	DAD	D
+	XCHG
+	JMP	L0815
+
+L096F	LXI	B,crtadr + (ramioH shl 8)
+	CALL	L0981
+	DCR	C
+	MVI	A,nulla
+	OUTP	A
+L097A	INP	A
+	ORA	A
+	JP	L097A
+	RET
+
+L0981	OUTP	B
+	INR	C
+	OUTP	D
+	DCR	C
+	INR	B
+	OUTP	B
+	INR	C
+	OUTP	E
+	RET
+
+L0992	CALL	L096F
+	IN	viddat
+	RET
+
+L0998	PUSH	PSW
+	MOV	A,D
+	ANI	7
+	MOV	D,A
+	CALL	L096F
+	POP	PSW
+	OUT	viddat
+	RET
+
+L09A4	LDA	attrib
+L09A7	PUSH	H
+	PUSH	PSW
+	CALL	L09BF
+	CALL	L096F
+	POP	PSW
+	OUT	viddat
+	XCHG
+	POP	H
+	RET
+	PUSH	H
+	CALL	L09BF
+	CALL	L0992
+	XCHG
+	POP	H
+	RET
+
+L09BF	LXI	H,0801h
+	DAD	D
+	MOV	A,H
+	ANI	7
+	ORI	8
+	MOV	H,A
+	XCHG
+	RET
+
+;ESC sequences
+L09CB	LXI	H,escflg
+	MVI	M,0
+	CPI	1
+	JRNZ	L09ED
+	MOV	A,C
+	ANI	01111111b
+	CPI	'R'
+	JZ	L0C06
+	CPI	'E'
+	JZ	L0C9D
+	CPI	'A'
+	RZ
+	CPI	'G'
+	RZ
+	STA	LFD7C
+	MVI	M,2
+	RET
+
+;more than 1 in sequence
+L09ED	CPI	2
+	JRNZ	L0A05
+	LDA	LFD7C
+	CPI	'B'
+	JZ	L088D
+	CPI	'C'
+	JZ	L08E7
+	MOV	A,C
+	STA	LFD81
+	MVI	M,3
+	RET
+
+;more than 2 in sequence
+L0A05	CPI	3
+	JRNZ	L0A22
+	MOV	A,C
+	STA	LFD7F
+	LDA	LFD7C
+	CPI	'='
+	JZ	L093D
+	CPI	'*'
+	JZ	L0DA1
+	CPI	' '
+	JZ	L0DA8
+	MVI	M,4
+	RET
+
+;more than 3
+L0A22	CPI	4
+	JRNZ	L0A2D
+	MOV	A,C
+	STA	LFD82
+	MVI	M,5
+	RET
+
+;5 sequential char
+L0A2D	MOV	A,C
+	STA	LFD80
+	LDA	LFD7C
+	CPI	'L'
+	JZ	L0F41
+	CPI	'D'
+	JZ	L0F48
+	RET
+
+L0A3F	in	keyb+2
+	ani	00000100b
+	jrz	L0A3F
+	mvi	a,ctrlD
+	out	keyb
+	ret
+
+;CTRL codes
+L0A44	CPI	cr
+	JZ	L07E6
+	CPI	lf
+	JZ	L07FA
+	CPI	bell
+	JRZ	L0A3F
+	CPI	ctrlX
+	JZ	L06A1
+	CPI	ctrlW
+	JZ	L06A6
+	CPI	ctrlZ
+	JZ	L06F8
+	CPI	bs
+	JZ	L0848
+	CPI	ff
+	JZ	L0877
+	CPI	ctrlK
+	JZ	L0831
+	CPI	rs
+	JZ	L075F
+	CPI	esc
+	JNZ	L078F
+	MVI	A,1
+	STA	escflg
+	RET
+
+L0A8C	LDA	attrib
+	ANI	00100000b
+	JRZ	L0AC9
+L0A93	LHLD	starta
+	LXI	D,1920
+	LXI	B,80
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	MOV	D,H
+	MOV	E,L
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	PUSH	H
+	CALL	L0AF0
+	POP	D
+	LXI	H,80
+	CALL	L0711
+	LHLD	starta
+	LXI	D,80
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	SHLD	starta
+	XCHG
+	LXI	B,crtadr + (startH shl 8)
+	JMP	L0981
+
+L0AC9	LHLD	starta
+	LXI	D,80
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	SHLD	starta
+	XCHG
+	LXI	B,crtadr + (startH shl 8)
+	CALL	L0981
+	LHLD	starta
+	LXI	D,1920
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	LXI	H,80
+	JMP	L0711
+
+L0AF0	MOV	A,B
+	ANI	00000111b
+	ORA	C
+	RZ
+L0AF5	PUSH	B
+L0AF6	IN	vidctl
+	ORA	A
+	JP	L0AF6
+	LXI	B,ramioL + (ramioH shl 8)
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,H
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,L
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L0B0F	IN	vidctl
+	ORA	A
+	JP	L0B0F
+	IN	viddat
+	EXAF
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+	EXAF
+	OUT	viddat
+	INX	D
+	INX	H
+	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+L0B35	IN	vidctl
+	ORA	A
+	JP	L0B35
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,H
+	ORI	00001000b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,L
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L0B4D	IN	vidctl
+	ORA	A
+	JP	L0B4D
+	IN	viddat
+	EXAF
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	ORI	00001000b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+	EXAF
+	OUT	viddat
+	POP	B
+	DCX	B
+	MOV	A,B
+	ORA	C
+	JNZ	L0AF5
+	JMP	L0BFF
+
+L0B75	MOV	A,B
+	ANI	00000111b
+	ORA	C
+	RZ
+L0B7A	PUSH	B
+L0B7B	IN	vidctl
+	ORA	A
+	JP	L0B7B
+	LXI	B,ramioL + (ramioH shl 8)
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,H
+	ANI	00000111b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,L
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L0B96	IN	vidctl
+	ORA	A
+	JP	L0B96
+	IN	viddat
+	EXAF
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	ANI	00000111b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+	EXAF
+	OUT	viddat
+	INX	D
+	INX	H
+	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+L0BBE	IN	vidctl
+	ORA	A
+	JP	L0BBE
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,H
+	ORI	8
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,L
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L0BD6	IN	vidctl
+	ORA	A
+	JP	L0BD6
+	IN	viddat
+	EXAF
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	ORI	00001000b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+	EXAF
+	OUT	viddat
+	POP	B
+	DCX	H
+	DCX	H
+	DCX	D
+	DCX	D
+	DCX	B
+	MOV	A,B
+	ORA	C
+	JNZ	L0B7A
+L0BFF	IN	vidctl
+	ORA	A
+	JP	L0BFF
+	RET
+
+L0C06	CALL	L07E6
+	LDA	line
+	ORA	A
+	JZ	L0C4F
+	LDED	curpos
+	LXI	H,80
+	CPI	23
+	JNC	L0711
+	CPI	11
+	JRNC	L0C64
+	XCHG
+	LXI	B,79
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	MOV	B,H
+	MOV	C,L
+	DSBC	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	PUSH	H
+	LDED	starta
+	DSBC	D
+	JRNC	L0C5D
+	LXI	H,2048
+	ORA	A
+	DSBC	D
+	POP	D
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,B
+	MOV	B,A
+	MOV	A,L
+	MOV	L,C
+	MOV	C,A
+	XCHG
+L0C4B	INX	B
+	CALL	L0B75
+L0C4F	CALL	L0A93
+	LHLD	curpos
+	LXI	D,80
+	DAD	D
+	XCHG
+	JMP	L0815
+
+L0C5D	MOV	D,B
+	MOV	E,C
+	MOV	B,H
+	MOV	C,L
+	POP	H
+	JR	L0C4B
+
+L0C64	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	D,A
+	MOV	E,L
+	LHLD	starta
+	LXI	B,1920
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	MOV	B,A
+	MOV	C,L
+	DSBC	D
+	JRNC	L0C82
+	LXI	H,2048
+	ORA	A
+	DSBC	D
+	DAD	B
+L0C82	MOV	B,H
+	MOV	C,L
+	LHLD	curpos
+	XCHG
+	CALL	L0AF0
+	LHLD	starta
+	LXI	D,1840
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	D,A
+	MOV	E,L
+	LXI	H,80
+	JMP	L0711
+
+L0C9D	LDA	line
+	CPI	12
+	JNC	L0D4E
+	LHLD	starta
+	LXI	D,80
+	ORA	A
+	DSBC	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	LXI	B,crtadr + (startH shl 8)
+	CALL	L0981
+	LHLD	curpos
+	LBCD	starta
+	ORA	A
+	DSBC	B
+	JRNC	L0CD4
+	LXI	H,2048
+	ORA	A
+	DSBC	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	LBCD	curpos
+	DAD	B
+L0CD4	MOV	A,H
+	ANI	00000111b
+	MOV	B,A
+	MOV	C,L
+	LXI	H,128
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	B,A
+	MOV	C,L
+	LHLD	starta
+	LXI	D,1840
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	LXI	H,80
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	CALL	L0AF0
+	LHLD	curpos
+	LXI	B,80
+	ORA	A
+	DSBC	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	LDA	column
+	MOV	C,A
+	MVI	B,0
+	LXI	H,80
+	DSBC	B
+	PUSH	D
+	PUSH	H
+	CALL	L0711
+	POP	B
+	PUSH	B
+	LHLD	curpos
+	LDA	column
+	MOV	E,A
+	MVI	D,0
+	ORA	A
+	DSBC	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	D,A
+	MOV	E,L
+	LHLD	curpos
+	CALL	L0AF0
+	POP	B
+	LXI	H,80
+	ORA	A
+	DSBC	B
+	CNZ	L0711
+	LHLD	starta
+	LXI	B,80
+	ORA	A
+	DSBC	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	SHLD	starta
+	POP	D
+	JMP	L0815
+
+L0D4E	SUI	22
+	JRZ	L0D7C
+	JNC	L06A1
+	NEG
+	PUSH	PSW
+	LHLD	starta
+	LXI	D,1839
+	LXI	B,80
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	D,A
+	MOV	E,L
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	POP	PSW
+	PUSH	H
+	LXI	H,0
+L0D72	DAD	B
+	DCR	A
+	JRNZ	L0D72
+	MOV	B,H
+	MOV	C,L
+	POP	H
+	CALL	L0B75
+L0D7C	LHLD	curpos
+	MOV	D,H
+	MOV	E,L
+	LDA	column
+	MOV	C,A
+	MVI	A,80
+	SUB	C
+	MOV	C,A
+	MVI	B,0
+	DAD	B
+	MOV	A,H
+	ANI	00000111b
+	MOV	H,A
+	XCHG
+	CALL	L0AF0
+	LDA	column
+	MOV	L,A
+	MVI	H,0
+	ORA	A
+	CNZ	L0711
+	JMP	L06A1
+
+L0DA1	MVI	A,0
+	STA	LFD83
+	JR	L0DAD
+
+L0DA8	MVI	A,-1
+	STA	LFD83
+L0DAD	LDA	LFD7F
+	SUI	' '
+	MOV	E,A
+	LDA	LFD81
+	SUI	' '
+	MOV	D,A
+L0DB9	MOV	A,D
+	CPI	100
+	RNC
+	ANI	0011b
+	MOV	B,A
+	srlr	d
+	srlr	d
+	MOV	A,E
+	CPI	160
+	RNC
+	RRC
+	MOV	E,A
+	MVI	A,1
+	JRC	L0DD1
+	ADD	A
+L0DD1	INR	B
+	DCR	B
+	JRZ	L0DDA
+L0DD5	ADD	A
+	ADD	A
+	djnz	L0DD5
+L0DDA	STA	LFD85
+	MOV	A,E
+	ANI	01111111b
+	MOV	E,A
+	LHLD	starta
+	MOV	B,D
+	MOV	C,E
+	LXI	D,80
+	INR	B
+	JR	L0DED
+
+L0DEC	DAD	D
+L0DED	DJNZ	L0DEC
+	MVI	D,0
+	MOV	E,C
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	MOV	D,A
+	MOV	E,L
+	SDED	LFD86
+	CALL	L0E93
+	ORA	A
+	JM	L0E08
+	CPI	' '
+	RNZ
+	MVI	A,128
+L0E08	STA	LFD84
+	LDA	LFD85
+	ORA	A
+	JP	L0E4A
+	LDED	LFD86
+	CALL	L0ED9
+	STA	LFD7C
+	ANI	00000001b
+	JRZ	L0E37
+	LDA	LFD83
+	ORA	A
+	RZ
+	LDA	LFD7C
+	ANI	11111110b
+	LDED	LFD86
+	CALL	L0ECB
+	LDA	LFD84
+	CMA
+	JR	L0E6E
+
+L0E37	LDA	LFD83
+	ORA	A
+	RNZ
+	LDA	LFD7C
+	ORI	00000001b
+	CALL	L0ECB
+	LDA	LFD84
+	CMA
+	JR	L0E6E
+
+L0E4A	LDED	LFD86
+	CALL	L0ED9
+	ANI	00000001b
+	JRNZ	L0E78
+	LDA	LFD83
+	ORA	A
+	JRZ	L0E66
+	LDA	LFD85
+	CMA
+	MOV	B,A
+	LDA	LFD84
+	ANA	B
+	JR	L0E6E
+
+L0E66	LDA	LFD84
+	MOV	B,A
+	LDA	LFD85
+	ORA	B
+L0E6E	ORI	10000000b
+	LDED	LFD86
+	CALL	L0E9D
+	RET
+
+L0E78	LDA	LFD83
+	ORA	A
+	JRZ	L0E88
+	LDA	LFD85
+	MOV	B,A
+	LDA	LFD84
+	ORA	B
+	JR	L0E6E
+
+L0E88	LDA	LFD85
+	CMA
+	MOV	B,A
+	LDA	LFD84
+	ANA	B
+	JR	L0E6E
+
+L0E93	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+L0E97	CALL	L0EA9
+	IN	viddat
+	RET
+
+L0E9D	PUSH	PSW
+	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+	CALL	L0EA9
+	POP	PSW
+	OUT	viddat
+	RET
+
+L0EA9	LXI	B,crtadr + (ramioH shl 8)
+	CALL	L0EBB
+	DCR	C
+	MVI	A,nulla
+	OUTP	A
+L0EB4	INP	A
+	ORA	A
+	JP	L0EB4
+	RET
+
+L0EBB	OUTP	B
+	INR	C
+	OUTP	D
+	DCR	C
+	INR	B
+	OUTP	B
+	INR	C
+	OUTP	E
+	RET
+
+L0ECB	PUSH	H
+	PUSH	PSW
+	CALL	L0EE3
+	CALL	L0EA9
+	POP	PSW
+	OUT	viddat
+	XCHG
+	POP	H
+	RET
+
+L0ED9	PUSH	H
+	CALL	L0EE3
+	CALL	L0E97
+	XCHG
+	POP	H
+	RET
+
+L0EE3	LXI	H,L0801
+	DAD	D
+	MOV	A,H
+	ANI	00000111b
+	ORI	00001000b
+	MOV	H,A
+	XCHG
+	RET
+
+L0EF1	MOV	A,E
+	SUI	' '
+	MOV	E,A
+	MOV	A,D
+	SUI	' '
+	MOV	D,A
+	SUB	E
+	RZ
+	JRNC	L0EFF
+	NEG
+L0EFF	INR	A
+	RET
+
+L0F01	LXI	H,0
+	MOV	A,D
+	ORA	A
+	RZ
+	MOV	A,E
+	ORA	A
+	RZ
+	INX	H
+	CMP	D
+	JRC	L0F10
+	MOV	A,D
+	MOV	D,E
+L0F10	MVI	E,0
+L0F12	MOV	B,H
+	MOV	C,L
+	ADD	A
+	JRNC	L0F18
+	INR	E
+L0F18	DAD	B
+	JRC	L0F2F
+	SUB	D
+	JRNC	L0F2C
+	PUSH	PSW
+	MOV	A,E
+	ORA	A
+	JRZ	L0F28
+	POP	PSW
+	MVI	E,0
+	JR	L0F2C
+
+L0F28	POP	PSW
+	ADD	D
+	JR	L0F12
+
+L0F2C	INX	H
+	JR	L0F12
+
+L0F2F	SUB	D
+	JRNC	L0F35
+	MOV	A,E
+	ORA	A
+	RZ
+L0F35	INX	H
+	RET
+
+L0F37	PUSH	H
+	PUSH	D
+	PUSH	B
+	CALL	L0DB9
+	POP	B
+	POP	D
+	POP	H
+	RET
+
+L0F41	MVI	A,0
+	STA	LFD83
+	JR	L0F4F
+
+L0F48	MVI	A,-1
+	STA	LFD83
+	JR	L0F4F
+
+L0F4F	LDED	LFD81
+	CALL	L0EF1
+	SDED	LFD81
+	STA	LFD8A
+	LDED	LFD7F
+	CALL	L0EF1
+	SDED	LFD7F
+	STA	LFD8B
+	MOV	D,A
+	LDA	LFD8A
+	MOV	E,A
+	CALL	L0F01
+	LDA	LFD81
+	MOV	D,A
+	LDA	LFD82
+	CMP	D
+	MVI	A,-1
+	JRC	L0F81
+	MVI	A,1
+L0F81	STA	LFD88
+	LDA	LFD7F
+	MOV	E,A
+	LDA	LFD80
+	CMP	E
+	MVI	A,-1
+	JRC	L0F92
+	MVI	A,1
+L0F92	STA	LFD89
+	LDA	LFD8A
+	MOV	C,A
+	LDA	LFD8B
+	CMP	C
+	MOV	B,H
+	MOV	C,L
+	LXI	H,0
+	JRC	L0FBD
+	JRZ	L0FD4
+L0FA6	CALL	L0F37
+	LDA	LFD80
+	CMP	E
+	RZ
+	LDA	LFD89
+	ADD	E
+	MOV	E,A
+	DAD	B
+	JRNC	L0FA6
+	LDA	LFD88
+	ADD	D
+	MOV	D,A
+	JR	L0FA6
+
+L0FBD	CALL	L0F37
+	LDA	LFD82
+	CMP	D
+	RZ
+	LDA	LFD88
+	ADD	D
+	MOV	D,A
+	DAD	B
+	JRNC	L0FBD
+	LDA	LFD89
+	ADD	E
+	MOV	E,A
+	JR	L0FBD
+
+L0FD4	CALL	L0F37
+	LDA	LFD82
+	CMP	D
+	RZ
+	LDA	LFD88
+	ADD	D
+	MOV	D,A
+	LDA	LFD89
+	ADD	E
+	MOV	E,A
+	JR	L0FD4
+
+L06A1	CALL	L06CA
+	JR	L0711
+
+L06A6	MVI	C,23
+	LDA	attrib
+	ANI	line25n
+	JRNZ	L06B0
+	INR	C
+L06B0	LDA	line
+	SUB	C
+	JRNC	L06A1
+	NEG
+	MOV	B,A
+	LXI	D,80
+	LXI	H,0
+L06BF	DAD	D
+	DJNZ	L06BF
+	PUSH	H
+	CALL	L06CA
+	POP	B
+	DAD	B
+	JR	L0711
+
+L06CA	LXI	H,80
+	LDED	curpos
+	LDA	column
+	MOV	C,A
+	XRA	A
+	MOV	B,A
+	DSBC	B
+	RET
+
+
+L06F8	CALL	L075F
+	LDA	attrib	 ;reset attributes
+	ANI	11110000b
+	STA	attrib	 ;
+; clear rest of screen
+	LDED	curpos
+	LXI	H,80*25
+	ANI	line25n 	;test 25th line
+	JRZ	L0711
+	LXI	H,80*24
+L0711	LXI	B,ramioL + (ramioH shl 8)
+;
+L0714	IN	vidctl	;wait for ???
+	ORA	A	;
+	JP	L0714	;
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	ANI	00000111b
+	MOV	D,A
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L072D	IN	vidctl
+	ORA	A
+	JP	L072D
+	MVI	A,' '
+	OUT	viddat
+	INX	D
+L0738	IN	vidctl
+	ORA	A
+	JP	L0738
+	MOV	A,B
+	OUT	crtadr
+	MOV	A,D
+	ORI	00001000b
+	OUT	crtreg
+	MOV	A,C
+	OUT	crtadr
+	MOV	A,E
+	OUT	crtreg
+	MVI	A,nulla
+	OUT	crtadr
+L0750	IN	vidctl
+	ORA	A
+	JP	L0750
+	XRA	A
+	OUT	viddat
+	DCX	H
+	MOV	A,H
+	ORA	L
+	JRNZ	L0714
+	RET
+
+L075F	XRA	A
+	STA	column
+	STA	line
+	LHLD	starta
+	XCHG
+	JMP	L0815
+
+escflg	db	0
+line	db	0
+column	db	0
+attrib	db	0
+curpos	dw	0
+starta	dw	0
+LFD7C	db	0
+LFD7D	dw	0
+LFD7F	db	0
+LFD80	db	0
+LFD81	db	0
+LFD82	db	0
+LFD83	db	0
+LFD84	db	0
+LFD85	db	0
+LFD86	dw	0
+LFD88	db	0
+LFD89	db	0
+LFD8A	db	0
+LFD8B	db	0
+LFD8C	db	0
+
+ endif
+	end
