@@ -22,7 +22,7 @@ map	equ	080h	; mmu flag to enable mapping...
 	extrn @bnkbf,@cbnk
 
 ;  Variables for use by other modules
-	public @nbnk,@compg,@mmerr
+	public @nbnk,@compg,@mmerr,@memstr
 	public @m512k,@t512k	; used by RD512K'3
 
 ;  Routines for use by other modules
@@ -32,8 +32,11 @@ map	equ	080h	; mmu flag to enable mapping...
 
 @nbnk:	db	4	; actually, 8 but we save 4 for ramdisk...
 @compg:	db	0c0h
-@mmerr: db	cr,lf,bell,'No H89-512K$'
+@mmerr: db	cr,lf,bell,'No RAM512K$'
 @m512k:	db	mmu
+@memstr: db	'RAM512K ',0,'H8 512K RAM with MMU ',0,'v3.10'
+	dw	vers
+	db	'$'
 
 ; Uses XMOVE semantics
 ; C=source bank, B=dest bank, HL=address, A=num recs

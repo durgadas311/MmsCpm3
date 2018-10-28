@@ -19,9 +19,13 @@
                 	extrn ?bnksl
                 	extrn @sec,@min,@hour,@date
                 
-                	public ?time,?itime
+                	public ?time,?itime,@rtcstr
                 
                 	cseg	; common memory, available no matter which bank
+                
+ 0000 3732343231@rtcstr: db	'72421 ',0,'RTC Driver ',0,'v3.10'
+ 0018 3120      	dw	vers
+ 001A 24        	db	'$'
                 
                 ; C=0 GET TIME (BDOS is about to read SCB), else SET TIME (BDOS just updated SCB)
                 ; Typically, only C1=0 (SET) is used, to update the RTC chip.
@@ -29,32 +33,32 @@
                 ; Must preserve HL, DE. Must be called with intrs enabled.
                 ; Cannot depend on Bank 0 on entry...
                 ?time:
- 0000 79        	mov	a,c
- 0001 B7        	ora	a
- 0002 C8        	rz	; we keep time ourselves, not in RTC
- 0003 3A0000    	lda	@cbnk
- 0006 322F00    	sta	savbnk
- 0009 F3        	di
- 000A AF        	xra	a
- 000B CD0000    	call	?bnksl
+ 001B 79        	mov	a,c
+ 001C B7        	ora	a
+ 001D C8        	rz	; we keep time ourselves, not in RTC
+ 001E 3A0000    	lda	@cbnk
+ 0021 322F00    	sta	savbnk
+ 0024 F3        	di
+ 0025 AF        	xra	a
+ 0026 CD0000    	call	?bnksl
                 	sspd	savsp
- 000E+ED73      	DB	0EDH,73H
- 0010+2D00      	DW	SAVSP
- 0012 312D00    	lxi	sp,stack
- 0015 FB        	ei	; TODO: bother with this?
- 0016 CD3000    	call	settm
- 0019 F3        	di
- 001A 3A2F00    	lda	savbnk
- 001D CD0000    	call	?bnksl
+ 0029+ED73      	DB	0EDH,73H
+ 002B+2D00      	DW	SAVSP
+ 002D 312D00    	lxi	sp,stack
+ 0030 FB        	ei	; TODO: bother with this?
+ 0031 CD3000    	call	settm
+ 0034 F3        	di
+ 0035 3A2F00    	lda	savbnk
+ 0038 CD0000    	call	?bnksl
                 	lspd	savsp
- 0020+ED7B      	DB	0EDH,07BH
- 0022+2D00      	DW	SAVSP
- 0024 FB        	ei
- 0025 C9        	ret	; No RTC device in this implementation
+ 003B+ED7B      	DB	0EDH,07BH
+ 003D+2D00      	DW	SAVSP
+ 003F FB        	ei
+ 0040 C9        	ret	; No RTC device in this implementation
                 
                 	dseg	; this part can be banked
                 
- 0000 0000000000regs:	db	0,0,0,0,0,0,0,0,0,0,0,0,0
+ 0000 0000000000regs:	db	0,0,0,0,0,0,0,0,0,0,0,0,0
                 
  000D           	ds	32
  002D           stack:	ds	0
@@ -106,11 +110,11 @@
  007D CD0901    	call	unhold
  0080 C1        	pop	b
  0081 D1        	pop	d
- 0082 E1        	pop	h
+ 0082 E1        	pop	h
  0083 C9        	ret
                 
                 ?itime:	; initialize RTC and get time
- 0084 E5        	push	h
+ 0084 E5        	push	h
  0085 D5        	push	d
  0086 C5        	push	b
  0087 DBAF      	in	rtc+15
@@ -162,11 +166,11 @@
                 gettm2:	
  00D7 D5        	push	d	; save day of month
  00D8 5A        	mov	e,d
- 00D9 1600      	mvi	d,0
+ 00D9 1600      	mvi	d,0
  00DB 19        	dad	d
  00DC 7E        	mov	a,m
  00DD 23        	inx	h
- 00DE 66        	mov	h,m
+ 00DE 66        	mov	h,m
  00DF 6F        	mov	l,a	; number of days before this month
  00E0 E5        	push	h	; save current month offset
  00E1 21631F    	lxi	h,epoch2k
@@ -218,11 +222,11 @@
                 
                 ; Get (BCD digit) value from regs[] in BCD
  011B 46        gtbcd:	mov	b,m	; assume no masking required
- 011C 23        	inx	h
+ 011C 23        	inx	h
  011D 7E        	mov	a,m
  011E 23        	inx	h
  011F 87        	add	a
- 0120 87        	add	a
+ 0120 87        	add	a
  0121 87        	add	a
  0122 87        	add	a
  0123 80        	add	b
@@ -274,11 +278,11 @@
  0152 19        	dad	d
  0153 11BC02    	lxi	d,700
  0156 B7        	ora	a
-                wd1:	dsbc	d
+                wd1:	dsbc	d
  0157+ED52      	DB	0EDH,D*8+42H
                 	jrnc	wd1
  0159+30FC      	DB	30H,WD1-$-1
- 015B 19        	dad	d
+ 015B 19        	dad	d
  015C 114600    	lxi	d,70
  015F B7        	ora	a
                 wd2:	dsbc	d
@@ -330,11 +334,11 @@
                 	jr	d2mdy0
  0194+18E3      	DB	18H,D2MDY0-$-1
  0196 C5        d2mdy2:	push	b	; DE = days within year 'C'
- 0197 21D601    	lxi	h,month0+24
+ 0197 21D601    	lxi	h,month0+24
  019A 79        	mov	a,c
  019B E603      	ani	03h
                 	jrnz	d2mdy3
- 019D+2003      	DB	20H,D2MDY3-$-1
+ 019D+2003      	DB	20H,D2MDY3-$-1
  019F 21EE01    	lxi	h,month1+24
  01A2 060C      d2mdy3:	mvi	b,12
  01A4 2B        d2mdy4:	dcx	h
@@ -368,4 +372,4 @@
  01D6 00001F003Cmonth1: dw       0, 31, 60, 91,121,152,182,213,244,274,305,335
                 
  01EE           	end
-
+

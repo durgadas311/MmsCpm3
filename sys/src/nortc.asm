@@ -15,7 +15,9 @@ bell	equ 7
 	extrn @cbnk
 	extrn ?bnksl
 
-	public ?time,?itime
+	public ?time,?itime,@rtcstr
+
+@rtcstr	equ	0	; NULL (relocates to BIOS+0)
 
 	cseg	; common memory, available no matter which bank
 

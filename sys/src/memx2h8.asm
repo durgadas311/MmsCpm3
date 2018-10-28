@@ -20,7 +20,7 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 	extrn @bnkbf,@cbnk
 
 ;  Variables for use by other modules
-	public @nbnk,@compg,@mmerr
+	public @nbnk,@compg,@mmerr,@memstr
 
 ;  Routines for use by other modules
 	public ?bnksl,?bnkck,?xmove,?mvccp,?move
@@ -30,6 +30,9 @@ mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 @nbnk:	db	4
 @compg:	db	0c0h
 @mmerr: db	cr,lf,bell,'No X/2-H8$'
+@memstr: db	'X/2-H8 ',0,'Tryonix 256K RAM and MMU ',0,'v3.10'
+	dw	vers
+	db	'$'
 
 ; Uses XMOVE semantics...
 ; C=source bank, B=dest bank, HL=address, A=num recs

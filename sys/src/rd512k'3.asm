@@ -44,7 +44,7 @@ true	equ	not false
 	dw	string
 	dw	dphtbl,modtbl
 
-string: DB	'RAM512K',0,' 256K RAM Disk ',0,'v3.10'
+string: DB	'RD512K ',0,'256K RAM Disk ',0,'v3.10'
 	DW	VERS
 	DB	'$'
 

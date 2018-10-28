@@ -1,4 +1,4 @@
-vers equ '3 ' ; Oct 7, 2017  15:45   drm "MBIOS3.ASM"
+vers equ '4 ' ; Oct 28, 2018  09:06   drm "MBIOS3.ASM"
 ;****************************************************************
 ; Main BIOS module for CP/M 3 (CP/M plus),			*
 ;	 Banked memory and Time split-out.			*
@@ -23,7 +23,7 @@ port	equ	0f2h	;interupt control port
 ;  SCB registers
 	extrn @covec,@civec,@aovec,@aivec,@lovec,@ermde
 	extrn @mxtpa,@bnkbf,@sec,@min,@hour,@date
-	extrn @lptbl,@nbnk,@compg,@mmerr
+	extrn @lptbl,@nbnk,@compg,@mmerr,@memstr,@rtcstr
 
 ;  External routines
 	extrn ?getdp,?serdp
@@ -88,6 +88,8 @@ resdos	equ	bios$0+0fd00h	; substitiute real values.
 	jmp 0		; reserved for future expansion
 	jmp 0		; reserved for future expansion
 
+; The following are accessed externally, relative to wboot entry.
+; (for both utilities as well as SETUP.COM)
 @dstat: ds	1
 @intby: ds	1
 
@@ -111,6 +113,10 @@ ilovec: dw	0100000000000000b
 defsrc: db	0,0ffh,0ffh,0ffh
 tmpdrv: db	0
 srctyp: db	000$00$000b	;only bits 3,4 are used (others ignored)
+
+	dw	@memstr	; Memory driver module string
+	dw	@rtcstr	; RTC driver module string
+; End of externally dependent locations.
 
 bdose:	lhld	@mxtpa
 	pchl

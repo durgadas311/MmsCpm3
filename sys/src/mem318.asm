@@ -20,7 +20,7 @@ port	equ	0f2h	;interupt/memory control port
 	extrn @bnkbf,@cbnk,@intby
 
 ;  Variables for use by other modules
-	public @nbnk,@compg,@mmerr
+	public @nbnk,@compg,@mmerr,@memstr
 
 ;  Routines for use by other modules
 	public ?bnksl,?bnkck,?xmove,?mvccp,?move
@@ -29,6 +29,9 @@ port	equ	0f2h	;interupt/memory control port
 
 @nbnk:	db	3
 @mmerr: db	cr,lf,bell,'No 77318$'
+@memstr: db	'77318 ',0,'MMS 128K+48K RAM ',0,'v3.10'
+	dw	vers
+	db	'$'
 
 ; Uses XMOVE semantics
 ; C=source bank, B=dest bank, HL=address, A=num recs

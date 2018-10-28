@@ -13,7 +13,7 @@ retver	equ	12
 cr	equ	13
 lf	equ	10
 
-	cseg
+	org	100h
 base:	jmp	start
 
 bdos	equ	base-100H+5
@@ -29,6 +29,8 @@ vererr: lxi	d,verr
 	jmp	xit
 
 thread: dw	0
+memstr: dw	0
+rtcstr: dw	0
 
 start:	sspd	savstk
 	lxi	sp,stack
@@ -55,6 +57,16 @@ st0:	mvi	l,67h	;thread
 	inx	h
 	mov	b,m
 	sbcd	thread
+	mvi	l,84h	;memstr
+	mov	c,m
+	inx	h
+	mov	b,m
+	inx	h
+	sbcd	memstr
+	mov	c,m
+	inx	h
+	mov	b,m
+	sbcd	rtcstr
 
 	lhld	thread
 su2:	mov	e,m
@@ -63,7 +75,7 @@ su2:	mov	e,m
 	inx	h
 	mov	a,d
 	ora	e
-	jz	xit
+	jz	done
 	push	d
 	lxi	d,17
 	mov	a,m
@@ -78,6 +90,23 @@ su3:	dad	d	;point to string address
 	call	crlf
 	pop	h
 	jmp	su2
+done:
+	lda	cpm+2	; compare page for sanity
+	lhld	memstr
+	cmp	h	; should be carry
+	jnc	nomem
+	xchg
+	call	strout
+	call	crlf
+nomem:
+	lda	cpm+2	; compare page for sanity
+	lhld	rtcstr
+	cmp	h	; should be carry
+	jnc	nortc
+	xchg
+	call	strout
+	call	crlf
+nortc:
 
 xit:	lspd	savstk
 	ret

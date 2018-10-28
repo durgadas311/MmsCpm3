@@ -19,9 +19,13 @@ rtc	equ	0a0h	; standard port address
 	extrn ?bnksl
 	extrn @sec,@min,@hour,@date
 
-	public ?time,?itime
+	public ?time,?itime,@rtcstr
 
 	cseg	; common memory, available no matter which bank
+
+@rtcstr: db	'72421 ',0,'RTC Driver ',0,'v3.10'
+	dw	vers
+	db	'$'
 
 ; C=0 GET TIME (BDOS is about to read SCB), else SET TIME (BDOS just updated SCB)
 ; Typically, only C1=0 (SET) is used, to update the RTC chip.
