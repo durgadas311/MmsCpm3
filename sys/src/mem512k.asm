@@ -1,4 +1,4 @@
-vers equ '1 ' ; Sep 24, 2017  17:05   drm "MEM512K.ASM"
+vers equ '2 ' ; Oct 29, 2018  18:13   drm "MEM512K.ASM"
 ;****************************************************************
 ; Banked Memory BIOS module for CP/M 3 (CP/M plus)		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -19,7 +19,7 @@ wr	equ	4	; mmu offset for write
 map	equ	080h	; mmu flag to enable mapping...
 
 ;  SCB registers
-	extrn @bnkbf,@cbnk
+	extrn @bnkbf,@cbnk,@dtacb,@dircb,@heapt
 
 ;  Variables for use by other modules
 	public @nbnk,@compg,@mmerr,@memstr
@@ -98,8 +98,8 @@ bnksl2:
 table:
 	db	 0, 1, 2,3	; Bank 0 map pattern
 	db	 4, 5, 6,3	; Bank 1 map pattern
-	db	 8, 9,10,3	; Bank 2 map pattern
-	db	12,13,14,3	; Bank 3 map pattern
+	db	 7, 8, 9,3	; Bank 2 map pattern
+	db	10,11,12,3	; Bank 3 map pattern
 	db	0	; safety stop for RD512K'3
 tablez	equ	$-table
 
@@ -201,7 +201,51 @@ in6:	setb	7,m	; (HL) |= map
 	djnz	in6
 	xra	a
 	call	?bnksl	; this enables mapping...
+	; Allocate some buffers below BNKBDOS
+	lhld	@heapt
+	lxi	d,-1024	; max sector size = 1024
+	dad	d
+	shld	dirbf1
+	dad	d
+	shld	dirbf2
+	dad	d
+	shld	dtabf1
+	dad	d
+	shld	dtabf2
+	shld	@heapt
+	lxi	h,dtacb1
+	shld	@dtacb
+	lxi	h,dircb1
+	shld	@dircb
 	mvi	a,true
 	ret		; A<>0 banked memory available
+
+dtacb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dtabf1:	dw	0
+	db 0
+	dw dtacb2
+
+dtacb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dtabf2:	dw	0
+	db 0
+	dw 0000 ;end of data buffers
+
+dircb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf1:	dw	0
+	db 0
+	dw dircb2
+
+dircb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf2:	dw	0
+	db 0
+	dw 0000 ;end of DIR buffers
 
 	end

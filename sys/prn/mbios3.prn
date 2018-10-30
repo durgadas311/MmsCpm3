@@ -1,4 +1,4 @@
- 2034 =         vers equ '4 ' ; Oct 28, 2018  09:06   drm "MBIOS3.ASM"
+ 2035 =         vers equ '5 ' ; Oct 29, 2018  18:11   drm "MBIOS3.ASM"
                 ;****************************************************************
                 ; Main BIOS module for CP/M 3 (CP/M plus),			*
                 ;	 Banked memory and Time split-out.			*
@@ -34,7 +34,8 @@
                 	public @adrv,@pdrv,@rdrv,@side,@trk,@sect,@login
                 	public @dma,@dbnk,@cnt,@scrbf,@dtacb,@dircb
                 	public @dstat,@intby,@cmode,@dph,@rcnfg,@tick0
-                	public @ctbl,@cbnk,bnkdos,resdos,wbtrap
+                	public @ctbl,@cbnk,@heapt
+                	public bnkdos,resdos,wbtrap
                 
                 ;  Routines for use by other modules
                 	public ?timot
@@ -47,26 +48,26 @@
  0000 =         BIOS$0	equ	$
  FC00 =         bnkdos	equ	bios$0+0fc00h	;dummy values, reloc "Fxxx", GENCPM will
  FD00 =         resdos	equ	bios$0+0fd00h	; substitiute real values.
- 0000 C30600    	jmp boot	; initial entry on cold start
+ 0000 C30800    	jmp boot	; initial entry on cold start
  0003 C3D700    	jmp wboot	; reentry on program exit, warm start
                  
  0006 C3E903    	jmp const	; return console input status
  0009 C31204    	jmp conin	; return console input character
  000C C39903    	jmp conout	; send console output character
- 000F C3A303    	jmp list	; send list output character
- 0012 C39E03    	jmp auxout	; send auxilliary output character
+ 000F C3A303    	jmp list	; send list output character
+ 0012 C39E03    	jmp auxout	; send auxilliary output character
  0015 C31704    	jmp auxin	; return auxilliary input character
                 
- 0018 C32502    	jmp home	; set disks to logical home
- 001B C30501    	jmp seldsk	; select disk drive, return disk parameter info
- 001E C32802    	jmp settrk	; set disk track
- 0021 C32D02    	jmp setsec	; set disk sector
- 0024 C33202    	jmp setdma	; set disk I/O memory address
- 0027 C34902    	jmp read	; read physical block(s)
- 002A C34E02    	jmp write	; write physical block(s)
+ 0018 C32702    	jmp home	; set disks to logical home
+ 001B C30701    	jmp seldsk	; select disk drive, return disk parameter info
+ 001E C32A02    	jmp settrk	; set disk track
+ 0021 C32F02    	jmp setsec	; set disk sector
+ 0024 C33402    	jmp setdma	; set disk I/O memory address
+ 0027 C34B02    	jmp read	; read physical block(s)
+ 002A C35002    	jmp write	; write physical block(s)
                 
  002D C3C903    	jmp listst	; return list device status
- 0030 C33D02    	jmp sectrn	; translate logical to physical sector
+ 0030 C33F02    	jmp sectrn	; translate logical to physical sector
                 
  0033 C3BF03    	jmp conost	; return console output status
  0036 C3EE03    	jmp auxist	; return aux input status
@@ -74,14 +75,14 @@
  003C C3FC02    ?dvtbl: jmp devtbl	; return address of device def table
  003F C38C03    	jmp cinit	; change baud rate of device
                 
- 0042 C3C800    ?drtbl: jmp getdrv	; return address of disk drive table
- 0045 C3C502    	jmp multio	; set multiple record count for disk I/O
- 0048 C3C902    	jmp flush	; flush BIOS maintained disk caching
+ 0042 C3CA00    ?drtbl: jmp getdrv	; return address of disk drive table
+ 0045 C3C702    	jmp multio	; set multiple record count for disk I/O
+ 0048 C3CB02    	jmp flush	; flush BIOS maintained disk caching
                 
  004B C30000    	jmp ?move	; block move memory to memory
  004E C30000    	jmp ?time	; Signal Time and Date operation
  0051 C30000    	jmp ?bnksl	; select bank for code execution and default DMA
- 0054 C33902    ?stbnk: jmp setbnk	; select different bank for disk I/O DMA operations.
+ 0054 C33B02    ?stbnk: jmp setbnk	; select different bank for disk I/O DMA operations.
  0057 C30000    	jmp ?xmove	; set source and destination banks for one operation
                 
  005A C3E402    	jmp search	; reserved for OEM: search for module.
@@ -94,7 +95,7 @@
  0064           @intby: ds	1
                 
  0065 0000      	dw	@lptbl	;logical/physical drive table
- 0067 700C      	dw	thread	;module thread
+ 0067 7004      	dw	thread	;module thread
  0069 0000      	dw	?serdp	;test mode validity, HL=memory address of ?serdp
                 
  006B           @adrv:	ds	1		; currently selected disk drive
@@ -109,8 +110,8 @@
  0078 0020      iaovec: dw	0010000000000000b
  007A 0020      iaivec: dw	0010000000000000b
  007C 0040      ilovec: dw	0100000000000000b
-                
- 007E 00FFFFFF  defsrc: db	0,0ffh,0ffh,0ffh
+                
+ 007E 00FFFFFF  defsrc: db	0,0ffh,0ffh,0ffh
  0082 00        tmpdrv: db	0
  0083 00        srctyp: db	000$00$000b	;only bits 3,4 are used (others ignored)
                 
@@ -165,8 +166,8 @@
  00D4 C3E400    	jmp	goccp	; (allowing 16K for "CCP" and reserving page 0)
                 
                 ; Don't know which bank is selected...
- 00D7 319201    wboot:	lxi	sp,stack
- 00DA CDFF00    	call	reset$pg0	; initialize page zero
+ 00D7 319201    wboot:	lxi	sp,stack
+ 00DA CDFF00    	call	reset$pg0	; initialize page zero
                 				; leaves bank 1 selected...
  00DD 3AE302    	lda	ccprecs 	; reload CCP
  00E0 0E00      	mvi	c,0
@@ -221,8 +222,8 @@
  0150 FB        rpg0:	ei	; bank 1 is selected
  0151 C9        	ret
                 
- 0152           	ds 64
- 0192 =         stack	equ $
+ 0152           	ds 64
+ 0192 =         stack	equ $
  0192           	ds 32
  01B2 =         iostk	equ $
  01B2 0000      iostkp: dw	$-$
@@ -277,8 +278,8 @@
  01F5 36FF      	mvi	m,true
  01F7 23        	inx	h
  01F8 23        to3:	inx	h
- 01F9 23        	inx	h
- 01FA 23        	inx	h
+ 01F9 23        	inx	h
+ 01FA 23        	inx	h
  01FB 05        	dcr	b
                 	jrnz	to4
  01FC+20D8      	DB	20H,TO4-$-1
@@ -333,8 +334,8 @@
                 	jrz	to2
  0245+280D      	DB	28H,TO2-$-1
  0247 23        	inx	h
- 0248 23        	inx	h
- 0249 23        	inx	h
+ 0248 23        	inx	h
+ 0249 23        	inx	h
  024A 23        	inx	h
  024B 1D        	dcr	e
                 	jrnz	to0
@@ -368,7 +369,7 @@
  0032 =         t1cnt	equ	50	;counts 20 milliseconds into 1 second.
                 
  0269 0D0A074350signon: db	13,10,7,'CP/M 3.10'
- 0275 3420      	dw	vers
+ 0275 3520      	dw	vers
  0277 2028632920	db	' (c) 1982,1983 DRI and MMS'
  0291 0D0A24    	db	13,10,'$'
                 
@@ -389,8 +390,8 @@
  02D1           	ds	16	;8 levels of stack
  02E1           intstk: ds	0
  02E1 0000      istk:	dw	0
-                
- 02E3 00        ccprecs db	0
+                
+ 02E3 00        ccprecs db	0
                 
                 ; SEARCH for a module by device #.
                 ;   entry:	C = device # (0-249)
@@ -399,7 +400,7 @@
                 ;		A=device number (relative to module's #0)
                 ;
                 
- 02E4 11700C    search: lxi	d,thread	;C=device number
+ 02E4 117004    search: lxi	d,thread	;C=device number
  02E7 EB        snext:	xchg
  02E8 5E        	mov	e,m
  02E9 23        	inx	h
@@ -445,8 +446,8 @@
  0363+7903      	DW CNULL
  0365+7903      	DW CNULL
  0367+7903      	DW CNULL
- 0369+7903      	DW CNULL
- 036B+7903      	DW CNULL
+ 0369+7903      	DW CNULL
+ 036B+7903      	DW CNULL
  036D+7903      	DW CNULL
  036F+7903      	DW CNULL
  0371+7903      	DW CNULL
@@ -501,8 +502,8 @@
  03B2 DC5304    	cc	indjmp1
  03B5 13        	inx	d
  03B6 13        	inx	d
- 03B7 04        	inr	b
- 03B8 7CB7      	mov a,h ! ora a ; see if any devices left
+ 03B7 04        	inr	b
+ 03B8 7CB7      	mov a,h ! ora a ; see if any devices left
                 	jrnz	co$next ; and go find them...
  03BA+20F2      	DB	20H,CO$NEXT-$-1
  03BC C34404    	jmp	xitusr
@@ -557,8 +558,8 @@
  03F7 D5        	push	d
                 ist$scan:
  03F8 116103    	lxi	d,cdtbl
- 03FB 0600      	mvi	b,0
-                cis$next:
+ 03FB 0600      	mvi	b,0
+                cis$next:
                 	slar	h	; check next bit
  03FD+CB24      	DB	0CBH, 20H + H
  03FF D20904    	jnc is0
@@ -613,8 +614,8 @@
  0441 F5        sw0:	push	psw
  0442 D5        	push	d
  0443 C9        	ret 
-                
- 0444 47        xitusr: mov	b,a
+                
+ 0444 47        xitusr: mov	b,a
  0445 F1        	pop	psw
  0446 B7        	ora	a
                 	jrz	xu0
@@ -657,12 +658,8 @@
  046E 00        @cbnk:	db	0		; bank for processor operations
  046F           bnkflg: ds	1	;flag for banked RAM installed.
                 
- 0470           dtabf1: ds	1024
- 0870           dtabf2: ds	1024-1
- 0C6F 00        	db	0	;to force LINK to fill with "00"
-                
                 ;must be at end of all "cseg" code.
- 0C70 =         thread	equ	$
+ 0470 =         thread	equ	$
                 
                 	dseg	; this part can be banked
  0000           @login: ds	2	;position is assumed by special BNKBDOS3.SPR...
@@ -670,502 +667,480 @@
                 
  0002 =         hbnk	equ	2	;bank to use for Hash tables.
  0100 =         hstart	equ	100h	;reserve page 0 for interupt vectors, etc.
- 0002 0000      hleft	dw	0
+ 0002 0000      hleft	dw	0
  0004 0001      hlast	dw	hstart
+                ; TODO: @heapt must be checked against CCP for collisions,
+                ; but CCP is not loaded/known when buffers are allocated from here.
+                ; So, check before saving CCP to bank 0 in cold boot.
+ 0006 00FC      @heapt:	dw	bnkdos	; top of bank 0 memory, below BNKBDOS
+                			; Modules may update this downward.
                 
- 0006 319201    boot:	lxi	sp,stack
- 0009 3A0D00    	lda	13
- 000C E6FD      	ani	11111101b	;we must be in bank 0 now or all is lost...
- 000E 326400    	sta	@intby
- 0011 D3F2      	out	port
- 0013 3A0000    	lda	@compg
- 0016 3D        	dcr	a	; minus 0100h
- 0017 67        	mov	h,a
- 0018 2E00      	mvi	l,0
- 001A 220200    	shld	hleft
+ 0008 319201    boot:	lxi	sp,stack
+ 000B 3A0D00    	lda	13
+ 000E E6FD      	ani	11111101b	;we must be in bank 0 now or all is lost...
+ 0010 326400    	sta	@intby
+ 0013 D3F2      	out	port
+ 0015 3A0000    	lda	@compg
+ 0018 3D        	dcr	a	; minus 0100h
+ 0019 67        	mov	h,a
+ 001A 2E00      	mvi	l,0
+ 001C 220200    	shld	hleft
                 ; Verify that we have banked RAM...
- 001D CD0000    	call	?bnkck
- 0020 326F04    	sta	bnkflg	;assume X/2-H8 Bank Switch not installed (error)
+ 001F CD0000    	call	?bnkck
+ 0022 326F04    	sta	bnkflg	;assume X/2-H8 Bank Switch not installed (error)
                 ; Initialize all modules and build tables.
- 0023 21700C    	lxi	h,thread	;thread our way through the modules,
- 0026 5E        in0:	mov	e,m		;initializing as we go.
- 0027 23        	inx	h
- 0028 56        	mov	d,m	;next module, or "0000" if we're past the end.
+ 0025 217004    	lxi	h,thread	;thread our way through the modules,
+ 0028 5E        in0:	mov	e,m		;initializing as we go.
  0029 23        	inx	h
- 002A 7A        	mov	a,d
- 002B B3        	ora	e
- 002C CA8200    	jz	init$done
- 002F 7E        	mov	a,m	;device base number
- 0030 23        	inx	h
- 0031 23        	inx	h	;thread+4 = init entry (JMP)
- 0032 D6C8      	sui	200	;if Char I/O module, build entry(s) in tables.
- 0034 DA7A00    	jc	notchr
- 0037 D5        	push	d	;save NEXT module address
- 0038 4F        	mov	c,a
- 0039 0600      	mvi	b,0
- 003B 2B        	dcx	h
- 003C 7E        	mov	a,m	;number of devices
- 003D 23        	inx	h
- 003E EB        	xchg		;DE=init entry point
- 003F 216103    	lxi	h,cdtbl
- 0042 09        	dad	b
- 0043 09        	dad	b
- 0044 47        	mov	b,a
- 0045 79        	mov	a,c
- 0046 FE0C      in1:	cpi	12
- 0048 D27300    	jnc	in4	;if device # overflows, adjust next step.
- 004B 73        	mov	m,e		;
- 004C 23        	inx	h		;
- 004D 72        	mov	m,d		;
+ 002A 56        	mov	d,m	;next module, or "0000" if we're past the end.
+ 002B 23        	inx	h
+ 002C 7A        	mov	a,d
+ 002D B3        	ora	e
+ 002E CA8400    	jz	init$done
+ 0031 7E        	mov	a,m	;device base number
+ 0032 23        	inx	h
+ 0033 23        	inx	h	;thread+4 = init entry (JMP)
+ 0034 D6C8      	sui	200	;if Char I/O module, build entry(s) in tables.
+ 0036 DA7C00    	jc	notchr
+ 0039 D5        	push	d	;save NEXT module address
+ 003A 4F        	mov	c,a
+ 003B 0600      	mvi	b,0
+ 003D 2B        	dcx	h
+ 003E 7E        	mov	a,m	;number of devices
+ 003F 23        	inx	h
+ 0040 EB        	xchg		;DE=init entry point
+ 0041 216103    	lxi	h,cdtbl
+ 0044 09        	dad	b
+ 0045 09        	dad	b
+ 0046 47        	mov	b,a
+ 0047 79        	mov	a,c
+ 0048 FE0C      in1:	cpi	12
+ 004A D27500    	jnc	in4	;if device # overflows, adjust next step.
+ 004D 73        	mov	m,e		;
  004E 23        	inx	h		;
- 004F 3C        	inr	a
+ 004F 72        	mov	m,d		;
+ 0050 23        	inx	h		;
+ 0051 3C        	inr	a
                 	djnz	in1
- 0050+10F4      	DB	10H,IN1-$-1
- 0052 1B        	dcx	d
- 0053 1A        	ldax	d	;number of devices
- 0054 47        in3:	mov	b,a
- 0055 79        	mov	a,c	;DE=module address, C=device base
- 0056 87        	add	a	; *2
- 0057 87        	add	a	; *4
- 0058 87        	add	a	; *8
- 0059 4F        	mov	c,a
- 005A 78        	mov	a,b	;number of devices
- 005B 0600      	mvi	b,0
- 005D 210003    	lxi	h,@ctbl
- 0060 09        	dad	b
- 0061 EB        	xchg		;DE=@ctbl indexed by device base
- 0062 0E12      	mvi	c,17+1	;B=0 still, point to CHRTBL vector
- 0064 09        	dad	b	;point to chrtbl location
- 0065 4E        	mov	c,m
- 0066 23        	inx	h
- 0067 66        	mov	h,m
- 0068 69        	mov	l,c	;HL=chrtbl
- 0069 87        	add	a
- 006A 87        	add	a
- 006B 87        	add	a	;num.dev * 8 = number of bytes in module's table.
- 006C 4F        	mov	c,a	;B=0 still
+ 0052+10F4      	DB	10H,IN1-$-1
+ 0054 1B        	dcx	d
+ 0055 1A        	ldax	d	;number of devices
+ 0056 47        in3:	mov	b,a
+ 0057 79        	mov	a,c	;DE=module address, C=device base
+ 0058 87        	add	a	; *2
+ 0059 87        	add	a	; *4
+ 005A 87        	add	a	; *8
+ 005B 4F        	mov	c,a
+ 005C 78        	mov	a,b	;number of devices
+ 005D 0600      	mvi	b,0
+ 005F 210003    	lxi	h,@ctbl
+ 0062 09        	dad	b
+ 0063 EB        	xchg		;DE=@ctbl indexed by device base
+ 0064 0E12      	mvi	c,17+1	;B=0 still, point to CHRTBL vector
+ 0066 09        	dad	b	;point to chrtbl location
+ 0067 4E        	mov	c,m
+ 0068 23        	inx	h
+ 0069 66        	mov	h,m
+ 006A 69        	mov	l,c	;HL=chrtbl
+ 006B 87        	add	a
+ 006C 87        	add	a
+ 006D 87        	add	a	;num.dev * 8 = number of bytes in module's table.
+ 006E 4F        	mov	c,a	;B=0 still
                 	ldir		;copy modules chrtbl into system table.
- 006D+EDB0      	DB	0EDH,0B0H
- 006F E1        in2:	pop	h
- 0070 C32600    	jmp	in0
+ 006F+EDB0      	DB	0EDH,0B0H
+ 0071 E1        in2:	pop	h
+ 0072 C32800    	jmp	in0
                 
- 0073 91        in4:	sub	c	;compute number of devices that will fit.
- 0074 C25400    	jnz	in3	;continue with initialization of tables
- 0077 C36F00    	jmp	in2
+ 0075 91        in4:	sub	c	;compute number of devices that will fit.
+ 0076 C25600    	jnz	in3	;continue with initialization of tables
+ 0079 C37100    	jmp	in2
                 
                 notchr: 		;HL point to init entry
- 007A D5        	push	d
- 007B CD6D04    	call	icall	;"call" (HL)
- 007E E1        	pop	h
- 007F C32600    	jmp	in0
+ 007C D5        	push	d
+ 007D CD6D04    	call	icall	;"call" (HL)
+ 0080 E1        	pop	h
+ 0081 C32800    	jmp	in0
                 
                 init$done:		;all Disk I/O modules are initialized.
- 0082 0E0B      	mvi	c,11
- 0084 C5        in5:	push	b
- 0085 CD8C03    	call	cinit
- 0088 C1        	pop	b
- 0089 0D        	dcr	c
- 008A F28400    	jp	in5
+ 0084 0E0B      	mvi	c,11
+ 0086 C5        in5:	push	b
+ 0087 CD8C03    	call	cinit
+ 008A C1        	pop	b
+ 008B 0D        	dcr	c
+ 008C F28600    	jp	in5
                 
- 008D 2A7400    	lhld	icovec
- 0090 220000    	shld	@covec	;set console I/O
- 0093 2A7600    	lhld	icivec
- 0096 220000    	shld	@civec	;
- 0099 2A7C00    	lhld	ilovec
- 009C 220000    	shld	@lovec	;set list output device
- 009F 2A7800    	lhld	iaovec
- 00A2 220000    	shld	@aovec	;set auxiliary I/O device
- 00A5 2A7A00    	lhld	iaivec
- 00A8 220000    	shld	@aivec	;
- 00AB 217E00    	lxi	h,defsrc
- 00AE 110100    	lxi	d,@ermde+1	;location of default search chain in SCB
- 00B1 010500    	lxi	b,5
-                	ldir
- 00B4+EDB0      	DB	0EDH,0B0H
- 00B6 3A8300    	lda	srctyp
- 00B9 E618      	ani	000$11$000b
- 00BB 4F        	mov	c,a
- 00BC 3AF6FF    	lda	@civec-10	;location of search type flags in CCP section
- 00BF E6E7      	ani	111$00$111b
- 00C1 B1        	ora	c
- 00C2 32F6FF    	sta	@civec-10
- 00C5 C39000    	jmp	boot$1
+ 008F 2A7400    	lhld	icovec
+ 0092 220000    	shld	@covec	;set console I/O
+ 0095 2A7600    	lhld	icivec
+ 0098 220000    	shld	@civec	;
+ 009B 2A7C00    	lhld	ilovec
+ 009E 220000    	shld	@lovec	;set list output device
+ 00A1 2A7800    	lhld	iaovec
+ 00A4 220000    	shld	@aovec	;set auxiliary I/O device
+ 00A7 2A7A00    	lhld	iaivec
+ 00AA 220000    	shld	@aivec	;
+ 00AD 217E00    	lxi	h,defsrc
+ 00B0 110100    	lxi	d,@ermde+1	;location of default search chain in SCB
+ 00B3 010500    	lxi	b,5
+                	ldir
+ 00B6+EDB0      	DB	0EDH,0B0H
+ 00B8 3A8300    	lda	srctyp
+ 00BB E618      	ani	000$11$000b
+ 00BD 4F        	mov	c,a
+ 00BE 3AF6FF    	lda	@civec-10	;location of search type flags in CCP section
+ 00C1 E6E7      	ani	111$00$111b
+ 00C3 B1        	ora	c
+ 00C4 32F6FF    	sta	@civec-10
+ 00C7 C39000    	jmp	boot$1
                 
                 getdrv:
- 00C8 21CC00C9  	lxi h,@dtbl ! ret
+ 00CA 21CE00C9  	lxi h,@dtbl ! ret
                 
- 00CC EC00000000@dtbl:	dw	dnull,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 00CE EE00000000@dtbl:	dw	dnull,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
                 
- 00EC 0000000000dnull:	dw 0,0,0,0,0,0,0,0,0,@dircb,@dtacb,0
- 0104 00        	db 0
+ 00EE 0000000000dnull:	dw 0,0,0,0,0,0,0,0,0,@dircb,@dtacb,0
+ 0106 00        	db 0
                 
                 seldsk:
- 0105 79326B00  	mov a,c ! sta @adrv			; save drive select code
- 0109 210000    	lxi	h,@lptbl
- 010C 060009    	mvi b,0 ! dad b 	      ; create index from drive code
- 010F 7E        	mov	a,m
- 0110 FEFF      	cpi	255
+ 0107 79326B00  	mov a,c ! sta @adrv			; save drive select code
+ 010B 210000    	lxi	h,@lptbl
+ 010E 060009    	mvi b,0 ! dad b 	      ; create index from drive code
+ 0111 7E        	mov	a,m
+ 0112 FEFF      	cpi	255
                 	jrz	selerr
- 0112+286B      	DB	28H,SELERR-$-1
- 0114 326C00    	sta	@pdrv
- 0117 4F        	mov	c,a
- 0118 43        	mov	b,e	;save login flag thru "search" routine
- 0119 CDE402    	call	search
+ 0114+286B      	DB	28H,SELERR-$-1
+ 0116 326C00    	sta	@pdrv
+ 0119 4F        	mov	c,a
+ 011A 43        	mov	b,e	;save login flag thru "search" routine
+ 011B CDE402    	call	search
                 	jrc	selerr
- 011C+3861      	DB	38H,SELERR-$-1
- 011E 326D00    	sta	@rdrv
- 0121 226E00    	shld	curmdl
- 0124 C5        	push	b	;save login bit
- 0125 110E00    	lxi	d,14
- 0128 19        	dad	d	;point to dphtbl
- 0129 5E        	mov	e,m	;DE=dphtbl
- 012A 23        	inx	h
- 012B 56        	mov	d,m
+ 011E+3861      	DB	38H,SELERR-$-1
+ 0120 326D00    	sta	@rdrv
+ 0123 226E00    	shld	curmdl
+ 0126 C5        	push	b	;save login bit
+ 0127 110E00    	lxi	d,14
+ 012A 19        	dad	d	;point to dphtbl
+ 012B 5E        	mov	e,m	;DE=dphtbl
  012C 23        	inx	h
- 012D 4E        	mov	c,m	;BC=modtbl
+ 012D 56        	mov	d,m
  012E 23        	inx	h
- 012F 46        	mov	b,m
- 0130 3A6D00    	lda	@rdrv
- 0133 87        	add	a
- 0134 87        	add	a
- 0135 87        	add	a	;*8
- 0136 6F        	mov	l,a
- 0137 2600      	mvi	h,0
- 0139 09        	dad	b	;select mode bytes
- 013A 227000    	shld	@cmode	;set current mode pointer
- 013D C1        	pop	b	;get login bit back.
+ 012F 4E        	mov	c,m	;BC=modtbl
+ 0130 23        	inx	h
+ 0131 46        	mov	b,m
+ 0132 3A6D00    	lda	@rdrv
+ 0135 87        	add	a
+ 0136 87        	add	a
+ 0137 87        	add	a	;*8
+ 0138 6F        	mov	l,a
+ 0139 2600      	mvi	h,0
+ 013B 09        	dad	b	;select mode bytes
+ 013C 227000    	shld	@cmode	;set current mode pointer
+ 013F C1        	pop	b	;get login bit back.
                 	bit	0,b	;test for initial select.
- 013E+CB40      	DB	0CBH,0*8+B+40H
-                	jrnz	notlgi
- 0140+2041      	DB	20H,NOTLGI-$-1
- 0142 EB        	xchg		;DE=modes
- 0143 4F        	mov	c,a
- 0144 0600      	mvi	b,0
- 0146 09        	dad	b	;+*8
- 0147 09        	dad	b	;+*16
- 0148 09        	dad	b	;+*24
- 0149 3A6D00    	lda	@rdrv
- 014C 4F        	mov	c,a
- 014D 09        	dad	b	;+*1 = +*25
- 014E 227200    	shld	@dph
- 0151 CDDE01    	call	setup$dph
+ 0140+CB40      	DB	0CBH,0*8+B+40H
+                	jrnz	notlgi
+ 0142+2041      	DB	20H,NOTLGI-$-1
+ 0144 EB        	xchg		;DE=modes
+ 0145 4F        	mov	c,a
+ 0146 0600      	mvi	b,0
+ 0148 09        	dad	b	;+*8
+ 0149 09        	dad	b	;+*16
+ 014A 09        	dad	b	;+*24
+ 014B 3A6D00    	lda	@rdrv
+ 014E 4F        	mov	c,a
+ 014F 09        	dad	b	;+*1 = +*25
+ 0150 227200    	shld	@dph
+ 0153 CDE001    	call	setup$dph
                 	jrc	selerr
- 0154+3829      	DB	38H,SELERR-$-1
- 0156 AF        	xra	a
- 0157 32D502    	sta	@rcnfg
- 015A 3E03      	mvi	a,3
- 015C CDBF02    	call	calmod	;call module's "login" routine.
- 015F B7        	ora	a	;see if an error occured.
+ 0156+3829      	DB	38H,SELERR-$-1
+ 0158 AF        	xra	a
+ 0159 32D702    	sta	@rcnfg
+ 015C 3E03      	mvi	a,3
+ 015E CDC102    	call	calmod	;call module's "login" routine.
+ 0161 B7        	ora	a	;see if an error occured.
                 	jrnz	selerr
- 0160+201D      	DB	20H,SELERR-$-1
- 0162 3AD502    	lda	@rcnfg
- 0165 B7        	ora	a
- 0166 C4DE01    	cnz	setup$dph
+ 0162+201D      	DB	20H,SELERR-$-1
+ 0164 3AD702    	lda	@rcnfg
+ 0167 B7        	ora	a
+ 0168 C4E001    	cnz	setup$dph
                 	jrc	selerr
- 0169+3814      	DB	38H,SELERR-$-1
- 016B 3A6B00    	lda	@adrv
- 016E 87        	add	a
- 016F 4F        	mov	c,a
- 0170 0600      	mvi	b,0
- 0172 21CC00    	lxi	h,@dtbl
- 0175 09        	dad	b
+ 016B+3814      	DB	38H,SELERR-$-1
+ 016D 3A6B00    	lda	@adrv
+ 0170 87        	add	a
+ 0171 4F        	mov	c,a
+ 0172 0600      	mvi	b,0
+ 0174 21CE00    	lxi	h,@dtbl
+ 0177 09        	dad	b
                 	lded	@dph
- 0176+ED5B      	DB	0EDH,5BH
- 0178+7200      	DW	@DPH
- 017A 73        	mov	m,e	;set current DPH in @dtbl
- 017B 23        	inx	h
- 017C 72        	mov	m,d
+ 0178+ED5B      	DB	0EDH,5BH
+ 017A+7200      	DW	@DPH
+ 017C 73        	mov	m,e	;set current DPH in @dtbl
+ 017D 23        	inx	h
+ 017E 72        	mov	m,d
                 	jr	selcom	;DE=dph
- 017D+1816      	DB	18H,SELCOM-$-1
+ 017F+1816      	DB	18H,SELCOM-$-1
                 
- 017F 210000    selerr: lxi	h,0
- 0182 C9        	ret
+ 0181 210000    selerr: lxi	h,0
+ 0184 C9        	ret
                 
- 0183 3A6B00    notlgi: lda	@adrv
- 0186 87        	add	a
- 0187 4F        	mov	c,a
- 0188 0600      	mvi	b,0
- 018A 21CC00    	lxi	h,@dtbl
- 018D 09        	dad	b
- 018E 5E        	mov	e,m	;get current DPH from @dtbl
- 018F 23        	inx	h
- 0190 56        	mov	d,m	;DE=dph
+ 0185 3A6B00    notlgi: lda	@adrv
+ 0188 87        	add	a
+ 0189 4F        	mov	c,a
+ 018A 0600      	mvi	b,0
+ 018C 21CE00    	lxi	h,@dtbl
+ 018F 09        	dad	b
+ 0190 5E        	mov	e,m	;get current DPH from @dtbl
+ 0191 23        	inx	h
+ 0192 56        	mov	d,m	;DE=dph
                 	sded	@dph
- 0191+ED53      	DB	0EDH,53H
- 0193+7200      	DW	@DPH
- 0195 2A7000    selcom: lhld	@cmode
- 0198 010000    	lxi	b,0	;
+ 0193+ED53      	DB	0EDH,53H
+ 0195+7200      	DW	@DPH
+ 0197 2A7000    selcom: lhld	@cmode
+ 019A 010000    	lxi	b,0	;
                 	bit	7,m	;Tracks-per-side not valid for Hard disks.
- 019B+CB7E      	DB	0CBH,7*8+M+40H
+ 019D+CB7E      	DB	0CBH,7*8+M+40H
                 	jrnz	selxit
- 019D+201C      	DB	20H,SELXIT-$-1
- 019F 23        	inx	h
+ 019F+201C      	DB	20H,SELXIT-$-1
+ 01A1 23        	inx	h
                 	bit	1,m	;unless its Z17...
- 01A0+CB4E      	DB	0CBH,1*8+M+40H
+ 01A2+CB4E      	DB	0CBH,1*8+M+40H
                 	jrz	sc0
- 01A2+2802      	DB	28H,SC0-$-1
- 01A4 0604      	mvi	b,4	;then side 1 has 4 less tracks (8 on DT)
- 01A6 3E28      sc0:	mvi	a,40	;assume 5" ST
- 01A8 23        	inx	h
+ 01A4+2802      	DB	28H,SC0-$-1
+ 01A6 0604      	mvi	b,4	;then side 1 has 4 less tracks (8 on DT)
+ 01A8 3E28      sc0:	mvi	a,40	;assume 5" ST
+ 01AA 23        	inx	h
                 	bit	7,m	;check 5" drive
- 01A9+CB7E      	DB	0CBH,7*8+M+40H
+ 01AB+CB7E      	DB	0CBH,7*8+M+40H
                 	jrz	sc1
- 01AB+2802      	DB	28H,SC1-$-1
- 01AD 3E4D      	mvi	a,77	;8" drives have 77 tracks
- 01AF 4F        sc1:	mov	c,a	;set side 0 tracks
- 01B0 90        	sub	b
- 01B1 47        	mov	b,a
- 01B2 23        	inx	h	;fix for HT bug
+ 01AD+2802      	DB	28H,SC1-$-1
+ 01AF 3E4D      	mvi	a,77	;8" drives have 77 tracks
+ 01B1 4F        sc1:	mov	c,a	;set side 0 tracks
+ 01B2 90        	sub	b
+ 01B3 47        	mov	b,a
+ 01B4 23        	inx	h	;fix for HT bug
                 	bit	5,m	;check for DT
- 01B3+CB6E      	DB	0CBH,5*8+M+40H
+ 01B5+CB6E      	DB	0CBH,5*8+M+40H
                 	jrz	selxit
- 01B5+2804      	DB	28H,SELXIT-$-1
+ 01B7+2804      	DB	28H,SELXIT-$-1
                 	slar	b	;multiply # of tracks by 2 if DT
- 01B7+CB20      	DB	0CBH, 20H + B
+ 01B9+CB20      	DB	0CBH, 20H + B
                 	slar	c	;
- 01B9+CB21      	DB	0CBH, 20H + C
+ 01BB+CB21      	DB	0CBH, 20H + C
                 selxit: sbcd	@tps
- 01BB+ED43      	DB	0EDH,43H
- 01BD+D302      	DW	@TPS
+ 01BD+ED43      	DB	0EDH,43H
+ 01BF+D502      	DW	@TPS
                 	lded	@dph
- 01BF+ED5B      	DB	0EDH,5BH
- 01C1+7200      	DW	@DPH
- 01C3 210C00    	lxi	h,+12
- 01C6 19        	dad	d	;point to DPB entry
- 01C7 4E        	mov	c,m
- 01C8 23        	inx	h
- 01C9 46        	mov	b,m
- 01CA 0A        	ldax	b	;logical sectors-per-track, byte value
- 01CB 210F00    	lxi	h,+15
- 01CE 09        	dad	b
- 01CF 46        	mov	b,m	;psh
- 01D0 04        	inr	b
- 01D1 05        gh2:	dcr	b
- 01D2 CAD901    	jz	gh3
+ 01C1+ED5B      	DB	0EDH,5BH
+ 01C3+7200      	DW	@DPH
+ 01C5 210C00    	lxi	h,+12
+ 01C8 19        	dad	d	;point to DPB entry
+ 01C9 4E        	mov	c,m
+ 01CA 23        	inx	h
+ 01CB 46        	mov	b,m
+ 01CC 0A        	ldax	b	;logical sectors-per-track, byte value
+ 01CD 210F00    	lxi	h,+15
+ 01D0 09        	dad	b
+ 01D1 46        	mov	b,m	;psh
+ 01D2 04        	inr	b
+ 01D3 05        gh2:	dcr	b
+ 01D4 CADB01    	jz	gh3
                 	srlr	a
- 01D5+CB3F      	DB	0CBH, 38H + A
+ 01D7+CB3F      	DB	0CBH, 38H + A
                 	jr	gh2
- 01D7+18F8      	DB	18H,GH2-$-1
- 01D9 32D202    gh3:	sta	@pspt	;physical sectors per track
- 01DC EB        	xchg	;put DPH in (HL) for BDOS
- 01DD C9        	ret
+ 01D9+18F8      	DB	18H,GH2-$-1
+ 01DB 32D402    gh3:	sta	@pspt	;physical sectors per track
+ 01DE EB        	xchg	;put DPH in (HL) for BDOS
+ 01DF C9        	ret
                 
-                setup$dph:
- 01DE B7        	ora	a	;reset [CY]
- 01DF 2A7000    	lhld	@cmode	;HL=modes
+                setup$dph:
+ 01E0 B7        	ora	a	;reset [CY]
+ 01E1 2A7000    	lhld	@cmode	;HL=modes
                 	bit	7,m	;check for hard-disk drive (modes not standard)
- 01E2+CB7E      	DB	0CBH,7*8+M+40H
- 01E4 C0        	rnz
- 01E5 CD0000    	call	?getdp
- 01E8 37        	stc
- 01E9 C0        	rnz
- 01EA 2A7200    	lhld	@dph	;restore dph
- 01ED 71        	mov	m,c	;set XLAT table
- 01EE 23        	inx	h
- 01EF 70        	mov	m,b
- 01F0 010B00    	lxi	b,12-1
- 01F3 09        	dad	b	;point to dpb
- 01F4 73        	mov	m,e	;set DPB
- 01F5 23        	inx	h
- 01F6 72        	mov	m,d	;(DE=dpb)
- 01F7 B7        	ora	a	;reset [CY]
- 01F8 C9        	ret
+ 01E4+CB7E      	DB	0CBH,7*8+M+40H
+ 01E6 C0        	rnz
+ 01E7 CD0000    	call	?getdp
+ 01EA 37        	stc
+ 01EB C0        	rnz
+ 01EC 2A7200    	lhld	@dph	;restore dph
+ 01EF 71        	mov	m,c	;set XLAT table
+ 01F0 23        	inx	h
+ 01F1 70        	mov	m,b
+ 01F2 010B00    	lxi	b,12-1
+ 01F5 09        	dad	b	;point to dpb
+ 01F6 73        	mov	m,e	;set DPB
+ 01F7 23        	inx	h
+ 01F8 72        	mov	m,d	;(DE=dpb)
+ 01F9 B7        	ora	a	;reset [CY]
+ 01FA C9        	ret
                 
                 ; Allocate space from hash pool into DPH.HASH/HBNK.
                 ; Does nothing if space exhausted (caller must init for "no hash")
                 ; BC = size of hash, @dph setup
                 ; Preserves BC (only)
                 ?halloc:
- 01F9 2A7200    	lhld	@dph	; check if already set
- 01FC 111600    	lxi	d,22
- 01FF 19        	dad	d	; point to &DPH.HASH
- 0200 7E        	mov	a,m
- 0201 23        	inx	h
- 0202 B6        	ora	m
- 0203 C0        	rnz	; <> 00000h, leave as-is
- 0204 35        	dcr	m	; 0ffh
- 0205 2B        	dcx	h
- 0206 35        	dcr	m	; 0ffh = no HASH
- 0207 EB        	xchg
- 0208 78        	mov	a,b
- 0209 B1        	ora	c
- 020A C8        	rz
- 020B 2A0200    	lhld	hleft
- 020E B7        	ora	a
+ 01FB 2A7200    	lhld	@dph	; check if already set
+ 01FE 111600    	lxi	d,22
+ 0201 19        	dad	d	; point to &DPH.HASH
+ 0202 7E        	mov	a,m
+ 0203 23        	inx	h
+ 0204 B6        	ora	m
+ 0205 C0        	rnz	; <> 00000h, leave as-is
+ 0206 35        	dcr	m	; 0ffh
+ 0207 2B        	dcx	h
+ 0208 35        	dcr	m	; 0ffh = no HASH
+ 0209 EB        	xchg
+ 020A 78        	mov	a,b
+ 020B B1        	ora	c
+ 020C C8        	rz
+ 020D 2A0200    	lhld	hleft
+ 0210 B7        	ora	a
                 	dsbc	b
- 020F+ED42      	DB	0EDH,B*8+42H
- 0211 D8        	rc	; no space - TODO: try next bank
- 0212 220200    	shld	hleft
- 0215 2A0400    	lhld	hlast
- 0218 EB        	xchg
- 0219 73        	mov	m,e
- 021A 23        	inx	h
- 021B 72        	mov	m,d
+ 0211+ED42      	DB	0EDH,B*8+42H
+ 0213 D8        	rc	; no space - TODO: try next bank
+ 0214 220200    	shld	hleft
+ 0217 2A0400    	lhld	hlast
+ 021A EB        	xchg
+ 021B 73        	mov	m,e
  021C 23        	inx	h
- 021D 3602      	mvi	m,hbnk
- 021F EB        	xchg
- 0220 09        	dad	b
- 0221 220400    	shld	hlast
- 0224 C9        	ret
+ 021D 72        	mov	m,d
+ 021E 23        	inx	h
+ 021F 3602      	mvi	m,hbnk
+ 0221 EB        	xchg
+ 0222 09        	dad	b
+ 0223 220400    	shld	hlast
+ 0226 C9        	ret
                 
- 0225 010000    home:	lxi b,0 	; same as set track zero
+ 0227 010000    home:	lxi b,0 	; same as set track zero
                 settrk: sbcd trk
- 0228+ED43      	DB	0EDH,43H
- 022A+D602      	DW	TRK
- 022C C9        	ret
+ 022A+ED43      	DB	0EDH,43H
+ 022C+D802      	DW	TRK
+ 022E C9        	ret
                 
                 setsec: sbcd sect
- 022D+ED43      	DB	0EDH,43H
- 022F+D802      	DW	SECT
- 0231 C9        	ret
+ 022F+ED43      	DB	0EDH,43H
+ 0231+DA02      	DW	SECT
+ 0233 C9        	ret
                 
                 setdma: sbcd @dma
- 0232+ED43      	DB	0EDH,43H
- 0234+8C00      	DW	@DMA
- 0236 3A6E04    	lda @cbnk	; default DMA bank is current bank
- 0239 32D102    setbnk: sta @dbnk
- 023C C9        	ret
+ 0234+ED43      	DB	0EDH,43H
+ 0236+8C00      	DW	@DMA
+ 0238 3A6E04    	lda @cbnk	; default DMA bank is current bank
+ 023B 32D302    setbnk: sta @dbnk
+ 023E C9        	ret
                 
- 023D 6960      sectrn: mov l,c ! mov h,b
- 023F 7AB3C8    	mov a,d ! ora e ! rz
- 0242 EB096E2600	xchg ! dad b ! mov l,m ! mvi h,0
- 0247 2B        	dcx	h	;sectors numbered 0 - (n-1)
- 0248 C9        	ret
+ 023F 6960      sectrn: mov l,c ! mov h,b
+ 0241 7AB3C8    	mov a,d ! ora e ! rz
+ 0244 EB096E2600	xchg ! dad b ! mov l,m ! mvi h,0
+ 0249 2B        	dcx	h	;sectors numbered 0 - (n-1)
+ 024A C9        	ret
                 
- 0249 1E06      read:	mvi	e,6	;read entry is +6
- 024B C35002    	jmp rw$common			; use common code
+ 024B 1E06      read:	mvi	e,6	;read entry is +6
+ 024D C35202    	jmp rw$common			; use common code
                 
- 024E 1E09      write:	mvi	e,9	;write entry is +9
+ 0250 1E09      write:	mvi	e,9	;write entry is +9
                 
                 rw$common:	;do any track/sector/side conversion...
- 0250 AF        	xra	a
- 0251 32CB02    	sta	@side
- 0254 2AD602    	lhld	trk
- 0257 22CC02    	shld	@trk
- 025A 2AD802    	lhld	sect
- 025D 22CE02    	shld	@sect
- 0260 2A7000    	lhld	@cmode
+ 0252 AF        	xra	a
+ 0253 32CD02    	sta	@side
+ 0256 2AD802    	lhld	trk
+ 0259 22CE02    	shld	@trk
+ 025C 2ADA02    	lhld	sect
+ 025F 22D002    	shld	@sect
+ 0262 2A7000    	lhld	@cmode
                 	bit	7,m	;floppy or hard-disk?
- 0263+CB7E      	DB	0CBH,7*8+M+40H
+ 0265+CB7E      	DB	0CBH,7*8+M+40H
                 	jrnz	rw0
- 0265+2057      	DB	20H,RW0-$-1
- 0267 23        	inx	h
- 0268 23        	inx	h
+ 0267+2057      	DB	20H,RW0-$-1
  0269 23        	inx	h
+ 026A 23        	inx	h
+ 026B 23        	inx	h
                 	bit	6,m
- 026A+CB76      	DB	0CBH,6*8+M+40H
+ 026C+CB76      	DB	0CBH,6*8+M+40H
                 	jrz	rw0
- 026C+2850      	DB	28H,RW0-$-1
- 026E 7E        	mov	a,m
- 026F E603      	ani	0011b	;DSALG
+ 026E+2850      	DB	28H,RW0-$-1
+ 0270 7E        	mov	a,m
+ 0271 E603      	ani	0011b	;DSALG
                 	jrz	wrap	;as done by MMS
- 0271+2834      	DB	28H,WRAP-$-1
- 0273 3D        	dcr	a
+ 0273+2834      	DB	28H,WRAP-$-1
+ 0275 3D        	dcr	a
                 	jrz	alt	;as done by Zenith
- 0274+2822      	DB	28H,ALT-$-1
- 0276 3D        	dcr	a
+ 0276+2822      	DB	28H,ALT-$-1
+ 0278 3D        	dcr	a
                 	jrz	cont1	;as done by EXO and Televideo.
- 0277+280E      	DB	28H,CONT1-$-1
+ 0279+280E      	DB	28H,CONT1-$-1
                 
- 0279 3AD202    cont2:	lda	@pspt	;as done by Gnat
+ 027B 3AD402    cont2:	lda	@pspt	;as done by Gnat
                 	srlr	a	;SPT must be EVEN
- 027C+CB3F      	DB	0CBH, 38H + A
- 027E 4F        	mov	c,a
- 027F 3ACE02    	lda	@sect
- 0282 B9        	cmp	c	;don't change the sector number on side 1
+ 027E+CB3F      	DB	0CBH, 38H + A
+ 0280 4F        	mov	c,a
+ 0281 3AD002    	lda	@sect
+ 0284 B9        	cmp	c	;don't change the sector number on side 1
                 	jrc	rw0
- 0283+3839      	DB	38H,RW0-$-1
+ 0285+3839      	DB	38H,RW0-$-1
                 	jr	side1
- 0285+1832      	DB	18H,SIDE1-$-1
+ 0287+1832      	DB	18H,SIDE1-$-1
                 
- 0287 3AD202    cont1:	lda	@pspt
+ 0289 3AD402    cont1:	lda	@pspt
                 	srlr	a	;SPT must be EVEN
- 028A+CB3F      	DB	0CBH, 38H + A
- 028C 4F        	mov	c,a
- 028D 3ACE02    	lda	@sect
- 0290 91        	sub	c
+ 028C+CB3F      	DB	0CBH, 38H + A
+ 028E 4F        	mov	c,a
+ 028F 3AD002    	lda	@sect
+ 0292 91        	sub	c
                 	jrc	rw0
- 0291+382B      	DB	38H,RW0-$-1
- 0293 32CE02    	sta	@sect
+ 0293+382B      	DB	38H,RW0-$-1
+ 0295 32D002    	sta	@sect
                 	jr	side1
- 0296+1821      	DB	18H,SIDE1-$-1
+ 0298+1821      	DB	18H,SIDE1-$-1
                 
- 0298 3ACC02    alt:	lda	@trk
- 029B 1F        	rar
- 029C 32CC02    	sta	@trk
- 029F 3E00      	mvi	a,0
- 02A1 17        	ral
- 02A2 32CB02    	sta	@side
+ 029A 3ACE02    alt:	lda	@trk
+ 029D 1F        	rar
+ 029E 32CE02    	sta	@trk
+ 02A1 3E00      	mvi	a,0
+ 02A3 17        	ral
+ 02A4 32CD02    	sta	@side
                 	jr	rw0
- 02A5+1817      	DB	18H,RW0-$-1
+ 02A7+1817      	DB	18H,RW0-$-1
                 
                 wrap:	lbcd	@tps	;B=tracks on side 1, C=tracks on side 0
- 02A7+ED4B      	DB	0EDH,4BH
- 02A9+D302      	DW	@TPS
- 02AB 3ACC02    	lda	@trk	;(for all except Z17, B=C)
- 02AE B9        	cmp	c
+ 02A9+ED4B      	DB	0EDH,4BH
+ 02AB+D502      	DW	@TPS
+ 02AD 3ACE02    	lda	@trk	;(for all except Z17, B=C)
+ 02B0 B9        	cmp	c
                 	jrc	rw0
- 02AF+380D      	DB	38H,RW0-$-1
+ 02B1+380D      	DB	38H,RW0-$-1
                 	neg
- 02B1+ED44      	DB	0EDH,44H
- 02B3 81        	add	c
- 02B4 80        	add	b
- 02B5 3D        	dcr	a
- 02B6 32CC02    	sta	@trk
- 02B9 3E01      side1:	mvi	a,1
- 02BB 32CB02    	sta	@side
- 02BE 7B        rw0:	mov	a,e
- 02BF 2A6E00    calmod: lhld	curmdl
- 02C2 C36704    	jmp	addjmp			; leap to driver
+ 02B3+ED44      	DB	0EDH,44H
+ 02B5 81        	add	c
+ 02B6 80        	add	b
+ 02B7 3D        	dcr	a
+ 02B8 32CE02    	sta	@trk
+ 02BB 3E01      side1:	mvi	a,1
+ 02BD 32CD02    	sta	@side
+ 02C0 7B        rw0:	mov	a,e
+ 02C1 2A6E00    calmod: lhld	curmdl
+ 02C4 C36704    	jmp	addjmp			; leap to driver
                 
- 02C5 32D002C9  multio: sta @cnt ! ret
+ 02C7 32D202C9  multio: sta @cnt ! ret
                 
- 02C9 AFC9      flush:	xra a ! ret		; return with no error
+ 02CB AFC9      flush:	xra a ! ret		; return with no error
                 
                 
- 02CB           @side:	ds	1		; current side of media (floppy only)
- 02CC           @trk:	ds	2		; current track number
- 02CE           @sect:	ds	2		; current sector number
- 02D0 00        @cnt:	db	0		; record count for multisector transfer
- 02D1 00        @dbnk:	db	0		; bank for disk DMA operations
- 02D2           @pspt:	ds	1		; physical sectors per track
- 02D3           @tps:	ds	2
- 02D5           @rcnfg: ds	1
- 02D6           trk:	ds	2		 
- 02D8           sect:	ds	2
+ 02CD           @side:	ds	1		; current side of media (floppy only)
+ 02CE           @trk:	ds	2		; current track number
+ 02D0           @sect:	ds	2		; current sector number
+ 02D2 00        @cnt:	db	0		; record count for multisector transfer
+ 02D3 00        @dbnk:	db	0		; bank for disk DMA operations
+ 02D4           @pspt:	ds	1		; physical sectors per track
+ 02D5           @tps:	ds	2
+ 02D7           @rcnfg: ds	1
+ 02D8           trk:	ds	2		 
+ 02DA           sect:	ds	2
                 
- 02DA           @scrbf: ds	1024
+ 02DC           @scrbf: ds	1024
                 
- 06DA DE06      @dtacb: dw	dtacb1
- 06DC FC06      @dircb: dw	dircb1
+                ; These MUST be set by memory module
+ 06DC 0000      @dtacb: dw	0
+ 06DE 0000      @dircb: dw	0
                 
- 06DE FF        dtacb1: db 0ffh ;drive
- 06DF 0000000000	db 0,0,0,0,0
- 06E4 0000000070	dw 0,0,dtabf1
- 06EA 00        	db 0
- 06EB ED06      	dw dtacb2
-                
- 06ED FF        dtacb2: db 0ffh ;drive
- 06EE 0000000000	db 0,0,0,0,0
- 06F3 0000000070	dw 0,0,dtabf2
- 06F9 00        	db 0
- 06FA 0000      	dw 0000 ;end of data buffers
-                
- 06FC FF        dircb1: db 0ffh ;drive
- 06FD 0000000000	db 0,0,0,0,0
- 0702 000000001A	dw 0,0,dirbf1
- 0708 00        	db 0
- 0709 0B07      	dw dircb2
-                
- 070B FF        dircb2: db 0ffh ;drive
- 070C 0000000000	db 0,0,0,0,0
- 0711 000000001A	dw 0,0,dirbf2
- 0717 00        	db 0
- 0718 0000      	dw 0000 ;end of DIR buffers
-                
- 071A           dirbf1: ds	1024
- 0B1A           dirbf2: ds	1024-1
- 0F19 00        	db	0	;to force LINK to fill space with "00"
-                
- 0F1A           	end
-
+ 06E0           	end
+

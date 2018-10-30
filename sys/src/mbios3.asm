@@ -1,4 +1,4 @@
-vers equ '4 ' ; Oct 28, 2018  09:06   drm "MBIOS3.ASM"
+vers equ '5 ' ; Oct 29, 2018  18:11   drm "MBIOS3.ASM"
 ;****************************************************************
 ; Main BIOS module for CP/M 3 (CP/M plus),			*
 ;	 Banked memory and Time split-out.			*
@@ -34,7 +34,8 @@ port	equ	0f2h	;interupt control port
 	public @adrv,@pdrv,@rdrv,@side,@trk,@sect,@login
 	public @dma,@dbnk,@cnt,@scrbf,@dtacb,@dircb
 	public @dstat,@intby,@cmode,@dph,@rcnfg,@tick0
-	public @ctbl,@cbnk,bnkdos,resdos,wbtrap
+	public @ctbl,@cbnk,@heapt
+	public bnkdos,resdos,wbtrap
 
 ;  Routines for use by other modules
 	public ?timot
@@ -598,10 +599,6 @@ icall:	pchl		;indirect call
 @cbnk:	db	0		; bank for processor operations
 bnkflg: ds	1	;flag for banked RAM installed.
 
-dtabf1: ds	1024
-dtabf2: ds	1024-1
-	db	0	;to force LINK to fill with "00"
-
 ;must be at end of all "cseg" code.
 thread	equ	$
 
@@ -613,6 +610,11 @@ hbnk	equ	2	;bank to use for Hash tables.
 hstart	equ	100h	;reserve page 0 for interupt vectors, etc.
 hleft	dw	0
 hlast	dw	hstart
+; TODO: @heapt must be checked against CCP for collisions,
+; but CCP is not loaded/known when buffers are allocated from here.
+; So, check before saving CCP to bank 0 in cold boot.
+@heapt:	dw	bnkdos	; top of bank 0 memory, below BNKBDOS
+			; Modules may update this downward.
 
 boot:	lxi	sp,stack
 	lda	13
@@ -1020,35 +1022,8 @@ sect:	ds	2
 
 @scrbf: ds	1024
 
-@dtacb: dw	dtacb1
-@dircb: dw	dircb1
-
-dtacb1: db 0ffh ;drive
-	db 0,0,0,0,0
-	dw 0,0,dtabf1
-	db 0
-	dw dtacb2
-
-dtacb2: db 0ffh ;drive
-	db 0,0,0,0,0
-	dw 0,0,dtabf2
-	db 0
-	dw 0000 ;end of data buffers
-
-dircb1: db 0ffh ;drive
-	db 0,0,0,0,0
-	dw 0,0,dirbf1
-	db 0
-	dw dircb2
-
-dircb2: db 0ffh ;drive
-	db 0,0,0,0,0
-	dw 0,0,dirbf2
-	db 0
-	dw 0000 ;end of DIR buffers
-
-dirbf1: ds	1024
-dirbf2: ds	1024-1
-	db	0	;to force LINK to fill space with "00"
+; These MUST be set by memory module
+@dtacb: dw	0
+@dircb: dw	0
 
 	end

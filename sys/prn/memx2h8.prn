@@ -1,4 +1,4 @@
- 2031 =         vers equ '1 ' ; Sep 24, 2017  16:24   drm "MEMX2H8.ASM"
+ 2032 =         vers equ '2 ' ; Oct 29, 2018  18:12   drm "MEMX2H8.ASM"
                 ;****************************************************************
                 ; Banked Memory BIOS module for CP/M 3 (CP/M plus), 		*
                 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -17,7 +17,7 @@
  0000 =         mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
                 
                 ;  SCB registers
-                	extrn @bnkbf,@cbnk
+                	extrn @bnkbf,@cbnk,@dtacb,@dircb,@heapt
                 
                 ;  Variables for use by other modules
                 	public @nbnk,@compg,@mmerr,@memstr
@@ -31,7 +31,7 @@
  0001 C0        @compg:	db	0c0h
  0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No X/2-H8$'
  000F 582F322D48@memstr: db	'X/2-H8 ',0,'Tryonix 256K RAM and MMU ',0,'v3.10'
- 0036 3120      	dw	vers
+ 0036 3220      	dw	vers
  0038 24        	db	'$'
                 
                 ; Uses XMOVE semantics...
@@ -120,6 +120,11 @@
                 ?xmove:
  0092 C9        	ret
                 
+                ; Data buffers must be in common memory
+ 0093           dtabf1: ds	1024
+ 0493           dtabf2: ds	1024-1
+ 0892 00        	db	0	;to force LINK to fill with "00"
+                
                 	dseg	; this part can be banked
                 
                 ; Verify that we have banked RAM...
@@ -161,12 +166,12 @@
  0037 110001    	lxi	d,0100h
  003A 018000    	lxi	b,128
                 	ldir
- 003D+EDB0      	DB	0EDH,0B0H
+ 003D+EDB0      	DB	0EDH,0B0H
  003F 3E2F      	mvi	a,0$010$1111b
  0041 D300      	out	mmu
  0043 3E3E      	mvi	a,0$011$1110b
  0045 D300      	out	mmu
- 0047 210341    	lxi	h,4103h
+ 0047 210341    	lxi	h,4103h
  004A 110001    	lxi	d,0100h
  004D 018000    	lxi	b,128
                 	ldir
@@ -177,33 +182,33 @@
  0056 3E00      	mvi	a,0$000$0000b
  0058 D300      	out	mmu
  005A 210041    	lxi	h,4100h
- 005D CD9E00    	call	bnkck9
+ 005D CDBB00    	call	bnkck9
                 	jrnz	noram
- 0060+2034      	DB	20H,NORAM-$-1
+ 0060+2051      	DB	20H,NORAM-$-1
  0062 3E01      	mvi	a,0$000$0001b
  0064 D300      	out	mmu
  0066 3E1E      	mvi	a,0$001$1110b
  0068 D300      	out	mmu
  006A 210141    	lxi	h,4101h
- 006D CD9E00    	call	bnkck9
+ 006D CDBB00    	call	bnkck9
                 	jrnz	noram
- 0070+2024      	DB	20H,NORAM-$-1
+ 0070+2041      	DB	20H,NORAM-$-1
  0072 3E1F      	mvi	a,0$001$1111b
  0074 D300      	out	mmu
  0076 3E2E      	mvi	a,0$010$1110b
  0078 D300      	out	mmu
  007A 210241    	lxi	h,4102h
- 007D CD9E00    	call	bnkck9
+ 007D CDBB00    	call	bnkck9
                 	jrnz	noram
- 0080+2014      	DB	20H,NORAM-$-1
+ 0080+2031      	DB	20H,NORAM-$-1
  0082 3E2F      	mvi	a,0$010$1111b
  0084 D300      	out	mmu
  0086 3E3E      	mvi	a,0$011$1110b
  0088 D300      	out	mmu
  008A 210341    	lxi	h,4103h
- 008D CD9E00    	call	bnkck9
+ 008D CDBB00    	call	bnkck9
                 	jrnz	noram
- 0090+2004      	DB	20H,NORAM-$-1
+ 0090+2021      	DB	20H,NORAM-$-1
                  else
                 	lxi	d,40h
                 	mvi	a,0$000$0001b
@@ -217,12 +222,12 @@
                 	mvi	a,0$010$1110b
                 	out	mmu
                 	mvi	a,2
-                	stax	d	;put bank number in 40h of respective bank
+                	stax	d	;put bank number in 40h of respective bank
                 	mvi	a,0$010$1111b
                 	out	mmu
                 	mvi	a,0$011$1110b
                 	out	mmu
-                	mvi	a,3
+                	mvi	a,3
                 	stax	d	;put bank number in 40h of respective bank
                 	mvi	a,0$011$1111b
                 	out	mmu
@@ -246,35 +251,74 @@
                 	cpi	3
                 	jrnz	noram
                  endif
- 0092 3EFF      	mvi	a,true
+                	; Allocate some buffers below BNKBDOS
+ 0092 2A0000    	lhld	@heapt
+ 0095 1100FC    	lxi	d,-1024	; max sector size = 1024
+ 0098 19        	dad	d
+ 0099 22FD00    	shld	dirbf1
+ 009C 19        	dad	d
+ 009D 220C01    	shld	dirbf2
+ 00A0 220000    	shld	@heapt
+ 00A3 21D500    	lxi	h,dtacb1
+ 00A6 220000    	shld	@dtacb
+ 00A9 21F300    	lxi	h,dircb1
+ 00AC 220000    	shld	@dircb
+ 00AF 3EFF      	mvi	a,true
                 	jr	bnkck0
- 0094+1801      	DB	18H,BNKCK0-$-1
- 0096 AF        noram:	xra	a
- 0097 F5        bnkck0:	push	psw
- 0098 AF        	xra	a
- 0099 CD6000    	call	?bnksl
- 009C F1        	pop	psw
- 009D C9        	ret
+ 00B1+1801      	DB	18H,BNKCK0-$-1
+ 00B3 AF        noram:	xra	a
+ 00B4 F5        bnkck0:	push	psw
+ 00B5 AF        	xra	a
+ 00B6 CD6000    	call	?bnksl
+ 00B9 F1        	pop	psw
+ 00BA C9        	ret
                  if memtest
                 bnkck9:
- 009E E5        	push	h	; pattern
- 009F 210001    	lxi	h,0100h
- 00A2 110042    	lxi	d,4200h
- 00A5 018000    	lxi	b,128
-                	ldir
- 00A8+EDB0      	DB	0EDH,0B0H
- 00AA E1        	pop	h	; pattern
- 00AB 110042    	lxi	d,4200h
- 00AE 0680      	mvi	b,128
+ 00BB E5        	push	h	; pattern
+ 00BC 210001    	lxi	h,0100h
+ 00BF 110042    	lxi	d,4200h
+ 00C2 018000    	lxi	b,128
+                	ldir
+ 00C5+EDB0      	DB	0EDH,0B0H
+ 00C7 E1        	pop	h	; pattern
+ 00C8 110042    	lxi	d,4200h
+ 00CB 0680      	mvi	b,128
                 bnkck8:
- 00B0 1A        	ldax	d
- 00B1 BE        	cmp	m
- 00B2 C0        	rnz
- 00B3 23        	inx	h
- 00B4 13        	inx	d
+ 00CD 1A        	ldax	d
+ 00CE BE        	cmp	m
+ 00CF C0        	rnz
+ 00D0 23        	inx	h
+ 00D1 13        	inx	d
                 	djnz	bnkck8
- 00B5+10F9      	DB	10H,BNKCK8-$-1
- 00B7 C9        	ret
+ 00D2+10F9      	DB	10H,BNKCK8-$-1
+ 00D4 C9        	ret
                  endif
- 00B8           	end
-
+                
+ 00D5 FF        dtacb1: db 0ffh ;drive
+ 00D6 0000000000	db 0,0,0,0,0
+ 00DB 0000000093	dw 0,0,dtabf1
+ 00E1 00        	db 0
+ 00E2 E400      	dw dtacb2
+                
+ 00E4 FF        dtacb2: db 0ffh ;drive
+ 00E5 0000000000	db 0,0,0,0,0
+ 00EA 0000000093	dw 0,0,dtabf2
+ 00F0 00        	db 0
+ 00F1 0000      	dw 0000 ;end of data buffers
+                
+ 00F3 FF        dircb1: db 0ffh ;drive
+ 00F4 0000000000	db 0,0,0,0,0
+ 00F9 00000000  	dw 0,0
+ 00FD 0000      dirbf1:	dw	0
+ 00FF 00        	db 0
+ 0100 0201      	dw dircb2
+                
+ 0102 FF        dircb2: db 0ffh ;drive
+ 0103 0000000000	db 0,0,0,0,0
+ 0108 00000000  	dw 0,0
+ 010C 0000      dirbf2:	dw	0
+ 010E 00        	db 0
+ 010F 0000      	dw 0000 ;end of DIR buffers
+                
+ 0111           	end
+

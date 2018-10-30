@@ -25,6 +25,8 @@ rd	equ	0	;
 wr	equ	4	;
 map	equ	080h	;
 
+base$pg	equ	13	; memory pages 0-12 used by CP/M 3
+
 driv0	equ	40		; first drive in system
 ndriv	equ	1		; # of drives is system
 
@@ -44,7 +46,7 @@ true	equ	not false
 	dw	string
 	dw	dphtbl,modtbl
 
-string: DB	'RD512K ',0,'256K RAM Disk ',0,'v3.10'
+string: DB	'RD512K ',0,'304K RAM Disk ',0,'v3.10'
 	DW	VERS
 	DB	'$'
 
@@ -53,7 +55,7 @@ modtbl: db	10000000b,00000000b,00000000b,00000000b ; drive 40, like HDD
 
 rddpb:	dw	128	; SPT - arbitrary
 	db	3,7,0
-	dw	255,63
+	dw	303,63
 	db	11000000b,0
 	dw	08000h,0
 	db	0,0	; PSH,PSM = 128byte sectors
@@ -130,7 +132,7 @@ init$rd:	; interrupts are disabled - leave them that way
 	adi	wr
 	sta	r$port+1
 	mov	b,a
-	mvi	a,16+map	; first page of upper 256K
+	mvi	a,base$pg+map	; first page of upper 304K
 	outp	a
 	mov	c,b
 	outp	a
@@ -193,8 +195,8 @@ setup$rw:
 	rar
 	mov	l,a
 	shld	rd$addr
-	lda	@trk	; 0-15
-	adi	16+map	; upper 256K, enable mapping
+	lda	@trk	; 0-18
+	adi	base$pg+map	; upper 304K, enable mapping
 	sta	rd$map
 	ret
 

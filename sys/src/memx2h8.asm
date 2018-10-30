@@ -1,4 +1,4 @@
-vers equ '1 ' ; Sep 24, 2017  16:24   drm "MEMX2H8.ASM"
+vers equ '2 ' ; Oct 29, 2018  18:12   drm "MEMX2H8.ASM"
 ;****************************************************************
 ; Banked Memory BIOS module for CP/M 3 (CP/M plus), 		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -17,7 +17,7 @@ bell	equ 7
 mmu	equ	000h	; Trionyx X/2-H8 Bank Switch Board
 
 ;  SCB registers
-	extrn @bnkbf,@cbnk
+	extrn @bnkbf,@cbnk,@dtacb,@dircb,@heapt
 
 ;  Variables for use by other modules
 	public @nbnk,@compg,@mmerr,@memstr
@@ -109,6 +109,11 @@ table:
 	xchg		; need next addresses in same regs
 ?xmove:
 	ret
+
+; Data buffers must be in common memory
+dtabf1: ds	1024
+dtabf2: ds	1024-1
+	db	0	;to force LINK to fill with "00"
 
 	dseg	; this part can be banked
 
@@ -227,6 +232,18 @@ bnkck1:
 	cpi	3
 	jrnz	noram
  endif
+	; Allocate some buffers below BNKBDOS
+	lhld	@heapt
+	lxi	d,-1024	; max sector size = 1024
+	dad	d
+	shld	dirbf1
+	dad	d
+	shld	dirbf2
+	shld	@heapt
+	lxi	h,dtacb1
+	shld	@dtacb
+	lxi	h,dircb1
+	shld	@dircb
 	mvi	a,true
 	jr	bnkck0
 noram:	xra	a
@@ -254,4 +271,31 @@ bnkck8:
 	djnz	bnkck8
 	ret
  endif
+
+dtacb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0,dtabf1
+	db 0
+	dw dtacb2
+
+dtacb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0,dtabf2
+	db 0
+	dw 0000 ;end of data buffers
+
+dircb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf1:	dw	0
+	db 0
+	dw dircb2
+
+dircb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf2:	dw	0
+	db 0
+	dw 0000 ;end of DIR buffers
+
 	end

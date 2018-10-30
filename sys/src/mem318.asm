@@ -1,4 +1,4 @@
-vers equ '1 ' ; Sep 24, 2017  17:30   drm "MEM318.ASM"
+vers equ '2 ' ; Oct 29, 2018  18:14   drm "MEM318.ASM"
 ;****************************************************************
 ; Banke Membory BIOS module for CP/M 3 (CP/M plus),		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -17,7 +17,7 @@ bell	equ 7
 port	equ	0f2h	;interupt/memory control port
 
 ;  SCB registers
-	extrn @bnkbf,@cbnk,@intby
+	extrn @bnkbf,@cbnk,@intby,@dtacb,@dircb,@heapt
 
 ;  Variables for use by other modules
 	public @nbnk,@compg,@mmerr,@memstr
@@ -83,9 +83,9 @@ port	equ	0f2h	;interupt/memory control port
 
 @compg	db	0e0h
 
-table:	db	20H	;select code for bank 0
-	db	14H	; bank 1 (56K)
-	db	34H	; bank 2 (56K)
+table:	db	20H	;select code for bank 0 (B)
+	db	14H	; bank 1 (56K) (G)
+	db	34H	; bank 2 (56K) (H)
 
 	endif
 
@@ -93,9 +93,9 @@ table:	db	20H	;select code for bank 0
 
 @compg	db	0c0h
 
-table:	db	20H	;select code for bank 0
-	db	10H	; bank 1 (48K)
-	db	30H	; bank 2 (48K)
+table:	db	20H	;select code for bank 0 (B)
+	db	10H	; bank 1 (48K) (E)
+	db	30H	; bank 2 (48K) (F)
 
 	endif
 
@@ -105,45 +105,63 @@ table:	db	20H	;select code for bank 0
 ?xmove:
 	ret
 
+; Data buffers must be in common memory
+dtabf1: ds	1024
+dtabf2: ds	1024-1
+	db	0	;to force LINK to fill with "00"
+
 	dseg	; this part can be banked
 
 ; Verify that we have banked RAM...
 ?bnkck:
-	lxi	h,@intby
+	lxi	h,@intby	; presumed to be bank B
 	lxi	d,40h
 	mvi	a,1
 	stax	d	;put bank number in 40h of respective bank
 	mov	a,m
 	ani	11001011b
-	ori	04h
+	ori	04h	; bank C (G)
 	out	port
 	mvi	a,2
 	stax	d
 	mov	a,m
 	ani	11001011b
-	ori	24h
+	ori	24h	; bank D (H)
 	out	port
 	mvi	a,3
 	stax	d
-	mov	a,m
+	mov	a,m	; presumed to be bank B
 	out	port
 	ldax	d
 	cpi	1
 	jrnz	noram
 	mov	a,m
 	ani	11001011b
-	ori	04h
+	ori	04h	; bank C (G)
 	out	port
 	ldax	d
 	cpi	2
 	jrnz	noram
 	mov	a,m
 	ani	11001011b
-	ori	24h
+	ori	24h	; bank D (H)
 	out	port
 	ldax	d
 	cpi	3
 	jrnz	noram
+	; Allocate some buffers below BNKBDOS
+	lhld	@heapt
+	lxi	d,-1024	; max sector size = 1024
+	dad	d
+	shld	dirbf1
+	dad	d
+	shld	dirbf2
+	shld	@heapt
+	lxi	h,dtacb1
+	shld	@dtacb
+	lxi	h,dircb1
+	shld	@dircb
+	lxi	h,@intby ; *MUST* restore this
 	mvi	a,true
 	jr	bnkck0
 noram:	xra	a
@@ -152,5 +170,31 @@ bnkck0:	push	psw
 	out	port
 	pop	psw
 	ret
+
+dtacb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0,dtabf1
+	db 0
+	dw dtacb2
+
+dtacb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0,dtabf2
+	db 0
+	dw 0000 ;end of data buffers
+
+dircb1: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf1:	dw	0
+	db 0
+	dw dircb2
+
+dircb2: db 0ffh ;drive
+	db 0,0,0,0,0
+	dw 0,0
+dirbf2:	dw	0
+	db 0
+	dw 0000 ;end of DIR buffers
 
 	end

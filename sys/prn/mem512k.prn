@@ -1,4 +1,4 @@
- 2031 =         vers equ '1 ' ; Sep 24, 2017  17:05   drm "MEM512K.ASM"
+ 2032 =         vers equ '2 ' ; Oct 29, 2018  18:13   drm "MEM512K.ASM"
                 ;****************************************************************
                 ; Banked Memory BIOS module for CP/M 3 (CP/M plus)		*
                 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -19,7 +19,7 @@
  0080 =         map	equ	080h	; mmu flag to enable mapping...
                 
                 ;  SCB registers
-                	extrn @bnkbf,@cbnk
+                	extrn @bnkbf,@cbnk,@dtacb,@dircb,@heapt
                 
                 ;  Variables for use by other modules
                 	public @nbnk,@compg,@mmerr,@memstr
@@ -35,7 +35,7 @@
  0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No RAM512K$'
  0010 00        @m512k:	db	mmu
  0011 52414D3531@memstr: db	'RAM512K ',0,'H8 512K RAM with MMU ',0,'v3.10'
- 0035 3120      	dw	vers
+ 0035 3220      	dw	vers
  0037 24        	db	'$'
                 
                 ; Uses XMOVE semantics
@@ -215,8 +215,52 @@
  0046+10FB      	DB	10H,IN6-$-1
  0048 AF        	xra	a
  0049 CD5800    	call	?bnksl	; this enables mapping...
- 004C 3EFF      	mvi	a,true
- 004E C9        	ret		; A<>0 banked memory available
+                	; Allocate some buffers below BNKBDOS
+ 004C 2A0000    	lhld	@heapt
+ 004F 1100FC    	lxi	d,-1024	; max sector size = 1024
+ 0052 19        	dad	d
+ 0053 229C00    	shld	dirbf1
+ 0056 19        	dad	d
+ 0057 22AB00    	shld	dirbf2
+ 005A 19        	dad	d
+ 005B 227E00    	shld	dtabf1
+ 005E 19        	dad	d
+ 005F 228D00    	shld	dtabf2
+ 0062 220000    	shld	@heapt
+ 0065 217400    	lxi	h,dtacb1
+ 0068 220000    	shld	@dtacb
+ 006B 219200    	lxi	h,dircb1
+ 006E 220000    	shld	@dircb
+ 0071 3EFF      	mvi	a,true
+ 0073 C9        	ret		; A<>0 banked memory available
                 
- 004F           	end
-
+ 0074 FF        dtacb1: db 0ffh ;drive
+ 0075 0000000000	db 0,0,0,0,0
+ 007A 00000000  	dw 0,0
+ 007E 0000      dtabf1:	dw	0
+ 0080 00        	db 0
+ 0081 8300      	dw dtacb2
+                
+ 0083 FF        dtacb2: db 0ffh ;drive
+ 0084 0000000000	db 0,0,0,0,0
+ 0089 00000000  	dw 0,0
+ 008D 0000      dtabf2:	dw	0
+ 008F 00        	db 0
+ 0090 0000      	dw 0000 ;end of data buffers
+                
+ 0092 FF        dircb1: db 0ffh ;drive
+ 0093 0000000000	db 0,0,0,0,0
+ 0098 00000000  	dw 0,0
+ 009C 0000      dirbf1:	dw	0
+ 009E 00        	db 0
+ 009F A100      	dw dircb2
+                
+ 00A1 FF        dircb2: db 0ffh ;drive
+ 00A2 0000000000	db 0,0,0,0,0
+ 00A7 00000000  	dw 0,0
+ 00AB 0000      dirbf2:	dw	0
+ 00AD 00        	db 0
+ 00AE 0000      	dw 0000 ;end of DIR buffers
+                
+ 00B0           	end
+
