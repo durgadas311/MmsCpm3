@@ -1,15 +1,20 @@
- 2033 =         VERS EQU '3 ' ; Oct  7, 2017  15:45  drm  "RD512K'3.ASM"
+ 2033 =         VERS EQU '3 ' ; Nov  1, 2018  11:20  drm  "RD512K'3.ASM"
                 ;*********************************************************
                 ;	Disk I/O module for MMS CP/M 3.1
                 ;	for RAM disk on the 512K RAM board
-                ;	Copyright (c) 2017 Douglas Miller
+                ;	Copyright (c) 2018 Douglas Miller
                 ;*********************************************************
-                	MACLIB Z80
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                	maclib z80
                 
                 	extrn	@trk,@sect,@dma,@dbnk,@cbnk
                 	extrn	@dircb,@dtacb
                 	extrn	@m512k,@t512k
                 	extrn	?bnksl
+                
+ FFFF =         larger	equ	true	; larger ramdisk, but larger block size?
                 
                 ;---------------------------------------------------------
                 ;
@@ -21,30 +26,51 @@
                 ;	Ports and Constants
                 ;---------------------------------------------------------
                 ;  PORT ASSIGNMENTS
- 0000 =         rd	equ	0	;
+ 0000 =         rd	equ	0	; TODO: get these from mem512k.rel
  0004 =         wr	equ	4	;
  0080 =         map	equ	080h	;
+                
+ 000D =         base$pg	equ	13	; memory pages 0-12 used by CP/M 3
                 
  0028 =         driv0	equ	40		; first drive in system
  0001 =         ndriv	equ	1		; # of drives is system
                 
- 0000 =         false	equ	0
- FFFF =         true	equ	not false
+                if larger
+ 0097 =         dsm	equ	151	; 19 pages for ramdisk, 2k blocks
+ 0004 =         bsh	equ	4
+ 000F =         blm	equ	15
+ 0001 =         exm	equ	1
+ 003F =         drm	equ	63	; still requires manual ALV0 setup
+ 0080 =         alv0	equ	10000000b
+                else
+                dsm	equ	255	; 16 pages for ramdisk, 1k blocks
+                bsh	equ	3
+                blm	equ	7
+                exm	equ	0
+                drm	equ	63	; still requires manual ALV0 setup
+                alv0	equ	11000000b
+                endif
                 ;-------------------------------------------------------
                 ;	Start of relocatable disk I/O module.
                 ;-------------------------------------------------------
                 	cseg
-                
+                
  0000 9600      	dw	thread
  0002 2801      	db	driv0,ndriv
- 0004 C37900    	jmp	init$rd
- 0007 C3BE00    	jmp	login$rd
- 000A C3F600    	jmp	read$rd
- 000D C30501    	jmp	write$rd
+ 0004 C35F00    	jmp	init$rd
+ 0007 C3A400    	jmp	login$rd
+ 000A C3DC00    	jmp	read$rd
+ 000D C3EB00    	jmp	write$rd
  0010 1600      	dw	string
  0012 00003500  	dw	dphtbl,modtbl
                 
- 0016 5244353132string: DB	'RD512K ',0,'256K RAM Disk ',0,'v3.10'
+ 0016 5244353132string: DB	'RD512K ',0
+                if larger
+ 001E 333034    	DB	'304'
+                else
+                	DB	'256'
+                endif
+ 0021 4B2052414D	DB	'K RAM Disk ',0,'v3.10'
  0032 3320      	DW	VERS
  0034 24        	DB	'$'
                 
@@ -52,9 +78,9 @@
  0039 FFFFFFFF  	  db	11111111b,11111111b,11111111b,11111111b
                 
  003D 8000      rddpb:	dw	128	; SPT - arbitrary
- 003F 030700    	db	3,7,0
- 0042 FF003F00  	dw	255,63
- 0046 C000      	db	11000000b,0
+ 003F 040F01    	db	bsh,blm,exm
+ 0042 97003F00  	dw	dsm,drm
+ 0046 8000      	db	alv0,0
  0048 00800000  	dw	08000h,0
  004C 0000      	db	0,0	; PSH,PSM = 128byte sectors
                 
@@ -73,18 +99,18 @@
                 ; Interrupts must be disabled before calling.
                 ; Caller must restore bank 0 mapping on return.
                 rd$read:
-                	lbcd	r$port
+                	lbcd	r$port	; B=WR, C=RD
  0057+ED4B      	DB	0EDH,4BH
  0059+4E00      	DW	R$PORT
  005B 3A5000    	lda	rd$map	; source mapping
                 	outp	a
  005E+ED79      	DB	0EDH,A*8+41H
- 0060 48        	mov	c,b
+ 0060 48        	mov	c,b	; WR port
  0061 2A5300    	lhld	usr$map	; dest mapping
                 	outi	; OK in all cases that matter...
  0064+EDA3      	DB	0EDH,0A3H
  0066 0C        	inr	c
-                	outi
+                	outi
  0067+EDA3      	DB	0EDH,0A3H
  0069 2A5500    	lhld	usr$addr; DATA BUFFER ADDRESS (dest)
  006C EB        	xchg
@@ -95,11 +121,11 @@
  0075 C9        	ret
                 
                 rd$write:
-                	lbcd	r$port
+                	lbcd	r$port	; B=WR, C=RD
  0076+ED4B      	DB	0EDH,4BH
  0078+4E00      	DW	R$PORT
  007A 78        	mov	a,b	; save from OUTI
- 007B 2A5300    	lhld	usr$map	; dest mapping
+ 007B 2A5300    	lhld	usr$map	; src mapping
                 	outi	; OK in all cases that matter...
  007E+EDA3      	DB	0EDH,0A3H
  0080 0C        	inr	c
@@ -110,7 +136,7 @@
                 	outp	a
  0087+ED79      	DB	0EDH,A*8+41H
  0089 2A5100    	lhld	rd$addr	; dest addr
- 008C EB        	xchg
+ 008C EB        	xchg
  008D 2A5500    	lhld	usr$addr; DATA BUFFER ADDRESS (source)
  0090 018000    	lxi	b,128
                 	ldir
@@ -125,114 +151,115 @@
  0000 0000000000dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0ffffh
  0018 00        	db 0
                 
- 0019           alv40:	ds	(256)/4 	; max blocks: 256
+ 0019           alv40:	ds	(dsm+1)/4 	;
                 
- 0059 2052414D44label:	db	020h,'RAMDISK3LBL'
+                ; This could be overlapped with alv40: never used after init$rd.
+ 003F 2052414D44label:	db	020h,'RAMDISK3LBL'
  000C =         lblen	equ	$-label
- 0065 01000000  	db	00000001b,0,0,0	; no modes (yet)
- 0069 0000000000	db	0,0,0,0,0,0,0,0	; password
- 0071 00000000  	db	0,0,0,0		; ctime
- 0075 00000000  	db	0,0,0,0		; utime
+ 004B 01000000  	db	00000001b,0,0,0	; no modes (yet)
+ 004F 0000000000	db	0,0,0,0,0,0,0,0	; password
+ 0057 00000000  	db	0,0,0,0		; ctime
+ 005B 00000000  	db	0,0,0,0		; utime
                 
                 init$rd:	; interrupts are disabled - leave them that way
                 	; Check if a valid directory already exists...
- 0079 3A0000    	lda	@m512k
- 007C 324E00    	sta	r$port
- 007F 4F        	mov	c,a
- 0080 C604      	adi	wr
- 0082 324F00    	sta	r$port+1
- 0085 47        	mov	b,a
- 0086 3E90      	mvi	a,16+map	; first page of upper 256K
+ 005F 3A0000    	lda	@m512k
+ 0062 324E00    	sta	r$port
+ 0065 4F        	mov	c,a
+ 0066 C604      	adi	wr
+ 0068 324F00    	sta	r$port+1
+ 006B 47        	mov	b,a
+ 006C 3E8D      	mvi	a,base$pg+map	; first page of upper 304K
                 	outp	a
- 0088+ED79      	DB	0EDH,A*8+41H
- 008A 48        	mov	c,b
+ 006E+ED79      	DB	0EDH,A*8+41H
+ 0070 48        	mov	c,b
                 	outp	a
- 008B+ED79      	DB	0EDH,A*8+41H
- 008D 210000    	lxi	h,0	; first sector... first dirent (label)
- 0090 115900    	lxi	d,label
- 0093 060C      	mvi	b,lblen
- 0095 1A        ird2:	ldax	d
- 0096 BE        	cmp	m
- 0097 C2A000    	jnz	ird1
- 009A 13        	inx	d
- 009B 23        	inx	h
+ 0071+ED79      	DB	0EDH,A*8+41H
+ 0073 210000    	lxi	h,0	; first sector... first dirent (label)
+ 0076 113F00    	lxi	d,label
+ 0079 060C      	mvi	b,lblen
+ 007B 1A        ird2:	ldax	d
+ 007C BE        	cmp	m
+ 007D C28600    	jnz	ird1
+ 0080 13        	inx	d
+ 0081 23        	inx	h
                 	djnz	ird2
- 009C+10F7      	DB	10H,IRD2-$-1
+ 0082+10F7      	DB	10H,IRD2-$-1
                 	jr	ird3
- 009E+1817      	DB	18H,IRD3-$-1
+ 0084+1817      	DB	18H,IRD3-$-1
                 ird1:	; must re-initialize directory (to empty)
- 00A0 110000    	lxi	d,0
- 00A3 215900    	lxi	h,label
- 00A6 012000    	lxi	b,32
+ 0086 110000    	lxi	d,0
+ 0089 213F00    	lxi	h,label
+ 008C 012000    	lxi	b,32
                 	ldir
- 00A9+EDB0      	DB	0EDH,0B0H
- 00AB EB        	xchg	; make rest empty
- 00AC 112000    	lxi	d,32	; bytes/dirent
- 00AF 063F      	mvi	b,63	; DRM (one already done)
- 00B1 3EE5      	mvi	a,0e5h	; empty entry
- 00B3 77        ird0:	mov	m,a
- 00B4 19        	dad	d
+ 008F+EDB0      	DB	0EDH,0B0H
+ 0091 EB        	xchg	; make rest empty
+ 0092 112000    	lxi	d,32	; bytes/dirent
+ 0095 063F      	mvi	b,drm	; DRM (one already done)
+ 0097 3EE5      	mvi	a,0e5h	; empty entry
+ 0099 77        ird0:	mov	m,a
+ 009A 19        	dad	d
                 	djnz	ird0
- 00B5+10FC      	DB	10H,IRD0-$-1
+ 009B+10FC      	DB	10H,IRD0-$-1
                 ird3:
- 00B7 3A0000    	lda	@cbnk
- 00BA CD0000    	call	?bnksl
- 00BD C9        	ret
+ 009D 3A0000    	lda	@cbnk
+ 00A0 CD0000    	call	?bnksl
+ 00A3 C9        	ret
                 
                 login$rd:
- 00BE AF        	xra	a
- 00BF C9        	ret
+ 00A4 AF        	xra	a
+ 00A5 C9        	ret
                 
                 setup$rw:
- 00C0 2A0000    	lhld	@dma
- 00C3 7C        	mov	a,h
- 00C4 E6C0      	ani	0c0h
- 00C6 07        	rlc
- 00C7 07        	rlc
- 00C8 47        	mov	b,a	; 000000aa
- 00C9 7C        	mov	a,h
- 00CA E63F      	ani	03fh
- 00CC 67        	mov	h,a
- 00CD 225500    	shld	usr$addr
- 00D0 3A0000    	lda	@dbnk
- 00D3 87        	add	a
- 00D4 87        	add	a	; 0000bb00
- 00D5 B0        	ora	b	; 0000bbaa
- 00D6 4F        	mov	c,a
- 00D7 0600      	mvi	b,0
- 00D9 210000    	lxi	h,@t512k
- 00DC 09        	dad	b
- 00DD 225300    	shld	usr$map
- 00E0 3A0000    	lda	@sect	; 0-127
- 00E3 B7        	ora	a
- 00E4 1F        	rar	; * 128
- 00E5 67        	mov	h,a
- 00E6 3E00      	mvi	a,0
- 00E8 1F        	rar
- 00E9 6F        	mov	l,a
- 00EA 225100    	shld	rd$addr
- 00ED 3A0000    	lda	@trk	; 0-15
- 00F0 C690      	adi	16+map	; upper 256K, enable mapping
- 00F2 325000    	sta	rd$map
- 00F5 C9        	ret
+ 00A6 2A0000    	lhld	@dma
+ 00A9 7C        	mov	a,h
+ 00AA E6C0      	ani	0c0h
+ 00AC 07        	rlc
+ 00AD 07        	rlc
+ 00AE 47        	mov	b,a	; 000000aa
+ 00AF 7C        	mov	a,h
+ 00B0 E63F      	ani	03fh
+ 00B2 67        	mov	h,a
+ 00B3 225500    	shld	usr$addr
+ 00B6 3A0000    	lda	@dbnk
+ 00B9 87        	add	a
+ 00BA 87        	add	a	; 0000bb00
+ 00BB B0        	ora	b	; 0000bbaa
+ 00BC 4F        	mov	c,a
+ 00BD 0600      	mvi	b,0
+ 00BF 210000    	lxi	h,@t512k
+ 00C2 09        	dad	b
+ 00C3 225300    	shld	usr$map
+ 00C6 3A0000    	lda	@sect	; 0-127
+ 00C9 B7        	ora	a
+ 00CA 1F        	rar	; * 128
+ 00CB 67        	mov	h,a
+ 00CC 3E00      	mvi	a,0
+ 00CE 1F        	rar
+ 00CF 6F        	mov	l,a
+ 00D0 225100    	shld	rd$addr
+ 00D3 3A0000    	lda	@trk	; 0-18
+ 00D6 C68D      	adi	base$pg+map	; upper 304K, enable mapping
+ 00D8 325000    	sta	rd$map
+ 00DB C9        	ret
                 
                 read$rd:
- 00F6 CDC000    	call	setup$rw
- 00F9 F3        	di
- 00FA CD5700    	call	rd$read
- 00FD 3A0000    	lda	@cbnk
- 0100 CD0000    	call	?bnksl
- 0103 FB        	ei
- 0104 C9        	ret
+ 00DC CDA600    	call	setup$rw
+ 00DF F3        	di
+ 00E0 CD5700    	call	rd$read
+ 00E3 3A0000    	lda	@cbnk
+ 00E6 CD0000    	call	?bnksl
+ 00E9 FB        	ei
+ 00EA C9        	ret
                 
                 write$rd:
- 0105 CDC000    	call	setup$rw
- 0108 F3        	di
- 0109 CD7600    	call	rd$write
- 010C 3A0000    	lda	@cbnk
- 010F CD0000    	call	?bnksl
- 0112 FB        	ei
- 0113 C9        	ret
+ 00EB CDA600    	call	setup$rw
+ 00EE F3        	di
+ 00EF CD7600    	call	rd$write
+ 00F2 3A0000    	lda	@cbnk
+ 00F5 CD0000    	call	?bnksl
+ 00F8 FB        	ei
+ 00F9 C9        	ret
                 
- 0114           	end
-
+ 00FA           	end
+

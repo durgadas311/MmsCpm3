@@ -1,15 +1,20 @@
-VERS EQU '3 ' ; Oct  7, 2017  15:45  drm  "RD512K'3.ASM"
+VERS EQU '3 ' ; Nov  1, 2018  11:20  drm  "RD512K'3.ASM"
 ;*********************************************************
 ;	Disk I/O module for MMS CP/M 3.1
 ;	for RAM disk on the 512K RAM board
-;	Copyright (c) 2017 Douglas Miller
+;	Copyright (c) 2018 Douglas Miller
 ;*********************************************************
-	MACLIB Z80
+false	equ	0
+true	equ	not false
+
+	maclib z80
 
 	extrn	@trk,@sect,@dma,@dbnk,@cbnk
 	extrn	@dircb,@dtacb
 	extrn	@m512k,@t512k
 	extrn	?bnksl
+
+larger	equ	true	; larger ramdisk, but larger block size?
 
 ;---------------------------------------------------------
 ;
@@ -21,7 +26,7 @@ VERS EQU '3 ' ; Oct  7, 2017  15:45  drm  "RD512K'3.ASM"
 ;	Ports and Constants
 ;---------------------------------------------------------
 ;  PORT ASSIGNMENTS
-rd	equ	0	;
+rd	equ	0	; TODO: get these from mem512k.rel
 wr	equ	4	;
 map	equ	080h	;
 
@@ -30,8 +35,21 @@ base$pg	equ	13	; memory pages 0-12 used by CP/M 3
 driv0	equ	40		; first drive in system
 ndriv	equ	1		; # of drives is system
 
-false	equ	0
-true	equ	not false
+if larger
+dsm	equ	151	; 19 pages for ramdisk, 2k blocks
+bsh	equ	4
+blm	equ	15
+exm	equ	1
+drm	equ	63	; still requires manual ALV0 setup
+alv0	equ	10000000b
+else
+dsm	equ	255	; 16 pages for ramdisk, 1k blocks
+bsh	equ	3
+blm	equ	7
+exm	equ	0
+drm	equ	63	; still requires manual ALV0 setup
+alv0	equ	11000000b
+endif
 ;-------------------------------------------------------
 ;	Start of relocatable disk I/O module.
 ;-------------------------------------------------------
@@ -46,7 +64,13 @@ true	equ	not false
 	dw	string
 	dw	dphtbl,modtbl
 
-string: DB	'RD512K ',0,'304K RAM Disk ',0,'v3.10'
+string: DB	'RD512K ',0
+if larger
+	DB	'304'
+else
+	DB	'256'
+endif
+	DB	'K RAM Disk ',0,'v3.10'
 	DW	VERS
 	DB	'$'
 
@@ -54,9 +78,9 @@ modtbl: db	10000000b,00000000b,00000000b,00000000b ; drive 40, like HDD
 	  db	11111111b,11111111b,11111111b,11111111b
 
 rddpb:	dw	128	; SPT - arbitrary
-	db	3,7,0
-	dw	303,63
-	db	11000000b,0
+	db	bsh,blm,exm
+	dw	dsm,drm
+	db	alv0,0
 	dw	08000h,0
 	db	0,0	; PSH,PSM = 128byte sectors
 
@@ -75,10 +99,10 @@ usr$addr:
 ; Interrupts must be disabled before calling.
 ; Caller must restore bank 0 mapping on return.
 rd$read:
-	lbcd	r$port
+	lbcd	r$port	; B=WR, C=RD
 	lda	rd$map	; source mapping
 	outp	a
-	mov	c,b
+	mov	c,b	; WR port
 	lhld	usr$map	; dest mapping
 	outi	; OK in all cases that matter...
 	inr	c
@@ -91,9 +115,9 @@ rd$read:
 	ret
 
 rd$write:
-	lbcd	r$port
+	lbcd	r$port	; B=WR, C=RD
 	mov	a,b	; save from OUTI
-	lhld	usr$map	; dest mapping
+	lhld	usr$map	; src mapping
 	outi	; OK in all cases that matter...
 	inr	c
 	outi
@@ -115,8 +139,9 @@ thread	equ	$
 dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0ffffh
 	db 0
 
-alv40:	ds	(256)/4 	; max blocks: 256
+alv40:	ds	(dsm+1)/4 	;
 
+; This could be overlapped with alv40: never used after init$rd.
 label:	db	020h,'RAMDISK3LBL'
 lblen	equ	$-label
 	db	00000001b,0,0,0	; no modes (yet)
@@ -153,7 +178,7 @@ ird1:	; must re-initialize directory (to empty)
 	ldir
 	xchg	; make rest empty
 	lxi	d,32	; bytes/dirent
-	mvi	b,63	; DRM (one already done)
+	mvi	b,drm	; DRM (one already done)
 	mvi	a,0e5h	; empty entry
 ird0:	mov	m,a
 	dad	d
