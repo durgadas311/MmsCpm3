@@ -93,7 +93,54 @@ pars1:
 	lxi	d,SUBR
 	jz	pars2
 	cpi 	'M'
-	jnz	help
+	jz	pars3
+	cpi	'0'
+	jc	help
+	cpi	'3'+1
+	jnc	help
+	; Socket config
+	sta	sokn
+	; parse <srvid> <ipadr> <port>
+	mvi	c,0	; NUL won't ever be seen
+	call	parshx
+	jc	help
+	mvi	a,31h
+	sta	sokpt
+	mov	a,d	; server ID
+	sta	sokpt+1
+	call	skipb
+	jc	help
+	lxix	sokip
+	call	parsadr
+	jc	help
+	call	skipb
+	jc	help
+	call	parsnm
+	jc	help
+	mov	a,d
+	sta	sokdpt
+	mov	a,e
+	sta	sokdpt+1
+	; set Sn_MR separate, to avoid writing CR and SR...
+	mvi	a,1	; TCP
+	sta	sokmr
+	lxi	h,sokmr
+	lda	sokn
+	sui	'0'
+	adi	04h
+	mov	d,a
+	mvi	e,0
+	push	d
+	mvi	b,1
+	call	wizset
+	; TODO: do we need to skip/cleanse DHAR?
+	lxi	h,sokpt
+	pop	d
+	mvi	e,4
+	mvi	b,soklen-4
+	jmp	setit
+
+pars3:
 	lxix	mac
 	pushix
 	call	parsmac
@@ -402,10 +449,32 @@ skip0:	mov	a,m
 parsmac:
 	mvi	c,':'
 pm00:
+	call	parshx
+	rc
+	jz	pm1	; hit term char
+	; TODO: check for 6 bytes...
+	stx	d,+0
+	ora	a	; NC
+	ret
+pm1:
+	stx	d,+0
+	inxix
+	inx	h
+	djnz	pm00
+	; error if ends here...
+	stc
+	ret
+
+
+; C=term char
+; returns CY if error, Z if term char, NZ end of text
+parshx:
 	mvi	d,0
 pm0:	mov	a,m
 	cmp	c
-	jz	pm1
+	rz
+	cpi	' '
+	jz	nzret
 	sui	'0'
 	rc
 	cpi	'9'-'0'+1
@@ -432,18 +501,9 @@ pm3:
 	mov	d,a
 	inx	h
 	djnz	pm0
-	; TODO: check for 6 bytes...
-	stx	d,+0
-	ora	a
-	ret
-
-pm1:
-	stx	d,+0
-	inxix
-	inx	h
-	djnz	pm00
-	; error if ends here...
-	stc
+nzret:
+	xra	a
+	inr	a	; NZ
 	ret
 
 ; IX=destination
@@ -454,6 +514,8 @@ pa00:
 pa0:	mov	a,m
 	cmp	c
 	jz	pa1
+	cpi	' '
+	jz	pa2
 	cpi	'0'
 	rc
 	cpi	'9'+1
@@ -471,6 +533,7 @@ pa0:	mov	a,m
 	mov	d,a
 	inx	h
 	djnz	pa0
+pa2:
 	; TODO: check for 4 bytes...
 	stx	d,+0
 	ora	a
@@ -484,6 +547,43 @@ pa1:
 	; error if ends here...
 	stc
 	ret
+
+; Parse a 16-bit (max) decimal number
+parsnm:
+	lxi	d,0
+pd0:	mov	a,m
+	cpi	' '
+	rz
+	cpi	'0'
+	rc
+	cpi	'9'+1
+	cmc
+	rc
+	ani	0fh
+	push	h
+	mov	h,d
+	mov	l,e
+	dad	h	; *2
+	jc	pd1
+	dad	h	; *4
+	jc	pd1
+	dad	d	; *5
+	jc	pd1
+	dad	h	; *10
+	jc	pd1
+	mov	e,a
+	mvi	d,0
+	dad	d
+	xchg
+	pop	h
+	rc
+	inx	h
+	djnz	pd0
+	ora	a	; NC
+	ret
+
+pd1:	pop	h
+	ret	; CY still set
 
 	ds	40
 stack:	ds	0
@@ -499,7 +599,7 @@ ip:	ds	4
 comlen	equ	$-comregs
 
 sokregs:
-	ds	4	; MR, CR, IR, SR
+sokmr:	ds	4	; MR, CR, IR, SR
 sokpt:	ds	2	; PORT
 	ds	6	; DHAR
 sokip:	ds	4	; DIPR
