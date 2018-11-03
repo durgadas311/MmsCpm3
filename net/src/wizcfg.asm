@@ -20,6 +20,7 @@ SUBR	equ	5
 SHAR	equ	9
 SIPR	equ	15
 RMSR	equ	26	; TMSR = RMSR+1
+PMAGIC	equ	41	; used for node ID
 
 CR	equ	13
 LF	equ	10
@@ -34,12 +35,14 @@ print	equ	9
 
 	jmp	start
 
+idmsg:	db	'Node ID:  $'
 gwmsg:	db	'Gateway:  $'
 ntmsg:	db	'Subnet:   $'
 mcmsg:	db	'MAC:      $'
 ipmsg:	db	'IP Addr:  $'
 
-usage:	db	'Usage: WIZCFG {G|I|S|M adr}',CR,LF,'$'
+usage:	db	'Usage: WIZCFG {G|I|S|M|N adr}',CR,LF
+	db	'       WIZCFG {0|1|2|3 sock-info}',CR,LF,'$'
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
@@ -94,6 +97,8 @@ pars1:
 	jz	pars2
 	cpi 	'M'
 	jz	pars3
+	cpi 	'N'
+	jz	pars4
 	cpi	'0'
 	jc	help
 	cpi	'3'+1
@@ -138,6 +143,16 @@ pars1:
 	pop	d
 	mvi	e,4
 	mvi	b,soklen-4
+	jmp	setit
+
+pars4:
+	call	parshx
+	jc	help
+	mov	a,d
+	sta	wizmag
+	lxi	h,wizmag
+	lxi	d,PMAGIC
+	mvi	b,1
 	jmp	setit
 
 pars3:
@@ -200,7 +215,19 @@ show:
 	lxi	d,GAR
 	mvi	b,comlen
 	call	wizget
-	; collect more... sockets...
+	lxi	h,wizmag
+	lxi	d,PMAGIC
+	mvi	b,1
+	call	wizget
+
+	lxi	d,idmsg
+	mvi	c,print
+	call	bdos
+	lda	wizmag
+	call	hexout
+	mvi	a,'H'
+	call	chrout
+	call	crlf
 
 	lxi	d,ipmsg
 	mvi	c,print
@@ -590,6 +617,8 @@ stack:	ds	0
 usrstk:	dw	0
 
 wizmsr:	db	00000000b,00000000b	; min memory per socket
+
+wizmag:	db	0	; used a client (node) ID
 
 comregs:
 gw:	ds	4
