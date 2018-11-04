@@ -41,8 +41,10 @@ ntmsg:	db	'Subnet:   $'
 mcmsg:	db	'MAC:      $'
 ipmsg:	db	'IP Addr:  $'
 
-usage:	db	'Usage: WIZCFG {G|I|S|M|N adr}',CR,LF
-	db	'       WIZCFG {0|1|2|3 sock-info}',CR,LF,'$'
+usage:	db	'Usage: WIZCFG {G|I|S ipadr}',CR,LF
+	db	'       WIZCFG {M macadr}',CR,LF
+	db	'       WIZCFG {N cid}',CR,LF
+	db	'       WIZCFG {0|1|2|3 sid ipadr port}',CR,LF,'$'
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
@@ -57,7 +59,8 @@ start:
 	jz	nocpnt
 	; TODO: confirm network is idle...
 nocpnt:
-	mvi	a,00000011b	; bus indir, auto-incr
+	in	wiz$mr
+	ori	00000011b	; bus indir, auto-incr
 	out	wiz$mr
 	lxi	h,wizmsr
 	lxi	d,RMSR
@@ -177,13 +180,14 @@ pars2:
 setit:
 	call	wizset
 
-	lxi	d,done
-	mvi	c,print
-	call	bdos
+	;lxi	d,done
+	;mvi	c,print
+	;call	bdos
 
 exit:
-	mvi	a,00000001b	; bus indir, no auto-incr
-	out	wiz$mr
+	; leave auto-incr on
+	;mvi	a,00000001b	; bus indir, no auto-incr
+	;out	wiz$mr
 	jmp	cpm
 
 help:

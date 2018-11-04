@@ -1,0 +1,648 @@
+                ; SNIOS for WIZ810MJ/WIZ812MJ
+                ;
+                	maclib	z80
+                
+                	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                
+ 0010 =         wiz	equ	10h	; base port
+ 0010 =         wiz$mr	equ	wiz+0
+ 0011 =         wiz$arh	equ	wiz+1
+ 0012 =         wiz$arl	equ	wiz+2
+ 0013 =         wiz$dr	equ	wiz+3
+                
+                ; common regs
+ 0015 =         ir	equ	21
+ 001A =         rmsr	equ	26
+ 001B =         tmsr	equ	27
+ 0029 =         pmagic	equ	41
+                
+                ; socket regs, relative
+ 0004 =         sn$prt	equ	4
+ 0001 =         sn$cr	equ	1
+ 0002 =         sn$ir	equ	2
+ 0003 =         sn$sr	equ	3
+ 0024 =         sn$txwr	equ	36
+ 0026 =         sn$rxrsr equ	38
+ 0028 =         sn$rxrd	equ	40
+                
+                ; socket commands
+ 0001 =         OPEN	equ	01h
+ 0004 =         CONNECT	equ	04h
+ 0020 =         SEND	equ	20h
+ 0040 =         RECV	equ	40h
+                
+                ; socket status
+ 0013 =         INIT	equ	13h
+ 0017 =         ESTABLISHED equ	17h
+                
+                	cseg
+                ;	Slave Configuration Table
+                CFGTBL:
+ 0000           	ds	1		; network status byte
+ 0001           	ds	1		; slave processor ID number
+ 0002           	ds	2		; A:	Disk device	+2
+ 0004           	ds	2		; B:	"
+ 0006           	ds	2		; C:	"
+ 0008           	ds	2		; D:	"
+ 000A           	ds	2		; E:	"
+ 000C           	ds	2		; F:	"
+ 000E           	ds	2		; G:	"
+ 0010           	ds	2		; H:	"
+ 0012           	ds	2		; I:	"
+ 0014           	ds	2		; J:	"
+ 0016           	ds	2		; K:	"
+ 0018           	ds	2		; L:	"
+ 001A           	ds	2		; M:	"
+ 001C           	ds	2		; N:	"
+ 001E           	ds	2		; O:	"
+ 0020           	ds	2		; P:	"
+                
+ 0022           	ds	2		; console device	+34
+                
+ 0024           	ds	2		; list device:		+36...
+ 0026           	ds	1		;	buffer index	+2
+ 0027 00        	db	0		;	FMT		+3
+ 0028 00        	db	0		;	DID		+4
+ 0029 FF        	db	0ffh		;	SID (CP/NOS must still initialize)
+ 002A 05        	db	5		;	FNC		+6
+ 002B 00        	db	0		;	SIZ		+7
+ 002C           	ds	1		;	MSG(0)	List number	+8
+ 002D           	ds	128		;	MSG(1) ... MSG(128)	+9...
+                
+                ;	Network Status Byte Equates
+                ;
+ 0010 =         active		equ	0001$0000b	; slave logged in on network
+ 0002 =         rcverr		equ	0000$0010b	; error in received message
+ 0001 =         senderr 	equ	0000$0001b	; unable to send message
+                
+ 00AD           srvtbl:	ds	4	; SID, per socket
+                
+ 00B1           rxbase:	ds	8	; RX base and top addrs (hi bytes)
+ 00B9           txbase:	ds	8	; TX base and top addrs (hi bytes)
+                
+ 00C1 00        cursok:	db	0	; current socket
+ 00C2 00        curbas:	db	0
+ 00C3 00        curtop:	db	0
+ 00C4 0000      curptr:	dw	0	; into chip mem
+ 00C6 0000      curseg:	dw	0	; bytes until wrap
+ 00C8 0000      msgptr:	dw	0
+ 00CA 0000      msglen:	dw	0
+ 00CC 0000      totlen:	dw	0
+                
+                getwiz1:
+ 00CE 7A        	mov	a,d
+ 00CF D311      	out	wiz$arh
+ 00D1 7B        	mov	a,e
+ 00D2 D312      	out	wiz$arl
+ 00D4 DB13      	in	wiz$dr
+ 00D6 C9        	ret
+                
+                ; Get 16-bit value from chip
+                ; Prereq: IDM_AR0 already set, auto-incr on
+                ; Entry: A=value for IDM_AR1
+                ; Return: HL=register pair contents
+                getwiz2:
+ 00D7 D312      	out	wiz$arl
+ 00D9 DB13      	in	wiz$dr
+ 00DB 67        	mov	h,a
+ 00DC DB13      	in	wiz$dr
+ 00DE 6F        	mov	l,a
+ 00DF C9        	ret
+                
+                ; Put 16-bit value to chip
+                ; Prereq: IDM_AR0 already set, auto-incr on
+                ; Entry: A=value for IDM_AR1
+                ;        HL=register pair contents
+                putwiz2:
+ 00E0 D312      	out	wiz$arl
+ 00E2 7C        	mov	a,h
+ 00E3 D313      	out	wiz$dr
+ 00E5 7D        	mov	a,l
+ 00E6 D313      	out	wiz$dr
+ 00E8 C9        	ret
+                
+                ; Issue command, wait for complete
+                ; Prereq: IDM_AR0=desired socket base
+                ; Returns: A=Sn_SR
+ 00E9 F5        wizcmd:	push	psw
+ 00EA DB10      	in	wiz$mr
+ 00EC E6FD      	ani	11111101b	; auto-incr off
+ 00EE D310      	out	wiz$mr
+ 00F0 3E01      	mvi	a,sn$cr
+ 00F2 D312      	out	wiz$arl
+ 00F4 F1        	pop	psw
+ 00F5 D313      	out	wiz$dr
+ 00F7 DB13      wc0:	in	wiz$dr
+ 00F9 B7        	ora	a
+                	jrnz	wc0
+ 00FA+20FB      	DB	20H,WC0-$-1
+ 00FC DB10      	in	wiz$mr
+ 00FE F602      	ori	00000010b	; auto-incr on
+ 0100 D310      	out	wiz$mr
+ 0102 3E03      	mvi	a,sn$sr
+ 0104 D312      	out	wiz$arl
+ 0106 DB13      	in	wiz$dr
+ 0108 C9        	ret
+                
+                ; B=Server ID, preserves HL
+                ; returns DE=socket base (if NC)
+                getsrv:
+ 0109 0E04      	mvi	c,4
+ 010B 11AD00    	lxi	d,srvtbl
+                gs1:
+ 010E 1A        	ldax	d
+ 010F 13        	inx	d
+ 0110 B8        	cmp	b
+                	jrz	gs0
+ 0111+2805      	DB	28H,GS0-$-1
+ 0113 0D        	dcr	c
+                	jrnz	gs1
+ 0114+20F8      	DB	20H,GS1-$-1
+ 0116 37        	stc	; not found
+ 0117 C9        	ret
+                gs0:	; found...
+ 0118 3E04      	mvi	a,4
+ 011A 91        	sub	c	; socket num
+ 011B 32C100    	sta	cursok
+ 011E C604      	adi	04h
+ 0120 D311      	out	wiz$arh
+ 0122 3E03      	mvi	a,sn$sr
+ 0124 D312      	out	wiz$arl
+ 0126 DB13      	in	wiz$dr
+ 0128 FE17      	cpi	ESTABLISHED
+ 012A C8        	rz
+ 012B FE13      	cpi	INIT
+                	jrz	gs3
+ 012D+2809      	DB	28H,GS3-$-1
+                	; try to open socket...
+ 012F 3E01      	mvi	a,OPEN
+ 0131 CDE900    	call	wizcmd
+ 0134 FE13      	cpi	INIT
+                	jrnz	gs2
+ 0136+2008      	DB	20H,GS2-$-1
+ 0138 3E04      gs3:	mvi	a,CONNECT
+ 013A CDE900    	call	wizcmd
+ 013D FE17      	cpi	ESTABLISHED
+ 013F C8        	rz
+ 0140 37        gs2:	stc	; failed to open
+ 0141 C9        	ret
+                
+                ; HL=socket relative pointer (TX_WR)
+                ; DE=length
+                ; Destroys IDM_AR0, IDM_AR1
+                cpyout:
+ 0142 3AC200    	lda	curbas
+ 0145 84        	add	h
+ 0146 D311      	out	wiz$arh
+ 0148 7D        	mov	a,l
+ 0149 D312      	out	wiz$arl
+ 014B 2AC800    	lhld	msgptr
+ 014E 0E13      	mvi	c,wiz$dr
+ 0150 43        	mov	b,e	; fraction of page
+ 0151 7B        	mov	a,e
+ 0152 B7        	ora	a
+                	jrz	co0	; exactly 256
+ 0153+2806      	DB	28H,CO0-$-1
+                	outir		; do partial page
+ 0155+EDB3      	DB	0EDH,0B3H
+                	; B is now 0 (256 bytes)
+ 0157 7A        	mov	a,d
+ 0158 B7        	ora	a
+                	jrz	co1
+ 0159+2802      	DB	28H,CO1-$-1
+                co0:	outir	; 256 (more) bytes to xfer
+ 015B+EDB3      	DB	0EDH,0B3H
+ 015D 22C800    co1:	shld	msgptr
+ 0160 C9        	ret
+                
+                ; HL=socket relative pointer (RX_RD)
+                ; DE=length
+                ; Destroys IDM_AR0, IDM_AR1
+                cpyin:
+ 0161 3AC200    	lda	curbas
+ 0164 84        	add	h
+ 0165 D311      	out	wiz$arh
+ 0167 7D        	mov	a,l
+ 0168 D312      	out	wiz$arl
+ 016A 2AC800    	lhld	msgptr
+ 016D 0E13      	mvi	c,wiz$dr
+ 016F 43        	mov	b,e	; fraction of page
+ 0170 7B        	mov	a,e
+ 0171 B7        	ora	a
+                	jrz	ci0	; exactly 256
+ 0172+2806      	DB	28H,CI0-$-1
+                	inir		; do partial page
+ 0174+EDB2      	DB	0EDH,0B2H
+                	; B is now 0 (256 bytes)
+ 0176 7A        	mov	a,d
+ 0177 B7        	ora	a
+                	jrz	ci1
+ 0178+2802      	DB	28H,CI1-$-1
+                ci0:	inir	; 256 (more) bytes to xfer
+ 017A+EDB2      	DB	0EDH,0B2H
+ 017C 22C800    ci1:	shld	msgptr
+ 017F C9        	ret
+                
+                ; C=bits to reset
+                ; D=socket base
+                wizsts:
+ 0180 7A        	mov	a,d
+ 0181 D311      	out	wiz$arh
+                wizsts1:	; IDM_AR0 already set
+ 0183 3E02      	mvi	a,sn$ir
+ 0185 D312      	out	wiz$arl
+ 0187 DB13      	in	wiz$dr
+ 0189 F5        	push	psw
+ 018A A1        	ana	c
+                	jrz	ws0	; don't reset if not set (could race)
+ 018B+2807      	DB	28H,WS0-$-1
+ 018D 3E02      	mvi	a,sn$ir	; must reset due to auto-incr
+ 018F D312      	out	wiz$arl
+ 0191 79        	mov	a,c
+ 0192 D313      	out	wiz$dr
+ 0194 F1        ws0:	pop	psw
+ 0195 C9        	ret
+                
+                ;	Utility Procedures
+                ;
+                ;	Network Initialization
+                NTWKIN:
+                	lxix	CFGTBL
+ 0196+DD21      	DB	0DDH,21H
+ 0198+0000      	DW	CFGTBL
+ 019A 112900    	lxi	d,pmagic
+ 019D CDCE00    	call	getwiz1
+ 01A0 B7        	ora	a
+ 01A1 CA1103    	jz	err
+                	stx	a,+1 ; our slave (client) ID
+ 01A4+DD7701    	DB	0DDH,70H+A,+1
+ 01A7 3E10      	mvi	a,active
+                	stx	a,+0 ; network status byte
+ 01A9+DD7700    	DB	0DDH,70H+A,+0
+ 01AC AF        	xra	a
+ 01AD 322B00    	sta	CFGTBL+36+7
+ 01B0 C31403    	jmp	NTWKBT	; load data
+                
+                ;	Network Status
+                NTWKST:
+ 01B3 3A0000    	lda	CFGTBL+0
+ 01B6 47        	mov	b,a
+ 01B7 E6FC      	ani	not (rcverr+senderr)
+ 01B9 320000    	sta	CFGTBL+0
+ 01BC 78        	mov	a,b
+ 01BD C9        	ret
+                
+                ;	Return Configuration Table Address
+                ;	Still need this for BDOS func 69
+                CNFTBL:
+ 01BE 210000    	lxi	h,CFGTBL
+ 01C1 C9        	ret
+                
+                ;	Send Message on Network
+                SNDMSG:			; BC = message addr
+                	sbcd	msgptr
+ 01C2+ED43      	DB	0EDH,43H
+ 01C4+C800      	DW	MSGPTR
+                	lixd	msgptr
+ 01C6+DD2A      	DB	0DDH,2AH
+ 01C8+C800      	DW	MSGPTR
+                	ldx	b,+1	; SID - destination
+ 01CA+DD4601    	DB	0DDH,B*8+46H,+1
+ 01CD CD0901    	call	getsrv
+                	jrc	serr
+ 01D0+3865      	DB	38H,SERR-$-1
+                	; DE=socket
+ 01D2 3A0100    	lda	CFGTBL+1
+                	stx	a,+2	; Set Slave ID in header
+ 01D5+DD7702    	DB	0DDH,70H+A,+2
+                	ldx	a,+4	; msg siz (-1)
+ 01D8+DD7E04    	DB	0DDH,A*8+46H,+4
+ 01DB C606      	adi	5+1	; hdr, +1 for (-1)
+ 01DD 6F        	mov	l,a
+ 01DE 3E00      	mvi	a,0
+ 01E0 CE00      	aci	0
+ 01E2 67        	mov	h,a	; HL=msg length
+ 01E3 22CA00    	shld	msglen
+ 01E6 CD7D03    	call	tx$setup
+ 01E9 2ACA00    	lhld	msglen
+                	lbcd	curptr
+ 01EC+ED4B      	DB	0EDH,4BH
+ 01EE+C400      	DW	CURPTR
+ 01F0 09        	dad	b
+ 01F1 3AC300    	lda	curtop
+ 01F4 3D        	dcr	a
+ 01F5 A4        	ana	h
+ 01F6 67        	mov	h,a	; HL=new TX_WR
+ 01F7 3E24      	mvi	a,sn$txwr
+ 01F9 CDE000    	call	putwiz2
+ 01FC 7C        	mov	a,h	; nxt
+ 01FD B8        	cmp	b	; nxt-cur
+                	jrnc	nowrap
+ 01FE+3019      	DB	30H,NOWRAP-$-1
+ 0200 2AC600    	lhld	curseg
+ 0203 EB        	xchg
+ 0204 2ACA00    	lhld	msglen
+ 0207 B7        	ora	a
+                	dsbc	d
+ 0208+ED52      	DB	0EDH,D*8+42H
+ 020A 22CA00    	shld	msglen
+ 020D 2AC400    	lhld	curptr
+ 0210 CD4201    	call	cpyout
+ 0213 210000    	lxi	h,0
+ 0216 22C400    	shld	curptr
+                nowrap:
+                	; send data
+ 0219 2ACA00    	lhld	msglen
+ 021C EB        	xchg
+ 021D 2AC400    	lhld	curptr
+ 0220 CD4201    	call	cpyout
+ 0223 3AC100    	lda	cursok
+ 0226 C604      	adi	04h
+ 0228 D311      	out	wiz$arh
+ 022A 3E20      	mvi	a,SEND
+ 022C CDE900    	call	wizcmd
+                	; ignore Sn_SR?
+ 022F 0E10      	mvi	c,00010000b	; SEND_OK bit
+ 0231 CD8301    	call	wizsts1
+ 0234 2F        	cma	; want "0" on success
+ 0235 A1        	ana	c	; SEND_OK
+ 0236 C8        	rz
+ 0237 3A0000    serr:	lda	CFGTBL
+ 023A F601      	ori	senderr
+ 023C 320000    	sta	CFGTBL
+ 023F 3EFF      	mvi	a,0ffh
+ 0241 C9        	ret
+                
+                ; TODO: also check/OPEN sockets?
+                ; That would result in all sockets always being open...
+                ; At least check all, if none are ESTABLISHED then error immediately
+                check:
+ 0242 110304    	lxi	d,sn$sr+0400h
+ 0245 0604      	mvi	b,4
+ 0247 CDCE00    chk2:	call	getwiz1
+ 024A FE17      	cpi	ESTABLISHED
+                	jrz	chk3
+ 024C+2805      	DB	28H,CHK3-$-1
+ 024E 14        	inr	d	; next socket
+                	djnz	chk2
+ 024F+10F6      	DB	10H,CHK2-$-1
+ 0251 37        	stc
+ 0252 C9        	ret
+ 0253 21007D    chk3:	lxi	h,32000	; do check for sane receive time...
+ 0256 1604      chk0:	mvi	d,04h	; socket base
+ 0258 0604      	mvi	b,4
+ 025A 0E04      	mvi	c,00000100b	; RECV data available bit
+ 025C CD8001    chk1:	call	wizsts
+ 025F A1        	ana	c	; RECV data available
+ 0260 C0        	rnz	; D=socket
+ 0261 14        	inr	d	; next socket
+                	djnz	chk1
+ 0262+10F8      	DB	10H,CHK1-$-1
+ 0264 2B        	dcx	h
+ 0265 7C        	mov	a,h
+ 0266 B5        	ora	l
+                	jrnz	chk0
+ 0267+20ED      	DB	20H,CHK0-$-1
+ 0269 37        	stc
+ 026A C9        	ret
+                
+                ;	Receive Message from Network
+                RCVMSG:			; BC = message addr
+                	sbcd	msgptr
+ 026B+ED43      	DB	0EDH,43H
+ 026D+C800      	DW	MSGPTR
+                	lixd	msgptr
+ 026F+DD2A      	DB	0DDH,2AH
+ 0271+C800      	DW	MSGPTR
+ 0273 CD4202    	call	check	; locates socket that is ready
+                	; DE=socket
+                	jrc	rerr
+ 0276+3891      	DB	38H,RERR-$-1
+ 0278 CDA703    	call	rx$setup
+ 027B 210000    	lxi	h,0
+ 027E 22CC00    	shld	totlen
+                rm0:	; IDM_AR0 must be socket base...
+ 0281 3E26      	mvi	a,sn$rxrsr	; length
+ 0283 CDD700    	call	getwiz2
+ 0286 7C        	mov	a,h
+ 0287 B5        	ora	l
+                	jrz	rm0
+ 0288+28F7      	DB	28H,RM0-$-1
+ 028A 22CA00    	shld	msglen		; not CP/NET msg len
+                	; DE destroyed...
+ 028D EB        	xchg		; DE=Sn_RX_RSR
+ 028E 2ACC00    	lhld	totlen
+ 0291 B7        	ora	a
+                	dsbc	d
+ 0292+ED52      	DB	0EDH,D*8+42H
+ 0294 22CC00    	shld	totlen	; might be negative...
+ 0297 3E28      	mvi	a,sn$rxrd	; pointer
+ 0299 CDD700    	call	getwiz2
+ 029C 22C400    	shld	curptr
+ 029F EB        	xchg	; DE=Sn_RX_RD, HL=Sn_RX_RSR
+ 02A0 19        	dad	d
+ 02A1 3AC300    	lda	curtop
+ 02A4 3D        	dcr	a
+ 02A5 A4        	ana	h	; nxt
+ 02A6 67        	mov	h,a	; HL=nxt RD
+ 02A7 3E28      	mvi	a,sn$rxrd
+ 02A9 CDE000    	call	putwiz2
+ 02AC 7C        	mov	a,h
+ 02AD BA        	cmp	d	; nxt-cur
+                	jrnc	nowrp2
+ 02AE+3025      	DB	30H,NOWRP2-$-1
+ 02B0 B5        	ora	l
+                	jrz	nowrp2	; exact wrap
+ 02B1+2822      	DB	28H,NOWRP2-$-1
+ 02B3 3AC300    	lda	curtop
+ 02B6 67        	mov	h,a
+ 02B7 2E00      	mvi	l,0
+                	lbcd	curptr
+ 02B9+ED4B      	DB	0EDH,4BH
+ 02BB+C400      	DW	CURPTR
+ 02BD B7        	ora	a
+                	dsbc	b	; HL=num bytes until wrap
+ 02BE+ED42      	DB	0EDH,B*8+42H
+                	;shld	curseg
+ 02C0 EB        	xchg	; DE=curseg
+ 02C1 2ACA00    	lhld	msglen
+ 02C4 B7        	ora	a
+                	dsbc	d
+ 02C5+ED52      	DB	0EDH,D*8+42H
+ 02C7 22CA00    	shld	msglen
+ 02CA 69        	mov	l,c	; curptr
+ 02CB 60        	mov	h,b	;
+ 02CC CD6101    	call	cpyin	; destroys IDM_AR0, IDM_AR1
+ 02CF 210000    	lxi	h,0
+ 02D2 22C400    	shld	curptr
+                nowrp2:
+ 02D5 2ACA00    	lhld	msglen
+ 02D8 EB        	xchg
+ 02D9 2AC400    	lhld	curptr
+ 02DC CD6101    	call	cpyin	; destroys IDM_AR0, IDM_AR1
+ 02DF 3AC100    	lda	cursok
+ 02E2 C604      	adi	04h
+ 02E4 D311      	out	wiz$arh
+ 02E6 3E40      	mvi	a,RECV
+ 02E8 CDE900    	call	wizcmd
+                	; ignore Sn_SR?
+ 02EB 2ACC00    	lhld	totlen	; might be neg (first pass)
+ 02EE 7C        	mov	a,h
+ 02EF B7        	ora	a
+ 02F0 F20403    	jp	rm1
+                	; can we guarantee at least msg hdr?
+                	ldx	a,+4	; msg siz (-1)
+ 02F3+DD7E04    	DB	0DDH,A*8+46H,+4
+ 02F6 C606      	adi	5+1	; header, +1 for (-1)
+ 02F8 5F        	mov	e,a
+ 02F9 3E00      	mvi	a,0
+ 02FB 8F        	adc	a
+ 02FC 57        	mov	d,a	; true msg len
+ 02FD 19        	dad	d	; subtract what we already have
+                	jrnc	rerr	; something is wrong, if still neg
+ 02FE+3009      	DB	30H,RERR-$-1
+ 0300 22CC00    	shld	totlen
+ 0303 7C        	mov	a,h
+ 0304 B5        rm1:	ora	l
+ 0305 C28102    	jnz	rm0
+ 0308 C9        	ret	; success (A=0)
+                
+ 0309 3A0000    rerr:	lda	CFGTBL
+ 030C F602      	ori	rcverr
+ 030E 320000    	sta	CFGTBL
+ 0311 3EFF      err:	mvi	a,0ffh
+ 0313 C9        NTWKER:	ret
+                
+                NTWKBT:	; NETWORK WARM START
+ 0314 3A0000    	lda	CFGTBL
+ 0317 E610      	ani	active
+ 0319 CA9601    	jz	NTWKIN	; will end up back here, on success
+ 031C DB10      	in	wiz$mr
+ 031E F602      	ori	00000010b	; auto-incr
+ 0320 D310      	out	wiz$mr
+                	; load socket server IDs
+ 0322 0E04      	mvi	c,4
+ 0324 1604      	mvi	d,04h	; base of sock regs
+ 0326 21AD00    	lxi	h,srvtbl
+                nb1:
+ 0329 7A        	mov	a,d
+ 032A D311      	out	wiz$arh
+ 032C 3E04      	mvi	a,sn$prt
+ 032E D312      	out	wiz$arl
+ 0330 DB13      	in	wiz$dr
+ 0332 FE31      	cpi	31h
+ 0334 3EFF      	mvi	a,0ffh
+                	jrnz	nb0
+ 0336+2002      	DB	20H,NB0-$-1
+ 0338 DB13      	in	wiz$dr	; continuation
+ 033A 77        nb0:	mov	m,a
+ 033B 23        	inx	h
+ 033C 14        	inr	d	; next socket
+ 033D 0D        	dcr	c
+                	jrnz	nb1
+ 033E+20E9      	DB	20H,NB1-$-1
+                	; compute socket buffers
+ 0340 AF        	xra	a
+ 0341 D311      	out	wiz$arh
+ 0343 3E1A      	mvi	a,rmsr
+ 0345 D312      	out	wiz$arl
+ 0347 DB13      	in	wiz$dr	; get RMSR
+ 0349 1660      	mvi	d,60h	; RX memory base
+ 034B 21B100    	lxi	h,rxbase
+ 034E CD5D03    	call	setbuf
+                	; compute TX bases, TMSR is RMSR+1
+ 0351 DB13      	in	wiz$dr	; auto-incr makes this TMSR
+ 0353 1640      	mvi	d,40h	; TX memory base
+ 0355 21B900    	lxi	h,txbase
+ 0358 CD5D03    	call	setbuf
+ 035B AF        	xra	a
+ 035C C9        	ret
+                
+                ; Compute base and top for all 4 sockets
+                ; HL=rxbase, D=60h, A=RMSR or
+                ; HL=txbase, D=40h, A=TMSR
+                setbuf:
+ 035D 0604      	mvi	b,4
+ 035F 72        sb0:	mov	m,d	; base addr
+ 0360 23        	inx	h
+ 0361 4F        	mov	c,a
+ 0362 CD7103    	call	comp	; A=04h,08h,10h,20h
+ 0365 77        	mov	m,a	; top addr offset (size)
+ 0366 23        	inx	h
+ 0367 82        	add	d	; next memory chunk
+ 0368 57        	mov	d,a
+ 0369 79        	mov	a,c
+ 036A E6FC      	ani	11111100b
+ 036C 0F        	rrc
+ 036D 0F        	rrc
+                	djnz	sb0
+ 036E+10EF      	DB	10H,SB0-$-1
+ 0370 C9        	ret
+                
+                ; compute (1024 << A)
+                ; Uses A and E only.
+ 0371 E603      comp:	ani	00000011b	; (1 << A) Kbytes
+ 0373 5F        	mov	e,a
+ 0374 B7        	ora	a
+ 0375 3E04      	mvi	a,04h	; 1K
+ 0377 C8        	rz
+ 0378 87        cmp0:	add	a
+ 0379 1D        	dcr	e
+                	jrnz	cmp0
+ 037A+20FC      	DB	20H,CMP0-$-1
+ 037C C9        	ret
+                
+                ; IDM_AR0=socket base
+                ; Sets curptr, curbas, curtop, curseg
+                ; Returns: HL=space before wrap
+                tx$setup:
+ 037D 3E24      	mvi	a,sn$txwr
+ 037F CDD700    	call	getwiz2
+ 0382 22C400    	shld	curptr
+ 0385 3AC100    	lda	cursok
+ 0388 87        	add	a	; 2 bytes/entry
+ 0389 21B900    	lxi	h,txbase
+ 038C 4F        	mov	c,a
+ 038D 0600      	mvi	b,0
+ 038F 09        	dad	b
+ 0390 7E        	mov	a,m	; base page
+ 0391 32C200    	sta	curbas
+ 0394 23        	inx	h
+ 0395 7E        	mov	a,m	; top page
+ 0396 32C300    	sta	curtop
+ 0399 67        	mov	h,a
+ 039A 2E00      	mvi	l,0
+                	lbcd	curptr
+ 039C+ED4B      	DB	0EDH,4BH
+ 039E+C400      	DW	CURPTR
+ 03A0 B7        	ora	a
+                	dsbc	b	; HL=num bytes until wrap
+ 03A1+ED42      	DB	0EDH,B*8+42H
+ 03A3 22C600    	shld	curseg
+                	; never carry? never zero?
+ 03A6 C9        	ret
+                
+                ; DE=socket base (preserved)
+                ; IDM_AR0=socket base
+                ; Sets curbas, curtop
+                rx$setup:
+ 03A7 3E02      	mvi	a,sn$ir
+ 03A9 D312      	out	wiz$arl
+ 03AB 3E04      	mvi	a,00000100b	; RECV data available bit
+ 03AD D313      	out	wiz$dr	; reset status bit
+ 03AF 7A        	mov	a,d
+ 03B0 E603      	ani	00000011b	; socket num
+ 03B2 87        	add	a	; 2 bytes/entry
+ 03B3 21B100    	lxi	h,rxbase
+ 03B6 4F        	mov	c,a
+ 03B7 0600      	mvi	b,0
+ 03B9 09        	dad	b
+ 03BA 7E        	mov	a,m	; base page
+ 03BB 32C200    	sta	curbas
+ 03BE 23        	inx	h
+ 03BF 7E        	mov	a,m	; top page
+ 03C0 32C300    	sta	curtop
+ 03C3 C9        	ret
+                
+ 03C4           	end
+
