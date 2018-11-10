@@ -22,6 +22,18 @@ SIPR	equ	15
 RMSR	equ	26	; TMSR = RMSR+1
 PMAGIC	equ	41	; used for node ID
 
+SnMR	equ	0
+SnCR	equ	1
+SnIR	equ	2
+SnSR	equ	3
+SnPORT	equ	4
+
+; Socket SR values
+CLOSED	equ	00h
+
+; Socket CR commands
+DISCON	equ	08h
+
 CR	equ	13
 LF	equ	10
 
@@ -30,6 +42,8 @@ bdos	equ	5
 cmd	equ	0080h
 
 print	equ	9
+getver	equ	12
+cfgtbl	equ	69
 
 	org	00100h
 
@@ -53,11 +67,16 @@ ncfg:	db	'- Not Configured',CR,LF,'$'
 start:
 	sspd	usrstk
 	lxi	sp,stack
-	call	getver
+	mvi	c,getver
+	call	bdos
 	mov	a,h
 	ani	02h
 	jz	nocpnt
-	; TODO: confirm network is idle...
+	ori	0ffh
+	sta	cpnet
+	mvi	c,cfgtbl
+	call	bdos
+	shld	netcfg
 nocpnt:
 	in	wiz$mr
 	ori	00000011b	; bus indir, auto-incr
@@ -106,19 +125,20 @@ pars1:
 	jc	help
 	cpi	'3'+1
 	jnc	help
-	; Socket config
+
+; Parse new Socket config
 	sta	sokn
 	; parse <srvid> <ipadr> <port>
 	mvi	c,0	; NUL won't ever be seen
 	call	parshx
 	jc	help
 	mvi	a,31h
-	sta	sokpt
+	sta	nskpt
 	mov	a,d	; server ID
-	sta	sokpt+1
+	sta	nskpt+1
 	call	skipb
 	jc	help
-	lxix	sokip
+	lxix	nskip
 	call	parsadr
 	jc	help
 	call	skipb
@@ -126,26 +146,72 @@ pars1:
 	call	parsnm
 	jc	help
 	mov	a,d
-	sta	sokdpt
+	sta	nskdpt
 	mov	a,e
-	sta	sokdpt+1
+	sta	nskdpt+1
+; Now prepare to update socket config
 	; set Sn_MR separate, to avoid writing CR and SR...
 	mvi	a,1	; TCP
 	sta	sokmr
-	lxi	h,sokmr
 	lda	sokn
 	sui	'0'
 	adi	04h
 	mov	d,a
-	mvi	e,0
+	mvi	e,SnMR
 	push	d
+	lxi	h,sokmr
 	mvi	b,1
-	call	wizset
-	; TODO: do we need to skip/cleanse DHAR?
-	lxi	h,sokpt
+	call	wizset	; force TCP/IP mode
+	; Get current values, cleanup as needed
+	lxi	h,sokregs
+	mvi	e,SnMR
+	mvi	b,soklen
+	call	wizget
+	lxi	h,sokmac
+	lxi	d,nskmac
+	lxi	b,6
+	ldir
+	lda	sokpt
+	cpi	31h
+	jnz	ntcpnet	; don't care about CP/NET either
+	lda	cpnet
+	ora	a
+	jz	ntcpnet	; skip CFGTBL cleanup if not CP/NET
+	; remove all refs to this server...
+	lda	sokpt+1	; server node ID
+	mov	c,a
+	lhld	netcfg
+	mvi	b,18	; 16 drives, CON:, LST:
+	inx	h
+	inx	h
+cln0:	mov	a,m
+	ora	a
+	jp	ntnet	; device not networked
+	inx	h
+	mov	a,m
+	cmp	c	; same server?
+	jnz	ntnet1
+	xra	a
+	mov	m,a
+	dcx	h
+	mov	m,a
+ntnet:	inx	h
+ntnet1:	inx	h
+	djnz	cln0
+ntcpnet:
+	lda	sokmr+SnSR
+	cpi	CLOSED
+	jz	ntopn
 	pop	d
-	mvi	e,4
-	mvi	b,soklen-4
+	push	d
+	mvi	e,SnCR
+	mvi	a,DISCON
+	call	wizcmd
+	; don't care about results?
+ntopn:	lxi	h,nskpt
+	pop	d
+	mvi	e,SnPORT
+	mvi	b,soklen-SnPORT
 	jmp	setit
 
 pars4:
@@ -195,6 +261,25 @@ help:
 	mvi	c,print
 	call	bdos
 	jmp	exit
+
+wizcmd:
+	push	psw
+	in	wiz$mr
+	ani	11111101b	; auto-icr off
+	out	wiz$mr
+	mov	a,d
+	out	wiz$arh
+	mov	a,e
+	out	wiz$arl
+	pop	psw
+	out	wiz$dr	; start command
+wc0:	in	wiz$dr
+	ora	a
+	jnz	wc0
+	in	wiz$mr
+	ori	00000010b	; auto-icr on
+	out	wiz$mr
+	ret
 
 wizget:
 	mov	a,d
@@ -358,11 +443,6 @@ chrout:
 	pop	b
 	pop	d
 	pop	h
-	ret
-
-getver:
-	mvi	c,12
-	call	bdos
 	ret
 
 getsts:
@@ -620,9 +700,12 @@ pd1:	pop	h
 stack:	ds	0
 usrstk:	dw	0
 
+cpnet:	db	0
+netcfg:	dw	0
+
 wizmsr:	db	00000000b,00000000b	; min memory per socket
 
-wizmag:	db	0	; used a client (node) ID
+wizmag:	db	0	; used as client (node) ID
 
 comregs:
 gw:	ds	4
@@ -634,9 +717,15 @@ comlen	equ	$-comregs
 sokregs:
 sokmr:	ds	4	; MR, CR, IR, SR
 sokpt:	ds	2	; PORT
-	ds	6	; DHAR
+sokmac:	ds	6	; DHAR
 sokip:	ds	4	; DIPR
 sokdpt:	ds	2	; DPORT
 soklen	equ	$-sokregs
+
+nskpt:	ds	2	; PORT
+nskmac:	ds	6	; DHAR
+nskip:	ds	4	; DIPR
+nskdpt:	ds	2	; DPORT
+nsklen	equ	$-sokregs
 
 	end
