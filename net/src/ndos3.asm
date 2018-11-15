@@ -543,19 +543,12 @@ SNDHDR:
 	inx	h
 	xchg		; DE = MSGDAT
 	lhld	MCRPNT
-	xra	a	; negate DE
-	sub	e
-	mov	c,a
-	mvi	a,0
-	sbb	d
-	mov	b,a
-	dad	b	; HL -= DE
-	mov	a,l
-	ora	h
+	ora	a
+	dsbc	d	; HL -= DE
 	jz	SNDHD1	; size set already
-	dcx	h
+	dcx	h	; SIZ is -1
 	xchg
-	dcx	h
+	dcx	h	; point to SIZ byte
 	mov	m,e	; SIZ = length - 1
 SNDHD1:
 	lxi	b,MSGTOP
@@ -649,18 +642,18 @@ STFCB:
 	inx	h
 	mov	m,c	; put DSK in msg buf
 	inx	h
+	push	h
 	xchg
 	lhld	PARAMT
 	inx	h
+	lxi	b,35
+	ldir	; copy FCB to msg buf
 	xchg
-	mvi	b,35
-	call	MCPYTS	; copy FCB to msg buf
+	shld	MCRPNT
 	xra	a
 	sta	FNTMPF
 	sta	F5SETF
-	lhld	MCRPNT
-	lxi	d,-35
-	dad	d	; point to start of FCB name in msg buf
+	pop	h	; point to start of FCB name in msg buf
 SUBTMP:
 	call	CKDOL	; substitute $NN for $$$ at start of name
 	mvi	b,0
@@ -712,13 +705,10 @@ CKDOL1:
 
 HEXDIG:
 	ani	00fh
-	cpi	10
-	jnc	HEXDG1
-	adi	'0'
-	stax	d
-	ret
-HEXDG1:
-	adi	'A'-10
+	adi	90h
+	daa
+	aci	40h
+	daa
 	stax	d
 	ret
 
@@ -728,30 +718,22 @@ RENTMP:
 	dad	d
 	jmp	SUBTMP
 
-MCPYTS:
-	ldax	d
-	mov	m,a
-	inx	h
-	inx	d
-	dcr	b
-	jnz	MCPYTS
-	shld	MCRPNT
-	ret
-
-WTDTC2:
-	mvi	b,2
+WTDTC2:	; hardly worth ldir, should just hard-code
+	lxi	b,2
 	jmp	WTDTCS
 WTDTC8:
-	mvi	b,8
+	lxi	b,8
 	jmp	WTDTCS
 
 WTDTCP:
-	mvi	b,SCTLNG
+	lxi	b,SCTLNG
 WTDTCS:
-	lhld	DMAADR
-	xchg
 	lhld	MCRPNT
-	call	MCPYTS
+	xchg
+	lhld	DMAADR
+	ldir
+	xchg
+	shld	MCRPNT
 	jmp	SNDHDR
 
 CKSTDP:
@@ -900,8 +882,11 @@ BCSTFN:	; broadcast func (set default password, set compat attrs)
 	mov	m,e
 	jmp	BCST2
 BCST1:
-	mvi	b,8
-	call	MCPYTS
+	lxi	b,8
+	xchg
+	ldir
+	xchg
+	shld	MCRPNT
 BCST2:
 	call	SNDHDR
 	call	RCVPAR
@@ -1140,30 +1125,20 @@ GTFCB:
 	inr	a
 	jnz	GTFCCR
 GTFCRR:
-	mvi	b,35	; FCB+CR+RR (-drive)
+	lxi	b,35	; FCB+CR+RR (-drive)
 	jmp	GTFC1
 GTFCCR:
-	mvi	b,32	; FCB+CR, not RR
+	lxi	b,32	; FCB+CR, not RR
 GTFC1:
 	call	RSTMP	; un-do temp file subst
-	lhld	MCRPNT
-	inx	h
-	xchg
 	lhld	PARAMT
 	inx	h
-	call	MCPYFS
-	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
-	ret
-
-MCPYFS:
-	ldax	d
-	mov	m,a
-	inx	d
-	inx	h
-	dcr	b
-	jnz	MCPYFS
 	xchg
+	lhld	MCRPNT
+	inx	h
+	ldir
 	shld	MCRPNT
+	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
 	ret
 
 RSTMP:	; restore TMP filename
@@ -1220,8 +1195,9 @@ GTDIR1:
 	dad	b
 	jmp	GTDIR1
 GTDIR2:
-	mov	b,c
-	call	MCPYFS
+	xchg
+	ldir
+	shld	MCRPNT
 	ret
 
 GTOSCT:
@@ -1230,10 +1206,10 @@ GTOSCT:
 	rnz
 	lxi	h,MSGDAT+37
 STOSC0:
-	xchg
-	lhld	DMAADR
-	mvi	b,SCTLNG
-	call	MCPYFS
+	lded	DMAADR
+	lxi	b,SCTLNG
+	ldir
+	shld	MCRPNT
 	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
 	ret
 
@@ -1243,29 +1219,29 @@ GTMISC:
 	lda	FUNCOD
 	cpi	CGTALL	; get alloc addr
 	jz	GTMSC3	; for alloc vec, just leave in message buffer
-	xchg
 	cpi	CFRSP	; get disk free space
 	jz	GTMSC4
 	cpi	CGTDPB	; get DPB addr
 	jnz	GTMSC1
 	; fn 31 - get DPB
-	lxi	h,CURDPB
-	push	h
-	mvi	b,16	; should be 15 for CP/M 2.2, 17 for CP/M 3
+	lxi	d,CURDPB
+	push	d
+	lxi	b,16	; should be 15 for CP/M 2.2, 17 for CP/M 3
 	jmp	GTMSC2
 GTMSC4:
-	lxi	h,0
-	push	h
-	lhld	DMAADR
-	mvi	b,3
+	lxi	d,0
+	push	d
+	lded	DMAADR
+	lxi	b,3
 	jmp	GTMSC2
 
 GTMSC1:		; fn 71 - get server config
-	lxi	h,CURSCF
-	push	h
-	mvi	b,23
+	lxi	d,CURSCF
+	push	d
+	lxi	b,23
 GTMSC2:
-	call	MCPYFS
+	ldir
+	shld	MCRPNT
 	pop	h
 GTMSC3:
 	mov	a,l
@@ -1459,14 +1435,16 @@ NWCFTB:
 	ret
 
 LOGIN:
+	lhld	MCRPNT
+	xchg
 	lhld	PARAMT
 	mov	a,m
 	sta	MSGID
 	inx	h
+	lxi	b,8
+	ldir
 	xchg
-	lhld	MCRPNT
-	mvi	b,8
-	call	MCPYTS
+	shld	MCRPNT
 	jmp	SNDHDR
 
 LOGOFF:
