@@ -68,6 +68,7 @@ cont:	db	0	; continuous mode
 
 seed:	db	0
 pgnum:	db	0
+err0:	db	0
 
 ; If current mapping is not the default/disabled,
 ; things will likely crash here.
@@ -191,6 +192,9 @@ start:
 	lxi	d,banks+4
 	lxi	b,lenbnks-4
 	ldir
+	; initialize buffer to detect errors
+	mvi	a,099h
+	call	setpat
 
 	call	mmu$init
 
@@ -199,21 +203,35 @@ start:
 	lxi	h,0000h
 	mvi	a,0	; page 0
 	call	minchk
+	sta	err0
 	lxi	d,4
 	dadx	d
 	lxi	h,4000h
 	mvi	a,1	; page 1 - no-op
 	call	minchk
+	mov	c,a
+	lda	err0
+	ora	c
+	sta	err0
 	lxi	d,4
 	dadx	d
 	lxi	h,8000h
 	mvi	a,2	; page 2
 	call	minchk
+	mov	c,a
+	lda	err0
+	ora	c
+	sta	err0
 	lxi	d,4
 	dadx	d
 	lxi	h,0c000h
 	mvi	a,3	; page 3
 	call	minchk
+	mov	c,a
+	lda	err0
+	ora	c
+	sta	err0
+	jnz	nommu
 	lxi	d,4
 	dadx	d
 	; Now can do write tests...
@@ -268,6 +286,7 @@ loop2:
 	cpi	32
 	jc	loop2
 
+nommu:
 	; done with MMU, report results...
 	call	mmu$deinit
 
@@ -304,12 +323,24 @@ done1:	lxi	d,4
 	lda	pgnum
 	inr	a
 	sta	pgnum
+	cpi	4
+	jnz	done2
+	lda	err0
+	ora	a
+	jnz	nommu0
+	lda	pgnum
+done2:
 	cpi	32
 	jc	done0
 	mov	a,b
 	ora	a
 	jnz	cpm	; already reported results
 	lxi	d,noerr
+	mvi	c,msgout
+	call	bdos
+	jmp	cpm
+
+nommu0:	lxi	d,mmuerr
 	mvi	c,msgout
 	call	bdos
 	jmp	cpm
@@ -370,6 +401,7 @@ res2:	db	'nnn '
 res3:	db	'hh',cr,lf,'$'
 
 noerr:	db	'No errors found.',cr,lf,'$'
+mmuerr:	db	'Aborting test: No MMU?',cr,lf,'$'
 
 banks:
 	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u
