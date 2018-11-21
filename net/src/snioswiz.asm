@@ -4,7 +4,7 @@
 
 	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
 
-wiz	equ	10h	; base port
+wiz	equ	40h	; base port
 wiz$dat	equ	wiz+0
 wiz$ctl	equ	wiz+1
 wiz$sta	equ	wiz+1

@@ -10,7 +10,7 @@
 
 	maclib	z80
 
-wiz	equ	10h	; base port of H8-WIZ550io
+wiz	equ	40h	; base port of H8-WIZ550io
 
 wiz$dat	equ	wiz+0
 wiz$ctl	equ	wiz+1
