@@ -357,7 +357,7 @@ SNDMSG:			; BC = message addr
 	mvi	l,00010000b	; SEND_OK bit
 	call	wizsts
 	cma	; want "0" on success
-	ana	c	; SEND_OK
+	ana	l	; SEND_OK
 	rz
 serr:	lda	CFGTBL
 	ori	senderr
