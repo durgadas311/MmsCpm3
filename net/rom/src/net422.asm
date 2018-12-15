@@ -1,4 +1,4 @@
-VERS1 set 86 ; February 9, 1983  15:58	drm  "NET422.ASM"
+VERS1 set 35 ; (Dec 14, 2018 21:34) drm  "NET422.ASM"
  if VERS1 gt VERS
 VERS set VERS1
  endif
@@ -8,17 +8,12 @@ VERS set VERS1
 ; Response$time * 14.75 (uS) = timeout for response.
 response$time equ 102  ;1505 microseconds
 
-
-CONTENTION:
-	lxi	sp,stack
-	call	LEDoff	;turn LEDs off.
-	call	LEDred
 start$net:
+	di
 	mvi	a,00001000b
 	sta	chAwr1	;interupt on first character of message.
 	call	setrcv	;setup receiver
-	lxi	h,eops
-	res	0,m
+	ei
 
 *********************************************************
 *  Server or Requestor or whatever (node)		*
@@ -26,45 +21,81 @@ start$net:
 SERVER:
 	lhld	deadct0
 	shld	deadctr
-sv0b:	call	unlatch ;
-	jnz	sv1	;
-sv0a:	mvi	b,40	;make loop 40 times as long...
-sv0:	in	ctrl	;idle line detection.
-	ani	IDLE	;	;flag "heard" yet ??
-	jnz	sv1	;
-	djnz	sv0	;to this point...450 uS
-
+	in	ctrl
+	ani	IDLE
+	mov	c,a
+sv0a:
+	mvi	b,10
+sv0b:
+	push	b
 	call	chkeop	;Keep Host interface active...
-
-	lhld	deadctr ;
+	pop	b
+	in	ctrl	;idle line detection.
+	ani	IDLE	;	;flag "heard" yet ??
+	cmp	c
+	jnz	SERVER
+	djnz	sv0b	;to this point...450 uS
+	di
+	lhld	deadctr	;
 	dcx	h	;
-	shld	deadctr ;
+	shld	deadctr	;
+	ei
 	mov	a,h	;
 	ora	l	;
 	jnz	sv0a	; +15.5 = 465.5 uS, times HL... 238mS to 15 sec.
-	lxi	h,stshdr+4
+	lxi	h,stshdr+ZDE+1
 	res	4,m
-	jmp	sv2a	;network is dead, assume TOKEN-0
+	call	sv2a	;network is dead, assume TOKEN-0
+	jmp	SERVER
 
-sv1:	in	ctrl	;now wait for line to IDLE (message finished)
-	ani	IDLE	; ; should "chkeop" be call here?
-	jnz	sv1	; ;
-	call	LATCH	;set IDLE latch.
-;
-; Process messages to/from Host.
-;
-	lda	Z89flg	;did the Host send us a message ?
+chkeop:
+	lda	dbgflg
 	ora	a
-	jz	hm0
+	cnz	debug
+	lxi	h,eops
+	di
+	in	dmastat
+	ani	1111b
+	ora	m
+	mov	m,a
+	ei
+	ani	0100b	;did channel 2 EOP ?
+	jz	ce0
+	lda	from89
+	ora	a
+	jz	ce3
+	mvi	a,false
+	sta	from89
+	lda	ch2hdr
+	ani	11111100b
+	cpi	EXEC
+	lhld	ch2hdr+ZHL
+	jz	ce4
+	lhld	ch2pri
+	lxi	d,DATA	;setup CP/NET message
+	dad	d
+ce4:	lded	ch2hdr+ZBC
+	mov	a,d
+	ora	e
+	jz	ce3
+	mvi	c,ch2ba
+	di
+	call	setdma
+	mvi	a,2
+	out	mask
+	lxi	h,eops
+	res	2,m
+	ei
+	jmp	ce0
+ce3:			;we just finish receiving a message from Z89.
 	lda	ch2hdr	;what kind of message was it??
 	ani	11110000b
 	jm	hm2	;illegal message code from Host.
-	jz	hm1	;
-	cpi	70h	;Debug command
+	cpi	GDBG
 	jz	godbg
-	cpi	60h	;Execute command
+	cpi	EXEC
 	jz	gldng
-	cpi	30h	;status requests don't go out on network...
+	cpi	NSTS
 	jz	hm1
 	di		;swap buffers to save message untill we have a chance
 	lhld	ch2pri	;to send it out.
@@ -77,13 +108,13 @@ sv1:	in	ctrl	;now wait for line to IDLE (message finished)
 	sta	outflg
 	ei
 	lixd	ch2alt
-	lda	ch2hdr		;function code
-	stx	a,CODE
-	lda	ch2hdr+4	;destination
-	stx	a,DEST
 	lda	maddr
 	stx	a,SORC
-	lhld	ch2hdr+1
+	lda	ch2hdr		;function code
+	stx	a,CODE
+	lda	ch2hdr+ZDE+1	;destination
+	stx	a,DEST
+	lhld	ch2hdr+ZBC
 	lxi	d,DATA		; add in header
 	dad	d		;
 	shld	ch2siz
@@ -91,20 +122,87 @@ sv1:	in	ctrl	;now wait for line to IDLE (message finished)
 	sta	outflg
 	jmp	hm2
 
+; Get network status.
+; Local operation only, just return most recent token.
 hm1:	mvi	a,true
 	sta	stsflg
-hm2:	mvi	a,false
-	sta	Z89flg
-	sta	ch2flg
+	lda	ch2hdr+ZDE+1	;set new node type?
+	ani	00fh
+	jz	hm2	; no, leave type alone
+	rlc
+	rlc
+	rlc
+	rlc
+	sta	ntype
+;	jmp	hm2
+
+hm2:	mvi	a,true
+	sta	from89
 	lxi	h,ch2hdr
 	lxi	d,hdrsiz
 	mvi	c,ch2ba
+	di
 	call	setdma
-
-hm0:	lda	cp89	;is ch3 to Host free??
+	mvi	a,2
+	out	mask
+	lxi	h,eops
+	res	2,m
+	ei
+ce0:	lxi	h,eops
+	di
+	in	dmastat
+	ani	1111b
+	ora	m
+	mov	m,a
+	ei
+	ani	1000b
+	jz	hm3
+	lda	to89
 	ora	a
-	jnz	hm3
-	lda	rspflg
+	jz	ce1
+	mvi	a,false
+	sta	to89
+	lded	ch3siz
+	mov	a,e
+	ora	d
+	jz	ce1
+	lhld	ch3adr
+	mvi	c,ch3ba
+	di
+	call	setdma
+	mvi	a,3
+	out	mask
+	lxi	h,eops
+	res	3,m
+	ei
+	jmp	hm3
+
+; End of transfer processing???
+; if (didrsp) didrsp=false;
+; else {
+;	if (didsts) didsts=false;
+;	else if (didalt) didalt=false;
+; }
+ce1:	lda	didrsp
+	ora	a
+	jz	ce1a
+	mvi	a,false
+	sta	didrsp
+	jmp	ce1c
+; if (didsts) didsts=false;
+; else if (didalt) didalt=false;
+ce1a:	lda	didsts
+	ora	a
+	jz	ce1b
+	mvi	a,false
+	sta	didsts
+	jmp	ce1c
+ce1b:	lda	didalt
+	ora	a
+	jz	ce1c
+	mvi	a,false
+	sta	didalt
+ce1c:	lda	rspflg
 	ora	a
 	jnz	hm4
 	lda	stsflg
@@ -116,144 +214,160 @@ hm0:	lda	cp89	;is ch3 to Host free??
 
 	lixd	altaddr
 	ldx	a,SORC
-	sta	cpnhdr+4
+	sta	cpnhdr+ZDE+1
 	ldx	a,CODE
 	sta	cpnhdr
-	lxi	d,0
-	ani	11110000b
-	jz	su0	;CP/NET messages require no further processing.
-	cpi	10h	;Execute code
-	jz	su1
-	cpi	20h	;request for code.
-	jz	su2
-
-
-
-
-
-su2:	ldx	a,DATA
-	sta	cpnhdr+3
-	jmp	su0
-
-su1:	ldx	a,CODE
-	cpi	10h	;execute locally...
-	jz	ldngo1
-	mvi	e,2	;count 2 bytes that are the address for code.
-	ldx	c,DATA
-	ldx	b,DATA+1
-	sbcd	cpnhdr+5
-su0:
 	lhld	altaddr
-	dad	d
 	lxi	b,DATA
 	dad	b
 	shld	ch3adr
-	lxi	h,cpnhdr
-	shld	ch3hda
-	lhld	cpnhdr+1
-	ora	a	;
-	dsbc	d	;
-	shld	cpnhdr+1
-	shld	ch3siz
+	lxix	cpnhdr
 	mvi	a,true
-	sta	cp89
-	jmp	hm3
+	sta	didalt
+	mvi	a,false
+	sta	cpnflg
+	jmp	hm6
 
-hm4:	lxi	h,rsphdr
-	shld	ch3hda
-	lxi	h,0
-	shld	ch3siz
+hm4:	lxix	rsphdr
 	mvi	a,true
-	sta	cp89
-	jmp	hm3
-hm5:	lxi	h,stshdr
-	shld	ch3hda
-	lhld	stshdr+1
-	shld	ch3siz
-	lxi	h,net$table
+	sta	didrsp
+	mvi	a,false
+	sta	rspflg
+	jmp	hm6
+
+hm5:	lxix	stshdr
+	lxi	h,nxt$sp
 	shld	ch3adr
 	mvi	a,true
-	sta	cp89
+	sta	didsts
+	mvi	a,false
+	sta	stsflg
+;	jmp	hm6
 
-hm3:			;setup and start again....
-	jmp	SERVER
+hm6:	sixd	ch3hda
+	ldx	e,ZBC
+	ldx	d,ZBC+1
+	lxi	h,1
+	ora	a
+	dsbc	d
+	jnz	hm7
+	inx	d
+	stx	e,ZBC
+	stx	d,ZBC+1
+hm7:	sded	ch3siz
+	mvi	a,true
+	sta	to89
+	lhld	ch3hda
+	lxi	d,hdrsiz
+	mvi	c,ch3ba
+	di
+	call	setdma
+	mvi	a,0011b
+	out	mask
+	lxi	h,eops
+	res	3,m
+	ei
+hm3:	lda	cpnflg
+	ora	a
+	rz
+	lixd	altaddr
+	ldx	a,CODE
+	cpi	NBOOT
+	jz	btfail
+	ani	11110001b
+	cpi	EXE422
+	jz	ldngo1
+	ret
 
-godbg:	call	shut$down
-	lxi	h,dbgm
-	call	msgout
-	jmp	debug
+godbg:	lda	ch2hdr
+	ani	1111b
+	mov	c,a
+	add	a
+	add	c	; *3
+	mov	l,a	;
+	mvi	h,0	; HL=vector in page 0
+	lbcd	ch2hdr+ZDE
+	lded	ch2hdr+ZHL
+	call	gohl
+	jmp	hm2
 
-ldngo1: call	shut$down
+	pop	h
+	xthl
+gohl:	pchl
+
+btfail:	lxi	h,bootf
+	di
+	call	smsg
+	ei
+	mvi	a,false
+	sta	cpnflg
+	sta	didalt
+	ret
+
+bootf:	db	cr,lf,'Boot failed',0fdh
+
+; Load/run code locally
+ldngo1:	ldx	a,CODE
 	lhld	altaddr
 	lxi	d,DATA
 	dad	d
 	mov	e,m	;address for code...
 	inx	h
 	mov	d,m
-	push	d
+	push	d	; possible RET (goto) address
+	cpi	014h
+	jz	lg2	; goto only, do not load
 	inx	h	;HL points to code in buffer
-	lbcd	cpnhdr+1
+	lbcd	cpnhdr+ZBC
 	dcx	b
 	dcx	b
-	ldir	;move code to executable address
-	ret	;jump to code.
-
-gldng:	call	shut$down
-	lhld	ch2hdr+5	;address for code
-	push	h
-	xchg
-	lhld	ch2pri
-	lbcd	ch2hdr+1	;length of code
 	ldir
-	ret	;go to code
+	cpi	012h	; load+goto
+	jnz	lg2
+	pop	d	; do not jump to code
+lg2:	mvi	a,false
+	sta	cpnflg
+	sta	didalt
+	ret
 
-shut$down:
-	mvi	a,1
-	out	cmdB
-	lxi	h,chBwr1
-	mov	a,m
-	ani	00000100b
-	mov	m,a
-	out	cmdB	;all interupts off
-	xra	a
-	sta	chAwr1	;all chA interupts off
-	lxi	h,null
-	shld	TxEB
-	shld	RxAB
-	call	setrcv
-	mvi	a,0
-	jmp	setmask ;mask DMA channel 0
+gldng:	lda	ch2hdr
+	ani	00000011b
+	jnz	hm2
+	lhld	ch2hdr+ZHL
+	call	gohl
+	jmp	hm2
 
 ;*******************************************************************
 ;
 
-RDRA:		;interupt on first character of message received.
+rstA:
 	push	psw
 	push	b
 	push	d
 	push	h
 	pushix
 	pushiy
-rd0:	in	ctrl	;now wait for line to IDLE (message finished)
-	ani	IDLE	;
-	jnz	rd0	;
-	mvi	a,1	;RR1 has EOF status (message completed)
+	sspd	spcstk
+	call	unlatch
+	call	wait$r2
+	lhld	deadct0
+	shld	deadctr
+	mvi	a,1
 	out	cmdA
 	in	cmdA
 	mov	h,a
-	mvi	a,00110000b	;error reset
+	mvi	a,00110000b
 	out	cmdA
 	mvi	a,0
-	call	setmask ;shut off channel 0
+	call	setmask
+	mvi	a,038h
+	out	cmdA
 	mvi	a,1
 	out	cmdA
-	lxi	h,chAwr1
-	mov	a,m
+	lda	chAwr1
 	ani	11100111b
-	mov	m,a
-	out	cmdA	;shut off interupt on receiver.
-	mvi	a,00111000b	;return-from-interupt, to turn off "special
-	out	cmdA		;"receive condition" interupt pending.
+	sta	chAwr1
+	out	cmdA
 	ei
 	lixd	ch0addr
 	ldx	a,SORC	;destination of next message (response) is the source
@@ -276,19 +390,21 @@ rd0:	in	ctrl	;now wait for line to IDLE (message finished)
 	dsbc	d	;compute network length of message
 	shld	ch0size
 	ldx	a,CODE	;get code field
-	cpi	0ffh	;RESET
+	cpi	RESET
 	jz	CONTENTION
+	cpi	POLL
+	jz	sv4
+	cpi	TOKEN
+	jz	sv5
 	ani	11110000b
 	jp	sv6	;pass message to interpreter.
-	cpi	0e0h	;POLL
-	jz	sv4	;send ACK and continue monitoring
-	cpi	0d0h	;TOKEN0
-	jz	sv5	;get net.table and do buss-master stuff
 
-sv17:	call	LEDred	;;
-	call	setrcv	;
-;	jmp	xitmsg	;
-xitmsg: di
+CONTENTION:
+	call	LEDoff
+sv17:	call	LEDred
+sv17b:	call	setrcv
+xitmsg:	call	unlatch
+	di
 	mvi	a,1
 	out	cmdA
 	lxi	h,chAwr1
@@ -296,6 +412,7 @@ xitmsg: di
 	ori	00001000b
 	mov	m,a
 	out	cmdA	;turn interupt-on-first-char on.
+	lspd	spcstk
 	popiy
 	popix
 	pop	h
@@ -321,7 +438,45 @@ sv6:	in	ctrl	;test jumper for "printer server"
 	call	setup89 	;sends ACK, or NAK if Z89 full
 	jmp	xitmsg
 
-sv2a:	lxi	h,RESmsg
+sv2a:	di
+	push	psw
+	push	b
+	push	d
+	push	h
+	pushix
+	pushiy
+	sspd	spcstk
+	call	unlatch
+	lxi	h,chAwr5
+	mvi	a,5
+	out	cmdA
+	mov	a,m
+	ori	10001010b	; DTR, RTS, TxEna
+	out	cmdA
+	mvi	a,5
+	out	cmdA
+	mov	a,m
+	ori	10000010b	; DTR, RTS (TxDis)
+	out	cmdA
+	lda	ltime
+	add	a
+	add	a
+sv2a0:	dcr	a
+	jnz	sv2a0	; transmit some flag/sync chars
+	mvi	a,5
+	out	cmdA
+	mov	a,m
+	out	cmdA	; !DTR, !RTS, TxDis
+	call	LATCH
+	mvi	a,1
+	out	cmdA
+	lxi	h,chAwr1
+	mov	a,m
+	ani	11100111b
+	mov	m,a
+	out	cmdA
+	ei
+	lxi	h,RESmsg
 	lxi	d,3
 	call	send
 	jmp	sv2
@@ -338,7 +493,8 @@ sv5:			; TOKEN-0, we own the network...
 	mov	e,a
 	mvi	d,0
 	dad	d
-	mvi	m,online
+	lda	ntype
+	mov	m,a
 sv2:	call	LEDgrn		;assume TOKEN-0
 	call	send89	;contention is checked here...
 
@@ -352,11 +508,16 @@ sv2:	call	LEDgrn		;assume TOKEN-0
 	dad	b			;
 	mov	a,m			;
 	ani	11110000b		;
+	jnz	sv21
+	mov	a,m
+	inr	a
+	ani	00001111b
+	mov	m,a
 	mov	a,c			;
-	cz	poll$node	;contention is checked here.
+	call	poll$node	;contention is checked here.
 
-	call	findSERVER
-	jm	sv2
+sv21:	call	findSERVER
+	jm	sv22
 	lxi	h,TOKEN0msg
 	mov	m,a	;set DID
 	lxi	d,tk0ml
@@ -368,6 +529,9 @@ sv2:	call	LEDgrn		;assume TOKEN-0
 	jmp	xitmsg	;
 
 sv16:	call	LEDred
+	jmp	sv2
+
+sv22:	call	chkeop
 	jmp	sv2
 
 unlatch:
@@ -384,19 +548,27 @@ unlatch:
 
 wait$r: lxi	d,response$time ;counter of "how long to wait".
 	call	unlatch
-	jnz	wm12
+	jnz	wait$r2
 wm13:	in	ctrl
 	ani	IDLE		;message on line??
-	jnz	wm12
+	jnz	wait$r2
 	dcx	d
 	mov	a,d
 	ora	e
 	jnz	wm13
 	stc
 	jmp	LATCH	;setup "idle" latch again
+
+wait$r2:
+	lxi	d,33
 wm12:	in	ctrl
 	ani	IDLE
+	jz	LATCH
+	dcx	d
+	mov	a,d
+	ora	e
 	jnz	wm12		;wait for message to finish.
+	stc
 	jmp	LATCH	;setup "idle" latch again
 
 
@@ -407,6 +579,8 @@ setup89:	;(IX)=(ch0addr)
 	ani	1	;0=global, 1=not-global.
 	mov	b,a
 	lda	cpnflg	;is a message still waiting for z89?
+	lxi	h,didalt
+	ora	m
 	cma
 	ani	0010b	;0=overrun, 2=o.k.
 			;(B)=global flag, 0/1
@@ -426,9 +600,9 @@ setup89:	;(IX)=(ch0addr)
 	pop	psw
 	cnz	sendACK 	;sets up receiver. uses (ch0addr)
 	lhld	ch0size
-	lxi	b,-(DATA+2)	;length of header + CRC bytes
+	lxi	b,-(DATA+1)	;length of header + CRC bytes
 	dad	b
-	shld	cpnhdr+1
+	shld	cpnhdr+ZBC
 
 	mvi	a,true
 	sta	cpnflg
@@ -443,83 +617,24 @@ send89:
 	jz	s890	;flag if there are no messages
 	lhld	ch2alt
 	lded	ch2siz
-	lxi	h,ch2bf    ;
 	call	send
-	sta	rsphdr+3
+	sta	rsphdr+ZDE
+	lxi	h,rspflg
+	mvi	m,true
+	lxi	h,outflg
+	mvi	m,false
 	ora	a
-	cnz	LEDred
-	mvi	a,true
-	sta	RSPflg
-	mvi	a,false
-	sta	outflg
-	xra	a	;clear [CY]
-	ret
+	rz
+	rm
+	cpi	002h
+	rz
+	jmp	LEDred
 
 s890:	stc
 	ret
 
-chkeop: lxi	h,eops
-	in	dmastat
-	ani	1111b
-	ora	m
-	mov	m,a
-	bit	2,a	;did channel 2 EOP ?
-	jz	ce0
-	lda	ch2flg	;was it the header that just finished ?
-	ora	a
-	jnz	ce3
-	mvi	a,true
-	sta	ch2flg
-	lhld	ch2alt
-	lxi	d,DATA	;setup CP/NET message
-	dad	d
-	lded	ch2siz
-	mvi	c,ch2ba
-	call	setdma
-	mvi	a,2
-	out	mask
-	lxi	h,eops
-	res	2,m
-	jmp	ce0
-ce3:			;we just finish receiving a message from Z89.
-	mvi	a,true
-	sta	Z89flg
-	mvi	a,false
-	sta	ch2flg
-ce0:	bit	3,m	;did channel 3 EOP ?
-	jz	ce1
-	lda	ch3flg	;was it the header that just went out ?
-	ora	a
-	jz	ce12
-	cma
-	sta	ch3flg	;indicate that the header has been taken.
-	mvi	a,false
-	sta	cp89
-	lded	ch3siz
-	mov	a,e
-	ora	d
-	jz	ce1
-	lhld	ch3adr
-ce8:	mvi	c,ch3ba
-	call	setdma
-	mvi	a,3
-	out	mask
-	lxi	h,eops
-	res	3,m
-ce1:	mov	a,m
-	ret
 
-ce12:	lda	cp89
-	ora	a
-	jz	ce1
-	mvi	a,true
-	sta	ch3flg
-	lhld	ch3hda
-	lxi	d,hdrsiz
-	jmp	ce8
-
-
-setdma: out	clrBP
+setdma:	out	clrBP
 	outp	l
 	outp	h
 	inr	c
@@ -601,15 +716,20 @@ se3:	dcr	a		;
 	out	mode		;
 	call	setdma		;
 	pop	psw		;
+	di
 	out	Adat	;send first character		;
 	xra	a					; 5
 	out	mask	;un mask DMA			;12=17=4.25 usec.
 	out	cmdA	;send 0 to select wr0
 	mvi	a,11000000b
 	out	cmdA	;send reset TxU command <-------;this MUST occure
+	ei
 	lxi	h,eops		;			;before the last byte!
 	res	0,m		;
-se0:	call	chkeop		;wait for transmission to complete.
+se0:	in	dmastat		;wait for transmission to complete.
+	ani	1111b
+	ora	m
+	mov	m,a
 	ani	0001b
 	jz	se0
 	mvi	b,8	;EOP preceeds last flag by 4 characters, + 4 flags.
@@ -625,9 +745,10 @@ se2:	dcr	a	;wait untill a few flags have been sent...
 	mov	m,a
 	out	cmdA
 	lda	ltime
-	add	a	;multiply by 2
-se4:	dcr	a	;wait 2 character times (16 ones)
-	jnz	se4
+	add	a
+	add	a
+se4:	dcr	a
+	jnz	se4	; drain Tx?
 	pop	b	;restore message code and destination.
 	call	getresponse	;(does NOT set IDLE latch.)
 	push	psw
@@ -659,9 +780,19 @@ getresponse:	;(B) must have the code of the previously sent message.
 	mvi	a,1	;timout error code
 gr3:	lxi	h,srvtbl
 	dad	b
-	bit	7,m	;is node off-line?
-	rz		;don't give it a demerit then.
-	inr	m	;count one demerrit.
+	mov	b,a
+	mov	a,m
+	ani	11110000b
+	mov	c,a
+	mov	a,b
+	rz
+	mov	a,m
+	inr	a
+	ani	00001111b
+	jz	gr6
+	ora	c
+gr6:	mov	m,a
+	mov	a,b
 	ret
 
 gr1:	mvi	a,1
@@ -683,7 +814,7 @@ gr1:	mvi	a,1
 	jz	gr2
 	dcr	a
 	mvi	a,2	;NAK received
-	rz 
+	rz
 	mvi	a,5
 	jmp	gr3	;if response wasn't ACK or NAK.
 
@@ -691,12 +822,20 @@ gr4:	ldx	a,DATA	;get node that caused BSY
 	ori	10000000b	;differentiate it from error codes
 gr2:	lxi	h,srvtbl
 	dad	b
-	mvi	m,online	;reset demerrit count to 0
-	lxi	h,stshdr+4
+	mov	b,a
+	mov	a,m
+	ani	11110000b
+	jnz	gr5
+	mvi	a,TUNK	;reset demerrit count to 0
+gr5:	mov	m,a
+	mov	a,b
+	lxi	h,stshdr+ZDE+1
 	setb	4,m
 	ret
 
 setrcv:
+	xra	a
+	out	cmdA
 	mvi	a,5
 	out	cmdA
 	lxi	h,chAwr5
@@ -712,9 +851,7 @@ setrcv:
 	lxi	d,bufsiz*256
 	mvi	c,ch0ba
 	call	setdma		;setup DMA to receive from network
-	xra	a
-	out	cmdA
-	mvi	a,00110000b	;error reset
+	mvi	a,00110000b
 	out	cmdA
 	mvi	a,1	;wr1: setup RDY signal
 	out	cmdA
@@ -743,8 +880,7 @@ findSERVER:
 	jmp	fs3
 fs0:	mov	a,m
 	ani	11110000b	;strip off counter
-	cpi	online
-	jz	fs1
+	jnz	fs1
 fs3:	inx	h
 	mov	a,c
 	inr	a
@@ -753,7 +889,7 @@ fs3:	inx	h
 	jnz	fs2
 	xchg
 fs2:	djnz	fs0
-setnxs: lxi	h,srvtbl
+setnxs:	lxi	h,srvtbl
 	lda	maddr
 	mov	c,a
 	mvi	b,0
@@ -782,6 +918,7 @@ poll$node:
 	jmp	LEDred
 
 setmask:
+	di
 	ori	100b	;set mask bit = 1
 	mov	d,a
 	lxi	b,(dmacomd)+(comd)*256	;command and port to re-enable DMA
@@ -790,6 +927,7 @@ setmask:
 	mov	a,d
 	out	mask	;mask the requested channel
 	outp	b	;re-enable DMA. Elapsed time: 7.75 microseconds
+	ei
 	ret
 
 *******************************************************************
@@ -797,26 +935,43 @@ setmask:
 *******************************************************************
 
 printer$server:
-;	ldx	c,DATA+SID
-;	mvi	b,0
-;	lxi	h,SEQtbl
-;	dad	b
-;	mov	a,m
-;	inr	a
-;	cmpx	DATA+SEQ
-;	jnz	sv4	;give ACK but nothing more...????
-;
-	ldx	a,DATA+FNC	;get CP/NET function number
+	ldx	c,DATA+SID
+	mvi	b,0
+	mov	a,c
+	cpi	255
+	jz	sv17b
+	ldx	a,CODE
+	cpi	CPNET
+	jnz	sv4
+	mov	a,c
+	cpi	64
+	jnc	ps9
+	lxi	h,SEQtbl
+	dad	b
+	bitx	7,DATA+SEQ
+	jz	ps6
+	mov	a,m
+	xorx	DATA+SEQ
+	ani	00fh
+	jz	sv4
+ps6:	ldx	a,DATA+SEQ
+	ani	00001111b
+	mov	b,a
+	mov	a,m
+	ani	11110000b
+	ora	b
+	mov	m,a
+ps9:	ldx	a,DATA+FNC	;get CP/NET function number
 	cpi	05h	;list output function
 	jnz	ps4	;ACK irrelevant functions to keep requestor happy.
 	lxi	h,prtflg	;owner of the printer.
 	mov	a,m
 	cpi	255	;is printer un-owned?
 	ldx	a,SORC
-	jz	ps7
+	jz	ps10
 	cmp	m
-	jnz	ps8
-ps7:	mov	m,a	;mark current owner of printer.
+	jnz	ps8	; someone else
+ps10:	mov	m,a	;mark current owner of printer.
 	sta	PAKmsg+DEST	;
 	sta	PAKmsg+DATA+DID ;set CP/NET DID
 ;
@@ -871,9 +1026,22 @@ cb1:	lxi	h,buffer
 	xchg
 	call	memtomem	;move data to circular buffer
 	xchg
-	lxi	d,buffer
+	dcx	h
+	mov	a,m
+	cpi	255
+	jnz	cb3
+	sta	prtflg
+	dcx	h
+	mov	a,m
+	cpi	254
+	jz	cb4
+	inx	h
+	mvi	m,ffeed
+cb3:	inx	h
+cb4:	lxi	d,buffer
 	ora	a
 	dsbc	d	;compute index value
+	res	7,h
 	shld	prtpt0	;set pointer
 	di
 	lxi	h,endlst	;see if the SIO needs to be re-started
@@ -882,9 +1050,10 @@ cb1:	lxi	h,buffer
 	ora	a
 	cnz	chBTxE
 	ei
-	mvi	a,-10
-	sta	retry	;flag response message when TOKEN comes around.
-	jmp	sv4	;acknowledge message
+	lxiy	PAKmsg
+	lxi	d,retry
+	ldy	c,DEST
+	jmp	ps5
 
 memtomem:	;memory-to-memory DMA block move.
 	mvi	a,100001$00b	;
@@ -931,63 +1100,84 @@ ps4:			;build return frame to satisfy CP/NET.
 	lda	maddr		;put our address as source
 	sty	a,SORC		;
 	sty	a,DATA+SID	;
-;	mvi	b,0		;node address is still in (C).
-;	lxi	h,SEQtbl
-;	dad	b		;
-;	inr	m		;
-;	mov	a,m		;
-;	sty	a,DATA+SEQ	;
+	lxi	d,retflg
+ps5:	mvi	b,0		;node address is still in (C).
+	lxi	h,SEQtbl
+	dad	b		;
+	mov	a,m		;
+	rlc
+	rlc
+	rlc
+	rlc
+	ani	00001111b
+	sty	a,DATA+SEQ	;
+	mvi	a,010h
+	add	m
+	mov	m,a
 	mvi	a,-10
-	sta	retflg
+	stax	d
 	jmp	sv4		;ACK message
 
 ****************************************************************************
 
 PAKsend:
-	lda	retry	;has message been sent successfully ?
+	lxi	b,retry	;has message been sent successfully ?
+	ldax	b
 	ora	a	; (or have we given up trying?)
 	jz	s890a	;then we have nothing to send
-ps1:	lxi	h,PAKmsg
+	lxi	h,PAKmsg
 	lxi	d,9
+ps3:	push	b
+	push	h
 	call	send
+	popix
+	setx	7,DATA+SEQ
+	pop	h
 	ora	a	;success?
 	jz	ps2
-	lxi	h,retry
 	inr	m
+	rnz		;A=error code
+	push	psw
+	mvi	a,true
+	sta	prtflg
+	mvi	a,ffeed
+	di
+	call	schr
+	ei
+	pop	psw
 	ret		;A=error code
 
-ps2:	sta	retry	;zero retry counter.
+ps2:	mov	m,a	;zero retry counter.
 	ret		;return A=0
 
-s890a:	lda	retflg
+s890a:	lxi	b,retflg
+	ldax	b
 	ora	a
 	jz	s890
 	lxi	h,RETmsg
 	lxi	d,10
-	call	send
-	ora	a
-	jz	s890b
-	lxi	h,retflg
-	inr	m
-	ret
+	jmp	ps3
 
-s890b:	sta	retflg
-	ret
-
-****************************************************************************
-
-chr1st: push	psw
+chr1st:	push	psw
 	push	h
 	push	d
 	push	b
 	in	Bdat
 	ani	7fh
 	cpi	cr
-	jnz	err
+	jnz	smxit
 	lxi	h,chr2nd
 	shld	RxAB
 	lxi	h,mms
-smsg:	
+imsg:	call	smsg
+smxit:	pop	b
+	pop	d
+	pop	h
+	pop	psw
+	ei
+	reti
+
+smsg:
 	lbcd	prtpt0	;start where last message (if any) left off.
 	lxi	d,buffer
 	xchg
@@ -1000,37 +1190,44 @@ smsg0:	mov	a,m
 	inx	d
 	inx	h
 	inx	b
+	bit	7,b
+	jz	smsg0
+	res	7,b	;mod 32K
+	lxi	d,buffer
 	jmp	smsg0
-smsg1:	res	7,b	;mod 32K
-	sbcd	prtpt0
+
+smsg1:	sbcd	prtpt0
 	lxi	h,endlst
 	mov	a,m
 	mvi	m,0
 	ora	a
-	cnz	chBTxE
-smxit:	pop	b
-	pop	d
-	pop	h
-	pop	psw
-	ei
-	reti
+	rz
+	jmp	chBTxE
 
-chr2nd: push	psw
+schr:	lbcd	prtpt0
+	lxi	h,buffer
+	dad	b
+	mov	m,a
+	inx	b
+	res	7,b
+	jmp	smsg1
+
+chr2nd:	push	psw
 	push	h
 	push	d
 	push	b
 	in	Bdat
 	ani	5fh	;convert to upper case, strip off parity.
 	cpi	'D'
-	jz	godbg
+	jz	entdbg
 	cpi	'B'
 	jnz	err
 	lxi	h,chr3rd
 	shld	RxAB
 	lxi	h,boot
-	jmp	smsg
+	jmp	imsg
 
-chr3rd: push	psw
+chr3rd:	push	psw
 	push	h
 	push	d
 	push	b
@@ -1043,9 +1240,9 @@ chr3rd: push	psw
 	lxi	h,chr4th
 	shld	RxAB
 	lxi	h,nm
-	jmp	smsg
+	jmp	imsg
 
-chr4th: push	psw
+chr4th:	push	psw
 	push	h
 	push	d
 	push	b
@@ -1060,17 +1257,13 @@ chr4th: push	psw
 	lxi	h,chr5th
 	shld	RxAB
 	sta	pflag
-	lbcd	prtpt0
-	lxi	h,buffer
-	dad	b
-	mov	m,a
-	inx	b
-	jmp	smsg1
+cont:	call	schr
+	jmp	smxit
 
 bootn:	mvi	a,'0'
 	jmp	xboot
 
-chr5th: push	psw
+chr5th:	push	psw
 	push	h
 	push	d
 	push	b
@@ -1079,36 +1272,53 @@ chr5th: push	psw
 	cpi	cr
 	jnz	err
 	lda	pflag
-xboot:	sui	'0'
-	sta	ch2hdr+4	;destination
+xboot:	push	psw
+	mvi	a,2
+	call	setmask
+	pop	psw
+	sui	'0'
+	sta	ch2hdr+ZDE+1	;destination
 	lhld	ch2pri
+	lxi	d,DATA
+	dad	d
 	mvi	m,0	;device code 0, 77422 board
-	mvi	a,true
-	sta	Z89flg	;flag message ready (pretend we just received it from)
-	mvi	a,20h	;		    (host			     )
+	lxi	h,eops
+	setb	2,m
+	mvi	a,RBOOT
 	sta	ch2hdr	;command: boot
 	lxi	h,1
-	shld	ch2hdr+1
-	jmp	smxit
+	shld	ch2hdr+ZBC
+	mvi	a,false
+	sta	from89
+	lxi	h,chr1st
+	shld	RxAB
+	mvi	a,cr
+	jmp	cont
+
+entdbg:
+	mvi	a,true
+	sta	dbgflg
+	lxi	h,chr1st
+	shld	RxAB
+	mvi	a,'D'
+	jmp	cont
 
 err:	xra	a
 	sta	pflag
 	lxi	h,chr1st
 	shld	RxAB
 	lxi	h,errm
-	jmp	smsg
+	jmp	imsg
 
 mms:	db	cr,lf,' MMS-net: ',253
 boot:	db	'Boot ',253
 nm:	db	'NN-',253
 errm:	db	cr,lf,bel,'?',253
-dbgm:	db	'Debug',0
 
-
-LEDred: mvi	a,RED
+LEDred:	mvi	a,RED
 	jmp	LEDxon
 
-LEDgrn: mvi	a,GREEN
+LEDgrn:	mvi	a,GREEN
 LEDxon: lxi	h,ctl$image
 	ora	m
 	mov	m,a
@@ -1126,8 +1336,6 @@ LEDoff: lxi	h,ctl$image
 ** Interupt service.
 **********************************************************
 
-xsft:	ret		;software interupt null routine
-
 rstB:	exaf
 	mvi	a,00110000b
 	out	cmdB
@@ -1135,11 +1343,11 @@ rstB:	exaf
 null:	ei		;do-nothing interupt handler
 	reti
 
-tic:	out	0e0h	;turn interupt off
+tic:	out	ch2rd	;turn interupt off
 	ei
 	reti
 
-chBTxE: 
+chBTxE:
 ;------- interupt routine for circular buffer ------------
 	exx
 	exaf
@@ -1147,7 +1355,6 @@ chBTxE:
 	lded	prtpt1	;output pointer (out of buffer)
 	ora	a
 	dsbc	d
-	mvi	a,254
 	jz	bf0
 	lxi	h,buffer	;base address of buffer
 	dad	d
@@ -1155,18 +1362,14 @@ chBTxE:
 	res	7,d	;mod 32K, 32K buffer
 	sded	prtpt1
 	mov	a,m
-	cpi	255	;end of file?
-	jnz	bf1
-	sded	prtpt0	;stop further output.
-	sta	prtflg	;free printer.
-	mvi	a,ffeed ;separate print-out from possible subsequent printout.
-bf1:	out	Bdat	;send to SIO
+	out	Bdat	;send to SIO
 	exx
 	exaf
 	ei
 	reti		; xx.x microseconds, this path.
 
-bf0:	sta	endlst
+bf0:	mvi	a,254
+	sta	endlst
 	mvi	a,00101000b
 	out	cmdB
 	exx
@@ -1184,25 +1387,15 @@ intvec: dw	chBTxE	;channel B TBE
 	dw	rstB	;spcl rcv
 	dw	null	;channel A TBE	(handled by DMA)
 	dw	null	;status   (error conditions TxU, ABORT)
-	dw	rdrA	;channel A RCA	(triggers message handler)
-	dw	null	;spcl rcv (error conditions)
+	dw	null	;channel A RCA	(triggers message handler)
+	dw	rstA	;spcl rcv (error conditions)
 	dw	null	; ;Not used, Cannot occur
 	dw	null	; ;
 	dw	null	; ;
 	dw	null	; ;
 	dw	null	; ;
 	dw	null	; ;
-	dw	null	; ;
+	dw	0	; ;
 	dw	tic	;tic from host
-
-vecsft: jmp	xsft	; RST 1
-	jmp	xsft	; RST 2
-	jmp	xsft	; RST 3
-	jmp	xsft	; RST 4
-	jmp	xsft	; RST 5
-	jmp	xsft	; RST 6
-	jmp	xsft	; RST 7
-	jmp	xsft	; NMI	(not usable)
-
 
 ;------- end of NET422.ASM ----------

@@ -1,4 +1,4 @@
-VERS1 set 86 ; February 9, 1983  15:24	drm  "SUF422.ASM"
+VERS1 set 35 ; (Dec 14, 2018 21:34) drm  "SUF422.ASM"
  if VERS1 gt VERS
 VERS set VERS1
  endif
@@ -10,6 +10,9 @@ VERS set VERS1
 *********************************************************
 
 debug:
+	lda	ntype
+	push	psw
+	sspd	savstk
 	mvi	a,1
 	out	cmdB
 	lxi	h,chBwr1
@@ -17,9 +20,13 @@ debug:
 	ani	00000100b	;all interupts,etc off
 	mov	m,a
 	out	cmdB
+	mvi	a,TDBG
+	sta	ntype
+	mvi	a,false
+	sta	dbgflg
 	lxi	h,signon	;display revision message
 	call	msgout
-cilp	lxi	sp,stack
+cilp:	lspd	savstk
 	lxi	h,cilp		;setup return address
 	push	h
 	lxi	h,prompt	;prompt for a command
@@ -32,12 +39,12 @@ cilp	lxi	sp,stack
 	mvi	b,ncmnds	;(number of commands)
 cci0:	cmp	m		;search command table
 	inx	h
-	jrz	gotocmd 	;command was found, execute it
+	jrz	gotocmd		;command was found, execute it
 	inx	h		;step past routine address
 	inx	h
 	djnz	cci0		;loop untill all valid commands are checked
-error	mvi	c,bell		;if command unknown, beep and re-prompt
-	jmp	conout
+error	lxi	h,errm		;if command unknown, beep and re-prompt
+	jmp	msgout
 
 gotocmd:
 	push	d		;save command line buffer pointer
@@ -49,33 +56,102 @@ gotocmd:
 	pchl			;jump to command routine
 
 ** Macros to build the command code and routine address tables
-ncmnds	set	0
 comnds:
-	irpc	XX,?DSGLMFR	  ;commands
-	db	'&XX&'
-	dw	XX&comnd
-ncmnds	set	ncmnds+1
-	endm
+	db	'?'
+	dw	Qcomnd
+	db	'D'
+	dw	Dcomnd
+	db	'S'
+	dw	Scomnd
+	db	'G'
+	dw	Gcomnd
+	db	'L'
+	dw	Lcomnd
+	db	'M'
+	dw	Mcomnd
+	db	'F'
+	dw	Fcomnd
+	db	'R'
+	dw	Rcomnd
+	db	'T'
+	dw	Tcomnd
+ncmnds	equ	($-comnds)/3
 
 *********************************************************
 **  Command subroutines
 *********************************************************
 
-menu:	DB	cr,lf,'D <start> <end> - display memory in HEX'
-	DB	cr,lf,'S <start> - set/view memory'
-	DB	cr,lf,'G <start> - go to address'
-	DB	cr,lf,'L <start> <end> - list instructions'
-	DB	cr,lf,'F <start> <end> <data> - fill memory'
-	DB	cr,lf,'M - 64K memory test'
-	db	cr,lf,'MB - test (4) 56K banks'
-	DB	0
+menu:	db	cr,lf,'D <start> <end> - display memory in HEX'
+	db	cr,lf,'S <start> - set/view memory'
+	db	cr,lf,'G <start> - go to address'
+	db	cr,lf,'L <start> <end> - list instructions'
+	db	cr,lf,'F <start> <end> <data> - fill memory'
+	db	cr,lf,'M <start> <end> <dest> - Move data'
+	db	cr,lf,'T - Test 64K memory'
+	db	cr,lf,'T <#> - test 56K bank(s) #=1,2,3,4'
+	db	cr,lf,'R - return to network'
+	db	0
 
-?comnd: LXI	H,menu
-	JMP	msgout
+Qcomnd:	lxi	h,menu
+	jmp	msgout
 
-Rcomnd: di
-	jmp	0	;"RESET" command, restart system.
+Rcomnd:
+	mvi	a,001h
+	out	cmdB
+	lxi	h,chBwr1
+	mov	a,m
+	ori	01ah
+	mov	m,a
+	out	cmdB
+	lspd	savstk
+	pop	psw
+	sta	ntype
+	ret
 
+Mcomnd:	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	shld	addr0
+	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	shld	addr1
+	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	xchg
+	lbcd	addr0
+	lhld	addr1
+	ora	a
+	dsbc	b
+	jc	error
+	inx	h
+	mov	c,l
+	mov	b,h
+	push	d
+	xchg
+	dad	b
+	pop	d
+	jc	error
+	lhld	addr1
+	call	check
+	jc	mc0
+	lhld	addr0
+	call	check
+	jnc	mc0
+	lhld	addr1
+	xchg
+	dad	b
+	dcx	h
+	xchg
+	lddr
+	ret
+mc0:	lhld	addr0
+	ldir
+	ret
 Fcomnd:
 	call	getaddr ;get address to start at
 	jc	error	;error if non-hex character
@@ -97,7 +173,7 @@ Fcomnd:
 	mov	c,l	;(C)=fill data
 	lhld	addr1	;get stop address
 	lded	addr0	;get start address
-f0:	mov	a,c	;
+fc0:	mov	a,c	;
 	stax	d	;put byte in memory
 	inx	d	;step to next byte
 	mov	a,d	;
@@ -105,400 +181,399 @@ f0:	mov	a,c	;
 	rz		;
 	call	check	;test for past stop address
 	rc	;quit if past stop address
-	jr	f0
+	jr	fc0
 
 ***************************************************
 ** Full Memeory Test
 ***************************************************
-CSTAT	MACRO
+cstat	macro
 	mvi	a,10h
 	out	constat
 	in	constat
 	ani	00000100b
 	jrz	$-9
-	ENDM
+	endm
 ***************************************************
-LOPAGE	equ	0E0h	;RAM is tested is sections, 0000-DFFF/E000-FFFF
+LOPAGE	equ	0E0h
 
-Mcomnd: MVI	C,lf
-	CALL	conout
-	mvi	l,0
-mc0:	call	char
-	jrz	mc1
+Tcomnd:
+	mvi	c,lf
+	call	conout
+	mvi	l,000h
+tc0:	call	char
+	jrz	tc1
 	cpi	' '
-	jz	mc0
-	sui	'B'
-	sui	1
-	sbb	a	;0ffh if was "B"
+	jz	tc0
+	sui	'0'
+	cpi	5
+	jnc	tc1
 	mov	l,a
-mc1:	MVI	E,100H-LOPAGE
-	MVI	D,0
-	MVI	C,LOPAGE
-	MVI	B,0
-	EXX
-	LXI	H,MEMTEST-FIXJ
-	LXI	D,LOPAGE*256-FIXJ
-	LXI	B,PGMLEN+FIXJ
-	LDIR
-	LXI	D,LOPAGE*256
-	LXI	H,MEMTEST
-	LXI	B,PGMLEN+100H
-	XRA	A
-	EXAF
-	XRA	A
-CS1:	ADD	M
-	EXAF
-	XCHG
-	ADD	M
-	EXAF
-	XCHG
-	INX	H
-	INX	D
-	DCR	C
-	JNZ	CS1
-	DJNZ	CS1
-	MOV	C,A
-	EXAF
-	CMP	C
-	JNZ	XCSERR
-	DI
+tc1:	mvi	e,100H-LOPAGE
+	mvi	d,0
+	mvi	c,LOPAGE
+	mvi	b,0
 	exx
-	mov	a,l	;flag for "banked" test
+	lxi	h,FIXJMP
+	lxi	d,LOPAGE*256-FIXJ
+	lxi	b,PGMLEN+FIXJ
+	ldir
+	lxi	d,LOPAGE*256
+	lxi	h,MEMTEST
+	lxi	b,PGMLEN+100H
+	xra	a
+	exaf
+	xra	a
+CS1:	add	m
+	exaf
+	xchg
+	add	m
+	exaf
+	xchg
+	inx	h
+	inx	d
+	dcr	c
+	jnz	CS1
+	djnz	CS1
+	mov	c,a
+	exaf
+	cmp	c
+	jnz	XCSERR
+	di
+	exx
+	mov	a,l
 	exx
 	stai
-	lxix	(GREEN+B156)*256+(RED+ROMOFF)
-	lxiy	(GREEN+B356)*256+(RED+B256)
-	JMP	LOPAGE*256-FIXJ
+	lxix	08001h
+	jmp	LOPAGE*256-FIXJ
 
-XCSERR: LXI	H,CSEMSG
-	JMP	MSGOUT
+XCSERR:	lxi	h,CSEMSG
+tc4:	jmp	msgout
 
-CSEMSG: DB	cr,lf,bell,'Checksum error!',0
+CSEMSG:	db	cr,lf,bell,'Checksum error!',0
 
 ;*** The following block of code must be contiguous but is otherwise
 ;*** relocatable.
-FIXJMP: db 0DDH
-	mov	a,l ;; MOV A,XL
+FIXJMP:	db 0DDH
+	mov	a,l ;;MOV A,XL
+	db 0ddh
+	ora	h ;;ORA XH
 	out	ctrl
 FIXJ EQU $-FIXJMP
 ;*** The following block of code is check-summed to prevent bad memory from
 ;*** causing program crash.
-MEMTEST: EXX
-	MOV	H,D
-	MVI	L,0
-	MOV	A,B
-	EXX
-	MOV	C,A
-	MVI	B,2
+MEMTEST: exx
+	mov	h,d
+	mvi	l,0
+	mov	a,b
+	exx
+	mov	c,a
+	mvi	b,2
 	cstat
-DSP0:	MOV	A,C
-	RLC
-	RLC
-	RLC
-	RLC
-	MOV	C,A
-	ANI	00001111b
-	ADI	90H
-	DAA
-	ACI	40H
-	DAA
-	OUT	console
+DSP0:	mov	a,c
+	rlc
+	rlc
+	rlc
+	rlc
+	mov	c,a
+	ani	00001111b
+	adi	90h
+	daa
+	aci	40h
+	daa
+	out	console
 	cstat
-	DCR	B
-	JRNZ	DSP0
-	MVI	A,cr
-	OUT	console
-	EXX
-	MOV	A,B
-DMEM0:	MOV	M,A
-	ADI	1
-	DAA
-	INR	L
-	JRNZ	DMEM0
-	INR	H
-	DCR	C
-	JRNZ	DMEM0
-	MOV	A,H
-	SUB	D
-	MOV	C,A
-	MOV	H,D
-	MVI	L,0	;HL = starting address
-	MOV	A,B
-DMEM1:	CMP	M
-	JRNZ	DYERR
-	ADI	1
-	DAA
-	INR	L
-	JRNZ	DMEM1
-	INR	H
-	DCR	C
-	JRNZ	DMEM1
+	dcr	b
+	jrnz	DSP0
+	mvi	a,cr
+	out	console
+	exx
+	mov	a,b
+DMEM0:	mov	m,a
+	adi	1
+	daa
+	inr	l
+	jrnz	DMEM0
+	inr	h
+	dcr	c
+	jrnz	DMEM0
+	mov	a,h
+	sub	d
+	mov	c,a
+	mov	h,d
+	mvi	l,0	;HL = starting address
+	mov	a,b
+DMEM1:	cmp	m
+	jrnz	DYERR
+	adi	1
+	daa
+	inr	l
+	jrnz	DMEM1
+	inr	h
+	dcr	c
+	jrnz	DMEM1
 	ldai
 	ora	a
 	jrz	dm0
+	mov	c,a
 	db 0ddh
-	mov	c,l	;; MOV C,XL
-	db 0ddh
-	mov	a,h	;; MOV A,XH
-	db 0ddh
+	mov	a,l	;;MOV A,XL
+	ani	006h
+	rrc
+	inr	a
+	cmp	c
+	jrnz	tc10
+	xra	a
+tc10:	add	a
+	jrnz	tc11
+	inr	a
+tc11:	db 0ddh
 	mov	l,a	;; MOV XL,A
-	db 0fdh
-	mov	a,l	;; MOV A,YL
-	db 0ddh
-	mov	h,a	;; MOV XH,A
-	db 0fdh
-	mov	a,h	;; MOV A,YH
-	db 0fdh
-	mov	l,a	;; MOV YL,A
-	db 0fdh
-	mov	h,c	;; MOV YH,C
-	db 0ddh
-	mov	a,l	;; MOV A,XL
-	out	ctrl
-	mov	a,h	;re-compute number of pages to test
+	mov	a,h
 	sub	d
 	mov	c,a
-	MVI	A,1
-	ADD	B
-	DAA
-	MOV	B,A
-	EXX
-	mvi	d,LOPAGE	;this only allows proper checksum verfication
-	jr	dm1		;and execution address generation.
-dm0:	db 0ddh
-	mov	a,l
+	mvi	a,1
+	add	b
+	daa
+	mov	b,a
+	exx
+	mvi	d,LOPAGE
+	jr	dm1
+dm0:	exx
+	lxi	h,LOPAGE*256
+	lxi	d,0
+	lxi	b,PGMLEN
+	exx
+	mov	a,d
+	xri	LOPAGE
+	mov	d,a
+	jrz	NEXT0
+	mov	c,e
+	jr	NEXT20
+NEXT0:	mvi	c,LOPAGE
+	mvi	a,1
+	add	b
+	daa
+	mov	b,a
+	exx
+	xchg
+	exx
+NEXT20:	exx
+	ldir
+dm1:	db	0ddh
+	mov	a,h	;MOV A,XH
 	xri	BOTH
-	db 0ddh
-	mov	l,a
+	db	0ddh
+	mov	h,a	;MOV XH,A
+	db	0ddh
+	ora	l	;ORA XL
 	out	ctrl
-	EXX
-	LXI	H,LOPAGE*256
-	LXI	D,0
-	LXI	B,PGMLEN
-	EXX
-	MOV	A,D
-	XRI	LOPAGE
-	MOV	D,A
-	JRZ	NEXT0
-	MOV	C,E
-	JR	NEXT20
-NEXT0:	MVI	C,LOPAGE
-	MVI	A,1
-	ADD	B
-	DAA
-	MOV	B,A
-	EXX
-	XCHG
-	EXX
-NEXT20: EXX
-	LDIR
-dm1:	MOV	A,D
-	ANI	11110000b
-	MOV	H,A
-	MVI	L,0
-	LXI	B,PGMLEN+100H
-	XRA	A
-CS0:	ADD	M
-	INX	H
-	DCR	C
-	JRNZ	CS0
-	DJNZ	CS0
-	MOV	C,A
-	EXAF
-	CMP	C
-	JRNZ	CSERR
-	EXAF
-	MOV	A,D
-	ANI	11110000b
-	MOV	H,A
-	MVI	L,0
-	PCHL
+	mov	a,d
+	ani	11110000b
+	mov	h,a
+	mvi	l,0
+	lxi	b,PGMLEN+100H
+	xra	a
+CS0:	add	m
+	inx	h
+	dcr	c
+	jrnz	CS0
+	djnz	CS0
+	mov	c,a
+	exaf
+	cmp	c
+	jrnz	CSERR
+	exaf
+	mov	a,d
+	ani	11110000b
+	mov	h,a
+	mvi	l,0
+	pchl
 
-DYERR:	XRA	M
-	MOV	D,A
+DYERR:	xra	m
+	mov	d,a
 	cstat
-	MVI	A,lf
-	OUT	console
+	mvi	a,lf
+	out	console
 	cstat
 	db 0ddh
-	mov	a,l
-	ani	111b
-	ori	'0'
-	OUT	console
+	mov	a,l	;; MOV A,XL
+	ani	110b
+	rrc
+	adi	'0'
+	out	console
 	cstat
-	MVI	A,'*'
-	OUT	console
-	MVI	B,2
+	mvi	a,'*'
+	out	console
+	mvi	b,2
 DE1:	cstat
-	MOV	A,D
-	RLC
-	RLC
-	RLC
-	RLC
-	MOV	D,A
-	ANI	00001111b
-	ADI	90H
-	DAA
-	ACI	40H
-	DAA
-	OUT	console
-	DJNZ	DE1
-	JR	DEAD
+	mov	a,d
+	rlc
+	rlc
+	rlc
+	rlc
+	mov	d,a
+	ani	00001111b
+	adi	90h
+	daa
+	aci	40h
+	daa
+	out	console
+	djnz	DE1
+	jr	DEAD
 
 CSERR:	cstat
-	MVI	A,lf
-	OUT	console
+	mvi	a,lf
+	out	console
 	cstat
-	MVI	A,'!'
-	OUT	console
-DEAD:	XRA	A
-	MVI	B,0
-DEAD0:	DCR	A
-	JRNZ	DEAD0
-DEAD1:	DCR	A
-	JRNZ	DEAD1
-	DJNZ	DEAD0
-	MVI	A,bell
-	OUT	console
-	JR	DEAD
-PGMLEN EQU $-MEMTEST
+	mvi	a,'!'
+	out	console
+DEAD:	xra	a
+	mvi	b,0
+DEAD0:	dcr	a
+	jrnz	DEAD0
+tc22:	dcr	a
+	jrnz	tc22
+	djnz	DEAD0
+	mvi	a,bell
+	out	console
+	jr	DEAD
+PGMLEN	EQU	$-MEMTEST
 ;***************************************************************************
 ;*** End of block of code.
 
 
-Lcomnd: CALL	getaddr
-	JC	error
-	BIT	7,B
-	JZ	L5
-	LHLD	ADDR0
-L5:	SHLD	ADDR0
-	MVI	A,255
-	STA	COUNT
-	CALL	GETADDR
-	JC	ERROR
-	BIT	7,B
-	JZ	L3
-	MVI	A,16
-	STA	COUNT
-	LHLD	ADDR0
-	LXI	D,16*4
-	DAD	D
-L3:	SHLD	ADDR1
-	LDED	ADDR0
-L0:	SDED	ADDR0
-	CALL	CRLF
-	CALL	TADDR
-	CALL	SPACE
-	LDAX	D
-	ANI	11000000B
-	LXI	H,type$0
-	JRZ	XTRA
-	CPI	01000000b
-	JRZ	ONEBYTE
-	CPI	10000000b
-	JRZ	ONEBYTE
-	LXI	H,type$3
-XTRA:	LDAX	D
-	ANI	00111111B
-	ADD	L
-	MOV	L,A
-	MVI	A,0
-	ADC	H
-	MOV	H,A
-	MOV	A,M
-	ORA	A
-	JRZ	Z80I
-	JR	L1
+Lcomnd:	call	getaddr
+	jc	error
+	bit	7,b
+	jz	L5
+	lhld	addr0
+L5:	shld	addr0
+	mvi	a,255
+	sta	count
+	call	getaddr
+	jc	error
+	bit	7,b
+	jz	L3
+	mvi	a,16
+	sta	count
+	lhld	addr0
+	lxi	d,16*4
+	dad	d
+L3:	shld	addr1
+	lded	addr0
+L0:	call	crlf
+	call	taddr
+	call	space
+	ldax	d
+	ani	11000000b
+	lxi	h,type$0
+	jrz	XTRA
+	cpi	01000000b
+	jrz	ONEBYTE
+	cpi	10000000b
+	jrz	ONEBYTE
+	lxi	h,type$3
+XTRA:	ldax	d
+	ani	00111111b
+	add	l
+	mov	l,a
+	mvi	a,0
+	adc	h
+	mov	h,a
+	mov	a,m
+	ora	a
+	jrz	Z80I
+	jr	L1
 ONEBYTE:
-	MVI	A,1
-L1:	MOV	B,A
-L2:	LDAX	D
-	CALL	HEXOUT
-	CALL	SPACE
-	INX	D
-	DJNZ	L2
-	LDA	ADDR0+1
-	ANI	10000000B
-	JRZ	L4
-	XRA	D
-	ANI	10000000B
-	RNZ
-L4:	LHLD	ADDR1
-	CALL	CHECK
-	RC
-	LDA	COUNT
-	CPI	255
-	JRZ	L0
-	DCR	A
-	STA	COUNT
-	RZ
-	JR	L0
+	mvi	a,1
+L1:	mov	b,a
+L2:	ldax	d
+	call	hexout
+	call	space
+	inx	d
+	djnz	L2
+	lda	addr0+1
+	sded	addr0
+	ani	10000000b
+	jrz	L4
+	xra	d
+	ani	10000000b
+	rnz
+L4:	lhld	addr1
+	call	check
+	rc
+	lda	count
+	cpi	255
+	jrz	L0
+	dcr	a
+	sta	count
+	rz
+	jr	L0
 
-Z80I:	LDAX	D
-	CPI	0FDH
-	JRZ	LX
-	CPI	0DDH
-	JRZ	LX
-	CPI	0EDH
-	JRZ	LZ
+Z80I:	ldax	d
+	cpi	0fdh
+	jrz	LX
+	cpi	0ddh
+	jrz	LX
+	cpi	0edh
+	jrz	LZ
 TWOBYTE:
-	MVI	A,2
-	JR	L1
+	mvi	a,2
+	jr	L1
 
-LZ:	INX	D
-	LDAX	D
-	DCX	D
-	ANI	11000111B
-	CPI	01000011b
-	JRNZ	TWOBYTE
-FOURBY: MVI	A,4
-	JR	L1
+LZ:	inx	d
+	ldax	d
+	dcx	d
+	ani	11000111b
+	cpi	01000011b
+	jrnz	TWOBYTE
+FOURBY:	mvi	a,4
+	jr	L1
 
-LX:	INX	D
-	LDAX	D
-	DCX	D
-	CPI	34H
-	JRZ	THREEBY
-	CPI	35H
-	JRZ	THREEBY
-	CPI	21H
-	JRZ	FOURBY
-	CPI	22H
-	JRZ	FOURBY
-	CPI	2AH
-	JRZ	FOURBY
-	CPI	36H
-	JRZ	FOURBY
-	CPI	0CBH
-	JRZ	FOURBY
-	MOV	C,A
-	ANI	11000111B
-	CPI	46H
-	JRZ	THREEBY
-	CPI	86H
-	JRZ	THREEBY
-	MOV	A,C
-	ANI	11111000B
-	CPI	70H
-	JRNZ	TWOBYTE
+LX:	inx	d
+	ldax	d
+	dcx	d
+	cpi	34h
+	jrz	THREEBY
+	cpi	35h
+	jrz	THREEBY
+	cpi	21h
+	jrz	FOURBY
+	cpi	22h
+	jrz	FOURBY
+	cpi	2ah
+	jrz	FOURBY
+	cpi	36h
+	jrz	FOURBY
+	cpi	0cbh
+	jrz	FOURBY
+	mov	c,a
+	ani	11000111b
+	cpi	46h
+	jrz	THREEBY
+	cpi	86h
+	jrz	THREEBY
+	mov	a,c
+	ani	11111000b
+	cpi	70h
+	jrnz	TWOBYTE
 THREEBY:
-	MVI	A,3
-	JR	L1
+	mvi	a,3
+	jmp	L1
 
 type$0:
-	DB	1,3,1,1,1,1,2,1,1,1,1,1,1,1,2,1
-	DB	2,3,1,1,1,1,2,1,2,1,1,1,1,1,2,1
-	DB	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
-	DB	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
+	db	1,3,1,1,1,1,2,1,1,1,1,1,1,1,2,1
+	db	2,3,1,1,1,1,2,1,2,1,1,1,1,1,2,1
+	db	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
+	db	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
 
 type$3:
-	DB	1,1,3,3,3,1,2,1,1,1,3,0,3,3,2,1
-	DB	1,1,3,2,3,1,2,1,1,1,3,2,3,0,2,1
-	DB	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
-	DB	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
+	db	1,1,3,3,3,1,2,1,1,1,3,0,3,3,2,1
+	db	1,1,3,2,3,1,2,1,1,1,3,2,3,0,2,1
+	db	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
+	db	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
 
-
-Dcomnd: 	;display memory
+Dcomnd:		;display memory
 	call	getaddr ;get address to start at
 	jc	error	;error if non-hex character
 	bit	7,b	;test for no address (different from 0000)
@@ -509,11 +584,11 @@ Dcomnd: 	;display memory
 	bit	7,b	;test for no entry
 	jnz	error	;error if no stop address
 	lded	addr0	;get start address into (DE)
-dis0	call	crlf	;start on new line
+dis0:	call	crlf	;start on new line
 	call	taddr	;print current address
 	call	space	;delimit it from data
 	mvi	b,16	;display 16 bytes on each line
-dis1	ldax	d	;get byte to display
+dis1:	ldax	d	;get byte to display
 	inx	d	;step to next byte
 	call	hexout	;display this byte in HEX
 	call	space	;delimit it from others
@@ -527,7 +602,7 @@ dis2:	call	space	;delimit it from data
 	call	space
 	lded	addr0
 	mvi	b,16	;display 16 bytes on each line
-dis3	ldax	d	;get byte to display
+dis3:	ldax	d	;get byte to display
 	inx	d	;step to next byte
 	mvi	c,'.'
 	cpi	' '
@@ -551,14 +626,14 @@ Scomnd: 		;substitute (set) memory
 	bit	7,b	;test for no entry
 	jnz	error	;error if no address
 	xchg		;put address in (DE)
-sb1	call	crlf	;start on new line
+sb1:	call	crlf	;start on new line
 	call	taddr	;print address
 	call	space	;and delimit it
 	ldax	d	;get current value of byte
 	call	hexout	;and display it
 	call	space	;delimit it from user's (posible) entry
 	mvi	b,0	;zero accumilator for user's entry
-sb2	call	conin	;get user's first character
+sb2:	call	conin	;get user's first character
 	cpi	cr	;if CR then skip to next byte
 	jrz	foward
 	cpi	' '	;or if Space then skip to next
@@ -570,15 +645,15 @@ sb2	call	conin	;get user's first character
 	call	hexcon	;if none of the above, should be HEX digit
 	jrc	error0	;error if not
 	jr	sb3	;start accumilating HEX digits
-sb0	call	hexcon	;test for HEX digit
+sb0:	call	hexcon	;test for HEX digit
 	jrc	error1	;error if not HEX
-sb3	slar	b	;roll accumilator to receive new digit
+sb3:	slar	b	;roll accumilator to receive new digit
 	slar	b
 	slar	b
 	slar	b
 	ora	b	;merge in new digit
 	mov	b,a
-sb4	call	conin	;get next character
+sb4:	call	conin	;get next character
 	cpi	cr	;if CR then put existing byte into memory
 	jrz	putbyte ;  and step to next.
 	cpi	'.'
@@ -597,10 +672,10 @@ bakwrd:
 	dcx	d	;move address backward one location
 	jr	sb1
 
-error0	mvi	c,bell	;user's entry was not valid, beep and continue
+error0:	mvi	c,bell	;user's entry was not valid, beep and continue
 	call	conout
 	jr	sb2
-error1	mvi	c,bell	;same as above but for different section of routine
+error1:	mvi	c,bell	;same as above but for different section of routine
 	call	conout
 	jr	sb4
 
@@ -634,14 +709,14 @@ Gcomnd: 		;jump to address given by user
 taddr:	mov	a,d	;display (DE) at console in HEX
 	call	hexout	;print HI byte in HEX
 	mov	a,e	;now do LO byte
-hexout	push	psw	;output (A) to console in HEX
+hexout:	push	psw	;output (A) to console in HEX
 	rlc		;get HI digit in usable (LO) position
 	rlc
 	rlc
 	rlc
 	call	nible	;and display it
 	pop	psw	;get LO digit back and display it
-nible	ani	00001111b	;display LO 4 bits of (A) in HEX
+nible:	ani	00001111b	;display LO 4 bits of (A) in HEX
 	adi	90h	;algorithm to convert 4-bits to ASCII
 	daa
 	aci	40h
@@ -649,30 +724,31 @@ nible	ani	00001111b	;display LO 4 bits of (A) in HEX
 	mov	c,a	;display ASCII digit
 	jmp	conout
 
-space	mvi	c,' '	;send an ASCII blank to console
+space:	mvi	c,' '	;send an ASCII blank to console
 	jmp	conout
 
-crlf	mvi	c,cr	;send Carriage-Return/Line-Feed to console
+crlf:	mvi	c,cr	;send Carriage-Return/Line-Feed to console
 	call	conout
 	mvi	c,lf
 	jmp	conout
 
-msgout	mov	a,m	;send string to console, terminated by 00
+msgout:	mov	a,m	;send string to console, terminated by 00
 	ora	a
 	rz
+	rm
 	mov	c,a
 	call	conout
 	inx	h
 	jr	msgout
 
-check	push	h	;non-destuctive compare HL:DE
+check:	push	h	;non-destuctive compare HL:DE
 	ora	a
 	dsbc	d
 	pop	h
 	ret
 
-linein	lxi	h,line	;get string of characters from console, ending in CR
-li0	call	conin	;get a character
+linein:	lxi	h,line	;get string of characters from console, ending in CR
+li0:	call	conin	;get a character
 	cpi	bs	;allow BackSpacing
 	jrz	backup
 	cpi	tab	;ignore tabs (they foul BackSpace routine)
@@ -687,7 +763,7 @@ li0	call	conin	;get a character
 	rz		;stop if buffer full
 	jr	li0	;if not full, keep getting characters
 
-backup	mov	a,l	;(destructive) BackSpacing
+backup:	mov	a,l	;(destructive) BackSpacing
 	cpi	line mod 256	;test if at beginning of line
 	jrz	li0	;can't backspace past start of line
 	mvi	c,bs	;output BS," ",BS to erase character on screen
@@ -698,10 +774,10 @@ backup	mov	a,l	;(destructive) BackSpacing
 	dcx	h	;step buffer pointer back one
 	jr	li0	;and continue to get characters
 
-li1	mvi	c,cr	;display CR so user knows we got it
+li1:	mvi	c,cr	;display CR so user knows we got it
 	jmp	conout	;then return to calling routine
 
-char	mov	a,e	;remove a character from line buffer,
+char:	mov	a,e	;remove a character from line buffer,
 	sui	line mod 256	;testing for no more characters
 	sui	64
 	rz		;return [ZR] condition if at end of buffer
@@ -714,15 +790,15 @@ char	mov	a,e	;remove a character from line buffer,
 getaddr:		;extract address from line buffer (dilimitted by " ")
 	setb	7,b	;flag to detect no address entered
 	lxi	h,0
-ga2	call	char
+ga2:	call	char
 	rz		;end of buffer/line before a character was found
 	cpi	' '	;skip all leading spaces
 	jrnz	ga1	;if not space, then start getting HEX digits
 	jr	ga2	;else if space, loop untill not space
 
-ga0	call	char
+ga0:	call	char
 	rz
-ga1	call	hexcon	;start assembling digits into 16 bit accumilator
+ga1:	call	hexcon	;start assembling digits into 16 bit accumilator
 	jrc	chkdlm	;check if valid delimiter before returning error.
 	res	7,b	;reset flag
 	push	d	;save buffer pointer
@@ -752,7 +828,7 @@ hexcon: 		;convert ASCII character to HEX digit
 	cmc
 	rc		;return [CY] if not valid HEX digit
 	sui	'A'-'9'-1	;convert letter
-ok0	sui	'0'	;convert (numeral) to 0-15 in (A)
+ok0:	sui	'0'	;convert (numeral) to 0-15 in (A)
 	ret
 
 
@@ -810,11 +886,14 @@ br0:	xra	a
 
 AVERS	equ	(((VERS/10) and 0fh)+'0')+((VERS mod 10)+'0')*256
 
-signon: db	cr,lf,'MMS Z80 monitor v-6.'
+signon:	db	cr,lf,'MMS 77422 monitor M2001-'
 	dw	AVERS
-	db	' (for 77422)',0
-prompt: db	cr,lf,':',0
+	db	0
+prompt:	db	cr,lf,':',0
 
+	rept	RAM-$
+	db	0ffh
+	endm
  if $ gt EPROM+EPROML
  ds 'EPROM overflow'
  endif
@@ -823,21 +902,9 @@ prompt: db	cr,lf,':',0
 ** Varibles (RAM area)
 **********************************************************
 
-	org	RAM	;use area at start of RAM for general buffers
-	ds	128	
+	org	RAM
+	ds	128
 stack:	ds	0
-
-sftvec:
-VRST1:	ds	3
-VRST2:	ds	3
-VRST3:	ds	3
-VRST4:	ds	3
-VRST5:	ds	3
-VRST6:	ds	3
-VRST7:	ds	3
-VNMI:	ds	3
-numsft	equ	$-sftvec
-
 sioA:	ds	3	;channel reset and wr4 select.
 chAwr4: ds	2	;wr4 must be programmed before 3,5,6,7
 chAwr1: ds	2	;
@@ -881,70 +948,79 @@ numvec	equ	$-vector
 
 ctl$image: ds	1	;image of general control output port
 
+savstk:	ds	2
+
 addr0:	ds	2	;temporary 16 bit storage
 addr1:	ds	2	; ''
 count:	ds	1
 line:	ds	64	;input line buffer
 
-destin: ds	1	;default destination of any messages
+spcstk:	ds	2	; saved in special recv condition intr
+destin:	ds	1	;default destination of any messages
 ;--- Outgoing (to network) message frames --------------------------
-RESmsg:    ds	3
+RESmsg:	ds	3
 ACKmsg:    ds	3	;DEST,CODE,SORC  (DEST is the only variable)
-NAKmsg:    ds	3
-BSYmsg:    ds	4
-POLLmsg:   ds	3
-PAKmsg:    ds	9	;printer acknowledge, CP/NET form
-RETmsg:    ds	10	;
+NAKmsg:	ds	3
+BSYmsg:	ds	4
+POLLmsg:	ds	3
+PAKmsg:	ds	9	;printer acknowledge, CP/NET form
+	ds	1
+RETmsg:	ds	10	;
+	ds	1
 
 TOKEN0msg: ds	3	;DEST,CODE,SORC
 net$table:
 nxt$sp:    ds	1	;next server to poll
 srvtbl:    ds	64	;status of all server nodes.
 tk0ml	equ	$-TOKEN0msg
+SEQtbl:	ds	64
 ;-------------------------------------------------------------------
-nxsrva: ds	2
-nxsrvn: ds	1
+nxsrva:	ds	2
+nxsrvn:	ds	1
+ntype:	ds	1	; current node type/role
 
 nstat:	ds	1
 
 ctime:	ds	2
 ltime:	ds	1
 
-deadct0: ds	2
-deadctr: ds	2
+deadct0:	ds	2
+deadctr:	ds	2
 
 eops:	ds	1	;End Of Process flags from DMA
 
 hdrsiz	equ	7
 
-ch2hdr: ds	hdrsiz
-stshdr: ds	hdrsiz
-rsphdr: ds	hdrsiz
-cpnhdr: ds	hdrsiz
+ch2hdr:	ds	hdrsiz
+stshdr:	ds	hdrsiz
+rsphdr:	ds	hdrsiz
+cpnhdr:	ds	hdrsiz
 
-z89flg: ds	1
-ch2flg: ds	1
-outflg: ds	1
-cpnflg: ds	1
-cp89:	ds	1
-STSflg: ds	1
-RSPflg: ds	1
-ch3flg: ds	1
+from89:	ds	1
+outflg:	ds	1
+cpnflg:	ds	1
+didalt:	ds	1
+stsflg:	ds	1
+didsts:	ds	1
+rspflg:	ds	1
+didrsp:	ds	1
+to89:	ds	1
+dbgflg:	ds	1
 
-ch3hda: ds	2
-ch3adr: ds	2
-ch3siz: ds	2
+ch3hda:	ds	2
+ch3adr:	ds	2
+ch3siz:	ds	2
 
 pflag:	ds	1
 
 retry:	ds	1
-prtflg: ds	1
-endlst: ds	1
-retflg: ds	1
+prtflg:	ds	1
+endlst:	ds	1
+retflg:	ds	1
 
-ch2alt: ds	2
-ch2pri: ds	2
-ch2siz: ds	2
+ch2alt:	ds	2
+ch2pri:	ds	2
+ch2siz:	ds	2
 
 altaddr: ds	2	;alternate address for receive from network
 ch0addr: ds	2	;primary address for receive from network
@@ -957,8 +1033,8 @@ ch2bf:	ds	bufsiz*256	;output (Z89 to network) buffer
 ch3bf:	ds	bufsiz*256	;input (from network to Z89) buffer
 netbf:	ds	bufsiz*256	;general network message buffer
 
-prtpt0: ds	2
-prtpt1: ds	2
+prtpt0:	ds	2
+prtpt1:	ds	2
 bufmsk	equ	01111111b	;32K circular buffer
 buffer: ds	0
 ;--------- end of SUF422.ASM ---------

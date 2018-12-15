@@ -1,15 +1,12 @@
-VERS set 86 ; February 9, 1983	15:04  drm  "PRE422.ASM"
+VERS set 35 ; (Dec 14, 2018 21:34)  drm  "PRE422.ASM"
 ******************* MONITOR EPROM ***********************
 ************ for the 77422 network controller ***********
-	maclib z80
+	maclib	z80
 
 ;All nodes have equal responsibility. no Server/Requestor determination.
 
 TRUE	equ	0ffh
 FALSE	equ	000h
-online	equ	0f0h	;code for "responsive node" in NET.TABLE
-			;if code is incremented 16 times then node becomes
-			;"off line" (code=0)
 
 EPROM	equ	00000h	;start of EPROM
 EPROML	equ	8*1024	;length of EPROM in bytes
@@ -106,13 +103,47 @@ CODE	ds	1	;Control Field (network function number)
 SORC	ds	1	;Source I.D. address (my-address)
 DATA	ds	0	;0-n characters of data
 
+	org 0	;define relative positions of elements in host header.
+ZCODE	ds	1
+ZBC	ds	2
+ZDE	ds	2
+ZHL	ds	2
+ZDATA	ds	0
+
 ; CODE field definitions.
-POLL	equ	0e0h	;Poll node for status
+CPNET	equ	000h
+CPNRSP	equ	001h
+CPMAIL	equ	002h
+EXE422	equ	010h
+EXEHST	equ	011h
+RBOOT	equ	020h
+NBOOT	equ	028h
+NSTS	equ	030h
+EXEC	equ	060h	; +01 = load only
+GDBG	equ	070h
 TOKEN	equ	0d0h	;TOKEN-0, DATA = NET.TABLE
+RESET	equ	0dfh	;reset other nodes ("I have token")
+POLL	equ	0e0h	;Poll node for status
 ACK	equ	0f0h	;Acknowledge transmission
 NAK	equ	0f1h	;Error in transmission
 BSY	equ	0f2h	;unable to preocess message at present time.
-RESET	equ	0ffh	;reset other nodes ("I have token")
+
+; Node Type Codes
+TUNK	equ	010h
+TDBG	equ	020h	; In monitor/debugger
+TPSV	equ	030h	; Printer server
+TNOS	equ	040h	; CP/NOS (diskless)
+TRSV5	equ	050h
+TRSV6	equ	060h
+TFSV	equ	070h	; File server (e.g. MP/M on CP/NET)
+TNET	equ	080h	; CP/NET client/resquestor
+TCPM	equ	090h	; CP/M, on network
+TDOS	equ	0a0h	; MS-DOS, on network
+TCCD	equ	0b0h	; Concurrent DOS
+TRSVC	equ	0c0h
+TEXT1	equ	0d0h
+TEXT2	equ	0e0h
+TEXT3	equ	0f0h
 
 	org 0	;define relative positions of CP/NET message items.
 SEQ	ds	1	;added by MMS to handle retries
@@ -127,38 +158,54 @@ MSG	ds	0	;1-256 characters
 **	EPROM code
 *********************************************************
 	org	EPROM
-RST0:	jmp	start
-	db	0,0,0,0,0
-RST1:	jmp	VRST1
-	db	0,0,0,0,0
-RST2:	jmp	VRST2
-	db	0,0,0,0,0
-RST3:	jmp	VRST3
-	db	0,0,0,0,0
-RST4:	jmp	VRST4
-	db	0,0,0,0,0
-RST5:	jmp	VRST5
-	db	0,0,0,0,0
-RST6:	jmp	VRST6
-	db	0,0,0,0,0
-RST7:	jmp	VRST7
-	db	0,0,0,0,0
 
-	db	0,0,0,0,0,0,0,0
-	db	0,0,0,0,0,0,0
+	jmp	start	; func 70h
+	jmp	0	; func 71h
+	jmp	0	; func 72h
+	jmp	0	; func 73h
+	jmp	0	; func 74h
+	jmp	0	; func 75h
+	jmp	0	; func 76h
+	jmp	0	; func 77h
+	jmp	0	; func 78h
+	jmp	0	; func 79h
+	jmp	0	; func 7ah
+	jmp	0	; func 7bh
+	jmp	0	; func 7ch
+	jmp	0	; func 7dh
+	jmp	0	; func 7eh
+	jmp	debug	; func 7fh
 
-FAIL:	mvi	a,BOTH
-f2:	out	ctrl
-	lxi	b,(126)*256
+FAIL9:	mvi	e,10100101b	; RED RED GRN GRN
+	jr	f2
+FAIL8:	mvi	e,00100001b	; OFF RED OFF GRN
+	jr	f2
+FAIL7:	mvi	e,11011110b	; ALL GRN ALL RED
+	jr	f2
+FAIL6:	mvi	e,00100111b	; OFF RED GRN ALL
+	jr	f2
+FAIL5:	mvi	e,00011011b	; OFF GRN RED ALL
+	jr	f2
+FAIL4:	mvi	e,01110111b	; GRN ALL GRN ALL
+	jr	f2
+FAIL3:	mvi	e,10111011b	; RED ALL RED ALL
+	jr	f2
+FAIL2:	mvi	e,10011001b	; RED GRN RED GRN
+	jr	f2
+FAIL:	mvi	e,11001100b	; ALL OFF ALL OFF
+f2:	mov	a,e
+	rlc
+	rlc
+	mov	e,a
+	ani	BOTH
+	out	ctrl
+	lxi	b,(169)*256
 f1:	dcr	c
 	nop
-	nop
-	nop
-	jnz	f1
+	jrnz	f1
 	dcr	b
-	jnz	f1
-	xri	BOTH
-	jmp	f2
+	jrnz	f1
+	jr	f2
 
  if $ ne 0066H
 ds 'NMI position error'
@@ -174,7 +221,7 @@ start:
 	mvi	a,BOTH	      ;initial ctrl port image, both LEDs on
 	out	ctrl
 	lxi	sp,stack
-	lxi	d,(00000001b)	;(D)=0 [NC], (E)=00000001b
+	lxi	d,00000001b	;(D)=0 [NC], (E)=00000001b
 	lxi	b,0	;two counters, 256 each
 mt0:	lxi	h,RAM
 	mov	a,e
@@ -191,8 +238,8 @@ mt1:	mov	m,a
 mt2:	cci	;compares A:(HL), HL=HL+1, BC=BC-1, preserves [CY]
 	jnz	FAIL
 	ral		;9-bit rotate
-	jpo	mt2	;Parity bit set by "cci" per status of BC-1
-	ralr	e
+	jpe	mt2	;Parity bit set by "cci" per status of BC-1
+	slar	e
 	ralr	d	;[CY] into bit 0 of D, [CY] from bit 7 (previous value)
 	jnc	mt0
 ; the critical page of memory (stack) has now been tested.
@@ -204,10 +251,6 @@ mt2:	cci	;compares A:(HL), HL=HL+1, BC=BC-1, preserves [CY]
 	lxi	b,numvec
 	ldir
 	im2			;vectored interupt mode for Z80
-	lxi	h,vecsft	;initialize sofware interupts and NMI
-	lxi	d,sftvec
-	lxi	b,numsft
-	ldir
 
 *********************************************************
 **  AM 9517 Initialization...
@@ -237,7 +280,7 @@ id1:	in	dmastat ;check if dreq2 is active (must be cleared)
 	jnz	id1	;keep checking untill its stays cleared or 64K input.
 	in	dmastat
 	ani	0100$0000b
-	jnz	fail	;failure if still DREQing
+	jnz	FAIL2	;failure if still DREQing
 id0:
 *********************************************************
 **  Initialize the SIO (MK3884)
@@ -252,21 +295,47 @@ id0:
 	lxi	h,async
 	lxi	b,(asyncl)*256+(cmdA)
 	outir		;temporarely setup ch A as async, 6 data bits
-	xra	a	; (16x clock, results must be divided by 16)
-	out	Adat	;required to fill TxBuffer and shift register ??
-	lxi	d,cycles	;number of clock cycles in loop
-	lxi	h,0		;init counter
-gt0:	xra	a
-	out	Adat	;send a NUL thru serial port
-gt1:	xra	a	;   5 cycles (4 + M1wait)
-	out	cmdA	; +12	   
-	in	cmdA	; +12
-	ani	00000100b ;+8	;TxBufferEmpty
-	jnz	gt2	; +11
-	dad	d	; +12
-	jmp	gt1	; +11
-cycles	equ	71	; =71 cycles in the loop (17.75 microseconds)
 
+; This cps-measuring code is probably bogus.
+; 1 char at 500Kbps will be 64 CPU cycles (4MHz).
+; That will be at most one pass through the loop,
+; yielding a count of 79+82=161 cycles. This means
+; that 'ltime' will always be 0. That results in
+; the delay loops doing 256 interations, which is
+; excessive (although not fatal).
+	mvi	b,10	; max 10 chars to fill Tx FIFO
+id2:	xra	a
+	out	Adat
+	out	cmdA
+	in	cmdA
+	ani	00000100b
+	jz	id3
+	djnz	id2
+	jmp	FAIL3
+id3:	mov	b,a	; zero, i.e. 256 loops max to TxBE
+	lxi	d,cycles
+	lxi	h,79	; first pass, min cycles
+id4:
+	out	cmdA
+	in	cmdA
+	ani	00000100b	;  8
+	jnz	gt0		; 11
+	djnz	id4
+	jmp	FAIL3
+gt0:	xra	a		;  5
+	out	Adat		; 12
+				;...
+gt1:	xra	a		;  5
+	out	cmdA		; 12
+	in	cmdA		; 12
+	ani	00000100b	;  8
+	jnz	gt2		; 11 ...?
+	dad	d		; 12
+	jc	FAIL3		; 11
+	jmp	gt1		; 11
+				;---
+; at 500Kbps, 1 char == 64 cycles (4MHz)
+cycles	equ	82		; 82
 gt2:
 	shld	ctime	;number of CPU cycles per character.
 			;note: measurement was made at 16x normal rate.
@@ -304,11 +373,10 @@ gt2:
 	call	setdma		;setup to receive from Z89
 	mvi	a,2
 	out	mask	;un-mask channel 2 (Z89-to-77422)
-
-	mvi	a,false ;Clear to Zeros...
-	sta	ch2flg	;
-	sta	z89flg	;
-	sta	ch3flg	;
+	mvi	a,true
+	sta	from89
+	mvi	a,false	;Clear to Zeros...
+	sta	to89	;
 	sta	nstat	;
 	sta	pflag	;
 	sta	retry	;
@@ -320,11 +388,20 @@ gt2:
 	lxi	h,eops
 	res	2,m	;
 ;			;receiver setup later...at START$NET entry.
+	lxi	h,hstbf
+	shld	ch2alt
+	lxi	h,ch2bf
+	shld	ch2pri
 	lxi	h,srvtbl
 	lxi	d,srvtbl+1
 	lxi	b,64-1
 	mvi	m,0
 	ldir	;initialize net$table to all zeros (all nodes off-line)
+	lxi	h,SEQtbl
+	lxi	d,SEQtbl+1
+	lxi	b,64-1
+	mvi	m,080h
+	ldir
 	lda	maddr	; 0,1,2...63
 	mov	e,a
 	mvi	d,0
@@ -332,13 +409,20 @@ gt2:
 	dad	d
 	shld	nxsrva
 	sta	nxsrvn
-	mvi	m,online
+	mvi	m,TUNK	; node type not yet known
 	inr	a	; 1,2,3...64
 	add	a	; 2,4,6...128
 	mov	h,a	;
 	mvi	l,0	; 512,1024,1536...32768
 	shld	deadct0 ; multiplied by approx 238 usec for dead-timeout.
 
+	in	ctrl
+	ani	10000000b
+	xri	10000000b
+	rrc
+	rrc
+	ori	010h	; either TPSV or TUNK
+	sta	ntype
 	mvi	a,0	;Clear to zeros
 	sta	nxt$sp	;
 
@@ -355,9 +439,9 @@ gt2:
 	lxix	NAKmsg
 	mvix	NAK,CODE
 	stx	a,SORC
-	lxix	ACKmsg
-	mvix	ACK,CODE
-	stx	a,SORC
+	lxix	ACKmsg	; redundant...
+	mvix	ACK,CODE ;
+	stx	a,SORC	;
 	lxix	BSYmsg
 	mvix	BSY,CODE
 	stx	a,SORC
@@ -375,14 +459,28 @@ gt2:
 	stx	a,SORC
 	stx	a,DATA+SID	;SID
 
-	mvi	a,false ;Clear to zeros
-	sta	cp89	;
-	sta	STSflg	;
-	sta	RSPflg	;
+	lxix	rsphdr
+	mvix	038h,ZCODE
+	mvix	0,ZBC
+	mvix	0,ZBC+1
+	lxix	stshdr
+	mvix	NSTS,ZCODE
+	mvix	0,ZDE+1
+	lda	maddr
+	stx	a,ZDE
+	lxi	h,64+1
+	stx	l,ZBC
+	stx	h,ZBC+1
+	mvi	a,false	;Clear to zeros
+	sta	stsflg	;
+	sta	rspflg	;
 	sta	retflg	;
 	sta	cpnflg	;
 	sta	outflg	;
-
+	sta	didsts	;
+	sta	didrsp	;
+	sta	didalt	;
+	sta	dbgflg	;
 	mvi	a,255
 	sta	prtflg	;mark printer as "available"
 
@@ -392,7 +490,7 @@ gt2:
 initA:	db	0,00011000b	;reset channel
 	db	4,00100000b	;1x clock, SDLC, no parity
 	db	1,00000000b	;leave RDY and interupts disabled
-	db	6,11111111b	;Address byte (set to node address before init)
+	db	6,11111111b	;Address byte (set to node address before init) 
 	db	7,01111110b	;flag byte (for receive)
 	db	5,01100001b	;Tx 8 bits,SDLC CRC, RTS/DTR off, Tx Disabled
 	db	3,11001000b	;receive 8 bits, CRC, RxDisabled
