@@ -1,0 +1,680 @@
+ 6330 =         VERS equ '0c' ; December 29, 1982  13:26  drm  "OS422.ASM"
+                
+                	maclib	Z80
+                
+                ;*****************************************************
+                ;**** BDOS interface, BIOS entry, and DMA	 *****
+                ;**** handler for CP/M-422			 *****
+                ;****  Copyright (C) 1982 Magnolia microsystems  *****
+                ;*****************************************************
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+ 0000 =         CPM	equ	0	;warmboot entry for users
+ 0005 =         BDOS	equ	5	;BDOS entry for users
+                
+ 0FA0 =         KHz	equ	4000	;clock speed in KiloHertz
+                
+                ;********************************************************
+                ;*  I/O port base addresses
+                ;********************************************************
+ 0000 =         sio	equ	000h	;z80-sio/0
+ 0080 =         dma	equ	080h	;AMD 9517
+ 0040 =         ctrl	equ	040h	;general control outputs
+                
+                ;********************************************************
+                ;*  Control ports definitions
+                ;********************************************************
+ 00F8 =         MAP	equ	11111000b	;mask for memory mapping
+ 0000 =         ROMon	equ	000b	;code for EPROM on, bank 0
+ 0001 =         ROMoff	equ	001b	;EPROM off, bank 0
+ 0002 =         B156	equ	010b	;Bank 1, 56K
+ 0003 =         B148	equ	011b	;Bank 1, 48K
+ 0004 =         B256	equ	100b	;Bank 2, 56K
+ 0005 =         B248	equ	101b	;Bank 2, 48K
+ 0006 =         B356	equ	110b	;Bank 3, 56K
+ 0007 =         B348	equ	111b	;Bank 3, 48K
+ 0080 =         RED	equ	10000000b	;Red LED on
+ 0040 =         GREEN	equ	01000000b	;Green LED on
+ 00C0 =         BOTH	equ	11000000b	;Both LEDs on
+ 003F =         OFF	equ	00111111b	;mask to turn LEDs off.
+ 0020 =         ILAT	equ	00100000b	;latch control for IDLE status bit.
+                
+ 0040 =         IDLE	equ	01000000b	;position of IDLE status bit.
+ 0080 =         TEST	equ	10000000b	;position of TEST status bit.
+                
+                ;********************************************************
+                ;*  Z80-SIO equates
+                ;********************************************************
+ 0000 =         Adat	equ	sio	;channel A data port
+ 0001 =         Bdat	equ	sio+1	;channel B data port
+ 0002 =         cmdA	equ	sio+2	;channel A command/status port
+ 0003 =         cmdB	equ	sio+3	;channel B command/status port
+                
+ 0001 =         console equ	Bdat	;channel B is the RS-232 port for a console
+ 0003 =         constat equ	cmdB
+                
+                ;* ASCII character equates
+ 0007 =         bell	equ	7
+ 0008 =         bs	equ	8
+ 0009 =         tab	equ	9
+ 000A =         lf	equ	10
+ 000D =         cr	equ	13
+ 001B =         esc	equ	27
+ 007F =         del	equ	127
+                
+                ;********************************************************
+                ;*	AMD 9517 equates
+                ;********************************************************
+ 0080 =         ch0ba	equ	dma+0	;channel 0 base address
+ 0081 =         ch0wc	equ	dma+1	;channel 0 word count
+ 0082 =         ch1ba	equ	dma+2	;
+ 0083 =         ch1wc	equ	dma+3	;
+ 0084 =         ch2ba	equ	dma+4	;
+ 0085 =         ch2wc	equ	dma+5	;
+ 0086 =         ch3ba	equ	dma+6	;
+ 0087 =         ch3wc	equ	dma+7	;
+                
+ 0088 =         dmacomd equ	dma+8	;command port
+ 0070 =         comd	equ	01110000b	;DACK/DREQ act.lo, Norm timing, Ext write,
+                				;Rotating priority, Controller enable.
+                
+ 0088 =         dmastat equ	dma+8	;status port
+ 0089 =         dreq	equ	dma+9	;software data requests
+                
+ 008A =         mask	equ	dma+10	;individual channel mask bit access
+ 0004 =         dis	equ	100b	;disable DMA (set mask)
+                
+ 008B =         mode	equ	dma+11	;individual channel mode bit access
+ 008C =         clrBP	equ	dma+12	;clear Byte Pointer flip-flop
+ 008D =         clr	equ	dma+13	;clear DMA chip
+ 008D =         temp	equ	dma+13	;read temporary register
+ 008F =         maskall equ	dma+15	;write all mask bits (simultanious)
+                
+                
+                	cseg
+ 0000           	org	0
+                BDOS$1:
+ 0000 C30002    	jmp	BIOS$1	  ;serial number space (overwritten later)
+ 0003 000000    	db	0,0,0
+                
+ 0006 C31200    @BDOS:	JMP	ENTRY
+                
+ 0009 0000      	dw	0	;not valid
+ 000B 0000      	dw	0
+ 000D 0000      	dw	0
+ 000F 0000      	dw	0
+                
+ 0011 00        	db	0	;this makes the "ENTRY" address not xx11
+                
+                ENTRY:
+                	sspd	ustk
+ 0012+ED73      	DB	0EDH,73H
+ 0014+BD03      	DW	USTK
+ 0016 319F01    	lxi	sp,bdostk
+ 0019 214501    	lxi	h,exit
+ 001C E5        	push	h	;return address
+                	sded	info
+ 001D+ED53      	DB	0EDH,53H
+ 001F+B703      	DW	INFO
+ 0021 210000    	lxi	h,0
+ 0024 22BB03    	shld	retin
+ 0027 79        	mov	a,c
+ 0028 32B603    	sta	func
+ 002B FEE0      	cpi	0E0H	;remote load-n-go function from CCP
+ 002D CA4F01    	jz	ldngo
+ 0030 FE29      	cpi	NFUNCS
+ 0032 D0        	rnc
+ 0033 59        	mov	e,c
+ 0034 1600      	mvi	d,0
+ 0036 214000    	lxi	h,FUNTAB
+ 0039 19        	dad	d
+ 003A 19        	dad	d
+ 003B 5E        	mov	e,m
+ 003C 23        	inx	h
+ 003D 56        	mov	d,m
+ 003E EB        	xchg
+ 003F E9        	pchl
+                
+ 0040 0302      FUNTAB: dw	@BIOS	;go directly to local warm-boot
+ 0042 E500      	dw	putget	;read console, swap memory and go...
+ 0044 6703      	dw	put	;write console, ...
+ 0046 E500      	dw	putget	;read reader, ...
+ 0048 6703      	dw	put	;write punch, ...
+ 004A 6703      	dw	put	;write list, ...
+ 004C 9200      	dw	dcio	;direct console I/O
+ 004E E500      	dw	putget	;get iobyte
+ 0050 6703      	dw	put	;set iobyte
+ 0052 9B00      	dw	bufout	;buffered console output, special processing
+ 0054 BB00      	dw	bufin	;beffered console input, special processing
+ 0056 E500      	dw	putget	;console input status
+                
+ 0058 E500      	dw	putget	;return version
+ 005A 6703      	dw	put	;reset disk system
+ 005C 6703      	dw	put	;select drive
+ 005E 1701      	dw	pgF33	;open file, put and get FCB (33 byte)
+ 0060 F400      	dw	pFCB	;close file, put FCB, get only error code
+ 0062 F900      	dw	pFgD	;search first, put FCB and get DMA (+error code)
+ 0064 2F01      	dw	DMAgo	;search next, get DMA
+ 0066 F400      	dw	pFCB	;delete file, put FCB and get only error code
+ 0068 FF00      	dw	pFgFD	;read sequential, put FCB, get DMA+FCB(33 byte)
+ 006A 0F01      	dw	pFDgF	;write sequential, put FCB+DMA, get FCB(33 byte)
+ 006C 1701      	dw	pgF33	;make file entry
+ 006E F400      	dw	pFCB	;rename file
+ 0070 E500      	dw	putget	;return login vector
+ 0072 E500      	dw	putget	;return current drive
+ 0074 D200      	dw	sdma	;set dma address (for local use only)
+ 0076 4401      	dw	alloc	;return alloc vector address (actual alloc vector)
+ 0078 6703      	dw	put	;write protect drive
+ 007A E500      	dw	putget	;get R/O vector
+ 007C F400      	dw	pFCB	;set file attributes
+ 007E 3501      	dw	gDPB	;get DPB address (actual DPB)
+ 0080 E500      	dw	putget	;set/get user number
+ 0082 FF00      	dw	pFgFD	;read random (return 33 byte FCB)
+ 0084 0F01      	dw	pFDgF	;write random (return 33 byte FCB)
+ 0086 0A01      	dw	pgFCB	;compute file size (36 byte FCB)
+ 0088 0A01      	dw	pgFCB	;set random record number (36 byte FCB)
+ 008A 6703      	dw	put	;reset individual drives
+ 008C 4401      	dw	go	;no function
+ 008E 4401      	dw	go	;no function
+ 0090 0F01      	dw	pFDgF	;write random, zero fill (36 byte FCB)
+ 0029 =         NFUNCS equ ($-FUNTAB)/2
+                
+ 0092 3AB703    dcio:	lda	info
+ 0095 07        	rlc	;is bit 7 a "1" ?
+ 0096 D26703    	jnc	put	;output, don't wait for return frame.
+                	jr	putget
+ 0099+184A      	DB	18H,PUTGET-$-1
+                
+                bufout: 
+ 009B 2AB703    	lhld	info
+ 009E 010000    	lxi	b,0	;search through all of RAM for '$'
+ 00A1 3E24      	mvi	a,'$'	;to detrmine length of string to print.
+                	ccir
+ 00A3+EDB1      	DB	0EDH,0B1H
+                	lded	info
+ 00A5+ED5B      	DB	0EDH,5BH
+ 00A7+B703      	DW	INFO
+ 00A9 B7        	ora	a
+                	dsbc	d	;(HL) = length
+ 00AA+ED52      	DB	0EDH,D*8+42H
+ 00AC 22B703    	shld	info
+ 00AF D5        	push	d	;save message address
+ 00B0 CD6703    	call	put	;send func,info (info is message length)
+ 00B3 E1        	pop	h	;(HL) = Address
+                	lded	info	;(DE) = length
+ 00B4+ED5B      	DB	0EDH,5BH
+ 00B6+B703      	DW	INFO
+ 00B8 C37503    	jmp	put89 ;send string to Z89 (and then to console/printer)
+                
+ 00BB 2AB703    bufin:	lhld	info
+ 00BE 5E        	mov	e,m	;get max length of buffer
+ 00BF 23        	inx	h
+ 00C0 E5        	push	h
+ 00C1 1600      	mvi	d,0
+                	sded	info	;
+ 00C3+ED53      	DB	0EDH,53H
+ 00C5+B703      	DW	INFO
+ 00C7 CDE500    	call	putget	;send func,info (info=max number of chacters)
+                			;get back actual length of input.
+                	lded	retin	;total number of characters (input+count)
+ 00CA+ED5B      	DB	0EDH,5BH
+ 00CC+BB03      	DW	RETIN
+ 00CE E1        	pop	h	;(HL) = Buffer address
+ 00CF C38803    	jmp	get89	;
+                
+ 00D2 2AB703    sdma:	lhld	info
+ 00D5 22BF03    	shld	dmaa
+ 00D8 C9        	ret
+                
+ 00D9 CD6703    putFCB: call	put
+ 00DC 112400    	lxi	d,36
+ 00DF 2AB703    	lhld	info
+ 00E2 C37503    	jmp	put89
+                
+ 00E5 CD6703    putget: call	put
+ 00E8 CD7A03    get:	call	getf
+ 00EB 3AB603    	lda	func	;was the BDOS function terminated by a "^C" (jmp 0)
+ 00EE FEF0      	cpi	0f0h	;if it was, there will be no more data returned.
+ 00F0 C0        	rnz
+ 00F1 C38E02    	jmp	wstart
+                
+ 00F4 CDD900    pFCB:	call	putFCB
+                	jr	get
+ 00F7+18EF      	DB	18H,GET-$-1
+                
+ 00F9 CDF400    pFgD:	call	pFCB
+ 00FC C38203    	jmp	getDMA
+                
+ 00FF CD1701    pFgFD:	call	pgF33
+ 0102 3ABB03    	lda	retin
+ 0105 B7        	ora	a
+ 0106 C0        	rnz
+ 0107 C38203    	jmp	getDMA
+                
+ 010A CDD900    pgFCB:	call	putFCB
+                	jr	getFCB
+ 010D+1810      	DB	18H,GETFCB-$-1
+                
+ 010F CDD900    pFDgF:	call	putFCB
+ 0112 CD6F03    	call	putDMA
+                	jr	getF33
+ 0115+1803      	DB	18H,GETF33-$-1
+                
+ 0117 CDD900    pgF33:	call	putFCB
+ 011A 112100    getF33: lxi	d,33
+                	jr	gf0
+ 011D+1803      	DB	18H,GF0-$-1
+                
+ 011F 112400    getFCB: lxi	d,36
+ 0122 D5        gf0:	push	d
+ 0123 2AB703    	lhld	info	;user's FCB address (will be destroyed by "get")
+ 0126 E5        	push	h
+ 0127 CDE800    	call	get
+ 012A E1        	pop	h
+ 012B D1        	pop	d
+ 012C C38803    	jmp	get89
+                
+ 012F CDE500    DMAgo:	call	putget
+ 0132 C38203    	jmp	getDMA
+                
+ 0135 CD6703    gDPB:	call	put
+ 0138 21D301    	lxi	h,DPB
+ 013B 22BB03    	shld	retin
+ 013E 111500    	lxi	d,21
+ 0141 C38803    	jmp	get89
+                
+                alloc:
+ 0144 C9        go:	ret
+                
+ 0145 2ABB03    exit:	lhld	retin
+ 0148 7D        	mov	a,l
+ 0149 44        	mov	b,h
+                	lspd	ustk
+ 014A+ED7B      	DB	0EDH,07BH
+ 014C+BD03      	DW	USTK
+ 014E C9        	ret
+                
+ 014F 3A0400    ldngo:	lda	4	;default disk and user #
+ 0152 32B703    	sta	info
+ 0155 CD6703    	call	put
+ 0158 215000    	lxi	h,50H	;start of pertinant page-0 information
+ 015B 11B000    	lxi	d,(100H-50H)
+ 015E CD7503    	call	put89
+ 0161 CD7A03    	call	getf	;wait for program to terminate.
+ 0164 3AB703    	lda	info
+ 0167 320400    	sta	4
+ 016A C9        	ret
+                
+ 016B 0000000000	dw 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 019F           bdostk: ds 0
+                
+ 019F 0000000000	dw 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 
+ 01D3           stack:	ds 0
+                
+ 01D3 0000000000DPB:	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                
+ 00E8 #         @@ set (($-BDOS$1) and 0ffh)
+                 if @@ ne 0
+                 rept 100h-@@
+                 db 0
+                 endm
+ 01E8+00         DB 0
+ 01E9+00         DB 0
+ 01EA+00         DB 0
+ 01EB+00         DB 0
+ 01EC+00         DB 0
+ 01ED+00         DB 0
+ 01EE+00         DB 0
+ 01EF+00         DB 0
+ 01F0+00         DB 0
+ 01F1+00         DB 0
+ 01F2+00         DB 0
+ 01F3+00         DB 0
+ 01F4+00         DB 0
+ 01F5+00         DB 0
+ 01F6+00         DB 0
+ 01F7+00         DB 0
+ 01F8+00         DB 0
+ 01F9+00         DB 0
+ 01FA+00         DB 0
+ 01FB+00         DB 0
+ 01FC+00         DB 0
+ 01FD+00         DB 0
+ 01FE+00         DB 0
+ 01FF+00         DB 0
+                 endif
+                
+                BIOS$1:
+ 0200 C33702    	jmp	cstart		;cold start
+ 0203 C38E02    @BIOS:	jmp	wstart		;warm start
+ 0206 C3D302    	jmp	CS		;console status
+ 0209 C3D702    	jmp	CI		;console character in
+ 020C C3DB02    	jmp	CO		;console character out
+ 020F C3DF02    	jmp	PO		;list character out
+ 0212 C3E302    	jmp	punch		;punch not implemented in MP/M
+ 0215 C3E702    	jmp	reader		;reader not implemented in MP/M
+ 0218 C3EB02    	jmp	home		;move head to home
+ 021B C30103    	jmp	seldsk		;select disk
+ 021E C3EF02    	jmp	settrk		;set track number
+ 0221 C3F302    	jmp	setsec		;set sector number
+ 0224 C32303    	jmp	stdma		;set dma address
+ 0227 C32803    	jmp	read		;read disk
+ 022A C33203    	jmp	write		;write disk
+ 022D C33C03    	jmp	PS		;list status
+ 0230 C34003    	jmp	sectrn		;sector translate
+                
+                ;modes for DMA chip.
+ 0233 40        modes:	db	01000000b	;channel 0: use for Memory-to-Memory ?
+ 0234 41        	db	01000001b	;channel 1: use for Memory-to-Memory ?
+ 0235 46        	db	01000110b	;channel 2: I/O to Mem, Single mode
+ 0236 4B        	db	01001011b	;channel 3: Mem to I/O, Single mode
+                
+                ;In CP/M 2.24 the Cold Start routine is responsible for initializing the system
+                ;and transfering to the CCP.
+                cstart:
+ 0237 31D301    	lxi	sp,stack
+ 023A 3E01      	mvi	a,ROMoff	;LEDs off, EPROM off.
+ 023C 32B503    	sta	image
+ 023F D340      	out	ctrl
+                
+                ;*  AM 9517 Re-initialization...
+ 0241 3E74      	mvi	a,comd+100b	;disable controller
+ 0243 D388      	out	dmacomd
+ 0245 3E0F      	mvi	a,1111b 	;make sure all channels are masked
+ 0247 D38F      	out	maskall
+ 0249 3E70      	mvi	a,comd		;default (standard) command byte
+ 024B D388      	out	dmacomd 	;enable controller
+ 024D 213302    	lxi	h,modes
+ 0250 018B04    	lxi	b,(mode)+(4)*256
+                	outir
+ 0253+EDB3      	DB	0EDH,0B3H
+                ; Leave all DMA channels masked untill we need them.
+                
+ 0255 21FF02    	lxi	h,tick
+ 0258 7C        	mov	a,h
+                	stai
+ 0259+ED47      	DB	0EDH,47H
+ 025B FB        	ei
+                
+ 025C CD9D02    	call	wb0	;continue in WBOOT routine
+ 025F E5        	push	h	;save execution address of CCP
+ 0260 116F02    	lxi	d,signon
+ 0263 0E09      	mvi	c,9	;BDOS function 9: print buffer to console
+ 0265 CD0500    	call	bdos	;print signon message at console.
+ 0268 3E00      	mvi	a,00H	;default disk/user number
+ 026A 320400    	sta	4	;set default drive/user in RAM
+                	jr	wm0	;jump to CCP.
+ 026D+1829      	DB	18H,WM0-$-1
+                
+ 026F 0D0A074D4Dsignon: db	cr,lf,bell,'MMS CP/M-422 version 2.29'
+ 028B 3063      	dw	VERS
+ 028D 24        	db	'$'
+                
+                ;The warm-start routine is responsible for insuring that the CCP
+                ;is restored.
+ 028E 31D301    wstart: lxi	sp,stack
+ 0291 CD9D02    	call	wb0
+ 0294 23        	inx	h
+ 0295 23        	inx	h
+ 0296 23        	inx	h	;CCP+3 = warm start CCP
+ 0297 E5        	push	h	;jmp to CCP+3
+ 0298 3A0400    wm0:	lda	4
+ 029B 4F        	mov	c,a
+ 029C C9        	ret	;startup CCP
+                
+ 029D AF        wb0:	xra	a	;0=warm boot code. causes CCP to be transfered.
+ 029E CD4203    	call	goBIOS	;(BC) = CCP422 length
+ 02A1 E5        	push	h	;(HL) = CCP422 address
+ 02A2 59        	mov	e,c
+ 02A3 50        	mov	d,b	;(DE) = CCP422 length
+ 02A4 CD8803    	call	get89
+ 02A7 210000    	lxi	h,BDOS$1	;get serial number
+ 02AA 110600    	lxi	d,6
+ 02AD CD8803    	call	get89
+ 02B0 3E09      	mvi	a,09	;mms version number for CP/M-422
+ 02B2 320200    	sta	BDOS$1+2
+ 02B5 3EC3      	mvi	a,(JMP)
+ 02B7 320000    	sta	CPM
+ 02BA 320500    	sta	BDOS
+ 02BD 210302    	lxi	h,@BIOS 
+ 02C0 220100    	shld	CPM+1
+ 02C3 210600    	lxi	h,@BDOS
+ 02C6 220600    	shld	BDOS+1
+ 02C9 0E07      	mvi	c,7	;BDOS function 7: get IOBYTE value.
+ 02CB CD0500    	call	bdos
+ 02CE 320300    	sta	3	;set IOBYTE on this side.
+ 02D1 E1        	pop	h	;(HL) = CCP address
+ 02D2 C9        	ret
+                
+ 02D3 3E01      CS:	mvi	a,1	;test console input status
+                	jr	goBIOS
+ 02D5+186B      	DB	18H,GOBIOS-$-1
+                
+ 02D7 3E02      CI:	mvi	a,2	;input from console
+                	jr	goBIOS
+ 02D9+1867      	DB	18H,GOBIOS-$-1
+                
+ 02DB 3E03      CO:	mvi	a,3	;output to console
+                	jr	pBIOS  ;;send only, don't wait for return info.
+ 02DD+1878      	DB	18H,PBIOS-$-1
+                
+ 02DF 3E04      PO:	mvi	a,4	;output to list device
+                	jr	goBIOS
+ 02E1+185F      	DB	18H,GOBIOS-$-1
+                
+ 02E3 3E05      punch:	mvi	a,5	;output to punch device
+                	jr	goBIOS
+ 02E5+185B      	DB	18H,GOBIOS-$-1
+                
+ 02E7 3E06      reader: mvi	a,6	;input from reader device
+                	jr	goBIOS
+ 02E9+1857      	DB	18H,GOBIOS-$-1
+                
+ 02EB 3E07      home:	mvi	a,7	;home disk routine (set track to 0)
+                	jr	goBIOS
+ 02ED+1853      	DB	18H,GOBIOS-$-1
+                
+ 02EF 3E09      settrk: mvi	a,9	;set track number
+                	jr	goBIOS
+ 02F1+184F      	DB	18H,GOBIOS-$-1
+                
+ 02F3 3E0A      setsec: mvi	a,10	;set sector number
+                	jr	goBIOS
+ 02F5+184B      	DB	18H,GOBIOS-$-1
+                
+ 00F8 #         @@ set (($-BIOS$1+1) and 0ffh)
+                 if @@ ne 0
+                 rept 100h-@@
+                 db 0
+                 endm
+ 02F7+00         DB 0
+ 02F8+00         DB 0
+ 02F9+00         DB 0
+ 02FA+00         DB 0
+ 02FB+00         DB 0
+ 02FC+00         DB 0
+ 02FD+00         DB 0
+ 02FE+00         DB 0
+                 endif
+                
+ 02FF A703      tick:	dw	tic	;must be at xxFF
+                
+ 0301 3E08      seldsk: mvi	a,8	;select drive: find module for drive number.
+ 0303 CD4203    	call	goBIOS
+ 0306 7C        	mov	a,h	;check for select error (no more returned data)
+ 0307 B5        	ora	l
+ 0308 C8        	rz
+ 0309 21C103    	lxi	h,dph
+ 030C 22BB03    	shld	rHL
+ 030F 111000    	lxi	d,16
+ 0312 CD8803    	call	get89
+ 0315 21D103    	lxi	h,bdpb
+ 0318 22CB03    	shld	dph@dpb
+ 031B 111500    	lxi	d,21
+ 031E CD8803    	call	get89
+                	jr	reg
+ 0321+1825      	DB	18H,REG-$-1
+                
+                stdma:	sbcd	dmaa	;set DMA address
+ 0323+ED43      	DB	0EDH,43H
+ 0325+BF03      	DW	DMAA
+ 0327 C9        	ret
+                
+ 0328 3E0C      read:	mvi	a,12	;read sector from disk
+ 032A CD4203    	call	goBIOS
+ 032D CD8203    	call	getDMA
+                	jr	reg
+ 0330+1816      	DB	18H,REG-$-1
+                
+ 0332 3E0D      write:	mvi	a,13	;write sector to disk
+ 0334 CD5703    	call	pBIOS
+ 0337 CD6F03    	call	putDMA
+                	jr	gBIOS
+ 033A+1809      	DB	18H,GBIOS-$-1
+                
+ 033C 3E0E      PS:	mvi	a,14	;test list output status
+                	jr	goBIOS
+ 033E+1802      	DB	18H,GOBIOS-$-1
+                
+ 0340 3E0F      sectrn: mvi	a,15	;logical to physical sector translation
+                ;	jmp	goBIOS	
+                ;
+ 0342 CD5703    goBIOS: call	pBIOS
+ 0345 CD7A03    gBIOS:	call	getf
+ 0348 3AB603    reg:	lda	func
+                	lbcd	rBC
+ 034B+ED4B      	DB	0EDH,4BH
+ 034D+B703      	DW	RBC
+                	lded	rDE
+ 034F+ED5B      	DB	0EDH,5BH
+ 0351+B903      	DW	RDE
+ 0353 2ABB03    	lhld	rHL
+ 0356 C9        	ret
+                
+ 0357 F6F0      pBIOS:	ori	11110000b
+ 0359 32B603    	sta	func
+                	sbcd	rBC
+ 035C+ED43      	DB	0EDH,43H
+ 035E+B703      	DW	RBC
+                	sded	rDE
+ 0360+ED53      	DB	0EDH,53H
+ 0362+B903      	DW	RDE
+ 0364 22BB03    	shld	rHL
+ 0367 21B603    put:	lxi	h,func
+ 036A 110700    	lxi	d,7
+                	jr	put89
+ 036D+1806      	DB	18H,PUT89-$-1
+                
+ 036F 2ABF03    putDMA: lhld	dmaa
+ 0372 118000    	lxi	d,128
+                ;	jmp	put89
+                ;
+                put89:		;send a message to the Z89
+                ;				;(HL) = Base address
+ 0375 018608    	lxi	b,(ch3ba)+(1000b)*256	     ;(C)=ch3ba, (B)=1000b
+                	jr	gp89
+ 0378+1811      	DB	18H,GP89-$-1
+                
+ 037A 21B603    getf:	lxi	h,func
+ 037D 110700    	lxi	d,7
+                	jr	get89
+ 0380+1806      	DB	18H,GET89-$-1
+                
+ 0382 2ABF03    getDMA: lhld	dmaa
+ 0385 118000    	lxi	d,128
+                ;	jmp	get89
+                ;
+                get89:		;wait for a message from the Z89
+                ;				;(HL) = Base address
+ 0388 018404    	lxi	b,(ch2ba)+(0100b)*256	    ;(C)=ch2ba, (B)=0100b
+ 038B 1B        gp89:	dcx	d		;(DE) = Word count (-1)
+ 038C 79        	mov	a,c
+ 038D CD9B03    	call	setdma		;setup to receive from Z89
+ 0390 D680      	sui	ch0ba
+ 0392 0F        	rrc		;convert ch2ba/ch3ba to 2/3
+ 0393 D38A      	out	mask	;un-mask channel
+ 0395 DB88      g89:	in	dmastat
+ 0397 A0        	ana	b		;check eop (2 or 3)
+                	jrz	g89	;wait for Z89 to send message
+ 0398+28FB      	DB	28H,G89-$-1
+ 039A C9        	ret
+                
+ 039B D38C      setdma: out	clrBP
+                	outp	l
+ 039D+ED69      	DB	0EDH,L*8+41H
+                	outp	h
+ 039F+ED61      	DB	0EDH,H*8+41H
+ 03A1 0C        	inr	c
+                	outp	e
+ 03A2+ED59      	DB	0EDH,E*8+41H
+                	outp	d
+ 03A4+ED51      	DB	0EDH,D*8+41H
+ 03A6 C9        	ret
+                
+ 03A7 E5        tic:	push	h
+ 03A8 2A0B00    	lhld	11
+ 03AB 23        	inx	h
+ 03AC 220B00    	shld	11
+ 03AF D3E0      	out	0e0h	;reset interupt
+ 03B1 E1        	pop	h
+ 03B2 FB        	ei
+                	reti
+ 03B3+ED4D      	DB	0EDH,4DH
+                
+ 03B5 00        image:	db	0
+                
+ 03B6 00        func:	db	0
+ 03B7 0000      rBC:	dw	0
+ 03B9 0000      rDE:	dw	0
+ 03BB 0000      rHL:	dw	0
+                
+ 03B7 =         info	equ	rBC
+ 03BB =         retin	equ	rHL
+                
+ 03BD 0000      ustk:	dw	0
+ 03BF 8000      dmaa:	dw	0080H	;default DMA address
+                
+ 03C1 0000000000dph:	dw	0,0,0,0,0
+ 03CB 0000000000dph@dpb:    dw	0,0,0
+                
+ 03D1 0000000000bdpb:	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                
+ 03E6           	ds	0	;prints address on listing (only function)
+                
+ 00E9 #         @@ set (($-BIOS$1+3) and 0ffh)
+                 if @@ ne 0
+                 rept 100h-@@
+                 db 0
+                 endm
+ 03E6+00         DB 0
+ 03E7+00         DB 0
+ 03E8+00         DB 0
+ 03E9+00         DB 0
+ 03EA+00         DB 0
+ 03EB+00         DB 0
+ 03EC+00         DB 0
+ 03ED+00         DB 0
+ 03EE+00         DB 0
+ 03EF+00         DB 0
+ 03F0+00         DB 0
+ 03F1+00         DB 0
+ 03F2+00         DB 0
+ 03F3+00         DB 0
+ 03F4+00         DB 0
+ 03F5+00         DB 0
+ 03F6+00         DB 0
+ 03F7+00         DB 0
+ 03F8+00         DB 0
+ 03F9+00         DB 0
+ 03FA+00         DB 0
+ 03FB+00         DB 0
+ 03FC+00         DB 0
+                 endif
+                
+ 03FD 00        SCRATCH DB	0	;to simulate ESC-sequence patch in Z89
+ 03FE FD03      	DW	SCRATCH
+                
+ 0400           	end
+

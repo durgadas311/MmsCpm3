@@ -1,0 +1,861 @@
+ 6530 =         VERS equ '0e' ; January 17, 1983  12:51  drm  "OSZ89.ASM"
+                
+                	maclib	Z80
+                
+                ;*****************************************************
+                ;**** BDOS interface, BIOS entry, and DMA	 *****
+                ;**** handler for CP/M-422, Z89 resident code.	 *****
+                ;****  Copyright (C) 1983 Magnolia microsystems  *****
+                ;*****************************************************
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+ 0000 =         CPM	equ	0	;warmboot entry for users
+ 0005 =         BDOS	equ	5	;BDOS entry for users
+ 0008 =         RST1	equ	(1)*8
+ 000B =         clk	equ	RST1+3
+ 000D =         ictl	equ	RST1+5
+ 0028 =         RST5	equ	(5)*8
+ 005C =         FCB	equ	5CH
+ 0080 =         DMA	equ	80H
+ 0100 =         TPA	equ	0100H
+                
+ 0800 =         KHz	equ	2048	;clock speed in KiloHertz
+                
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+                ;********************************************************
+                ;*  I/O port base addresses
+                ;********************************************************
+                ;m422	equ	078h
+ 00F2 =         port	equ	0f2h
+                
+                ;********************************************************
+                ;*   77422 board ports
+                ;********************************************************
+                ;dat422  equ	 m422	 ;input/output
+                ;intoff  equ	 m422+1  ;output only
+                ;nmi	 equ	 m422+2  ;output only
+                ;tick	 equ	 m422+3  ;output only
+                ;sta422  equ	 m422+1  ;input only
+                
+                
+                	cseg
+ 0000           	org	0
+                BDOS$1:
+ 0000 0000      CCPl:	dw	0	;replaced by serial number after start-up
+ 0002 0000      CCPa:	dw	0
+ 0004 1402      	dw	colds	;cold start address
+                
+ 0006 C30000    @BDOS:	JMP	0	;address filled at start-up.
+                
+ 0009 0000      	dw	0	;for compatability only, not functional
+ 000B 0000      	dw	0
+ 000D 0000      	dw	0
+ 000F 0000      	dw	0
+                
+ 0011 5902      FUNTAB: dw	wstart	;go directly to local warm-boot
+ 0013 F600      	dw	putget	;read console, swap memory and go...
+ 0015 E700      	dw	do	;write console, ...
+ 0017 F600      	dw	putget	;read reader, ...
+ 0019 E700      	dw	do	;write punch, ...
+ 001B E700      	dw	do	;write list, ...
+ 001D 8100      	dw	dcio	;direct console I/O
+ 001F F600      	dw	putget	;get iobyte
+ 0021 E700      	dw	do	;set iobyte
+ 0023 8900      	dw	bufout	;buffered console output, special processing
+ 0025 9B00      	dw	bufin	;beffered console input, special processing
+ 0027 F600      	dw	putget	;console input status
+                
+ 0029 F600      	dw	putget	;return version
+ 002B E700      	dw	do	;reset disk system
+ 002D E700      	dw	do	;select drive
+ 002F FC00      	dw	pgF33	;open file, put and get FCB
+ 0031 0601      	dw	pFCB	;close file, put FCB, get only error code
+ 0033 0B01      	dw	pFgD	;search first, put FCB and get DMA (+error code)
+ 0035 2D01      	dw	DMAgo	;search next, get DMA
+ 0037 0601      	dw	pFCB	;delete file, put FCB and get only error code
+ 0039 1701      	dw	pFgFD	;read sequential, put FCB, get DMA+FCB
+ 003B 2201      	dw	pFDgF	;write sequential, put FCB+DMA, get FCB
+ 003D FC00      	dw	pgF33	;make file entry
+ 003F 0601      	dw	pFCB	;rename file
+ 0041 F600      	dw	putget	;return login vector
+ 0043 F600      	dw	putget	;return current drive
+ 0045 3F01      	dw	sdma	;set dma address (for local use only)
+ 0047 3F01      	dw	alloc	;return alloc vector address (actual alloc vector)
+ 0049 E700      	dw	do	;write protect drive
+ 004B F600      	dw	putget	;get R/O vector
+ 004D 0601      	dw	pFCB	;set file attributes
+ 004F 3301      	dw	gDPB	;get DPB address (actual DPB)
+ 0051 F600      	dw	putget	;set/get user number
+ 0053 1701      	dw	pFgFD	;read random
+ 0055 2201      	dw	pFDgF	;write random
+ 0057 0101      	dw	pgFCB	;compute file size
+ 0059 0101      	dw	pgFCB	;set random record number
+ 005B E700      	dw	do	;reset individual drives
+ 005D 3F01      	dw	go	;no function
+ 005F 3F01      	dw	go	;no function
+ 0061 2201      	dw	pFDgF	;write random, zero fill
+ 0029 =         NFUNCS equ ($-FUNTAB)/2
+                
+ 0063 210000    bdosf:	lxi	h,0	;execute a BDOS function
+ 0066 22FF03    	shld	retin
+ 0069 3AFA03    	lda	func
+ 006C FEE0      	cpi	0E0H	;77422 is instructing us to load a COM file and run...
+ 006E CA4001    	jz	ldngo
+ 0071 FE29      	cpi	NFUNCS
+ 0073 D0        	rnc
+ 0074 4F        	mov	c,a
+ 0075 0600      	mvi	b,0
+ 0077 211100    	lxi	h,FUNTAB
+ 007A 09        	dad	b
+ 007B 09        	dad	b
+ 007C 5E        	mov	e,m
+ 007D 23        	inx	h
+ 007E 56        	mov	d,m
+ 007F EB        	xchg
+ 0080 E9        	pchl
+                
+ 0081 3AFB03    dcio:	lda	info
+ 0084 07        	rlc	;is bit 7 a "1" ?
+                	jrnc	do	;output, don't return any info
+ 0085+3060      	DB	30H,DO-$-1
+                	jr	putget	;input/status, must return data
+ 0087+186D      	DB	18H,PUTGET-$-1
+                
+ 0089 210001    bufout: lxi	h,TPA
+                	lbcd	info	;normally this is the message address but we changed
+ 008C+ED4B      	DB	0EDH,4BH
+ 008E+FB03      	DW	INFO
+ 0090 CDA603    	call	get422	;the rules. now its the message length.
+ 0093 110001    	lxi	d,TPA
+ 0096 0E09      	mvi	c,9
+ 0098 C30500    	jmp	BDOS
+                
+ 009B 3AFB03    bufin:	lda	info
+ 009E 210001    	lxi	h,TPA
+ 00A1 77        	mov	m,a
+ 00A2 23        	inx	h
+ 00A3 3600      	mvi	m,0
+ 00A5 110001    	lxi	d,TPA
+ 00A8 0E0A      	mvi	c,10
+ 00AA CD0500    	call	BDOS
+ 00AD 210101    	lxi	h,TPA+1
+ 00B0 6E        	mov	l,m
+ 00B1 2600      	mvi	h,0
+ 00B3 23        	inx	h
+ 00B4 22FF03    	shld	retin
+ 00B7 CD7803    	call	put
+ 00BA 210101    	lxi	h,TPA+1
+                	lbcd	retin
+ 00BD+ED4B      	DB	0EDH,4BH
+ 00BF+FF03      	DW	RETIN
+ 00C1 C37E03    	jmp	put422
+                
+ 00C4 218000    getDMA: lxi	h,DMA	;
+ 00C7 018000    	lxi	b,128
+ 00CA C3A603    	jmp	get422
+                
+ 00CD 012400    getFCB: lxi	b,36
+ 00D0 215C00    	lxi	h,FCB
+ 00D3 22FB03    	shld	info
+ 00D6 C3A603    	jmp	get422
+                
+ 00D9 012100    putF33: lxi	b,33
+                	jr	pf0
+ 00DC+1803      	DB	18H,PF0-$-1
+                
+ 00DE 012400    putFCB: lxi	b,36
+ 00E1 215C00    pf0:	lxi	h,FCB
+ 00E4 C37E03    	jmp	put422
+                
+                do:	lded	info
+ 00E7+ED5B      	DB	0EDH,5BH
+ 00E9+FB03      	DW	INFO
+ 00EB 3AFA03    	lda	func
+ 00EE 4F        	mov	c,a
+ 00EF CD0500    	call	BDOS
+ 00F2 22FF03    	shld	retin
+ 00F5 C9        	ret
+                
+ 00F6 CDE700    putget: call	do
+ 00F9 C37803    	jmp	put
+                
+ 00FC CD0601    pgF33:	call	pFCB
+                	jr	putF33
+ 00FF+18D8      	DB	18H,PUTF33-$-1
+                
+ 0101 CD0601    pgFCB:	call	pFCB
+                	jr	putFCB
+ 0104+18D8      	DB	18H,PUTFCB-$-1
+                
+ 0106 CDCD00    pFCB:	call	getFCB
+                	jr	putget
+ 0109+18EB      	DB	18H,PUTGET-$-1
+                
+ 010B CD0601    pFgD:	call	pFCB
+ 010E 218000    putDMA: lxi	h,DMA
+ 0111 018000    	lxi	b,128
+ 0114 C37E03    	jmp	put422
+                
+ 0117 CDFC00    pFgFD:	call	pgF33
+ 011A 3AFF03    	lda	retin
+ 011D B7        	ora	a
+ 011E C0        	rnz
+ 011F C30E01    	jmp	putDMA
+                
+ 0122 CDCD00    pFDgF:	call	getFCB
+ 0125 CDC400    	call	getDMA
+ 0128 CDF600    	call	putget
+                	jr	putF33
+ 012B+18AC      	DB	18H,PUTF33-$-1
+                
+ 012D CDF600    DMAgo:	call	putget
+ 0130 C30E01    	jmp	putDMA
+                
+ 0133 CDE700    gDPB:	call	do
+ 0136 2AFF03    	lhld	retin
+ 0139 011500    	lxi	b,21
+ 013C C37E03    	jmp	put422
+                
+                sdma:
+                alloc:
+ 013F C9        go:	ret
+                
+ 0140 310402    ldngo:	lxi	sp,stack
+ 0143 3AFB03    	lda	info	;default disk and user #
+ 0146 320400    	sta	4
+ 0149 215000    	lxi	h,50H
+ 014C 01B000    	lxi	b,(100H-50H)
+ 014F CDA603    	call	get422
+ 0152 215000    	lxi	h,50H	;COM file FCB to load.
+ 0155 11AC01    	lxi	d,comfcb
+ 0158 010C00    	lxi	b,12
+                	ldir
+ 015B+EDB0      	DB	0EDH,0B0H
+ 015D 6B        	mov	l,e
+ 015E 62        	mov	h,d
+ 015F 13        	inx	d
+ 0160 3600      	mvi	m,0
+ 0162 011400    	lxi	b,21-1
+                	ldir		;fill rest of FCB with 00
+ 0165+EDB0      	DB	0EDH,0B0H
+ 0167 216402    	lxi	h,rstart	;return point
+ 016A E5        	push	h
+ 016B 11AC01    	lxi	d,comfcb
+ 016E 0E0F      	mvi	c,15	;open file
+ 0170 CD0500    	call	bdos
+ 0173 FEFF      	cpi	255	;this error should have already been checked.
+ 0175 C8        	rz
+ 0176 110001    	lxi	d,TPA
+ 0179 218000    lg0:	lxi	h,128
+ 017C 19        	dad	d
+ 017D 22AA01    	shld	loada
+ 0180 010000    	lxi	b,BDOS$1
+ 0183 B7        	ora	a
+                	dsbc	b
+ 0184+ED42      	DB	0EDH,B*8+42H
+ 0186 D0        	rnc		;program might overrun system...
+ 0187 0E1A      	mvi	c,26	;set DMA address
+ 0189 CD0500    	call	bdos
+ 018C 11AC01    	lxi	d,comfcb
+ 018F 0E14      	mvi	c,20	;read sequential
+ 0191 CD0500    	call	bdos
+ 0194 B7        	ora	a
+                	lded	loada
+ 0195+ED5B      	DB	0EDH,5BH
+ 0197+AA01      	DW	LOADA
+ 0199 CA7901    	jz	lg0
+ 019C 118000    	lxi	d,DMA
+ 019F 0E1A      	mvi	c,26	;set DMA address
+ 01A1 CD0500    	call	bdos
+ 01A4 CDD603    	call	crlf
+ 01A7 C30001    	jmp	TPA	;start user's program
+                
+ 01AA 0000      loada:	dw	0
+                
+ 01AC 00636F6D6Dcomfcb: db	0,'command COM',0,0,0,0
+ 01BC 0000000000	dw	0,0,0,0,0,0,0,0
+ 01CC 00000000  	db	0,0,0,0
+                
+ 01D0 0000000000	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 0204           stack:	ds	0
+                
+ 0204 0D0A4F535Asignon: db	cr,lf,'OSZ89 v2.29'
+ 0211 3065      	dw	VERS
+ 0213 24        	db	'$'
+                
+                ;The Cold Start routine
+ 0214 310402    colds:	lxi	sp,stack
+ 0217 79        	mov	a,c	;a gift from the loader:
+ 0218 325802    	sta	porta	;the port base address of the 77422 board.
+ 021B 110402    	lxi	d,signon
+ 021E 0E09      	mvi	c,9	;type message on console
+ 0220 CD0500    	call	bdos
+ 0223 115902    	lxi	d,wstart
+ 0226 2A0100    	lhld	CPM+1
+ 0229 220504    	shld	@BIOSa
+ 022C 2B        	dcx	h
+ 022D 72        	mov	m,d	;fill old Cold-Start vector
+ 022E 2B        	dcx	h
+ 022F 73        	mov	m,e
+ 0230 23        	inx	h
+ 0231 23        	inx	h
+ 0232 23        	inx	h
+ 0233 4E        	mov	c,m	;save old warm-start vector
+ 0234 73        	mov	m,e	;and fill Warm-Start vector
+ 0235 23        	inx	h
+ 0236 46        	mov	b,m
+ 0237 72        	mov	m,d
+                	sbcd	wbiosa
+ 0238+ED43      	DB	0EDH,43H
+ 023A+5602      	DW	WBIOSA
+ 023C 2A0600    	lhld	BDOS+1
+ 023F 220700    	shld	@BDOS+1
+ 0242 2A0900    	lhld	RST1+1
+ 0245 22EF03    	shld	chain+1
+ 0248 2A0200    	lhld	CCPa
+ 024B 220304    	shld	CCPadr
+ 024E 2A0000    	lhld	CCPl
+ 0251 220104    	shld	CCPlen
+                	jr	ws00
+ 0254+181A      	DB	18H,WS00-$-1
+                
+ 0256 0000      wbiosa: dw	0
+ 0258 00        porta:	db	0	;port base address
+                ;The warm-start routine
+ 0259 310402    wstart: lxi	sp,stack	;a user's program, executing locally, has
+ 025C 3EF0      	mvi	a,0f0h
+ 025E 32FA03    	sta	func
+ 0261 210000    	lxi	h,0		;terminated.
+ 0264 22FF03    rstart: shld	retin
+ 0267 3A0400    	lda	4
+ 026A 32FB03    	sta	info
+ 026D CD7803    	call	put
+ 0270 F3        ws00:	di
+ 0271 3EC3      	mvi	a,(JMP)
+ 0273 320000    	sta	CPM
+ 0276 320500    	sta	BDOS
+ 0279 320800    	sta	RST1
+ 027C 322800    	sta	RST5
+ 027F 2A0504    	lhld	@BIOSa
+ 0282 220100    	shld	CPM+1
+ 0285 110500    	lxi	d,5	;
+ 0288 19        	dad	d	;
+ 0289 56        	mov	d,m	;
+ 028A 1E00      	mvi	e,0	;
+ 028C 21FE01    	lxi	h,1feh	;
+ 028F 19        	dad	d	;
+ 0290 5E        	mov	e,m	;
+ 0291 23        	inx	h	;
+ 0292 56        	mov	d,m	;
+ 0293 EB        	xchg		;
+ 0294 36C9      	mvi	m,(RET) ;reset ESC-sequence trapping, just in case...
+ 0296 210600    	lxi	H,@BDOS
+ 0299 220600    	shld	BDOS+1
+ 029C 21E203    	lxi	h,TIC
+ 029F 220900    	shld	RST1+1
+ 02A2 21F103    	lxi	h,INT5
+ 02A5 222900    	shld	RST5+1
+ 02A8 AF        	xra	a
+ 02A9 320B00    	sta	clk
+ 02AC 210D00    	lxi	h,ictl
+ 02AF 7E        	mov	a,m
+ 02B0 F602      	ori	00000010b
+ 02B2 77        	mov	m,a
+ 02B3 D3F2      	out	port
+ 02B5 FB        	ei
+ 02B6 2A0700    	lhld	@BDOS+1 ;put serial number in front of system
+ 02B9 2E00      	mvi	l,0
+ 02BB 110000    	lxi	d,BDOS$1
+ 02BE 010600    	lxi	b,6
+                	ldir
+ 02C1+EDB0      	DB	0EDH,0B0H
+ 02C3 118000    	lxi	d,DMA
+ 02C6 0E1A      	mvi	c,26	;BDOS setdma function code
+ 02C8 CD0500    	call	BDOS
+ 02CB 21FA03    ws0:	lxi	h,func
+ 02CE 010700    	lxi	b,7	;7 bytes will be transfered
+ 02D1 CDA603    	call	get422	;wait for 77422 to send a packet (command)
+ 02D4 21CB02    	lxi	h,ws0
+ 02D7 E5        	push	h	;setup to loop by use of "RET" instructions
+ 02D8 3AFA03    	lda	func
+ 02DB FEF0      	cpi	0f0h	;from F0 to FF are direct BIOS calls.
+ 02DD DA6300    	jc	bdosf	;execute BDOS functions
+                ; Do direct BIOS calls....
+ 02E0 E60F      	ani	00001111b
+                	jrz	wboot	;transfer CCP and re-init
+ 02E2+286E      	DB	28H,WBOOT-$-1
+ 02E4 F5        	push	psw	;save code for later examinations...
+ 02E5 FE0D      	cpi	13	;write function requires handling of DMA buffer...
+                	jrnz	ws2
+ 02E7+2009      	DB	20H,WS2-$-1
+ 02E9 218000    	lxi	h,DMA
+ 02EC 018000    	lxi	b,128
+ 02EF CDA603    	call	get422	;get sector from 77422
+ 02F2 211003    ws2:	lxi	h,ws1
+ 02F5 E5        	push	h	;setup return address for BIOS routines.
+ 02F6 4F        	mov	c,a	;BIOS jmp-vector number (1-15, excl 11)
+ 02F7 87        	add	a	;*2
+ 02F8 81        	add	c	;*3
+ 02F9 4F        	mov	c,a
+ 02FA 0600      	mvi	b,0
+ 02FC 2A0504    	lhld	@BIOSa
+ 02FF 09        	dad	b
+ 0300 E5        	push	h	;save address where we can conviently jump to it...
+ 0301 3AFA03    	lda	func
+                	lbcd	rBC
+ 0304+ED4B      	DB	0EDH,4BH
+ 0306+FB03      	DW	RBC
+                	lded	rDE
+ 0308+ED5B      	DB	0EDH,5BH
+ 030A+FD03      	DW	RDE
+ 030C 2AFF03    	lhld	rHL
+ 030F C9        	ret		;do BIOS call
+ 0310 32FA03    ws1:	sta	func	;return here after doing BIOS routine
+                	sbcd	rBC
+ 0313+ED43      	DB	0EDH,43H
+ 0315+FB03      	DW	RBC
+                	sded	rDE
+ 0317+ED53      	DB	0EDH,53H
+ 0319+FD03      	DW	RDE
+ 031B 22FF03    	shld	rHL
+ 031E F1        	pop	psw    ;;
+ 031F FE03      	cpi	3      ;;console output - no return frame
+ 0321 C8        	rz	       ;;
+ 0322 F5        	push	psw    ;;
+ 0323 CD7803    	call	put	;send results to 77422
+ 0326 F1        	pop	psw	;function code
+ 0327 FE08      	cpi	8	;select disk requires special handling
+                	jrz	seldsk
+ 0329+280B      	DB	28H,SELDSK-$-1
+ 032B FE0C      	cpi	12	;read function requires handling of DMA buffer...
+ 032D C0        	rnz
+ 032E 218000    	lxi	h,DMA
+ 0331 018000    	lxi	b,128
+                	jr	put422	;send sector to 77422
+ 0334+1848      	DB	18H,PUT422-$-1
+                
+ 0336 2AFF03    seldsk: lhld	rHL
+ 0339 7C        	mov	a,h
+ 033A B5        	ora	l	;if select error, don't send back any data
+ 033B C8        	rz
+ 033C 011000    	lxi	b,16
+ 033F CD7E03    	call	put422
+ 0342 2AFF03    	lhld	rHL
+ 0345 110A00    	lxi	d,+10
+ 0348 19        	dad	d
+ 0349 5E        	mov	e,m
+ 034A 23        	inx	h
+ 034B 56        	mov	d,m
+ 034C EB        	xchg		;DPB address
+ 034D 011500    	lxi	b,21
+                	jr	put422
+ 0350+182C      	DB	18H,PUT422-$-1
+                
+ 0352 3EE3      wboot:	mvi	a,0E3H
+ 0354 32FA03    	sta	func
+ 0357 2A0104    	lhld	CCPlen
+ 035A 22FB03    	shld	rBC
+ 035D 2A0304    	lhld	CCPadr
+ 0360 22FF03    	shld	rHL
+ 0363 CD7803    	call	put	;tell 77422 that we're sending it the CCP...
+ 0366 210005    	lxi	h,@CCP
+                	lbcd	CCPlen 
+ 0369+ED4B      	DB	0EDH,4BH
+ 036B+0104      	DW	CCPLEN
+ 036D CD7E03    	call	put422
+ 0370 210000    	lxi	h,BDOS$1	;send serial number accross also.
+ 0373 010600    	lxi	b,6
+                	jr	put422	;send CCP to 77422 board
+ 0376+1806      	DB	18H,PUT422-$-1
+                
+ 0378 21FA03    put:	lxi	h,func
+ 037B 010700    	lxi	b,7
+                ;	jmp	put422
+                ; Word count cannot be 0.  This channel requires fixed message length !
+ 037E 79        put422: mov	a,c	;must split word count into byte-size counters.
+ 037F B7        	ora	a	;this requires some fancy foot-work.
+ 0380 58        	mov	e,b	;(E) will be the "page counter"
+                	jrz	pu3
+ 0381+2801      	DB	28H,PU3-$-1
+ 0383 1C        	inr	e
+ 0384 41        pu3:	mov	b,c	;(B) is the byte counter (initially the remainder)
+ 0385 3A5802    	lda	porta
+ 0388 4F        	mov	c,a
+ 0389 0C        	inr	c
+                pu0:	inp	a
+ 038A+ED78      	DB	0EDH,A*8+40H
+ 038C E604      	ani	0100b	;check channel 2 for idle
+                	jrz	pu0
+ 038E+28FA      	DB	28H,PU0-$-1
+ 0390 0D        	dcr	c
+ 0391 7E        	mov	a,m
+ 0392 23        	inx	h
+                	outp	a	;send first byte
+ 0393+ED79      	DB	0EDH,A*8+41H
+ 0395 0C        	inr	c
+                pu1:	inp	a
+ 0396+ED78      	DB	0EDH,A*8+40H
+ 0398 E604      	ani	0100b
+                	jrz	pu1
+ 039A+28FA      	DB	28H,PU1-$-1
+ 039C 0D        	dcr	c
+ 039D 05        	dcr	b	;update (B) for first byte output
+                	jrz	pu4	;
+ 039E+2802      	DB	28H,PU4-$-1
+                pu2:	outir
+ 03A0+EDB3      	DB	0EDH,0B3H
+ 03A2 1D        pu4:	dcr	e
+                	jrnz	pu2
+ 03A3+20FB      	DB	20H,PU2-$-1
+ 03A5 C9        	ret
+                
+                ; byte count (BC) must be greater than 1.
+ 03A6 0B        get422: dcx	b	;count first byte,
+ 03A7 79        	mov	a,c	;must handle blocks larger than 256 bytes
+ 03A8 3C        	inr	a	;(Z80 OUTIR/INIR cannot)
+ 03A9 58        	mov	e,b
+                	jrz	ge6
+ 03AA+2801      	DB	28H,GE6-$-1
+ 03AC 1C        	inr	e
+ 03AD 41        ge6:	mov	b,c
+ 03AE 3A5802    	lda	porta
+ 03B1 4F        	mov	c,a
+ 03B2 0C        	inr	c
+                ge0:	inp	a
+ 03B3+ED78      	DB	0EDH,A*8+40H
+ 03B5 E608      	ani	1000b	;check channel 2 for idle
+                	jrz	ge0
+ 03B7+28FA      	DB	28H,GE0-$-1
+ 03B9 0D        	dcr	c
+                	ini		;get first byte. must IN/MOV M,A in single instruction
+ 03BA+EDA2      	DB	0EDH,0A2H
+ 03BC 0C        	inr	c	;in case the transfer is for only 2 bytes: interupt 
+ 03BD 00        	nop		;will occur and 1st byte must be saved.
+ 03BE 04        	inr	b	;we want to test (B) later...
+                	inp	a	;if DMA is really active, the data register will
+ 03BF+ED78      	DB	0EDH,A*8+40H
+ 03C1 E608      	ani	1000b	;be reloaded immediatly.
+                	jrnz	ge3	;character has valid...continue with transfer...
+ 03C3+2004      	DB	20H,GE3-$-1
+ 03C5 2B        	dcx	h	;character was invalid. rewind pointers and start over.
+ 03C6 C3B303    	jmp	ge0
+ 03C9 0D        ge3:	dcr	c
+ 03CA 05        	dcr	b	;test (B) now for 0
+                	jrz	ge4
+ 03CB+2802      	DB	28H,GE4-$-1
+                ge2:	inir		;get the rest of the characters.
+ 03CD+EDB2      	DB	0EDH,0B2H
+ 03CF 1D        ge4:	dcr	e
+                	jrnz	ge2
+ 03D0+20FB      	DB	20H,GE2-$-1
+                ge5:	inp	a	;at this point we have all the characters we want but
+ 03D2+ED78      	DB	0EDH,A*8+40H
+                	jr	ge5	;the 77422 still has more to send (or it would have
+ 03D4+18FC      	DB	18H,GE5-$-1
+                			;interupted us before this point) so we must continue
+                			;to take characters untill it interupts us.
+                
+                
+ 03D6 1E0D      crlf:	mvi	e,cr
+ 03D8 CDDD03    	call	conout
+ 03DB 1E0A      	mvi	e,lf
+ 03DD 0E02      conout: mvi	c,2	;bdos conout function code
+ 03DF C30500    	jmp	bdos
+                
+ 03E2 F5        TIC:	push	psw
+ 03E3 C5        	push	b
+ 03E4 3A5802    	lda	porta
+ 03E7 C603      	adi	3	;tick interupt is +3
+ 03E9 4F        	mov	c,a
+                	outp	a	;cause interupt in 77422
+ 03EA+ED79      	DB	0EDH,A*8+41H
+ 03EC C1        	pop	b
+ 03ED F1        	pop	psw
+ 03EE C30000    chain:	jmp	0
+                
+                
+ 03F1 0C        INT5:	inr	c
+                	outp	a	;this routine will usually terminate "get422".
+ 03F2+ED79      	DB	0EDH,A*8+41H
+ 03F4 0D        	dcr	c
+                	ini		;get last byte of transfer.
+ 03F5+EDA2      	DB	0EDH,0A2H
+ 03F7 C1        	pop	b	;discard interupt return address.
+ 03F8 FB        	ei
+ 03F9 C9        	ret		;and return to caller.
+                
+ 03FA 00        func:	db	0	;function code or register (A)
+ 03FB 0000      rBC:	dw	0	;parameter or registers (BC)
+ 03FD 0000      rDE:	dw	0	;registers (DE)
+ 03FF 0000      rHL:	dw	0	;return info or registers (HL)
+                
+ 03FB =         info	equ	rBC
+ 03FF =         retin	equ	rHL
+                
+ 0401 0000      CCPlen: dw	0
+ 0403 0000      CCPadr: dw	0
+ 0405 0000      @BIOSa: dw	0
+                
+ 0407           	ds	0	;prints address on listing (only function)
+                
+ 0007 #         @@ set (($-BDOS$1) and 0FFH)
+                 if @@ ne 0
+                 rept 100H-@@
+                 db 0
+                 endm
+ 0407+00         DB 0
+ 0408+00         DB 0
+ 0409+00         DB 0
+ 040A+00         DB 0
+ 040B+00         DB 0
+ 040C+00         DB 0
+ 040D+00         DB 0
+ 040E+00         DB 0
+ 040F+00         DB 0
+ 0410+00         DB 0
+ 0411+00         DB 0
+ 0412+00         DB 0
+ 0413+00         DB 0
+ 0414+00         DB 0
+ 0415+00         DB 0
+ 0416+00         DB 0
+ 0417+00         DB 0
+ 0418+00         DB 0
+ 0419+00         DB 0
+ 041A+00         DB 0
+ 041B+00         DB 0
+ 041C+00         DB 0
+ 041D+00         DB 0
+ 041E+00         DB 0
+ 041F+00         DB 0
+ 0420+00         DB 0
+ 0421+00         DB 0
+ 0422+00         DB 0
+ 0423+00         DB 0
+ 0424+00         DB 0
+ 0425+00         DB 0
+ 0426+00         DB 0
+ 0427+00         DB 0
+ 0428+00         DB 0
+ 0429+00         DB 0
+ 042A+00         DB 0
+ 042B+00         DB 0
+ 042C+00         DB 0
+ 042D+00         DB 0
+ 042E+00         DB 0
+ 042F+00         DB 0
+ 0430+00         DB 0
+ 0431+00         DB 0
+ 0432+00         DB 0
+ 0433+00         DB 0
+ 0434+00         DB 0
+ 0435+00         DB 0
+ 0436+00         DB 0
+ 0437+00         DB 0
+ 0438+00         DB 0
+ 0439+00         DB 0
+ 043A+00         DB 0
+ 043B+00         DB 0
+ 043C+00         DB 0
+ 043D+00         DB 0
+ 043E+00         DB 0
+ 043F+00         DB 0
+ 0440+00         DB 0
+ 0441+00         DB 0
+ 0442+00         DB 0
+ 0443+00         DB 0
+ 0444+00         DB 0
+ 0445+00         DB 0
+ 0446+00         DB 0
+ 0447+00         DB 0
+ 0448+00         DB 0
+ 0449+00         DB 0
+ 044A+00         DB 0
+ 044B+00         DB 0
+ 044C+00         DB 0
+ 044D+00         DB 0
+ 044E+00         DB 0
+ 044F+00         DB 0
+ 0450+00         DB 0
+ 0451+00         DB 0
+ 0452+00         DB 0
+ 0453+00         DB 0
+ 0454+00         DB 0
+ 0455+00         DB 0
+ 0456+00         DB 0
+ 0457+00         DB 0
+ 0458+00         DB 0
+ 0459+00         DB 0
+ 045A+00         DB 0
+ 045B+00         DB 0
+ 045C+00         DB 0
+ 045D+00         DB 0
+ 045E+00         DB 0
+ 045F+00         DB 0
+ 0460+00         DB 0
+ 0461+00         DB 0
+ 0462+00         DB 0
+ 0463+00         DB 0
+ 0464+00         DB 0
+ 0465+00         DB 0
+ 0466+00         DB 0
+ 0467+00         DB 0
+ 0468+00         DB 0
+ 0469+00         DB 0
+ 046A+00         DB 0
+ 046B+00         DB 0
+ 046C+00         DB 0
+ 046D+00         DB 0
+ 046E+00         DB 0
+ 046F+00         DB 0
+ 0470+00         DB 0
+ 0471+00         DB 0
+ 0472+00         DB 0
+ 0473+00         DB 0
+ 0474+00         DB 0
+ 0475+00         DB 0
+ 0476+00         DB 0
+ 0477+00         DB 0
+ 0478+00         DB 0
+ 0479+00         DB 0
+ 047A+00         DB 0
+ 047B+00         DB 0
+ 047C+00         DB 0
+ 047D+00         DB 0
+ 047E+00         DB 0
+ 047F+00         DB 0
+ 0480+00         DB 0
+ 0481+00         DB 0
+ 0482+00         DB 0
+ 0483+00         DB 0
+ 0484+00         DB 0
+ 0485+00         DB 0
+ 0486+00         DB 0
+ 0487+00         DB 0
+ 0488+00         DB 0
+ 0489+00         DB 0
+ 048A+00         DB 0
+ 048B+00         DB 0
+ 048C+00         DB 0
+ 048D+00         DB 0
+ 048E+00         DB 0
+ 048F+00         DB 0
+ 0490+00         DB 0
+ 0491+00         DB 0
+ 0492+00         DB 0
+ 0493+00         DB 0
+ 0494+00         DB 0
+ 0495+00         DB 0
+ 0496+00         DB 0
+ 0497+00         DB 0
+ 0498+00         DB 0
+ 0499+00         DB 0
+ 049A+00         DB 0
+ 049B+00         DB 0
+ 049C+00         DB 0
+ 049D+00         DB 0
+ 049E+00         DB 0
+ 049F+00         DB 0
+ 04A0+00         DB 0
+ 04A1+00         DB 0
+ 04A2+00         DB 0
+ 04A3+00         DB 0
+ 04A4+00         DB 0
+ 04A5+00         DB 0
+ 04A6+00         DB 0
+ 04A7+00         DB 0
+ 04A8+00         DB 0
+ 04A9+00         DB 0
+ 04AA+00         DB 0
+ 04AB+00         DB 0
+ 04AC+00         DB 0
+ 04AD+00         DB 0
+ 04AE+00         DB 0
+ 04AF+00         DB 0
+ 04B0+00         DB 0
+ 04B1+00         DB 0
+ 04B2+00         DB 0
+ 04B3+00         DB 0
+ 04B4+00         DB 0
+ 04B5+00         DB 0
+ 04B6+00         DB 0
+ 04B7+00         DB 0
+ 04B8+00         DB 0
+ 04B9+00         DB 0
+ 04BA+00         DB 0
+ 04BB+00         DB 0
+ 04BC+00         DB 0
+ 04BD+00         DB 0
+ 04BE+00         DB 0
+ 04BF+00         DB 0
+ 04C0+00         DB 0
+ 04C1+00         DB 0
+ 04C2+00         DB 0
+ 04C3+00         DB 0
+ 04C4+00         DB 0
+ 04C5+00         DB 0
+ 04C6+00         DB 0
+ 04C7+00         DB 0
+ 04C8+00         DB 0
+ 04C9+00         DB 0
+ 04CA+00         DB 0
+ 04CB+00         DB 0
+ 04CC+00         DB 0
+ 04CD+00         DB 0
+ 04CE+00         DB 0
+ 04CF+00         DB 0
+ 04D0+00         DB 0
+ 04D1+00         DB 0
+ 04D2+00         DB 0
+ 04D3+00         DB 0
+ 04D4+00         DB 0
+ 04D5+00         DB 0
+ 04D6+00         DB 0
+ 04D7+00         DB 0
+ 04D8+00         DB 0
+ 04D9+00         DB 0
+ 04DA+00         DB 0
+ 04DB+00         DB 0
+ 04DC+00         DB 0
+ 04DD+00         DB 0
+ 04DE+00         DB 0
+ 04DF+00         DB 0
+ 04E0+00         DB 0
+ 04E1+00         DB 0
+ 04E2+00         DB 0
+ 04E3+00         DB 0
+ 04E4+00         DB 0
+ 04E5+00         DB 0
+ 04E6+00         DB 0
+ 04E7+00         DB 0
+ 04E8+00         DB 0
+ 04E9+00         DB 0
+ 04EA+00         DB 0
+ 04EB+00         DB 0
+ 04EC+00         DB 0
+ 04ED+00         DB 0
+ 04EE+00         DB 0
+ 04EF+00         DB 0
+ 04F0+00         DB 0
+ 04F1+00         DB 0
+ 04F2+00         DB 0
+ 04F3+00         DB 0
+ 04F4+00         DB 0
+ 04F5+00         DB 0
+ 04F6+00         DB 0
+ 04F7+00         DB 0
+ 04F8+00         DB 0
+ 04F9+00         DB 0
+ 04FA+00         DB 0
+ 04FB+00         DB 0
+ 04FC+00         DB 0
+ 04FD+00         DB 0
+ 04FE+00         DB 0
+ 04FF+00         DB 0
+                 endif
+                
+ 0500           @CCP:	end
+

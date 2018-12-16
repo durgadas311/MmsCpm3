@@ -1,0 +1,3073 @@
+0023          	VERS set 35 ; (Dec 14, 2018 21:34)  drm  "PRE422.ASM"
+		******************* MONITOR EPROM ***********************
+		************ for the 77422 network controller ***********
+			maclib	z80
+**** z80.lib ****
+**** rom422.asm ****
+		
+		;All nodes have equal responsibility. no Server/Requestor determination.
+		
+00FF          	TRUE	equ	0ffh
+0000          	FALSE	equ	000h
+		
+0000          	EPROM	equ	00000h	;start of EPROM
+2000          	EPROML	equ	8*1024	;length of EPROM in bytes
+2000          	RAM	equ	02000h	;start of RAM
+E000          	RAML	equ	56*1024 ;length of RAM in bytes
+		
+		*********************************************************
+		**  I/O port base addresses
+		*********************************************************
+0000          	sio	equ	000h	;z80-sio/0
+0080          	dma	equ	080h	;AMD 9517
+0040          	ctrl	equ	040h	;general control outputs
+0040          	myaddr	equ	040h	;node address and network sense
+00E0          	ch2rd	equ	0e0h	;read data from DMA channel 2 (clear ch2 dreq)
+		
+		*********************************************************
+		**  Control ports definitions
+		*********************************************************
+00F8          	MAP	equ	11111000b	;mask for memory mapping
+0000          	ROMon	equ	000b	;code for EPROM on, bank 0
+0001          	ROMoff	equ	001b	;EPROM off, bank 0
+0002          	B156	equ	010b	;Bank 1, 56K
+0003          	B148	equ	011b	;Bank 1, 48K
+0004          	B256	equ	100b	;Bank 2, 56K
+0005          	B248	equ	101b	;Bank 2, 48K
+0006          	B356	equ	110b	;Bank 3, 56K
+0007          	B348	equ	111b	;Bank 3, 48K
+0080          	RED	equ	10000000b	;Red LED on
+0040          	GREEN	equ	01000000b	;Green LED on
+00C0          	BOTH	equ	11000000b	;Both LEDs on
+003F          	OFF	equ	00111111b	;mask to turn LEDs off.
+0020          	ILAT	equ	00100000b	;latch control for IDLE status bit.
+		
+0040          	IDLE	equ	01000000b	;position of IDLE status bit.
+0080          	TEST	equ	10000000b	;position of TEST status bit.
+		
+		*********************************************************
+		**  Z80-SIO equates
+		*********************************************************
+0000          	Adat	equ	sio	;channel A data port
+0001          	Bdat	equ	sio+1	;channel B data port
+0002          	cmdA	equ	sio+2	;channel A command/status port
+0003          	cmdB	equ	sio+3	;channel B command/status port
+		
+0001          	console equ	Bdat	;channel B is the RS-232 port for a console
+0003          	constat equ	cmdB
+		
+		** ASCII character equates
+0007          	bell	equ	7
+0007          	bel	equ	bell
+0008          	bs	equ	8
+0009          	tab	equ	9
+000A          	lf	equ	10
+000C          	ffeed	equ	12	;form feed for printer
+000D          	cr	equ	13
+001B          	esc	equ	27
+007F          	del	equ	127
+		
+		*********************************************************
+		**	AMD 9517 equates
+		*********************************************************
+0080          	ch0ba	equ	dma+0	;channel 0 base address
+0081          	ch0wc	equ	dma+1	;channel 0 word count
+0082          	ch1ba	equ	dma+2	;
+0083          	ch1wc	equ	dma+3	;
+0084          	ch2ba	equ	dma+4	;
+0085          	ch2wc	equ	dma+5	;
+0086          	ch3ba	equ	dma+6	;
+0087          	ch3wc	equ	dma+7	;
+		
+0088          	dmacomd equ	dma+8	;command port
+0070          	comd	equ	01110000b	;DACK/DREQ act.lo, Norm timing, Ext write,
+						;Rotating priority, Controller enable.
+		
+0088          	dmastat equ	dma+8	;status port
+0089          	dreq	equ	dma+9	;software data requests
+		
+008A          	mask	equ	dma+10	;individual channel mask bit access
+0004          	dis	equ	100b	;disable DMA (set mask)
+		
+008B          	mode	equ	dma+11	;individual channel mode bit access
+008C          	clrBP	equ	dma+12	;clear Byte Pointer flip-flop
+008D          	clr	equ	dma+13	;clear DMA chip
+008D          	temp	equ	dma+13	;read temporary register
+008F          	maskall equ	dma+15	;write all mask bits (simultanious)
+		
+		*********************************************************
+		**	Network equates
+		*********************************************************
+		
+0000          		org 0	;define relative positions of elements in network frame.
+0000          	DEST	ds	1	;Destination I.D. address
+0001          	CODE	ds	1	;Control Field (network function number)
+0002          	SORC	ds	1	;Source I.D. address (my-address)
+		DATA	ds	0	;0-n characters of data
+		
+0000          		org 0	;define relative positions of elements in host header.
+0000          	ZCODE	ds	1
+0001          	ZBC	ds	2
+0003          	ZDE	ds	2
+0005          	ZHL	ds	2
+		ZDATA	ds	0
+		
+		; CODE field definitions.
+0000          	CPNET	equ	000h
+0001          	CPNRSP	equ	001h
+0002          	CPMAIL	equ	002h
+0010          	EXE422	equ	010h
+0011          	EXEHST	equ	011h
+0020          	RBOOT	equ	020h
+0028          	NBOOT	equ	028h
+0030          	NSTS	equ	030h
+0038          	NRSP	equ	038h
+0060          	EXEC	equ	060h	; +01 = load only
+0070          	GDBG	equ	070h
+00D0          	TOKEN	equ	0d0h	;TOKEN-0, DATA = NET.TABLE
+00DF          	RESET	equ	0dfh	;reset other nodes ("I have token")
+00E0          	POLL	equ	0e0h	;Poll node for status
+00F0          	ACK	equ	0f0h	;Acknowledge transmission
+00F1          	NAK	equ	0f1h	;Error in transmission
+00F2          	BSY	equ	0f2h	;unable to preocess message at present time.
+		
+		; Node Type Codes
+0010          	TUNK	equ	010h
+0020          	TDBG	equ	020h	; In monitor/debugger
+0030          	TPSV	equ	030h	; Printer server
+0040          	TNOS	equ	040h	; CP/NOS (diskless)
+0050          	TRSV5	equ	050h
+0060          	TRSV6	equ	060h
+0070          	TFSV	equ	070h	; File server (e.g. MP/M on CP/NET)
+0080          	TNET	equ	080h	; CP/NET client/resquestor
+0090          	TCPM	equ	090h	; CP/M, on network
+00A0          	TDOS	equ	0a0h	; MS-DOS, on network
+00B0          	TCCD	equ	0b0h	; Concurrent DOS
+00C0          	TRSVC	equ	0c0h
+00D0          	TEXT1	equ	0d0h
+00E0          	TEXT2	equ	0e0h
+00F0          	TEXT3	equ	0f0h
+		
+0000          		org 0	;define relative positions of CP/NET message items.
+0000          	SEQ	ds	1	;added by MMS to handle retries
+0001          	FMT	ds	1	;00 or 01
+0002          	DID	ds	1	;destination of message
+0003          	SID	ds	1	;source of message
+0004          	FNC	ds	1	;CP/NET function code
+0005          	SIZ	ds	1	;length of message, less 1
+		MSG	ds	0	;1-256 characters
+		
+		*********************************************************
+		**	EPROM code
+		*********************************************************
+0000          		org	EPROM
+		
+0000  C36700  		jmp	start	; func 70h
+0003  C30000  		jmp	0	; func 71h
+0006  C30000  		jmp	0	; func 72h
+0009  C30000  		jmp	0	; func 73h
+000C  C30000  		jmp	0	; func 74h
+000F  C30000  		jmp	0	; func 75h
+0012  C30000  		jmp	0	; func 76h
+0015  C30000  		jmp	0	; func 77h
+0018  C30000  		jmp	0	; func 78h
+001B  C30000  		jmp	0	; func 79h
+001E  C30000  		jmp	0	; func 7ah
+0021  C30000  		jmp	0	; func 7bh
+0024  C30000  		jmp	0	; func 7ch
+0027  C30000  		jmp	0	; func 7dh
+002A  C30000  		jmp	0	; func 7eh
+002D  C3180D  		jmp	debug	; func 7fh
+		
+0030  1EA5    	FAIL9:	mvi	e,10100101b	; RED RED GRN GRN
+0032          		jr	f2
+0034  1E21    	FAIL8:	mvi	e,00100001b	; OFF RED OFF GRN
+0036          		jr	f2
+0038  1EDE    	FAIL7:	mvi	e,11011110b	; ALL GRN ALL RED
+003A          		jr	f2
+003C  1E27    	FAIL6:	mvi	e,00100111b	; OFF RED GRN ALL
+003E          		jr	f2
+0040  1E1B    	FAIL5:	mvi	e,00011011b	; OFF GRN RED ALL
+0042          		jr	f2
+0044  1E77    	FAIL4:	mvi	e,01110111b	; GRN ALL GRN ALL
+0046          		jr	f2
+0048  1EBB    	FAIL3:	mvi	e,10111011b	; RED ALL RED ALL
+004A          		jr	f2
+004C  1E99    	FAIL2:	mvi	e,10011001b	; RED GRN RED GRN
+004E          		jr	f2
+0050  1ECC    	FAIL:	mvi	e,11001100b	; ALL OFF ALL OFF
+0052  7B      	f2:	mov	a,e
+0053  07      		rlc
+0054  07      		rlc
+0055  5F      		mov	e,a
+0056  E6C0    		ani	BOTH
+0058  D340    		out	ctrl
+005A  0100A9  		lxi	b,(169)*256
+005D  0D      	f1:	dcr	c
+005E  00      		nop
+005F          		jrnz	f1
+0061  05      		dcr	b
+0062          		jrnz	f1
+0064          		jr	f2
+		
+0000          	 if $ ne 0066H
+		 endif
+0066          	NMI:			;interupt caused by Z89
+0066  F3      		di	;reset interupt flip-flops
+		; re-start monitor...
+		
+0067          	start:
+		*********************************************************
+		**  Initialize the Z80
+		*********************************************************
+0067  3EC0    		mvi	a,BOTH	      ;initial ctrl port image, both LEDs on
+0069  D340    		out	ctrl
+006B  318020  		lxi	sp,stack
+006E  110100  		lxi	d,00000001b	;(D)=0 [NC], (E)=00000001b
+0071  010000  		lxi	b,0	;two counters, 256 each
+0074  210020  	mt0:	lxi	h,RAM
+0077  7B      		mov	a,e
+0078          		rrcr	d	;"prime" [CY] in bit 7 of D
+007A          		rlcr	d	;[CY] from bit 7 of D, into bit 0 of D
+007C  77      	mt1:	mov	m,a
+007D  23      		inx	h
+007E  17      		ral		;use 9-bit rotate to produce non-binary pattern.
+007F          		djnz	mt1
+0081  04      		inr	b	;prime BC to count 256
+0082  210020  		lxi	h,RAM
+0085          		rrcr	d	;[CY] from bit 0 D, into bit 7 of D
+0087  7B      		mov	a,e
+0088          	mt2:	cci	;compares A:(HL), HL=HL+1, BC=BC-1, preserves [CY]
+008A  C25000  		jnz	FAIL
+008D  17      		ral		;9-bit rotate
+008E  EA8800  		jpe	mt2	;Parity bit set by "cci" per status of BC-1
+0091          		slar	e
+0093          		ralr	d	;[CY] into bit 0 of D, [CY] from bit 7 (previous value)
+0095  D27400  		jnc	mt0
+		; the critical page of memory (stack) has now been tested.
+		
+0098  3EC0    		mvi	a,BOTH+ROMon	;initial ctrl port image, both LEDs on
+009A  320121  		sta	ctl$image	;set ctrl port image (keep EPROM)
+009D  21F80C  		lxi	h,intvec	;copy initial interupt vectors into RAM
+00A0  11E120  		lxi	d,vector
+00A3  012000  		lxi	b,numvec
+00A6          		ldir
+00A8          		im2			;vectored interupt mode for Z80
+		
+		*********************************************************
+		**  AM 9517 Initialization...
+		*********************************************************
+00AA  D38D    		out	clr	;reset the 9517 (masks all channels)
+00AC  3E70    		mvi	a,comd		;default (standard) command byte
+00AE  D388    		out	dmacomd 	;enable controller
+00B0  3E44    		mvi	a,010001$00b	;channel 0: currently in receive mode
+00B2  D38B    		out	mode
+00B4  3E41    		mvi	a,010000$01b	;channel 1: not currently connected
+00B6  D38B    		out	mode
+00B8  3E46    		mvi	a,010001$10b	;channel 2: write memory, read I/O
+00BA  D38B    		out	mode
+00BC  3E4B    		mvi	a,010010$11b	;channel 3: read memory, write I/O
+00BE  D38B    		out	mode
+00C0  3E0F    		mvi	a,1111b 	;mark all DMA channels inactive
+00C2  320122  		sta	eops
+		; Leave all DMA channels masked untill we need them.
+00C5  010000  		lxi	b,0	;64K counter (65536)
+00C8  DB88    	id1:	in	dmastat ;check if dreq2 is active (must be cleared)
+00CA  E640    		ani	0100$0000b
+00CC  CADE00  		jz	id0
+00CF  DBE0    		in	ch2rd	;read a byte to clear dreq2
+00D1  0B      		dcx	b
+00D2  78      		mov	a,b
+00D3  B1      		ora	c
+00D4  C2C800  		jnz	id1	;keep checking untill its stays cleared or 64K input.
+00D7  DB88    		in	dmastat
+00D9  E640    		ani	0100$0000b
+00DB  C24C00  		jnz	FAIL2	;failure if still DREQing
+00DE          	id0:
+		*********************************************************
+		**  Initialize the SIO (MK3884)
+		*********************************************************
+00DE  21D002  		lxi	h,initB 	;initialize channel B first.
+00E1  01030C  		lxi	b,(cmdB)+(lenB+2)*256	;port and length of transfer
+00E4          		outir
+00E6  21D202  		lxi	h,initB+2
+00E9  118E20  		lxi	d,sioB
+00EC  010A00  		lxi	b,lenB
+00EF          		ldir		;initialize RAM image of sio B registers
+00F1  21C602  		lxi	h,async
+00F4  01020A  		lxi	b,(asyncl)*256+(cmdA)
+00F7          		outir		;temporarely setup ch A as async, 6 data bits
+		
+		; This cps-measuring code is probably bogus.
+		; 1 char at 500Kbps will be 64 CPU cycles (4MHz).
+		; That will be at most one pass through the loop,
+		; yielding a count of 79+82=161 cycles. This means
+		; that 'ltime' will always be 0. That results in
+		; the delay loops doing 256 interations, which is
+		; excessive (although not fatal).
+00F9  060A    		mvi	b,10	; max 10 chars to fill Tx FIFO
+00FB  AF      	id2:	xra	a
+00FC  D300    		out	Adat
+00FE  D302    		out	cmdA
+0100  DB02    		in	cmdA
+0102  E604    		ani	00000100b
+0104  CA0C01  		jz	id3
+0107          		djnz	id2
+0109  C34800  		jmp	FAIL3
+010C  47      	id3:	mov	b,a	; zero, i.e. 256 loops max to TxBE
+010D  115200  		lxi	d,cycles
+0110  214F00  		lxi	h,79	; first pass, min cycles
+0113          	id4:
+0113  D302    		out	cmdA
+0115  DB02    		in	cmdA
+0117  E604    		ani	00000100b	;  8
+0119  C22101  		jnz	gt0		; 11
+011C          		djnz	id4
+011E  C34800  		jmp	FAIL3
+0121  AF      	gt0:	xra	a		;  5
+0122  D300    		out	Adat		; 12
+						;...
+0124  AF      	gt1:	xra	a		;  5
+0125  D302    		out	cmdA		; 12
+0127  DB02    		in	cmdA		; 12
+0129  E604    		ani	00000100b	;  8
+012B  C23501  		jnz	gt2		; 11 ...?
+012E  19      		dad	d		; 12
+012F  DA4800  		jc	FAIL3		; 11
+0132  C32401  		jmp	gt1		; 11
+						;---
+		; at 500Kbps, 1 char == 64 cycles (4MHz)
+0052          	cycles	equ	82		; 82
+0135          	gt2:
+0135  22FA21  		shld	ctime	;number of CPU cycles per character.
+					;note: measurement was made at 16x normal rate.
+0138  7C      		mov	a,h	; divide by 256 = 1x clock /16 (16 cycles in delay routine)
+0139  32FC21  		sta	ltime	;loop counter for one character (1 loop=16 cycles)
+013C  21B802  		lxi	h,initA
+013F  118020  		lxi	d,sioA
+0142  010E00  		lxi	b,lenA
+0145          		ldir		;initialize RAM image of sio A registers
+0147  DB40    		in	myaddr
+0149  2F      		cma
+014A  E63F    		ani	00111111b
+014C  328720  		sta	maddr
+014F  218020  		lxi	h,sioA		;send string of commands to SIO
+0152  01020E  		lxi	b,(cmdA)+(lenA)*256   ;channel A
+0155          		outir
+		
+0157  3E20    		mvi	a,vector/256
+0159          		stai			;initialize (I) register now.
+		
+		*********************************************************
+		**  Start up...
+		*********************************************************
+015B  213122  		lxi	h,endlst
+015E  36FF    		mvi	m,255
+0160  210000  		lxi	h,0
+0163  223F2A  		shld	prtpt0
+0166  22412A  		shld	prtpt1
+0169  CDB00C  		call	LEDoff		;turn the LED off to indicate we got here...
+016C  FB      		ei			;start everything (anything?)
+		
+016D  210222  		lxi	h,ch2hdr	;setup to receive command from Z89
+0170  110700  		lxi	d,hdrsiz
+0173  0E84    		mvi	c,ch2ba
+0175  CDB807  		call	setdma		;setup to receive from Z89
+0178  3E02    		mvi	a,2
+017A  D38A    		out	mask	;un-mask channel 2 (Z89-to-77422)
+017C  3EFF    		mvi	a,true
+017E  321E22  		sta	from89
+0181  3E00    		mvi	a,false	;Clear to Zeros...
+0183  322622  		sta	to89	;
+0186  32F921  		sta	nstat	;
+0189  322E22  		sta	pflag	;
+018C  322F22  		sta	retry	;
+		
+018F  213F26  		lxi	h,ch3bf
+0192  223B22  		shld	ch0addr
+0195  213F28  		lxi	h,netbf
+0198  223922  		shld	altaddr
+019B  210122  		lxi	h,eops
+019E          		res	2,m	;
+		;			;receiver setup later...at START$NET entry.
+01A0  213F22  		lxi	h,hstbf
+01A3  223322  		shld	ch2alt
+01A6  213F24  		lxi	h,ch2bf
+01A9  223522  		shld	ch2pri
+01AC  217521  		lxi	h,srvtbl
+01AF  117621  		lxi	d,srvtbl+1
+01B2  013F00  		lxi	b,64-1
+01B5  3600    		mvi	m,0
+01B7          		ldir	;initialize net$table to all zeros (all nodes off-line)
+01B9  21B521  		lxi	h,SEQtbl
+01BC  11B621  		lxi	d,SEQtbl+1
+01BF  013F00  		lxi	b,64-1
+01C2  3680    		mvi	m,080h
+01C4          		ldir
+01C6  3A8720  		lda	maddr	; 0,1,2...63
+01C9  5F      		mov	e,a
+01CA  1600    		mvi	d,0
+01CC  217521  		lxi	h,srvtbl
+01CF  19      		dad	d
+01D0  22F521  		shld	nxsrva
+01D3  32F721  		sta	nxsrvn
+01D6  3610    		mvi	m,TUNK	; node type not yet known
+01D8  3C      		inr	a	; 1,2,3...64
+01D9  87      		add	a	; 2,4,6...128
+01DA  67      		mov	h,a	;
+01DB  2E00    		mvi	l,0	; 512,1024,1536...32768
+01DD  22FD21  		shld	deadct0 ; multiplied by approx 238 usec for dead-timeout.
+		
+01E0  DB40    		in	ctrl
+01E2  E680    		ani	10000000b
+01E4  EE80    		xri	10000000b
+01E6  0F      		rrc
+01E7  0F      		rrc
+01E8  F610    		ori	010h	; either TPSV or TUNK
+01EA  32F821  		sta	ntype
+01ED  3E00    		mvi	a,0	;Clear to zeros
+01EF  327421  		sta	nxt$sp	;
+		
+01F2  3A8720  		lda	maddr
+01F5          		lxix	TOKEN0msg
+01F9          		mvix	TOKEN,CODE
+01FD          		stx	a,SORC
+0200          		lxix	POLLmsg
+0204          		mvix	POLL,CODE
+0208          		stx	a,SORC
+020B          		lxix	ACKmsg
+020F          		mvix	ACK,CODE
+0213          		stx	a,SORC
+0216          		lxix	NAKmsg
+021A          		mvix	NAK,CODE
+021E          		stx	a,SORC
+0221          		lxix	ACKmsg	; redundant...
+0225          		mvix	ACK,CODE ;
+0229          		stx	a,SORC	;
+022C          		lxix	BSYmsg
+0230          		mvix	BSY,CODE
+0234          		stx	a,SORC
+0237          		lxix	RESmsg		;setup reset message.
+023B          		mvix	RESET,CODE
+023F          		stx	a,SORC
+0242          		mvix	0FFH,DEST	;set destination as "global"
+0246          		lxix	PAKmsg
+024A          		mvix	0,DATA+SEQ	;SEQuence number, for retries.
+024E          		mvix	01h,CODE
+0252          		mvix	01h,DATA+FMT	;FMT
+0256          		mvix	05h,DATA+FNC	;FNC
+025A          		mvix	1-1,DATA+SIZ	;SIZ
+025E          		mvix	  0,DATA+MSG	;MSG
+0262          		stx	a,SORC
+0265          		stx	a,DATA+SID	;SID
+		
+0268          		lxix	rsphdr
+026C          		mvix	NRSP,ZCODE
+0270          		mvix	0,ZBC
+0274          		mvix	0,ZBC+1
+0278          		lxix	stshdr
+027C          		mvix	NSTS,ZCODE
+0280          		mvix	0,ZDE+1
+0284  3A8720  		lda	maddr
+0287          		stx	a,ZDE
+028A  214100  		lxi	h,64+1
+028D          		stx	l,ZBC
+0290          		stx	h,ZBC+1
+0293  3E00    		mvi	a,false	;Clear to zeros
+0295  322222  		sta	stsflg	;
+0298  322422  		sta	rspflg	;
+029B  323222  		sta	retflg	;
+029E  322022  		sta	cpnflg	;
+02A1  321F22  		sta	outflg	;
+02A4  322322  		sta	didsts	;
+02A7  322522  		sta	didrsp	;
+02AA  322122  		sta	didalt	;
+02AD  322722  		sta	dbgflg	;
+02B0  3EFF    		mvi	a,255
+02B2  323022  		sta	prtflg	;mark printer as "available"
+		
+02B5  C3DC02  		jmp	start$net
+		
+		** Initialization string for SIO channel A
+02B8  0018    	initA:	db	0,00011000b	;reset channel
+02BA  0420    		db	4,00100000b	;1x clock, SDLC, no parity
+02BC  0100    		db	1,00000000b	;leave RDY and interupts disabled
+02BE  06FF    		db	6,11111111b	;Address byte (set to node address before init) 
+02C0  077E    		db	7,01111110b	;flag byte (for receive)
+02C2  0561    		db	5,01100001b	;Tx 8 bits,SDLC CRC, RTS/DTR off, Tx Disabled
+02C4  03C8    		db	3,11001000b	;receive 8 bits, CRC, RxDisabled
+		
+		** setup port as 6 bit asyncronous (to simulate 8 bit SDLC timing)
+02C6  0018    	async:	db	0,00011000b	;reset channel
+02C8  0444    		db	4,01000100b	;16x clock, 1 stop bit, no parity
+02CA  0100    		db	1,00000000b	;leave RDY and interupts disabled
+02CC  054A    		db	5,01001010b	;Tx Enable, 6 bits, RTS on, DTR off
+02CE  03C0    		db	3,11000000b	;receive 8 bits, RxDisabled
+000A          	asyncl	equ	$-async
+		
+		** Initialization string for SIO channel B
+02D0  0018    	initB:	db	0,00011000b	;reset channel
+02D2  02E1    		db	2,vector mod 256 ;interupt vector address
+02D4  0484    		db	4,10000100b	;32x clock, 1 stop bit, no parity (ASYNC)
+02D6  011E    		db	1,00011110b	;status effects vector, TxE and RxA interupts
+02D8  05EA    		db	5,11101010b	;Tx 8 bits, enable, set RTS/DTR on
+02DA  03E1    		db	3,11100001b	;receive 8 bits, enable, auto enables.
+		
+		
+		;-------- end of PRE422.ASM ---------
+		
+0023          	VERS1 set 35 ; (Dec 14, 2018 21:34) drm  "NET422.ASM"
+0000          	 if VERS1 gt VERS
+		 endif
+		
+		; All nodes have equal responsibilty, no Requestor/Server determination.
+		
+		; Response$time * 14.75 (uS) = timeout for response.
+0066          	response$time equ 102  ;1505 microseconds
+		
+02DC          	start$net:
+02DC  F3      		di
+02DD  3E08    		mvi	a,00001000b
+02DF  328520  		sta	chAwr1	;interupt on first character of message.
+02E2  CD0F09  		call	setrcv	;setup receiver
+02E5  FB      		ei
+		
+		*********************************************************
+		*  Server or Requestor or whatever (node)		*
+		*********************************************************
+02E6          	SERVER:
+02E6  2AFD21  		lhld	deadct0
+02E9  22FF21  		shld	deadctr
+02EC  DB40    		in	ctrl
+02EE  E640    		ani	IDLE
+02F0  4F      		mov	c,a
+02F1          	sv0a:
+02F1  060A    		mvi	b,10
+02F3          	sv0b:
+02F3  C5      		push	b
+02F4  CD1B03  		call	chkeop	;Keep Host interface active...
+02F7  C1      		pop	b
+02F8  DB40    		in	ctrl	;idle line detection.
+02FA  E640    		ani	IDLE	;	;flag "heard" yet ??
+02FC  B9      		cmp	c
+02FD  C2E602  		jnz	SERVER
+0300          		djnz	sv0b	;to this point...450 uS
+0302  F3      		di
+0303  2AFF21  		lhld	deadctr	;
+0306  2B      		dcx	h	;
+0307  22FF21  		shld	deadctr	;
+030A  FB      		ei
+030B  7C      		mov	a,h	;
+030C  B5      		ora	l	;
+030D  C2F102  		jnz	sv0a	; +15.5 = 465.5 uS, times HL... 238mS to 15 sec.
+0310  210D22  		lxi	h,stshdr+ZDE+1
+0313          		res	4,m
+0315  CD4806  		call	sv2a	;network is dead, assume TOKEN-0
+0318  C3E602  		jmp	SERVER
+		
+031B          	chkeop:
+031B  3A2722  		lda	dbgflg
+031E  B7      		ora	a
+031F  C4180D  		cnz	debug
+0322  210122  		lxi	h,eops
+0325  F3      		di
+0326  DB88    		in	dmastat
+0328  E60F    		ani	1111b
+032A  B6      		ora	m
+032B  77      		mov	m,a
+032C  FB      		ei
+032D  E604    		ani	0100b	;did channel 2 EOP ?
+032F  CAF103  		jz	ce0
+0332  3A1E22  		lda	from89
+0335  B7      		ora	a
+0336  CA6E03  		jz	ce3
+0339  3E00    		mvi	a,false
+033B  321E22  		sta	from89
+033E  3A0222  		lda	ch2hdr+ZCODE
+0341  E6FC    		ani	11111100b
+0343  FE60    		cpi	EXEC
+0345  2A0722  		lhld	ch2hdr+ZHL
+0348  CA5203  		jz	ce4
+034B  2A3522  		lhld	ch2pri
+034E  110300  		lxi	d,DATA	;setup CP/NET message
+0351  19      		dad	d
+0352          	ce4:	lded	ch2hdr+ZBC
+0356  7A      		mov	a,d
+0357  B3      		ora	e
+0358  CA6E03  		jz	ce3
+035B  0E84    		mvi	c,ch2ba
+035D  F3      		di
+035E  CDB807  		call	setdma
+0361  3E02    		mvi	a,2
+0363  D38A    		out	mask
+0365  210122  		lxi	h,eops
+0368          		res	2,m
+036A  FB      		ei
+036B  C3F103  		jmp	ce0
+036E          	ce3:			;we just finish receiving a message from Z89.
+036E  3A0222  		lda	ch2hdr+ZCODE	;what kind of message was it??
+0371  E6F0    		ani	11110000b
+0373  FAD603  		jm	hm2	;illegal message code from Host.
+0376  FE70    		cpi	GDBG
+0378  CA0D05  		jz	godbg
+037B  FE60    		cpi	EXEC
+037D  CA7305  		jz	gldng
+0380  FE30    		cpi	NSTS
+0382  CAC203  		jz	hm1
+0385  F3      		di		;swap buffers to save message untill we have a chance
+0386  2A3522  		lhld	ch2pri	;to send it out.
+0389  EB      		xchg		;
+038A  2A3322  		lhld	ch2alt	;
+038D  223522  		shld	ch2pri	;
+0390  EB      		xchg		;
+0391  223322  		shld	ch2alt	;valid message
+0394  3E00    		mvi	a,false
+0396  321F22  		sta	outflg
+0399  FB      		ei
+039A          		lixd	ch2alt
+039E  3A8720  		lda	maddr
+03A1          		stx	a,SORC
+03A4  3A0222  		lda	ch2hdr+ZCODE	;function code
+03A7          		stx	a,CODE
+03AA  3A0622  		lda	ch2hdr+ZDE+1	;destination
+03AD          		stx	a,DEST
+03B0  2A0322  		lhld	ch2hdr+ZBC
+03B3  110300  		lxi	d,DATA		; add in header
+03B6  19      		dad	d		;
+03B7  223722  		shld	ch2siz
+03BA  3EFF    		mvi	a,true
+03BC  321F22  		sta	outflg
+03BF  C3D603  		jmp	hm2
+		
+		; Get network status.
+		; Local operation only, just return most recent token.
+03C2  3EFF    	hm1:	mvi	a,true
+03C4  322222  		sta	stsflg
+03C7  3A0622  		lda	ch2hdr+ZDE+1	;set new node type?
+03CA  E60F    		ani	00fh
+03CC  CAD603  		jz	hm2	; no, leave type alone
+03CF  07      		rlc
+03D0  07      		rlc
+03D1  07      		rlc
+03D2  07      		rlc
+03D3  32F821  		sta	ntype
+		;	jmp	hm2
+		
+03D6  3EFF    	hm2:	mvi	a,true
+03D8  321E22  		sta	from89
+03DB  210222  		lxi	h,ch2hdr
+03DE  110700  		lxi	d,hdrsiz
+03E1  0E84    		mvi	c,ch2ba
+03E3  F3      		di
+03E4  CDB807  		call	setdma
+03E7  3E02    		mvi	a,2
+03E9  D38A    		out	mask
+03EB  210122  		lxi	h,eops
+03EE          		res	2,m
+03F0  FB      		ei
+03F1  210122  	ce0:	lxi	h,eops
+03F4  F3      		di
+03F5  DB88    		in	dmastat
+03F7  E60F    		ani	1111b
+03F9  B6      		ora	m
+03FA  77      		mov	m,a
+03FB  FB      		ei
+03FC  E608    		ani	1000b
+03FE  CAF404  		jz	hm3
+0401  3A2622  		lda	to89
+0404  B7      		ora	a
+0405  CA2C04  		jz	ce1
+0408  3E00    		mvi	a,false
+040A  322622  		sta	to89
+040D          		lded	ch3siz
+0411  7B      		mov	a,e
+0412  B2      		ora	d
+0413  CA2C04  		jz	ce1
+0416  2A2A22  		lhld	ch3adr
+0419  0E86    		mvi	c,ch3ba
+041B  F3      		di
+041C  CDB807  		call	setdma
+041F  3E03    		mvi	a,3
+0421  D38A    		out	mask
+0423  210122  		lxi	h,eops
+0426          		res	3,m
+0428  FB      		ei
+0429  C3F404  		jmp	hm3
+		
+		; End of transfer processing???
+		; if (didrsp) didrsp=false;
+		; else {
+		;	if (didsts) didsts=false;
+		;	else if (didalt) didalt=false;
+		; }
+042C  3A2522  	ce1:	lda	didrsp
+042F  B7      		ora	a
+0430  CA3B04  		jz	ce1a
+0433  3E00    		mvi	a,false
+0435  322522  		sta	didrsp
+0438  C35604  		jmp	ce1c
+		; if (didsts) didsts=false;
+		; else if (didalt) didalt=false;
+043B  3A2322  	ce1a:	lda	didsts
+043E  B7      		ora	a
+043F  CA4A04  		jz	ce1b
+0442  3E00    		mvi	a,false
+0444  322322  		sta	didsts
+0447  C35604  		jmp	ce1c
+044A  3A2122  	ce1b:	lda	didalt
+044D  B7      		ora	a
+044E  CA5604  		jz	ce1c
+0451  3E00    		mvi	a,false
+0453  322122  		sta	didalt
+0456  3A2422  	ce1c:	lda	rspflg
+0459  B7      		ora	a
+045A  C29604  		jnz	hm4
+045D  3A2222  		lda	stsflg
+0460  B7      		ora	a
+0461  C2A704  		jnz	hm5
+0464  3A2022  		lda	cpnflg
+0467  B7      		ora	a
+0468  CAF404  		jz	hm3
+		
+046B          		lixd	altaddr
+046F          		ldx	a,SORC
+0472  321B22  		sta	cpnhdr+ZDE+1
+0475          		ldx	a,CODE
+0478  321722  		sta	cpnhdr+ZCODE
+047B  2A3922  		lhld	altaddr
+047E  010300  		lxi	b,DATA
+0481  09      		dad	b
+0482  222A22  		shld	ch3adr
+0485          		lxix	cpnhdr
+0489  3EFF    		mvi	a,true
+048B  322122  		sta	didalt
+048E  3E00    		mvi	a,false
+0490  322022  		sta	cpnflg
+0493  C3BB04  		jmp	hm6
+		
+0496          	hm4:	lxix	rsphdr
+049A  3EFF    		mvi	a,true
+049C  322522  		sta	didrsp
+049F  3E00    		mvi	a,false
+04A1  322422  		sta	rspflg
+04A4  C3BB04  		jmp	hm6
+		
+04A7          	hm5:	lxix	stshdr
+04AB  217421  		lxi	h,nxt$sp
+04AE  222A22  		shld	ch3adr
+04B1  3EFF    		mvi	a,true
+04B3  322322  		sta	didsts
+04B6  3E00    		mvi	a,false
+04B8  322222  		sta	stsflg
+		;	jmp	hm6
+		
+04BB          	hm6:	sixd	ch3hda
+04BF          		ldx	e,ZBC
+04C2          		ldx	d,ZBC+1
+04C5  210100  		lxi	h,1
+04C8  B7      		ora	a
+04C9          		dsbc	d
+04CB  C2D504  		jnz	hm7
+04CE  13      		inx	d
+04CF          		stx	e,ZBC
+04D2          		stx	d,ZBC+1
+04D5          	hm7:	sded	ch3siz
+04D9  3EFF    		mvi	a,true
+04DB  322622  		sta	to89
+04DE  2A2822  		lhld	ch3hda
+04E1  110700  		lxi	d,hdrsiz
+04E4  0E86    		mvi	c,ch3ba
+04E6  F3      		di
+04E7  CDB807  		call	setdma
+04EA  3E03    		mvi	a,0011b
+04EC  D38A    		out	mask
+04EE  210122  		lxi	h,eops
+04F1          		res	3,m
+04F3  FB      		ei
+04F4  3A2022  	hm3:	lda	cpnflg
+04F7  B7      		ora	a
+04F8  C8      		rz
+04F9          		lixd	altaddr
+04FD          		ldx	a,CODE
+0500  FE28    		cpi	NBOOT
+0502  CA2905  		jz	btfail
+0505  E6F1    		ani	11110001b
+0507  FE10    		cpi	EXE422
+0509  CA4805  		jz	ldngo1
+050C  C9      		ret
+		
+050D  3A0222  	godbg:	lda	ch2hdr+ZCODE
+0510  E60F    		ani	1111b
+0512  4F      		mov	c,a
+0513  87      		add	a
+0514  81      		add	c	; *3
+0515  6F      		mov	l,a	;
+0516  2600    		mvi	h,0	; HL=vector in page 0
+0518          		lbcd	ch2hdr+ZDE
+051C          		lded	ch2hdr+ZHL
+0520  CD2805  		call	gohl
+0523  C3D603  		jmp	hm2
+		
+0526  E1      		pop	h
+0527  E3      		xthl
+0528  E9      	gohl:	pchl
+		
+0529  213A05  	btfail:	lxi	h,bootf
+052C  F3      		di
+052D  CD7A0B  		call	smsg
+0530  FB      		ei
+0531  3E00    		mvi	a,false
+0533  322022  		sta	cpnflg
+0536  322122  		sta	didalt
+0539  C9      		ret
+		
+053A  0D0A426F	bootf:	db	cr,lf,'Boot failed',0fdh
+      6F742066
+      61696C65
+      64FD
+		
+		; Load/run code locally
+0548          	ldngo1:	ldx	a,CODE
+054B  2A3922  		lhld	altaddr
+054E  110300  		lxi	d,DATA
+0551  19      		dad	d
+0552  5E      		mov	e,m	;address for code...
+0553  23      		inx	h
+0554  56      		mov	d,m
+0555  D5      		push	d	; possible RET (goto) address
+0556  FE14    		cpi	014h
+0558  CA6A05  		jz	lg2	; goto only, do not load
+055B  23      		inx	h	;HL points to code in buffer
+055C          		lbcd	cpnhdr+ZBC
+0560  0B      		dcx	b
+0561  0B      		dcx	b
+0562          		ldir
+0564  FE12    		cpi	012h	; load+goto
+0566  C26A05  		jnz	lg2
+0569  D1      		pop	d	; do not jump to code
+056A  3E00    	lg2:	mvi	a,false
+056C  322022  		sta	cpnflg
+056F  322122  		sta	didalt
+0572  C9      		ret
+		
+0573  3A0222  	gldng:	lda	ch2hdr+ZCODE
+0576  E603    		ani	00000011b
+0578  C2D603  		jnz	hm2
+057B  2A0722  		lhld	ch2hdr+ZHL
+057E  CD2805  		call	gohl
+0581  C3D603  		jmp	hm2	;if code returns cleany, keep going
+		
+		;*******************************************************************
+		;
+		
+0584          	rstA:
+0584  F5      		push	psw
+0585  C5      		push	b
+0586  D5      		push	d
+0587  E5      		push	h
+0588          		pushix
+058A          		pushiy
+058C          		sspd	spcstk
+0590  CD0807  		call	unlatch
+0593  CD3207  		call	wait$r2
+0596  2AFD21  		lhld	deadct0
+0599  22FF21  		shld	deadctr
+059C  3E01    		mvi	a,1
+059E  D302    		out	cmdA
+05A0  DB02    		in	cmdA
+05A2  67      		mov	h,a
+05A3  3E30    		mvi	a,00110000b
+05A5  D302    		out	cmdA
+05A7  3E00    		mvi	a,0
+05A9  CDA909  		call	setmask
+05AC  3E38    		mvi	a,038h
+05AE  D302    		out	cmdA
+05B0  3E01    		mvi	a,1
+05B2  D302    		out	cmdA
+05B4  3A8520  		lda	chAwr1
+05B7  E6E7    		ani	11100111b
+05B9  328520  		sta	chAwr1
+05BC  D302    		out	cmdA
+05BE  FB      		ei
+05BF          		lixd	ch0addr
+05C3          		ldx	a,SORC	;destination of next message (response) is the source
+05C6  324B21  		sta	destin	;of the message we just received.
+05C9          		bit	6,h	;check for CRC error.
+05CB  C20106  		jnz	sv17	;what if the error was the address field?? So we
+					;should not respond to CRC errors. (let timeout do it)
+05CE          		bit	5,h	;overrun - DMA failure.
+05D0  C22606  		jnz	sv3	;;call LEDred
+		
+05D3  CDB00C  		call	LEDoff	;reset error indicator
+		
+05D6  D38C    		out	clrBP
+05D8  DB81    		in	ch0wc
+05DA  5F      		mov	e,a
+05DB  DB81    		in	ch0wc
+05DD  57      		mov	d,a	;DE=channel 0 ending word-count
+05DE  21FF01  		lxi	h,bufsiz*256-1
+05E1  B7      		ora	a
+05E2          		dsbc	d	;compute network length of message
+05E4  223D22  		shld	ch0size
+05E7          		ldx	a,CODE	;get code field
+05EA  FEDF    		cpi	RESET
+05EC  CAFE05  		jz	CONTENTION
+05EF  FEE0    		cpi	POLL
+05F1  CA2F06  		jz	sv4
+05F4  FED0    		cpi	TOKEN
+05F6  CA9A06  		jz	sv5
+05F9  E6F0    		ani	11110000b
+05FB  F23B06  		jp	sv6	;pass message to interpreter.
+		
+05FE          	CONTENTION:
+05FE  CDB00C  		call	LEDoff
+0601  CDA10C  	sv17:	call	LEDred
+0604  CD0F09  	sv17b:	call	setrcv
+0607  CD0807  	xitmsg:	call	unlatch
+060A  F3      		di
+060B  3E01    		mvi	a,1
+060D  D302    		out	cmdA
+060F  218520  		lxi	h,chAwr1
+0612  7E      		mov	a,m
+0613  F608    		ori	00001000b
+0615  77      		mov	m,a
+0616  D302    		out	cmdA	;turn interupt-on-first-char on.
+0618          		lspd	spcstk
+061C          		popiy
+061E          		popix
+0620  E1      		pop	h
+0621  D1      		pop	d
+0622  C1      		pop	b
+0623  F1      		pop	psw
+0624  FB      		ei
+0625  C9      		ret
+		
+0626  CDA10C  	sv3:	call	LEDred	;;
+0629  CDDA07  		call	sendNAK
+062C  C30706  		jmp	xitmsg
+		
+062F  CDD407  	sv4:	call	sendACK
+0632  C30706  		jmp	xitmsg
+		
+0635  CDC507  	ps8:	call	sendBSY
+0638  C30706  		jmp	xitmsg
+		
+063B  DB40    	sv6:	in	ctrl	;test jumper for "printer server"
+063D  E680    		ani	10000000b
+063F  CABB09  		jz	printer$server
+0642  CD4607  		call	setup89 	;sends ACK, or NAK if Z89 full
+0645  C30706  		jmp	xitmsg
+		
+0648  F3      	sv2a:	di
+0649  F5      		push	psw
+064A  C5      		push	b
+064B  D5      		push	d
+064C  E5      		push	h
+064D          		pushix
+064F          		pushiy
+0651          		sspd	spcstk
+0655  CD0807  		call	unlatch
+0658  218B20  		lxi	h,chAwr5
+065B  3E05    		mvi	a,5
+065D  D302    		out	cmdA
+065F  7E      		mov	a,m
+0660  F68A    		ori	10001010b	; DTR, RTS, TxEna
+0662  D302    		out	cmdA
+0664  3E05    		mvi	a,5
+0666  D302    		out	cmdA
+0668  7E      		mov	a,m
+0669  F682    		ori	10000010b	; DTR, RTS (TxDis)
+066B  D302    		out	cmdA
+066D  3AFC21  		lda	ltime
+0670  87      		add	a
+0671  87      		add	a
+0672  3D      	sv2a0:	dcr	a
+0673  C27206  		jnz	sv2a0	; transmit some flag/sync chars
+0676  3E05    		mvi	a,5
+0678  D302    		out	cmdA
+067A  7E      		mov	a,m
+067B  D302    		out	cmdA	; !DTR, !RTS, TxDis
+067D  CD8C08  		call	LATCH
+0680  3E01    		mvi	a,1
+0682  D302    		out	cmdA
+0684  218520  		lxi	h,chAwr1
+0687  7E      		mov	a,m
+0688  E6E7    		ani	11100111b
+068A  77      		mov	m,a
+068B  D302    		out	cmdA
+068D  FB      		ei
+068E  214C21  		lxi	h,RESmsg
+0691  110300  		lxi	d,3
+0694  CDE407  		call	send
+0697  C3BA06  		jmp	sv2
+069A          	sv5:			; TOKEN-0, we own the network...
+069A  CDD407  		call	sendACK ;sets IDLE latch before returning...
+069D  2A3B22  		lhld	ch0addr ;set NET.TABLE and go...
+06A0  110300  		lxi	d,DATA
+06A3  19      		dad	d
+06A4  117421  		lxi	d,net$table
+06A7  014100  		lxi	b,tk0ml-DATA
+06AA          		ldir
+06AC  217521  		lxi	h,srvtbl
+06AF  3A8720  		lda	maddr
+06B2  5F      		mov	e,a
+06B3  1600    		mvi	d,0
+06B5  19      		dad	d
+06B6  3AF821  		lda	ntype
+06B9  77      		mov	m,a
+06BA  CDA60C  	sv2:	call	LEDgrn		;assume TOKEN-0
+06BD  CD8807  		call	send89	;contention is checked here...
+		
+06C0  3A7421  		lda	nxt$sp			;Poll for new additions to network
+06C3  4F      		mov	c,a			;
+06C4  3C      		inr	a			;
+06C5  E63F    		ani	00111111b		;
+06C7  327421  		sta	nxt$sp	;set next node to poll
+06CA  0600    		mvi	b,0			;
+06CC  217521  		lxi	h,srvtbl		;
+06CF  09      		dad	b			;
+06D0  7E      		mov	a,m			;
+06D1  E6F0    		ani	11110000b		;
+06D3  C2DF06  		jnz	sv21	; node is online
+06D6  7E      		mov	a,m
+06D7  3C      		inr	a
+06D8  E60F    		ani	00001111b
+06DA  77      		mov	m,a
+06DB  79      		mov	a,c			;
+06DC  CD9909  		call	poll$node	;contention is checked here.
+		
+06DF  CD5609  	sv21:	call	findSERVER
+06E2  FA0207  		jm	sv22
+06E5  217121  		lxi	h,TOKEN0msg
+06E8  77      		mov	m,a	;set DID
+06E9  114400  		lxi	d,tk0ml
+06EC  CDE407  		call	send	;contention is checked here.
+06EF  B7      		ora	a
+06F0  C2FC06  		jnz	sv16	;keep TOKEN if anything went wrong...
+06F3  CD7709  		call	setnxs	;reset next-server pointer.
+06F6  CDB00C  		call	LEDoff	;
+06F9  C30706  		jmp	xitmsg	;
+		
+06FC  CDA10C  	sv16:	call	LEDred
+06FF  C3BA06  		jmp	sv2
+		
+0702  CD1B03  	sv22:	call	chkeop
+0705  C3BA06  		jmp	sv2
+		
+0708          	unlatch:
+0708  DB40    		in	ctrl	;save currently latched state of IDLE signal.
+070A  E640    		ani	IDLE	;
+070C  F5      		push	psw	;
+070D  210121  		lxi	h,ctl$image	;Allow IDLE bit to follow network status
+0710  7E      		mov	a,m		;
+0711  E6DF    		ani	not ILAT	;
+0713  77      		mov	m,a		;
+0714  D340    		out	ctrl		;
+0716  F1      		pop	psw	;return previously latched state
+0717  C9      		ret		;
+		
+0718  116600  	wait$r: lxi	d,response$time ;counter of "how long to wait".
+071B  CD0807  		call	unlatch
+071E  C23207  		jnz	wait$r2
+0721  DB40    	wm13:	in	ctrl
+0723  E640    		ani	IDLE		;message on line??
+0725  C23207  		jnz	wait$r2
+0728  1B      		dcx	d
+0729  7A      		mov	a,d
+072A  B3      		ora	e
+072B  C22107  		jnz	wm13
+072E  37      		stc
+072F  C38C08  		jmp	LATCH	;setup "idle" latch again
+		
+0732          	wait$r2:
+0732  112100  		lxi	d,33
+0735  DB40    	wm12:	in	ctrl
+0737  E640    		ani	IDLE
+0739  CA8C08  		jz	LATCH
+073C  1B      		dcx	d
+073D  7A      		mov	a,d
+073E  B3      		ora	e
+073F  C23507  		jnz	wm12		;wait for message to finish.
+0742  37      		stc
+0743  C38C08  		jmp	LATCH	;setup "idle" latch again
+		
+		
+0746          	setup89:	;(IX)=(ch0addr)
+0746          		ldx	a,DEST	;check if message was global.
+0749  D6FF    		sui	255
+074B  9F      		sbb	a	;make bolean...00=global, FF=not-global.
+074C  E601    		ani	1	;0=global, 1=not-global.
+074E  47      		mov	b,a
+074F  3A2022  		lda	cpnflg	;is a message still waiting for z89?
+0752  212122  		lxi	h,didalt
+0755  B6      		ora	m
+0756  2F      		cma
+0757  E602    		ani	0010b	;0=overrun, 2=o.k.
+					;(B)=global flag, 0/1
+0759  B0      		ora	b	;0=overrun and global,
+075A  CA0F09  		jz	setrcv	;don't respond to global messages.
+075D  3D      		dcr	a	;1=overrun and not global (send NAK)
+075E  CADA07  		jz	sendNAK 	;don't overrun z89
+0761  2A3B22  		lhld	ch0addr 	;"sendACK" will setup receiver to (ch0addr)
+0764  EB      		xchg			;so we must save our message in (altaddr) to
+0765  2A3922  		lhld	altaddr 	;prevent it from being overwritten by TOKEN0.
+0768  223B22  		shld	ch0addr 	;	(or whatever)
+076B  EB      		xchg			;
+076C  223922  		shld	altaddr 	;
+076F  3D      		dcr	a	;2=o.k. but global (no response)
+0770  F5      		push	psw
+0771  CC0F09  		cz	setrcv
+0774  F1      		pop	psw
+0775  C4D407  		cnz	sendACK 	;sets up receiver. uses (ch0addr)
+0778  2A3D22  		lhld	ch0size
+077B  01FCFF  		lxi	b,-(DATA+1)	;length of header + CRC bytes
+077E  09      		dad	b
+077F  221822  		shld	cpnhdr+ZBC
+		
+0782  3EFF    		mvi	a,true
+0784  322022  		sta	cpnflg
+0787  C9      		ret
+		
+0788          	send89:
+0788  DB40    		in	ctrl
+078A  E680    		ani	10000000b
+078C  CA180B  		jz	PAKsend
+078F  3A1F22  		lda	outflg	;see if there is a message ready to go out.
+0792  B7      		ora	a
+0793  CAB607  		jz	s890	;flag if there are no messages
+0796  2A3322  		lhld	ch2alt
+0799          		lded	ch2siz
+079D  CDE407  		call	send
+07A0  321322  		sta	rsphdr+ZDE	; status of send
+07A3  212422  		lxi	h,rspflg
+07A6  36FF    		mvi	m,true
+07A8  211F22  		lxi	h,outflg
+07AB  3600    		mvi	m,false
+07AD  B7      		ora	a
+07AE  C8      		rz	; no error
+07AF  F8      		rm	; busy
+07B0  FE02    		cpi	2	; NAK
+07B2  C8      		rz
+07B3  C3A10C  		jmp	LEDred
+		
+07B6  37      	s890:	stc
+07B7  C9      		ret
+		
+		
+07B8  D38C    	setdma:	out	clrBP
+07BA          		outp	l
+07BC          		outp	h
+07BE  0C      		inr	c
+07BF  1B      		dcx	d
+07C0          		outp	e
+07C2          		outp	d
+07C4  C9      		ret
+		
+07C5          	sendBSY:
+07C5  3A3022  		lda	prtflg
+07C8  325821  		sta	BSYmsg+DATA
+07CB  215521  		lxi	h,BSYmsg
+07CE  110400  		lxi	d,4
+07D1  C3E007  		jmp	sn1
+		
+07D4          	sendACK:
+07D4  214F21  		lxi	h,ACKmsg
+07D7  C3DD07  		jmp	sn0
+		
+07DA          	sendNAK:
+07DA  215221  		lxi	h,NAKmsg
+07DD  110300  	sn0:	lxi	d,3
+07E0  3A4B21  	sn1:	lda	destin
+07E3  77      		mov	m,a
+		;	jmp	send
+		;
+07E4  DB40    	send:	in	ctrl
+07E6  E640    		ani	IDLE
+07E8  C2FE05  		jnz	CONTENTION	;error: network is not idle (it should be)
+07EB  E5      		push	h
+07EC  D5      		push	d
+07ED  210121  		lxi	h,ctl$image	;un-latch IDLE signal during transmit so we
+07F0  7E      		mov	a,m		;don't see our own transmission as "contention"
+07F1  E6DF    		ani	not ILAT
+07F3  77      		mov	m,a
+07F4  D340    		out	ctrl
+07F6  3E03    		mvi	a,3
+07F8  D302    		out	cmdA
+07FA  218D20  		lxi	h,chAwr3
+07FD  3EFE    		mvi	a,11111110b	;disable receiver
+07FF  A6      		ana	m
+0800  77      		mov	m,a
+0801  D302    		out	cmdA
+0803  3E00    		mvi	a,0
+0805  CDA909  		call	setmask 	;shut off DMA
+0808  3E01    		mvi	a,1
+080A  D302    		out	cmdA
+080C  218520  		lxi	h,chAwr1
+080F  7E      		mov	a,m
+0810  E61F    		ani	00011111b
+0812  F6C0    		ori	11000000b	;set RDY to Tx mode
+0814  77      		mov	m,a
+0815  D302    		out	cmdA
+0817  3E05    		mvi	a,5
+0819  D302    		out	cmdA
+081B  218B20  		lxi	h,chAwr5
+081E  7E      		mov	a,m
+081F  F68A    		ori	10001010b	;Tx Enable, RTS/DTR on
+0821  77      		mov	m,a
+0822  D302    		out	cmdA		;transmitter starts sending flags...
+0824  AF      		xra	a		;
+0825  D302    		out	cmdA		;
+0827  3E80    		mvi	a,10000000b	;reset Tx CRC generater
+0829  D302    		out	cmdA		;
+082B  3AFC21  		lda	ltime		;
+082E  3D      	se3:	dcr	a		;
+082F  C22E08  		jnz	se3		;
+0832  D1      		pop	d		;
+0833  E1      		pop	h		;
+0834  7E      		mov	a,m	;first character to be sent...Destination I.D.
+0835  23      		inx	h		;
+0836  1B      		dcx	d		;
+0837  46      		mov	b,m	;save message code.
+0838  4F      		mov	c,a	;and destination (may be global - "FF")
+0839  C5      		push	b	;---save on stack.
+083A  0E80    		mvi	c,ch0ba 	;
+083C  F5      		push	psw		;
+083D  3E48    		mvi	a,010010$00b	;DMA send mode
+083F  D38B    		out	mode		;
+0841  CDB807  		call	setdma		;
+0844  F1      		pop	psw		;
+0845  F3      		di
+0846  D300    		out	Adat	;send first character		;
+0848  AF      		xra	a					; 5
+0849  D38A    		out	mask	;un mask DMA			;12=17=4.25 usec.
+084B  D302    		out	cmdA	;send 0 to select wr0
+084D  3EC0    		mvi	a,11000000b
+084F  D302    		out	cmdA	;send reset TxU command <-------;this MUST occure
+0851  FB      		ei
+0852  210122  		lxi	h,eops		;			;before the last byte!
+0855          		res	0,m		;
+0857  DB88    	se0:	in	dmastat		;wait for transmission to complete.
+0859  E60F    		ani	1111b
+085B  B6      		ora	m
+085C  77      		mov	m,a
+085D  E601    		ani	0001b
+085F  CA5708  		jz	se0
+0862  0608    		mvi	b,8	;EOP preceeds last flag by 4 characters, + 4 flags.
+0864  3AFC21  	se1:	lda	ltime
+0867  3D      	se2:	dcr	a	;wait untill a few flags have been sent...
+0868  C26708  		jnz	se2
+086B          		djnz	se1
+086D  3E05    		mvi	a,5
+086F  D302    		out	cmdA
+0871  218B20  		lxi	h,chAwr5
+0874  7E      		mov	a,m
+0875  E6F7    		ani	11110111b	;disable Tx, starts TxD marking.
+0877  77      		mov	m,a
+0878  D302    		out	cmdA
+087A  3AFC21  		lda	ltime
+087D  87      		add	a
+087E  87      		add	a
+087F  3D      	se4:	dcr	a
+0880  C27F08  		jnz	se4	; drain Tx?
+0883  C1      		pop	b	;restore message code and destination.
+0884  CD9808  		call	getresponse	;(does NOT set IDLE latch.)
+0887  F5      		push	psw
+0888  CD0F09  		call	setrcv
+088B  F1      		pop	psw
+088C  F5      	LATCH:	push	psw	;save response status (or zero)
+088D  210121  		lxi	h,ctl$image
+0890  7E      		mov	a,m
+0891  F620    		ori	ILAT
+0893  77      		mov	m,a
+0894  D340    		out	ctrl	;setup IDLE detection again
+0896  F1      		pop	psw	;this is the byte to send back to Z89
+0897  C9      		ret
+		
+0898          	getresponse:	;(B) must have the code of the previously sent message.
+0898  78      		mov	a,b	;and (C) must have the destination address.
+0899  D6F0    		sui	ACK	; base code for confirmations
+089B  E6F0    		ani	11110000b	;ACK-type messagess get no response.
+089D  C8      		rz
+089E  79      		mov	a,c	;see if message is "global"
+089F  D6FF    		sui	255
+08A1  C8      		rz		;if it is, it does not get a response.
+08A2  0600    		mvi	b,0	;(BC)=16 bit node address (0-63)
+08A4  C5      		push	b
+08A5  CD0F09  		call	setrcv
+08A8  CD1807  		call	wait$r
+08AB  C1      		pop	b
+08AC  D2C708  		jnc	gr1
+08AF  3E01    		mvi	a,1	;timout error code
+08B1  217521  	gr3:	lxi	h,srvtbl
+08B4  09      		dad	b
+08B5  47      		mov	b,a
+08B6  7E      		mov	a,m
+08B7  E6F0    		ani	11110000b
+08B9  4F      		mov	c,a
+08BA  78      		mov	a,b
+08BB  C8      		rz
+08BC  7E      		mov	a,m
+08BD  3C      		inr	a
+08BE  E60F    		ani	00001111b
+08C0  CAC408  		jz	gr6
+08C3  B1      		ora	c
+08C4  77      	gr6:	mov	m,a
+08C5  78      		mov	a,b
+08C6  C9      		ret
+		
+08C7  3E01    	gr1:	mvi	a,1	; BC=node address
+08C9  D302    		out	cmdA
+08CB  DB02    		in	cmdA
+08CD  67      		mov	h,a
+08CE          		bit	7,h	;EOF means message was for us.
+08D0  3E04    		mvi	a,4	;code for "response was not for us"
+08D2  CAB108  		jz	gr3	;if message was not for us, assume timeout.
+08D5  7C      		mov	a,h
+08D6  E660    		ani	01100000b	;CRC error or DMA failure.
+08D8  3E03    		mvi	a,3	;CRC error code
+08DA  C0      		rnz
+08DB          		lixd	ch0addr
+08DF          		ldx	a,CODE
+08E2  FEF2    		cpi	BSY	;printer-server busy
+08E4  CAF508  		jz	gr4
+08E7  D6F0    		sui	ACK	;0=succes (ACK)
+08E9  CAFA08  		jz	gr2	;update net.table
+08EC  3D      		dcr	a
+08ED  3E02    		mvi	a,2	;NAK received
+08EF  C8      		rz
+08F0  3E05    		mvi	a,5	;protocol error,
+08F2  C3B108  		jmp	gr3	;if response wasn't ACK or NAK.
+		
+08F5          	gr4:	ldx	a,DATA	;get node that caused BSY
+08F8  F680    		ori	10000000b	;differentiate it from error codes
+08FA  217521  	gr2:	lxi	h,srvtbl
+08FD  09      		dad	b
+08FE  47      		mov	b,a
+			; A node might have been polled, come online, and received the token
+			; since we last had the token, so our net.table might be out of date.
+			; adjust our copy of net.table, until we get the token again.
+08FF  7E      		mov	a,m
+0900  E6F0    		ani	11110000b
+0902  C20709  		jnz	gr5
+0905  3E10    		mvi	a,TUNK	;node was not online, reset demerrit count to 0
+0907  77      	gr5:	mov	m,a
+0908  78      		mov	a,b
+0909  210D22  		lxi	h,stshdr+ZDE+1
+090C          		setb	4,m
+090E  C9      		ret
+		
+090F          	setrcv:
+090F  AF      		xra	a
+0910  D302    		out	cmdA
+0912  3E05    		mvi	a,5
+0914  D302    		out	cmdA
+0916  218B20  		lxi	h,chAwr5
+0919  7E      		mov	a,m
+091A  E675    		ani	01110101b	;TX disable, RTS/DTR off
+091C  77      		mov	m,a
+091D  D302    		out	cmdA
+091F  3E00    		mvi	a,0
+0921  CDA909  		call	setmask ;shut off DMA channel 0.
+0924  3E44    		mvi	a,010001$00b	;receive mode
+0926  D38B    		out	mode
+0928  2A3B22  		lhld	ch0addr
+092B  110002  		lxi	d,bufsiz*256
+092E  0E80    		mvi	c,ch0ba
+0930  CDB807  		call	setdma		;setup DMA to receive from network
+0933  3E30    		mvi	a,00110000b
+0935  D302    		out	cmdA
+0937  3E01    		mvi	a,1	;wr1: setup RDY signal
+0939  D302    		out	cmdA
+093B  218520  		lxi	h,chAwr1
+093E  3EE0    		mvi	a,11100000b	;READY (DREQ) on receive characters
+0940  B6      		ora	m
+0941  77      		mov	m,a
+0942  D302    		out	cmdA
+0944  3E03    		mvi	a,3	;wr3: Startup receiver
+0946  D302    		out	cmdA
+0948  218D20  		lxi	h,chAwr3
+094B  3E15    		mvi	a,00010101b	;Enable, Enter Hunt Phase, Address Search.
+094D  B6      		ora	m
+094E  77      		mov	m,a
+094F  D302    		out	cmdA
+0951  3E00    		mvi	a,0
+0953  D38A    		out	mask	;un-mask DMA channel 0
+0955  C9      		ret
+		
+0956          	findSERVER:
+0956  2AF521  		lhld	nxsrva
+0959  3AF721  		lda	nxsrvn	;0-63, excl ourself
+095C  117521  		lxi	d,srvtbl
+095F  0641    		mvi	b,64+1
+0961  4F      		mov	c,a
+0962  C36B09  		jmp	fs3
+0965  7E      	fs0:	mov	a,m
+0966  E6F0    		ani	11110000b	;strip off counter
+0968  C28909  		jnz	fs1
+096B  23      	fs3:	inx	h
+096C  79      		mov	a,c
+096D  3C      		inr	a
+096E  E63F    		ani	00111111b	;MOD 64
+0970  4F      		mov	c,a
+0971  C27509  		jnz	fs2
+0974  EB      		xchg
+0975          	fs2:	djnz	fs0
+0977  217521  	setnxs:	lxi	h,srvtbl
+097A  3A8720  		lda	maddr
+097D  4F      		mov	c,a
+097E  0600    		mvi	b,0
+0980  09      		dad	b
+0981  22F521  		shld	nxsrva
+0984  32F721  		sta	nxsrvn
+0987  05      		dcr	b	;signal no other SERVERs with [MI]
+0988  C9      		ret
+		
+0989  3A8720  	fs1:	lda	maddr
+098C  B9      		cmp	c
+098D  CA6B09  		jz	fs3
+0990  79      		mov	a,c
+0991  B7      		ora	a	;signal active SERVER by [PL]
+0992  22F521  		shld	nxsrva
+0995  32F721  		sta	nxsrvn
+0998  C9      		ret
+		
+0999          	poll$node:
+0999  215921  		lxi	h,POLLmsg
+099C  77      		mov	m,a
+099D  110300  		lxi	d,3
+09A0  CDE407  		call	send	;"send" updates node table.
+09A3  FE02    		cpi	2
+09A5  D8      		rc
+09A6  C3A10C  		jmp	LEDred
+		
+09A9          	setmask:
+09A9  F3      		di
+09AA  F604    		ori	100b	;set mask bit = 1
+09AC  57      		mov	d,a
+09AD  018870  		lxi	b,(dmacomd)+(comd)*256	;command and port to re-enable DMA
+09B0  3E74    		mvi	a,comd+100b	;command to disable DMA
+09B2  D388    		out	dmacomd ;the clock is ticking...lets finish as fast as possible
+09B4  7A      		mov	a,d
+09B5  D38A    		out	mask	;mask the requested channel
+09B7          		outp	b	;re-enable DMA. Elapsed time: 7.75 microseconds
+09B9  FB      		ei
+09BA  C9      		ret
+		
+		*******************************************************************
+		**
+		*******************************************************************
+		
+09BB          	printer$server:
+09BB          		ldx	c,DATA+SID
+09BE  0600    		mvi	b,0
+09C0  79      		mov	a,c
+09C1  FEFF    		cpi	255
+09C3  CA0406  		jz	sv17b
+09C6          		ldx	a,CODE
+09C9  FE00    		cpi	CPNET
+09CB  C22F06  		jnz	sv4
+09CE  79      		mov	a,c
+09CF  FE40    		cpi	64
+09D1  D2F309  		jnc	ps9
+09D4  21B521  		lxi	h,SEQtbl
+09D7  09      		dad	b
+09D8          		bitx	7,DATA+SEQ
+09DC  CAE809  		jz	ps6
+09DF  7E      		mov	a,m
+09E0          		xorx	DATA+SEQ
+09E3  E60F    		ani	00fh
+09E5  CA2F06  		jz	sv4
+09E8          	ps6:	ldx	a,DATA+SEQ
+09EB  E60F    		ani	00001111b
+09ED  47      		mov	b,a
+09EE  7E      		mov	a,m
+09EF  E6F0    		ani	11110000b
+09F1  B0      		ora	b
+09F2  77      		mov	m,a
+09F3          	ps9:	ldx	a,DATA+FNC	;get CP/NET function number
+09F6  FE05    		cpi	05h	;list output function
+09F8  C2C40A  		jnz	ps4	;ACK irrelevant functions to keep requestor happy.
+09FB  213022  		lxi	h,prtflg	;owner of the printer.
+09FE  7E      		mov	a,m
+09FF  FEFF    		cpi	255	;is printer un-owned?
+0A01          		ldx	a,SORC
+0A04  CA0B0A  		jz	ps10
+0A07  BE      		cmp	m
+0A08  C23506  		jnz	ps8	; someone else
+0A0B  77      	ps10:	mov	m,a	;mark current owner of printer.
+0A0C  325C21  		sta	PAKmsg+DEST	;
+0A0F  326121  		sta	PAKmsg+DATA+DID ;set CP/NET DID
+		;
+		; NOTE: we only have one printer, so we will ignore the "Server list device #"
+		;
+0A12          		ldx	e,DATA+SIZ	;CP/NET SIZ field
+0A15  1600    		mvi	d,0		;DE = length of buffer
+0A17  2A3B22  		lhld	ch0addr
+0A1A  010A00  		lxi	b,DATA+MSG+1
+0A1D  09      		dad	b	;point to actual data for printer.
+0A1E  E5      		push	h
+		;------- message setup routine for circular buffer
+		; DE=length of data to be output.
+0A1F  2A412A  		lhld	prtpt1	;output pointer
+0A22          		lbcd	prtpt0	;input pointer
+0A26  B7      		ora	a
+0A27          		dsbc	b
+0A29  CA330A  		jz	cb2	;buffer is empty, 256 byte message can't overflow.
+0A2C          		res	7,h	; assuming 32K buffer
+0A2E          		dsbc	d	;compare to space needed
+0A30  DA3506  		jc	ps8	;if not enough space, send BSY response.
+0A33  210080  	cb2:	lxi	h,32*1024		; (BC=input pointer)
+0A36          		dsbc	b	;HL=bytes untill wrap point
+0A38  E5      		push	h	;
+0A39          		dsbc	d	;HL=
+0A3B  D2580A  		jnc	cb0	;
+0A3E  7C      		mov	a,h
+0A3F  2F      		cma
+0A40  67      		mov	h,a
+0A41  7D      		mov	a,l
+0A42  2F      		cma
+0A43  6F      		mov	l,a
+0A44  23      		inx	h	;negate HL
+0A45  EB      		xchg		;DE=bytes in 2nd move.
+0A46  21432A  		lxi	h,buffer
+0A49  09      		dad	b	;HL=start address to move to.
+0A4A  C1      		pop	b	;BC=bytes in 1st move.
+0A4B  EB      		xchg		;HL=bytes in 2nd move, DE=dest.address for 1st move.
+0A4C  E3      		xthl		;HL=message buffer address
+0A4D  CD9E0A  		call	memtomem	;move data
+0A50  010000  		lxi	b,0	;BC=0=index to start of buffer (wrap-around)
+0A53  D1      		pop	d	;DE=number of bytes
+0A54  E5      		push	h	;TOS=message buffer address (cont.)
+0A55  C3590A  		jmp	cb1
+		
+0A58  E1      	cb0:	pop	h	;DE=bytes to move, BC=index to start move
+0A59  21432A  	cb1:	lxi	h,buffer
+0A5C  09      		dad	b	;start address
+0A5D  4B      		mov	c,e
+0A5E  42      		mov	b,d
+0A5F  D1      		pop	d	;DE=message buffer address, data to output.
+0A60  EB      		xchg
+0A61  CD9E0A  		call	memtomem	;move data to circular buffer
+0A64  EB      		xchg
+0A65  2B      		dcx	h
+0A66  7E      		mov	a,m
+0A67  FEFF    		cpi	255
+0A69  C2790A  		jnz	cb3
+0A6C  323022  		sta	prtflg
+0A6F  2B      		dcx	h
+0A70  7E      		mov	a,m
+0A71  FEFE    		cpi	254
+0A73  CA7A0A  		jz	cb4
+0A76  23      		inx	h
+0A77  360C    		mvi	m,ffeed
+0A79  23      	cb3:	inx	h
+0A7A  11432A  	cb4:	lxi	d,buffer
+0A7D  B7      		ora	a
+0A7E          		dsbc	d	;compute index value
+0A80          		res	7,h
+0A82  223F2A  		shld	prtpt0	;set pointer
+0A85  F3      		di
+0A86  213122  		lxi	h,endlst	;see if the SIO needs to be re-started
+0A89  7E      		mov	a,m
+0A8A  3600    		mvi	m,0
+0A8C  B7      		ora	a
+0A8D  C4C80C  		cnz	chBTxE
+0A90  FB      		ei
+0A91          		lxiy	PAKmsg
+0A95  112F22  		lxi	d,retry
+0A98          		ldy	c,DEST
+0A9B  C3FE0A  		jmp	ps5
+		
+0A9E          	memtomem:	;memory-to-memory DMA block move.
+0A9E  3E84    		mvi	a,100001$00b	;
+0AA0  D38B    		out	mode	;set ch0 to block mode
+0AA2  3C      		inr	a
+0AA3  D38B    		out	mode	;and ch1 to block mode
+0AA5  3E71    		mvi	a,comd+01b	;select memory-to-memory, address change.
+0AA7  D388    		out	dmacomd
+0AA9  D5      		push	d	;destination address
+0AAA  C5      		push	b	;length of transfer
+0AAB  59      		mov	e,c
+0AAC  50      		mov	d,b	;length in DE
+0AAD  0E80    		mvi	c,ch0ba ;(source address in HL)
+0AAF  CDB807  		call	setdma	;setup ch0
+0AB2  13      		inx	d	;"setdma" does a DCX D
+0AB3  19      		dad	d	;point to end of source buffer
+0AB4  D1      		pop	d	;length in DE
+0AB5  E3      		xthl		;destination in HL (save end of source buffer)
+0AB6  0E82    		mvi	c,ch1ba ;
+0AB8  CDB807  		call	setdma	;setup ch1
+0ABB  13      		inx	d	;
+0ABC  19      		dad	d	;point to end of destination
+0ABD  3E04    		mvi	a,100b
+0ABF  D389    		out	dreq	;start transfer. we will have control when finished.
+0AC1  EB      		xchg
+0AC2  E1      		pop	h
+0AC3  C9      		ret		;transfer completed
+		
+0AC4          	ps4:			;build return frame to satisfy CP/NET.
+0AC4  3A3222  		lda	retflg
+0AC7  B7      		ora	a
+0AC8  C22606  		jnz	sv3	;NAK if we can't handle this many messages
+0ACB          		lxiy	RETmsg
+0ACF          		ldx	a,DATA+FNC	;
+0AD2          		sty	a,DATA+FNC	;same function number
+0AD5          		ldx	c,SORC		;send to source of this message.
+0AD8          		sty	c,DEST		;NOTE: node address is transfered in (C)
+0ADB          		sty	a,DATA+DID	;
+0ADE          		mviy	01h,DATA+FMT	;FMT=01, CP/NET response
+0AE2          		mviy	01h,CODE	;
+0AE6          		mviy	1,DATA+SIZ	;SIZ=2 bytes
+0AEA          		mviy	0,DATA+MSG	;
+0AEE          		mviy	0,DATA+MSG+1	;MSG=0000
+0AF2  3A8720  		lda	maddr		;put our address as source
+0AF5          		sty	a,SORC		;
+0AF8          		sty	a,DATA+SID	;
+0AFB  113222  		lxi	d,retflg
+0AFE  0600    	ps5:	mvi	b,0		;node address is still in (C).
+0B00  21B521  		lxi	h,SEQtbl
+0B03  09      		dad	b		;
+0B04  7E      		mov	a,m		;
+0B05  07      		rlc
+0B06  07      		rlc
+0B07  07      		rlc
+0B08  07      		rlc
+0B09  E60F    		ani	00001111b
+0B0B          		sty	a,DATA+SEQ	;
+0B0E  3E10    		mvi	a,010h
+0B10  86      		add	m
+0B11  77      		mov	m,a
+0B12  3EF6    		mvi	a,-10
+0B14  12      		stax	d
+0B15  C32F06  		jmp	sv4		;ACK message
+		
+		****************************************************************************
+		
+0B18          	PAKsend:
+0B18  012F22  		lxi	b,retry	;has message been sent successfully ?
+0B1B  0A      		ldax	b
+0B1C  B7      		ora	a	; (or have we given up trying?)
+0B1D  CA490B  		jz	s890a	;then we have nothing to send
+0B20  215C21  		lxi	h,PAKmsg
+0B23  110900  		lxi	d,9
+0B26  C5      	ps3:	push	b
+0B27  E5      		push	h
+0B28  CDE407  		call	send
+0B2B          		popix
+0B2D          		setx	7,DATA+SEQ
+0B31  E1      		pop	h
+0B32  B7      		ora	a	;success?
+0B33  CA470B  		jz	ps2
+0B36  34      		inr	m
+0B37  C0      		rnz		;A=error code
+0B38  F5      		push	psw
+0B39  3EFF    		mvi	a,true
+0B3B  323022  		sta	prtflg
+0B3E  3E0C    		mvi	a,ffeed
+0B40  F3      		di
+0B41  CDAA0B  		call	schr
+0B44  FB      		ei
+0B45  F1      		pop	psw
+0B46  C9      		ret		;A=error code
+		
+0B47  77      	ps2:	mov	m,a	;zero retry counter.
+0B48  C9      		ret		;return A=0
+		
+0B49  013222  	s890a:	lxi	b,retflg
+0B4C  0A      		ldax	b
+0B4D  B7      		ora	a
+0B4E  CAB607  		jz	s890
+0B51  216621  		lxi	h,RETmsg
+0B54  110A00  		lxi	d,10
+0B57  C3260B  		jmp	ps3
+		
+0B5A  F5      	chr1st:	push	psw
+0B5B  E5      		push	h
+0B5C  D5      		push	d
+0B5D  C5      		push	b
+0B5E  DB01    		in	Bdat
+0B60  E67F    		ani	7fh
+0B62  FE0D    		cpi	cr
+0B64  C2730B  		jnz	smxit
+0B67  21B90B  		lxi	h,chr2nd
+0B6A  22E520  		shld	RxAB
+0B6D  21850C  		lxi	h,mms
+0B70  CD7A0B  	imsg:	call	smsg
+0B73  C1      	smxit:	pop	b
+0B74  D1      		pop	d
+0B75  E1      		pop	h
+0B76  F1      		pop	psw
+0B77  FB      		ei
+0B78          		reti
+		
+0B7A          	smsg:
+0B7A          		lbcd	prtpt0	;start where last message (if any) left off.
+0B7E  11432A  		lxi	d,buffer
+0B81  EB      		xchg
+0B82  09      		dad	b
+0B83  EB      		xchg
+0B84  7E      	smsg0:	mov	a,m
+0B85  FEFD    		cpi	253
+0B87  CA9B0B  		jz	smsg1
+0B8A  12      		stax	d
+0B8B  13      		inx	d
+0B8C  23      		inx	h
+0B8D  03      		inx	b
+0B8E          		bit	7,b
+0B90  CA840B  		jz	smsg0
+0B93          		res	7,b	;mod 32K
+0B95  11432A  		lxi	d,buffer
+0B98  C3840B  		jmp	smsg0
+		
+0B9B          	smsg1:	sbcd	prtpt0
+0B9F  213122  		lxi	h,endlst
+0BA2  7E      		mov	a,m
+0BA3  3600    		mvi	m,0
+0BA5  B7      		ora	a
+0BA6  C8      		rz
+0BA7  C3C80C  		jmp	chBTxE
+		
+0BAA          	schr:	lbcd	prtpt0
+0BAE  21432A  		lxi	h,buffer
+0BB1  09      		dad	b
+0BB2  77      		mov	m,a
+0BB3  03      		inx	b
+0BB4          		res	7,b
+0BB6  C39B0B  		jmp	smsg1
+		
+0BB9  F5      	chr2nd:	push	psw
+0BBA  E5      		push	h
+0BBB  D5      		push	d
+0BBC  C5      		push	b
+0BBD  DB01    		in	Bdat
+0BBF  E65F    		ani	5fh	;convert to upper case, strip off parity.
+0BC1  FE44    		cpi	'D'
+0BC3  CA650C  		jz	entdbg
+0BC6  FE42    		cpi	'B'
+0BC8  C2750C  		jnz	err
+0BCB  21D70B  		lxi	h,chr3rd
+0BCE  22E520  		shld	RxAB
+0BD1  21920C  		lxi	h,boot
+0BD4  C3700B  		jmp	imsg
+		
+0BD7  F5      	chr3rd:	push	psw
+0BD8  E5      		push	h
+0BD9  D5      		push	d
+0BDA  C5      		push	b
+0BDB  DB01    		in	Bdat
+0BDD  E65F    		ani	5fh
+0BDF  FE0D    		cpi	cr
+0BE1  CA1B0C  		jz	bootn
+0BE4  FE4E    		cpi	'N'
+0BE6  C2750C  		jnz	err
+0BE9  21F50B  		lxi	h,chr4th
+0BEC  22E520  		shld	RxAB
+0BEF  21980C  		lxi	h,nm
+0BF2  C3700B  		jmp	imsg
+		
+0BF5  F5      	chr4th:	push	psw
+0BF6  E5      		push	h
+0BF7  D5      		push	d
+0BF8  C5      		push	b
+0BF9  DB01    		in	Bdat
+0BFB  E67F    		ani	7fh
+0BFD  FE0D    		cpi	cr
+0BFF  CA1B0C  		jz	bootn
+0C02  FE30    		cpi	'0'
+0C04  DA750C  		jc	err
+0C07  FE3A    		cpi	'9'+1
+0C09  D2750C  		jnc	err
+0C0C  21200C  		lxi	h,chr5th
+0C0F  22E520  		shld	RxAB
+0C12  322E22  		sta	pflag
+0C15  CDAA0B  	cont:	call	schr
+0C18  C3730B  		jmp	smxit
+		
+0C1B  3E30    	bootn:	mvi	a,'0'
+0C1D  C3300C  		jmp	xboot
+		
+0C20  F5      	chr5th:	push	psw
+0C21  E5      		push	h
+0C22  D5      		push	d
+0C23  C5      		push	b
+0C24  DB01    		in	Bdat
+0C26  E67F    		ani	7fh
+0C28  FE0D    		cpi	cr
+0C2A  C2750C  		jnz	err
+0C2D  3A2E22  		lda	pflag
+0C30  F5      	xboot:	push	psw
+0C31  3E02    		mvi	a,2
+0C33  CDA909  		call	setmask
+0C36  F1      		pop	psw
+0C37  D630    		sui	'0'
+0C39  320622  		sta	ch2hdr+ZDE+1	;destination
+0C3C  2A3522  		lhld	ch2pri
+0C3F  110300  		lxi	d,DATA
+0C42  19      		dad	d
+0C43  3600    		mvi	m,0	;device code 0, 77422 board
+0C45  210122  		lxi	h,eops
+0C48          		setb	2,m
+0C4A  3E20    		mvi	a,RBOOT
+0C4C  320222  		sta	ch2hdr+ZCODE	;command: boot
+0C4F  210100  		lxi	h,1
+0C52  220322  		shld	ch2hdr+ZBC
+0C55  3E00    		mvi	a,false
+0C57  321E22  		sta	from89
+0C5A  215A0B  		lxi	h,chr1st
+0C5D  22E520  		shld	RxAB
+0C60  3E0D    		mvi	a,cr
+0C62  C3150C  		jmp	cont
+		
+0C65          	entdbg:
+0C65  3EFF    		mvi	a,true
+0C67  322722  		sta	dbgflg
+0C6A  215A0B  		lxi	h,chr1st
+0C6D  22E520  		shld	RxAB
+0C70  3E44    		mvi	a,'D'
+0C72  C3150C  		jmp	cont
+		
+0C75  AF      	err:	xra	a
+0C76  322E22  		sta	pflag
+0C79  215A0B  		lxi	h,chr1st
+0C7C  22E520  		shld	RxAB
+0C7F  219C0C  		lxi	h,errm
+0C82  C3700B  		jmp	imsg
+		
+0C85  0D0A204D	mms:	db	cr,lf,' MMS-net: ',253
+      4D532D6E
+      65743A20
+      FD
+0C92  426F6F74	boot:	db	'Boot ',253
+      20FD
+0C98  4E4E2DFD	nm:	db	'NN-',253
+0C9C  0D0A073F	errm:	db	cr,lf,bel,'?',253
+      FD
+		
+0CA1  3E80    	LEDred:	mvi	a,RED
+0CA3  C3A80C  		jmp	LEDxon
+		
+0CA6  3E40    	LEDgrn:	mvi	a,GREEN
+0CA8  210121  	LEDxon: lxi	h,ctl$image
+0CAB  B6      		ora	m
+0CAC  77      		mov	m,a
+0CAD  D340    		out	ctrl
+0CAF  C9      		ret
+		
+0CB0  210121  	LEDoff: lxi	h,ctl$image
+0CB3  7E      		mov	a,m
+0CB4  E63F    		ani	OFF		;RED+GREEN off
+0CB6  77      		mov	m,a
+0CB7  D340    		out	ctrl
+0CB9  C9      		ret
+		
+		**********************************************************
+		** Interupt service.
+		**********************************************************
+		
+0CBA          	rstB:	exaf
+0CBB  3E30    		mvi	a,00110000b
+0CBD  D303    		out	cmdB
+0CBF          		exaf
+0CC0  FB      	null:	ei		;do-nothing interupt handler
+0CC1          		reti
+		
+0CC3  D3E0    	tic:	out	ch2rd	;turn interupt off
+0CC5  FB      		ei
+0CC6          		reti
+		
+0CC8          	chBTxE:
+		;------- interupt routine for circular buffer ------------
+0CC8          		exx
+0CC9          		exaf
+0CCA  2A3F2A  		lhld	prtpt0	;input pointer (into buffer)
+0CCD          		lded	prtpt1	;output pointer (out of buffer)
+0CD1  B7      		ora	a
+0CD2          		dsbc	d
+0CD4  CAEA0C  		jz	bf0
+0CD7  21432A  		lxi	h,buffer	;base address of buffer
+0CDA  19      		dad	d
+0CDB  13      		inx	d
+0CDC          		res	7,d	;mod 32K, 32K buffer
+0CDE          		sded	prtpt1
+0CE2  7E      		mov	a,m
+0CE3  D301    		out	Bdat	;send to SIO
+0CE5          		exx
+0CE6          		exaf
+0CE7  FB      		ei
+0CE8          		reti		; xx.x microseconds, this path.
+		
+0CEA  3EFE    	bf0:	mvi	a,254
+0CEC  323122  		sta	endlst
+0CEF  3E28    		mvi	a,00101000b
+0CF1  D303    		out	cmdB
+0CF3          		exx
+0CF4          		exaf
+0CF5  FB      		ei
+0CF6          		reti
+		
+		**********************************************************
+		** Data constants
+		**********************************************************
+		
+0CF8  C80C    	intvec: dw	chBTxE	;channel B TBE
+0CFA  C00C    		dw	null	;status: EOP, IV3, sync
+0CFC  5A0B    		dw	chr1st	;channel B RCA
+0CFE  BA0C    		dw	rstB	;spcl rcv
+0D00  C00C    		dw	null	;channel A TBE	(handled by DMA)
+0D02  C00C    		dw	null	;status   (error conditions TxU, ABORT)
+0D04  C00C    		dw	null	;channel A RCA	(triggers message handler)
+0D06  8405    		dw	rstA	;spcl rcv (error conditions)
+0D08  C00C    		dw	null	; ;Not used, Cannot occur
+0D0A  C00C    		dw	null	; ;
+0D0C  C00C    		dw	null	; ;
+0D0E  C00C    		dw	null	; ;
+0D10  C00C    		dw	null	; ;
+0D12  C00C    		dw	null	; ;
+0D14  0000    		dw	0	; ;
+0D16  C30C    		dw	tic	;tic from host
+		
+		;------- end of NET422.ASM ----------
+0023          	VERS1 set 35 ; (Dec 14, 2018 21:34) drm  "SUF422.ASM"
+0000          	 if VERS1 gt VERS
+		 endif
+		
+		; All nodes have equal responsibility. no Server/Requestor determination.
+		
+		*********************************************************
+		**  Debug mode
+		*********************************************************
+		
+0D18          	debug:
+0D18  3AF821  		lda	ntype
+0D1B  F5      		push	psw
+0D1C          		sspd	savstk
+0D20  3E01    		mvi	a,1
+0D22  D303    		out	cmdB
+0D24  219320  		lxi	h,chBwr1
+0D27  7E      		mov	a,m
+0D28  E604    		ani	00000100b	;all interupts,etc off
+0D2A  77      		mov	m,a
+0D2B  D303    		out	cmdB
+0D2D  3E20    		mvi	a,TDBG
+0D2F  32F821  		sta	ntype
+0D32  3E00    		mvi	a,false
+0D34  322722  		sta	dbgflg
+0D37  219314  		lxi	h,signon	;display revision message
+0D3A  CDAE13  		call	msgout
+0D3D          	cilp:	lspd	savstk
+0D41  213D0D  		lxi	h,cilp		;setup return address
+0D44  E5      		push	h
+0D45  21B014  		lxi	h,prompt	;prompt for a command
+0D48  CDAE13  		call	msgout
+0D4B  CDBF13  		call	linein		;wait for command line to be entered
+0D4E  110921  		lxi	d,line
+0D51  CDF513  		call	char		;get first character
+0D54  C8      		rz			;ignore line if it is empty
+0D55  216F0D  		lxi	h,comnds	;search table for command character
+0D58  0609    		mvi	b,ncmnds	;(number of commands)
+0D5A  BE      	cci0:	cmp	m		;search command table
+0D5B  23      		inx	h
+0D5C          		jrz	gotocmd		;command was found, execute it
+0D5E  23      		inx	h		;step past routine address
+0D5F  23      		inx	h
+0D60          		djnz	cci0		;loop untill all valid commands are checked
+0D62  219C0C  	error	lxi	h,errm		;if command unknown, beep and re-prompt
+0D65  C3AE13  		jmp	msgout
+		
+0D68          	gotocmd:
+0D68  D5      		push	d		;save command line buffer pointer
+0D69  5E      		mov	e,m		;get command routine address
+0D6A  23      		inx	h
+0D6B  56      		mov	d,m		;DE = routine address
+0D6C  EB      		xchg			;HL = routine address
+0D6D  D1      		pop	d		;restore buffer pointer
+0D6E  E9      		pchl			;jump to command routine
+		
+		** Macros to build the command code and routine address tables
+0D6F          	comnds:
+0D6F  3F      		db	'?'
+0D70  AB0E    		dw	Qcomnd
+0D72  44      		db	'D'
+0D73  8412    		dw	Dcomnd
+0D75  53      		db	'S'
+0D76  EA12    		dw	Scomnd
+0D78  47      		db	'G'
+0D79  5613    		dw	Gcomnd
+0D7B  4C      		db	'L'
+0D7C  2011    		dw	Lcomnd
+0D7E  4D      		db	'M'
+0D7F  C70E    		dw	Mcomnd
+0D81  46      		db	'F'
+0D82  280F    		dw	Fcomnd
+0D84  52      		db	'R'
+0D85  B10E    		dw	Rcomnd
+0D87  54      		db	'T'
+0D88  680F    		dw	Tcomnd
+0009          	ncmnds	equ	($-comnds)/3
+		
+		*********************************************************
+		**  Command subroutines
+		*********************************************************
+		
+0D8A  0D0A4420	menu:	db	cr,lf,'D <start> <end> - display memory in HEX'
+      3C737461
+      72743E20
+      3C656E64
+      3E202D20
+      64697370
+      6C617920
+      6D656D6F
+      72792069
+      6E204845
+      58
+0DB3  0D0A5320		db	cr,lf,'S <start> - set/view memory'
+      3C737461
+      72743E20
+      2D207365
+      742F7669
+      6577206D
+      656D6F72
+      79
+0DD0  0D0A4720		db	cr,lf,'G <start> - go to address'
+      3C737461
+      72743E20
+      2D20676F
+      20746F20
+      61646472
+      657373
+0DEB  0D0A4C20		db	cr,lf,'L <start> <end> - list instructions'
+      3C737461
+      72743E20
+      3C656E64
+      3E202D20
+      6C697374
+      20696E73
+      74727563
+      74696F6E
+      73
+0E10  0D0A4620		db	cr,lf,'F <start> <end> <data> - fill memory'
+      3C737461
+      72743E20
+      3C656E64
+      3E203C64
+      6174613E
+      202D2066
+      696C6C20
+      6D656D6F
+      7279
+0E36  0D0A4D20		db	cr,lf,'M <start> <end> <dest> - Move data'
+      3C737461
+      72743E20
+      3C656E64
+      3E203C64
+      6573743E
+      202D204D
+      6F766520
+      64617461
+0E5A  0D0A5420		db	cr,lf,'T - Test 64K memory'
+      2D205465
+      73742036
+      344B206D
+      656D6F72
+      79
+0E6F  0D0A5420		db	cr,lf,'T <#> - test 56K bank(s) #=1,2,3,4'
+      3C233E20
+      2D207465
+      73742035
+      364B2062
+      616E6B28
+      73292023
+      3D312C32
+      2C332C34
+0E93  0D0A5220		db	cr,lf,'R - return to network'
+      2D207265
+      7475726E
+      20746F20
+      6E657477
+      6F726B
+0EAA  00      		db	0
+		
+0EAB  218A0D  	Qcomnd:	lxi	h,menu
+0EAE  C3AE13  		jmp	msgout
+		
+0EB1          	Rcomnd:
+0EB1  3E01    		mvi	a,001h
+0EB3  D303    		out	cmdB
+0EB5  219320  		lxi	h,chBwr1
+0EB8  7E      		mov	a,m
+0EB9  F61A    		ori	01ah
+0EBB  77      		mov	m,a
+0EBC  D303    		out	cmdB
+0EBE          		lspd	savstk
+0EC2  F1      		pop	psw
+0EC3  32F821  		sta	ntype
+0EC6  C9      		ret
+		
+0EC7  CD0114  	Mcomnd:	call	getaddr
+0ECA  DA620D  		jc	error
+0ECD          		bit	7,b
+0ECF  C2620D  		jnz	error
+0ED2  220421  		shld	addr0
+0ED5  CD0114  		call	getaddr
+0ED8  DA620D  		jc	error
+0EDB          		bit	7,b
+0EDD  C2620D  		jnz	error
+0EE0  220621  		shld	addr1
+0EE3  CD0114  		call	getaddr
+0EE6  DA620D  		jc	error
+0EE9          		bit	7,b
+0EEB  C2620D  		jnz	error
+0EEE  EB      		xchg
+0EEF          		lbcd	addr0
+0EF3  2A0621  		lhld	addr1
+0EF6  B7      		ora	a
+0EF7          		dsbc	b
+0EF9  DA620D  		jc	error
+0EFC  23      		inx	h
+0EFD  4D      		mov	c,l
+0EFE  44      		mov	b,h
+0EFF  D5      		push	d
+0F00  EB      		xchg
+0F01  09      		dad	b
+0F02  D1      		pop	d
+0F03  DA620D  		jc	error
+0F06  2A0621  		lhld	addr1
+0F09  CDB913  		call	check
+0F0C  DA220F  		jc	mc0
+0F0F  2A0421  		lhld	addr0
+0F12  CDB913  		call	check
+0F15  D2220F  		jnc	mc0
+0F18  2A0621  		lhld	addr1
+0F1B  EB      		xchg
+0F1C  09      		dad	b
+0F1D  2B      		dcx	h
+0F1E  EB      		xchg
+0F1F          		lddr
+0F21  C9      		ret
+0F22  2A0421  	mc0:	lhld	addr0
+0F25          		ldir
+0F27  C9      		ret
+0F28          	Fcomnd:
+0F28  CD0114  		call	getaddr ;get address to start at
+0F2B  DA620D  		jc	error	;error if non-hex character
+0F2E          		bit	7,b	;test for no address (different from 0000)
+0F30  C2620D  		jnz	error	;error if no address was entered
+0F33  220421  		shld	addr0	;save starting address
+0F36  CD0114  		call	getaddr ;get stop address
+0F39  DA620D  		jc	error	;error if non-hex character
+0F3C          		bit	7,b	;test for no entry
+0F3E  C2620D  		jnz	error	;error if no stop address
+0F41  220621  		shld	addr1	;save stop address
+0F44  CD0114  		call	getaddr ;get fill data
+0F47  DA620D  		jc	error	;error if non-hex character
+0F4A          		bit	7,b	;test for no entry
+0F4C  C2620D  		jnz	error	;error if no fill data
+0F4F  7C      		mov	a,h
+0F50  B7      		ora	a
+0F51  C2620D  		jnz	error
+0F54  4D      		mov	c,l	;(C)=fill data
+0F55  2A0621  		lhld	addr1	;get stop address
+0F58          		lded	addr0	;get start address
+0F5C  79      	fc0:	mov	a,c	;
+0F5D  12      		stax	d	;put byte in memory
+0F5E  13      		inx	d	;step to next byte
+0F5F  7A      		mov	a,d	;
+0F60  B3      		ora	e	;if we reach 0000, stop. (don't wrap around)
+0F61  C8      		rz		;
+0F62  CDB913  		call	check	;test for past stop address
+0F65  D8      		rc	;quit if past stop address
+0F66          		jr	fc0
+		
+		***************************************************
+		** Full Memeory Test
+		***************************************************
+		cstat	macro
+		***************************************************
+00E0          	LOPAGE	equ	0E0h
+		
+0F68          	Tcomnd:
+0F68  0E0A    		mvi	c,lf
+0F6A  CD6514  		call	conout
+0F6D  2E00    		mvi	l,000h
+0F6F  CDF513  	tc0:	call	char
+0F72          		jrz	tc1
+0F74  FE20    		cpi	' '
+0F76  CA6F0F  		jz	tc0
+0F79  D630    		sui	'0'
+0F7B  FE05    		cpi	5
+0F7D  D2810F  		jnc	tc1
+0F80  6F      		mov	l,a
+0F81  1E20    	tc1:	mvi	e,100H-LOPAGE
+0F83  1600    		mvi	d,0
+0F85  0EE0    		mvi	c,LOPAGE
+0F87  0600    		mvi	b,0
+0F89          		exx
+0F8A  21DB0F  		lxi	h,FIXJMP
+0F8D  11FADF  		lxi	d,LOPAGE*256-FIXJ
+0F90  014501  		lxi	b,PGMLEN+FIXJ
+0F93          		ldir
+0F95  1100E0  		lxi	d,LOPAGE*256
+0F98  21E10F  		lxi	h,MEMTEST
+0F9B  013F02  		lxi	b,PGMLEN+100H
+0F9E  AF      		xra	a
+0F9F          		exaf
+0FA0  AF      		xra	a
+0FA1  86      	CS1:	add	m
+0FA2          		exaf
+0FA3  EB      		xchg
+0FA4  86      		add	m
+0FA5          		exaf
+0FA6  EB      		xchg
+0FA7  23      		inx	h
+0FA8  13      		inx	d
+0FA9  0D      		dcr	c
+0FAA  C2A10F  		jnz	CS1
+0FAD          		djnz	CS1
+0FAF  4F      		mov	c,a
+0FB0          		exaf
+0FB1  B9      		cmp	c
+0FB2  C2C20F  		jnz	XCSERR
+0FB5  F3      		di
+0FB6          		exx
+0FB7  7D      		mov	a,l
+0FB8          		exx
+0FB9          		stai
+0FBB          		lxix	08001h
+0FBF  C3FADF  		jmp	LOPAGE*256-FIXJ
+		
+0FC2  21C80F  	XCSERR:	lxi	h,CSEMSG
+0FC5  C3AE13  	tc4:	jmp	msgout
+		
+0FC8  0D0A0743	CSEMSG:	db	cr,lf,bell,'Checksum error!',0
+      6865636B
+      73756D20
+      6572726F
+      722100
+		
+		;*** The following block of code must be contiguous but is otherwise
+		;*** relocatable.
+0FDB  DD      	FIXJMP:	db 0DDH
+0FDC  7D      		mov	a,l ;;MOV A,XL
+0FDD  DD      		db 0ddh
+0FDE  B4      		ora	h ;;ORA XH
+0FDF  D340    		out	ctrl
+0006          	FIXJ EQU $-FIXJMP
+		;*** The following block of code is check-summed to prevent bad memory from
+		;*** causing program crash.
+0FE1          	MEMTEST: exx
+0FE2  62      		mov	h,d
+0FE3  2E00    		mvi	l,0
+0FE5  78      		mov	a,b
+0FE6          		exx
+0FE7  4F      		mov	c,a
+0FE8  0602    		mvi	b,2
+0FEA          		cstat
+0FF4  79      	DSP0:	mov	a,c
+0FF5  07      		rlc
+0FF6  07      		rlc
+0FF7  07      		rlc
+0FF8  07      		rlc
+0FF9  4F      		mov	c,a
+0FFA  E60F    		ani	00001111b
+0FFC  C690    		adi	90h
+0FFE  27      		daa
+0FFF  CE40    		aci	40h
+1001  27      		daa
+1002  D301    		out	console
+1004          		cstat
+100E  05      		dcr	b
+100F          		jrnz	DSP0
+1011  3E0D    		mvi	a,cr
+1013  D301    		out	console
+1015          		exx
+1016  78      		mov	a,b
+1017  77      	DMEM0:	mov	m,a
+1018  C601    		adi	1
+101A  27      		daa
+101B  2C      		inr	l
+101C          		jrnz	DMEM0
+101E  24      		inr	h
+101F  0D      		dcr	c
+1020          		jrnz	DMEM0
+1022  7C      		mov	a,h
+1023  92      		sub	d
+1024  4F      		mov	c,a
+1025  62      		mov	h,d
+1026  2E00    		mvi	l,0	;HL = starting address
+1028  78      		mov	a,b
+1029  BE      	DMEM1:	cmp	m
+102A          		jrnz	DYERR
+102C  C601    		adi	1
+102E  27      		daa
+102F  2C      		inr	l
+1030          		jrnz	DMEM1
+1032  24      		inr	h
+1033  0D      		dcr	c
+1034          		jrnz	DMEM1
+1036          		ldai
+1038  B7      		ora	a
+1039          		jrz	dm0
+103B  4F      		mov	c,a
+103C  DD      		db 0ddh
+103D  7D      		mov	a,l	;;MOV A,XL
+103E  E606    		ani	006h
+1040  0F      		rrc
+1041  3C      		inr	a
+1042  B9      		cmp	c
+1043          		jrnz	tc10
+1045  AF      		xra	a
+1046  87      	tc10:	add	a
+1047          		jrnz	tc11
+1049  3C      		inr	a
+104A  DD      	tc11:	db 0ddh
+104B  6F      		mov	l,a	;; MOV XL,A
+104C  7C      		mov	a,h
+104D  92      		sub	d
+104E  4F      		mov	c,a
+104F  3E01    		mvi	a,1
+1051  80      		add	b
+1052  27      		daa
+1053  47      		mov	b,a
+1054          		exx
+1055  16E0    		mvi	d,LOPAGE
+1057          		jr	dm1
+1059          	dm0:	exx
+105A  2100E0  		lxi	h,LOPAGE*256
+105D  110000  		lxi	d,0
+1060  013F01  		lxi	b,PGMLEN
+1063          		exx
+1064  7A      		mov	a,d
+1065  EEE0    		xri	LOPAGE
+1067  57      		mov	d,a
+1068          		jrz	NEXT0
+106A  4B      		mov	c,e
+106B          		jr	NEXT20
+106D  0EE0    	NEXT0:	mvi	c,LOPAGE
+106F  3E01    		mvi	a,1
+1071  80      		add	b
+1072  27      		daa
+1073  47      		mov	b,a
+1074          		exx
+1075  EB      		xchg
+1076          		exx
+1077          	NEXT20:	exx
+1078          		ldir
+107A  DD      	dm1:	db	0ddh
+107B  7C      		mov	a,h	;MOV A,XH
+107C  EEC0    		xri	BOTH
+107E  DD      		db	0ddh
+107F  67      		mov	h,a	;MOV XH,A
+1080  DD      		db	0ddh
+1081  B5      		ora	l	;ORA XL
+1082  D340    		out	ctrl
+1084  7A      		mov	a,d
+1085  E6F0    		ani	11110000b
+1087  67      		mov	h,a
+1088  2E00    		mvi	l,0
+108A  013F02  		lxi	b,PGMLEN+100H
+108D  AF      		xra	a
+108E  86      	CS0:	add	m
+108F  23      		inx	h
+1090  0D      		dcr	c
+1091          		jrnz	CS0
+1093          		djnz	CS0
+1095  4F      		mov	c,a
+1096          		exaf
+1097  B9      		cmp	c
+1098          		jrnz	CSERR
+109A          		exaf
+109B  7A      		mov	a,d
+109C  E6F0    		ani	11110000b
+109E  67      		mov	h,a
+109F  2E00    		mvi	l,0
+10A1  E9      		pchl
+		
+10A2  AE      	DYERR:	xra	m
+10A3  57      		mov	d,a
+10A4          		cstat
+10AE  3E0A    		mvi	a,lf
+10B0  D301    		out	console
+10B2          		cstat
+10BC  DD      		db 0ddh
+10BD  7D      		mov	a,l	;; MOV A,XL
+10BE  E606    		ani	110b
+10C0  0F      		rrc
+10C1  C630    		adi	'0'
+10C3  D301    		out	console
+10C5          		cstat
+10CF  3E2A    		mvi	a,'*'
+10D1  D301    		out	console
+10D3  0602    		mvi	b,2
+10D5          	DE1:	cstat
+10DF  7A      		mov	a,d
+10E0  07      		rlc
+10E1  07      		rlc
+10E2  07      		rlc
+10E3  07      		rlc
+10E4  57      		mov	d,a
+10E5  E60F    		ani	00001111b
+10E7  C690    		adi	90h
+10E9  27      		daa
+10EA  CE40    		aci	40h
+10EC  27      		daa
+10ED  D301    		out	console
+10EF          		djnz	DE1
+10F1          		jr	DEAD
+		
+10F3          	CSERR:	cstat
+10FD  3E0A    		mvi	a,lf
+10FF  D301    		out	console
+1101          		cstat
+110B  3E21    		mvi	a,'!'
+110D  D301    		out	console
+110F  AF      	DEAD:	xra	a
+1110  0600    		mvi	b,0
+1112  3D      	DEAD0:	dcr	a
+1113          		jrnz	DEAD0
+1115  3D      	tc22:	dcr	a
+1116          		jrnz	tc22
+1118          		djnz	DEAD0
+111A  3E07    		mvi	a,bell
+111C  D301    		out	console
+111E          		jr	DEAD
+013F          	PGMLEN	EQU	$-MEMTEST
+		;***************************************************************************
+		;*** End of block of code.
+		
+		
+1120  CD0114  	Lcomnd:	call	getaddr
+1123  DA620D  		jc	error
+1126          		bit	7,b
+1128  CA2E11  		jz	L5
+112B  2A0421  		lhld	addr0
+112E  220421  	L5:	shld	addr0
+1131  3EFF    		mvi	a,255
+1133  320821  		sta	count
+1136  CD0114  		call	getaddr
+1139  DA620D  		jc	error
+113C          		bit	7,b
+113E  CA4D11  		jz	L3
+1141  3E10    		mvi	a,16
+1143  320821  		sta	count
+1146  2A0421  		lhld	addr0
+1149  114000  		lxi	d,16*4
+114C  19      		dad	d
+114D  220621  	L3:	shld	addr1
+1150          		lded	addr0
+1154  CDA413  	L0:	call	crlf
+1157  CD8513  		call	taddr
+115A  CD9F13  		call	space
+115D  1A      		ldax	d
+115E  E6C0    		ani	11000000b
+1160  210412  		lxi	h,type$0
+1163          		jrz	XTRA
+1165  FE40    		cpi	01000000b
+1167          		jrz	ONEBYTE
+1169  FE80    		cpi	10000000b
+116B          		jrz	ONEBYTE
+116D  214412  		lxi	h,type$3
+1170  1A      	XTRA:	ldax	d
+1171  E63F    		ani	00111111b
+1173  85      		add	l
+1174  6F      		mov	l,a
+1175  3E00    		mvi	a,0
+1177  8C      		adc	h
+1178  67      		mov	h,a
+1179  7E      		mov	a,m
+117A  B7      		ora	a
+117B          		jrz	Z80I
+117D          		jr	L1
+117F          	ONEBYTE:
+117F  3E01    		mvi	a,1
+1181  47      	L1:	mov	b,a
+1182  1A      	L2:	ldax	d
+1183  CD8A13  		call	hexout
+1186  CD9F13  		call	space
+1189  13      		inx	d
+118A          		djnz	L2
+118C  3A0521  		lda	addr0+1
+118F          		sded	addr0
+1193  E680    		ani	10000000b
+1195          		jrz	L4
+1197  AA      		xra	d
+1198  E680    		ani	10000000b
+119A  C0      		rnz
+119B  2A0621  	L4:	lhld	addr1
+119E  CDB913  		call	check
+11A1  D8      		rc
+11A2  3A0821  		lda	count
+11A5  FEFF    		cpi	255
+11A7          		jrz	L0
+11A9  3D      		dcr	a
+11AA  320821  		sta	count
+11AD  C8      		rz
+11AE          		jr	L0
+		
+11B0  1A      	Z80I:	ldax	d
+11B1  FEFD    		cpi	0fdh
+11B3          		jrz	LX
+11B5  FEDD    		cpi	0ddh
+11B7          		jrz	LX
+11B9  FEED    		cpi	0edh
+11BB          		jrz	LZ
+11BD          	TWOBYTE:
+11BD  3E02    		mvi	a,2
+11BF          		jr	L1
+		
+11C1  13      	LZ:	inx	d
+11C2  1A      		ldax	d
+11C3  1B      		dcx	d
+11C4  E6C7    		ani	11000111b
+11C6  FE43    		cpi	01000011b
+11C8          		jrnz	TWOBYTE
+11CA  3E04    	FOURBY:	mvi	a,4
+11CC          		jr	L1
+		
+11CE  13      	LX:	inx	d
+11CF  1A      		ldax	d
+11D0  1B      		dcx	d
+11D1  FE34    		cpi	34h
+11D3          		jrz	THREEBY
+11D5  FE35    		cpi	35h
+11D7          		jrz	THREEBY
+11D9  FE21    		cpi	21h
+11DB          		jrz	FOURBY
+11DD  FE22    		cpi	22h
+11DF          		jrz	FOURBY
+11E1  FE2A    		cpi	2ah
+11E3          		jrz	FOURBY
+11E5  FE36    		cpi	36h
+11E7          		jrz	FOURBY
+11E9  FECB    		cpi	0cbh
+11EB          		jrz	FOURBY
+11ED  4F      		mov	c,a
+11EE  E6C7    		ani	11000111b
+11F0  FE46    		cpi	46h
+11F2          		jrz	THREEBY
+11F4  FE86    		cpi	86h
+11F6          		jrz	THREEBY
+11F8  79      		mov	a,c
+11F9  E6F8    		ani	11111000b
+11FB  FE70    		cpi	70h
+11FD          		jrnz	TWOBYTE
+11FF          	THREEBY:
+11FF  3E03    		mvi	a,3
+1201  C38111  		jmp	L1
+		
+1204          	type$0:
+1204  01030101		db	1,3,1,1,1,1,2,1,1,1,1,1,1,1,2,1
+      01010201
+      01010101
+      01010201
+1214  02030101		db	2,3,1,1,1,1,2,1,2,1,1,1,1,1,2,1
+      01010201
+      02010101
+      01010201
+1224  02030301		db	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
+      01010201
+      02010301
+      01010201
+1234  02030301		db	2,3,3,1,1,1,2,1,2,1,3,1,1,1,2,1
+      01010201
+      02010301
+      01010201
+		
+1244          	type$3:
+1244  01010303		db	1,1,3,3,3,1,2,1,1,1,3,0,3,3,2,1
+      03010201
+      01010300
+      03030201
+1254  01010302		db	1,1,3,2,3,1,2,1,1,1,3,2,3,0,2,1
+      03010201
+      01010302
+      03000201
+1264  01010301		db	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
+      03010201
+      01010301
+      03000201
+1274  01010301		db	1,1,3,1,3,1,2,1,1,1,3,1,3,0,2,1
+      03010201
+      01010301
+      03000201
+		
+1284          	Dcomnd:		;display memory
+1284  CD0114  		call	getaddr ;get address to start at
+1287  DA620D  		jc	error	;error if non-hex character
+128A          		bit	7,b	;test for no address (different from 0000)
+128C  C2620D  		jnz	error	;error if no address was entered
+128F  220421  		shld	addr0	;save starting address
+1292  CD0114  		call	getaddr ;get stop address
+1295  DA620D  		jc	error	;error if non-hex character
+1298          		bit	7,b	;test for no entry
+129A  C2620D  		jnz	error	;error if no stop address
+129D          		lded	addr0	;get start address into (DE)
+12A1  CDA413  	dis0:	call	crlf	;start on new line
+12A4  CD8513  		call	taddr	;print current address
+12A7  CD9F13  		call	space	;delimit it from data
+12AA  0610    		mvi	b,16	;display 16 bytes on each line
+12AC  1A      	dis1:	ldax	d	;get byte to display
+12AD  13      		inx	d	;step to next byte
+12AE  CD8A13  		call	hexout	;display this byte in HEX
+12B1  CD9F13  		call	space	;delimit it from others
+12B4  7A      		mov	a,d
+12B5  B3      		ora	e	;if we reach 0000, stop. (don't wrap around)
+12B6          		jrz	dis2
+12B8  CDB913  		call	check	;test for past stop address
+12BB          		jrc	dis2	;quit if past stop address
+12BD          		djnz	dis1	;else do next byte on this line
+12BF  CD9F13  	dis2:	call	space	;delimit it from data
+12C2  CD9F13  		call	space
+12C5          		lded	addr0
+12C9  0610    		mvi	b,16	;display 16 bytes on each line
+12CB  1A      	dis3:	ldax	d	;get byte to display
+12CC  13      		inx	d	;step to next byte
+12CD  0E2E    		mvi	c,'.'
+12CF  FE20    		cpi	' '
+12D1          		jrc	dis4
+12D3  FE7F    		cpi	'~'+1
+12D5          		jrnc	dis4
+12D7  4F      		mov	c,a
+12D8  CD6514  	dis4:	call	conout
+12DB  7A      		mov	a,d
+12DC  B3      		ora	e	;if we reach 0000, stop. (don't wrap around)
+12DD  C8      		rz
+12DE  CDB913  		call	check	;test for past stop address
+12E1  D8      		rc	;quit if past stop address
+12E2          		djnz	dis3	;else do next byte on this line
+12E4          		sded	addr0
+12E8          		jr	dis0	;when line is finished, start another
+		
+12EA          	Scomnd: 		;substitute (set) memory
+12EA  CD0114  		call	getaddr ;get address to start substitution at
+12ED  DA620D  		jc	error	;error if non-hex character
+12F0          		bit	7,b	;test for no entry
+12F2  C2620D  		jnz	error	;error if no address
+12F5  EB      		xchg		;put address in (DE)
+12F6  CDA413  	sb1:	call	crlf	;start on new line
+12F9  CD8513  		call	taddr	;print address
+12FC  CD9F13  		call	space	;and delimit it
+12FF  1A      		ldax	d	;get current value of byte
+1300  CD8A13  		call	hexout	;and display it
+1303  CD9F13  		call	space	;delimit it from user's (posible) entry
+1306  0600    		mvi	b,0	;zero accumilator for user's entry
+1308  CD3F14  	sb2:	call	conin	;get user's first character
+130B  FE0D    		cpi	cr	;if CR then skip to next byte
+130D          		jrz	foward
+130F  FE20    		cpi	' '	;or if Space then skip to next
+1311          		jrz	foward
+1313  FE2D    		cpi	'-'	;if Minus then step back to previous address
+1315          		jrz	bakwrd
+1317  FE2E    		cpi	'.'	;if Period then stop substitution
+1319  C8      		rz
+131A  CD2C14  		call	hexcon	;if none of the above, should be HEX digit
+131D          		jrc	error0	;error if not
+131F          		jr	sb3	;start accumilating HEX digits
+1321  CD2C14  	sb0:	call	hexcon	;test for HEX digit
+1324          		jrc	error1	;error if not HEX
+1326          	sb3:	slar	b	;roll accumilator to receive new digit
+1328          		slar	b
+132A          		slar	b
+132C          		slar	b
+132E  B0      		ora	b	;merge in new digit
+132F  47      		mov	b,a
+1330  CD3F14  	sb4:	call	conin	;get next character
+1333  FE0D    		cpi	cr	;if CR then put existing byte into memory
+1335          		jrz	putbyte ;  and step to next.
+1337  FE2E    		cpi	'.'
+1339  C8      		rz
+133A  FE7F    		cpi	del	;if DEL then restart at same address
+133C          		jrz	sb1
+133E          		jr	sb0	;else continue entering hex digits
+1340          	putbyte:
+1340  78      		mov	a,b	;store accumilated byte in memory
+1341  12      		stax	d
+1342          	foward:
+1342  13      		inx	d	;step to next location
+1343          		jr	sb1	;and allow substitution there
+		
+1345          	bakwrd:
+1345  1B      		dcx	d	;move address backward one location
+1346          		jr	sb1
+		
+1348  0E07    	error0:	mvi	c,bell	;user's entry was not valid, beep and continue
+134A  CD6514  		call	conout
+134D          		jr	sb2
+134F  0E07    	error1:	mvi	c,bell	;same as above but for different section of routine
+1351  CD6514  		call	conout
+1354          		jr	sb4
+		
+1356          	Gcomnd: 		;jump to address given by user
+1356  CD0114  		call	getaddr ;get address to jump to
+1359  DA620D  		jc	error	;error if non-hex character
+135C          		bit	7,b	;test for no entry
+135E  C2620D  		jnz	error	;error if no address entered
+1361  CDA413  		call	crlf	;on new line,
+1364  0E47    		mvi	c,'G'	;display "GO aaaa?" to ask
+1366  CD6514  		call	conout	;user to verify that we should
+1369  0E4F    		mvi	c,'O'	;jump to this address (in case user
+136B  CD6514  		call	conout	;made a mistake we should not blindly
+136E  CD9F13  		call	space	;commit suicide)
+1371  EB      		xchg
+1372  CD8513  		call	taddr
+1375  CD9F13  		call	space
+1378  0E3F    		mvi	c,'?'
+137A  CD6514  		call	conout
+137D  CD3F14  		call	conin	;wait for user to type "Y" to
+1380  FE59    		cpi	'Y'	;indicate that we should jump.
+1382  C0      		rnz		;abort if response was not "Y"
+1383  EB      		xchg
+1384  E9      		pchl		;else jump to address
+		
+		
+		*********************************************************
+		**  Utility subroutines
+		*********************************************************
+		
+1385  7A      	taddr:	mov	a,d	;display (DE) at console in HEX
+1386  CD8A13  		call	hexout	;print HI byte in HEX
+1389  7B      		mov	a,e	;now do LO byte
+138A  F5      	hexout:	push	psw	;output (A) to console in HEX
+138B  07      		rlc		;get HI digit in usable (LO) position
+138C  07      		rlc
+138D  07      		rlc
+138E  07      		rlc
+138F  CD9313  		call	nible	;and display it
+1392  F1      		pop	psw	;get LO digit back and display it
+1393  E60F    	nible:	ani	00001111b	;display LO 4 bits of (A) in HEX
+1395  C690    		adi	90h	;algorithm to convert 4-bits to ASCII
+1397  27      		daa
+1398  CE40    		aci	40h
+139A  27      		daa
+139B  4F      		mov	c,a	;display ASCII digit
+139C  C36514  		jmp	conout
+		
+139F  0E20    	space:	mvi	c,' '	;send an ASCII blank to console
+13A1  C36514  		jmp	conout
+		
+13A4  0E0D    	crlf:	mvi	c,cr	;send Carriage-Return/Line-Feed to console
+13A6  CD6514  		call	conout
+13A9  0E0A    		mvi	c,lf
+13AB  C36514  		jmp	conout
+		
+13AE  7E      	msgout:	mov	a,m	;send string to console, terminated by 00
+13AF  B7      		ora	a
+13B0  C8      		rz
+13B1  F8      		rm
+13B2  4F      		mov	c,a
+13B3  CD6514  		call	conout
+13B6  23      		inx	h
+13B7          		jr	msgout
+		
+13B9  E5      	check:	push	h	;non-destuctive compare HL:DE
+13BA  B7      		ora	a
+13BB          		dsbc	d
+13BD  E1      		pop	h
+13BE  C9      		ret
+		
+13BF  210921  	linein:	lxi	h,line	;get string of characters from console, ending in CR
+13C2  CD3F14  	li0:	call	conin	;get a character
+13C5  FE08    		cpi	bs	;allow BackSpacing
+13C7          		jrz	backup
+13C9  FE09    		cpi	tab	;ignore tabs (they foul BackSpace routine)
+13CB          		jrz	li0
+13CD  77      		mov	m,a	;put character in line nuffer
+13CE  23      		inx	h
+13CF  FE0D    		cpi	cr	;check for end of line
+13D1          		jrz	li1	;finish up if at end of input
+13D3  7D      		mov	a,l	;else check for pending buffer overflow
+13D4  D609    		sui	line mod 256
+13D6  FE40    		cpi	64
+13D8  C8      		rz		;stop if buffer full
+13D9          		jr	li0	;if not full, keep getting characters
+		
+13DB  7D      	backup:	mov	a,l	;(destructive) BackSpacing
+13DC  FE09    		cpi	line mod 256	;test if at beginning of line
+13DE          		jrz	li0	;can't backspace past start of line
+13E0  0E08    		mvi	c,bs	;output BS," ",BS to erase character on screen
+13E2  CD6514  		call	conout	;and put cursor back one position
+13E5  CD9F13  		call	space
+13E8  0E08    		mvi	c,bs
+13EA  CD6514  		call	conout
+13ED  2B      		dcx	h	;step buffer pointer back one
+13EE          		jr	li0	;and continue to get characters
+		
+13F0  0E0D    	li1:	mvi	c,cr	;display CR so user knows we got it
+13F2  C36514  		jmp	conout	;then return to calling routine
+		
+13F5  7B      	char:	mov	a,e	;remove a character from line buffer,
+13F6  D609    		sui	line mod 256	;testing for no more characters
+13F8  D640    		sui	64
+13FA  C8      		rz		;return [ZR] condition if at end of buffer
+13FB  1A      		ldax	d
+13FC  FE0D    		cpi	cr
+13FE  C8      		rz		;also return [ZR] if at end of line
+13FF  13      		inx	d	;else step to next character
+1400  C9      		ret		;and return [NZ]
+		
+1401          	getaddr:		;extract address from line buffer (dilimitted by " ")
+1401          		setb	7,b	;flag to detect no address entered
+1403  210000  		lxi	h,0
+1406  CDF513  	ga2:	call	char
+1409  C8      		rz		;end of buffer/line before a character was found
+140A  FE20    		cpi	' '	;skip all leading spaces
+140C          		jrnz	ga1	;if not space, then start getting HEX digits
+140E          		jr	ga2	;else if space, loop untill not space
+		
+1410  CDF513  	ga0:	call	char
+1413  C8      		rz
+1414  CD2C14  	ga1:	call	hexcon	;start assembling digits into 16 bit accumilator
+1417          		jrc	chkdlm	;check if valid delimiter before returning error.
+1419          		res	7,b	;reset flag
+141B  D5      		push	d	;save buffer pointer
+141C  5F      		mov	e,a
+141D  1600    		mvi	d,0
+141F  29      		dad	h	;shift "accumilator" left 1 digit
+1420  29      		dad	h
+1421  29      		dad	h
+1422  29      		dad	h
+1423  19      		dad	d	;add in new digit
+1424  D1      		pop	d	;restore buffer pointer
+1425          		jr	ga0	;loop for next digit
+		
+1427  FE20    	chkdlm: cpi	' '	;blank is currently the only valid delimiter
+1429  C8      		rz
+142A  37      		stc
+142B  C9      		ret
+		
+142C          	hexcon: 		;convert ASCII character to HEX digit
+142C  FE30    		cpi	'0'	;must be .GE. "0"
+142E  D8      		rc
+142F  FE3A    		cpi	'9'+1	;and be .LE. "9"
+1431          		jrc	ok0	;valid numeral.
+1433  FE41    		cpi	'A'	;or .GE. "A"
+1435  D8      		rc
+1436  FE47    		cpi	'F'+1	;and .LE. "F"
+1438  3F      		cmc
+1439  D8      		rc		;return [CY] if not valid HEX digit
+143A  D607    		sui	'A'-'9'-1	;convert letter
+143C  D630    	ok0:	sui	'0'	;convert (numeral) to 0-15 in (A)
+143E  C9      		ret
+		
+		
+		**********************************************************
+		** Physical I/O subroutines
+		**********************************************************
+		
+143F  AF      	conin:	xra	a	;wait for a character from console
+1440  D303    		out	constat ;command SIO to give status
+1442  DB03    		in	constat ;get status
+1444  E601    		ani	00000001b	;test for character received
+1446          		jrz	conin	;loop until a byte is ready
+1448  DB01    		in	console ;get character
+144A  E67F    		ani	01111111b	;discard parity bit
+144C  FE1B    		cpi	esc	;check for abort (ESC) key
+144E  CA3D0D  		jz	cilp	;if ESC then re-start monitor
+1451  FE20    		cpi	' '	;test for Control Characters
+1453  D8      		rc		;if Control character, don't echo
+1454  FE61    		cpi	'a'	;do Lower case to Upper case conversion
+1456          		jrc	ci0
+1458  FE7B    		cpi	'z'+1
+145A          		jrnc	ci0
+145C  D620    		sui	'a'-'A'
+145E  F5      	ci0:	push	psw	;echo character to console
+145F  4F      		mov	c,a
+1460  CD6514  		call	conout
+1463  F1      		pop	psw
+1464  C9      		ret
+		
+1465  AF      	conout: xra	a	;output register (C) to console
+1466  D303    		out	constat ;command SIO to give status
+1468  DB03    		in	constat ;get status
+146A          		bit	0,a	;check input status
+146C          		jrnz	break
+146E  E604    		ani	00000100b	;check for Tx Buffer Empty
+1470          		jrz	conout	;loop until Empty
+1472  79      		mov	a,c
+1473  D301    		out	console ;send character to SIO
+1475  C9      		ret
+		
+1476  DB01    	break:	in	console
+1478  E67F    		ani	01111111b
+147A  FE13    		cpi	13h	;ctrl-S
+147C  C23D0D  		jnz	cilp
+147F  AF      	br0:	xra	a
+1480  D303    		out	constat
+1482  DB03    		in	constat
+1484  E601    		ani	00000001b
+1486          		jrz	br0
+1488  DB01    		in	console
+148A  E67F    		ani	01111111b
+148C  FE03    		cpi	03h	;ctrl-C
+148E  CA3D0D  		jz	cilp
+1491          		jr	conout
+		
+3533          	AVERS	equ	(((VERS/10) and 0fh)+'0')+((VERS mod 10)+'0')*256
+		
+1493  0D0A4D4D	signon:	db	cr,lf,'MMS 77422 monitor M2001-'
+      53203737
+      34323220
+      6D6F6E69
+      746F7220
+      4D323030
+      312D
+14AD  3335    		dw	AVERS
+14AF  00      		db	0
+14B0  0D0A3A00	prompt:	db	cr,lf,':',0
+		
+			rept	RAM-$
+0000          	 if $ gt EPROM+EPROML
+		 endif
+		
+		**********************************************************
+		** Varibles (RAM area)
+		**********************************************************
+		
+2000          		org	RAM
+2000          		ds	128
+		stack:	ds	0
+2080          	sioA:	ds	3	;channel reset and wr4 select.
+2083          	chAwr4: ds	2	;wr4 must be programmed before 3,5,6,7
+2085          	chAwr1: ds	2	;
+2087          	maddr:
+2087          	chAwr6: ds	2	;then 6,7 before 3,5
+2089          	chAwr7: ds	2	;
+208B          	chAwr5: ds	2	;
+208D          	chAwr3: ds	1	;
+000E          	lenA	equ	$-sioA
+		
+208E          	sioB:	ds	1
+208F          	chBwr2: ds	2
+2091          	chBwr4: ds	2
+2093          	chBwr1: ds	2
+2095          	chBwr5: ds	2
+2097          	chBwr3: ds	1
+000A          	lenB	equ	$-sioB
+		
+0000          	 if $ gt RAM+0E1H
+		 endif
+20E1          		org	RAM+0E1H	;
+20E1          	vector: 		;must start at 16 byte boundary and end at "FF"
+20E1          	TxEB:	ds	2	;transmitter B empty
+20E3          	ExtB:	ds	2	;external status B
+20E5          	RxAB:	ds	2	;receiver B character available 
+20E7          	SpcB:	ds	2	;special recieve condition B
+20E9          	TxEA:	ds	2	;transmitter A empty
+20EB          	ExtA:	ds	2	;external status A
+20ED          	RxAA:	ds	2	;receiver A character available 
+20EF          	SpcA:	ds	2	;special recieve condition A
+20F1          		ds	2
+20F3          		ds	2
+20F5          		ds	2
+20F7          		ds	2
+20F9          		ds	2
+20FB          		ds	2
+20FD          		ds	2
+20FF          	ticker: ds	2	;tic-counter for MP/M, must be at address xxFF
+0020          	numvec	equ	$-vector
+		
+2101          	ctl$image: ds	1	;image of general control output port
+		
+2102          	savstk:	ds	2
+		
+2104          	addr0:	ds	2	;temporary 16 bit storage
+2106          	addr1:	ds	2	; ''
+2108          	count:	ds	1
+2109          	line:	ds	64	;input line buffer
+		
+2149          	spcstk:	ds	2	; saved in special recv condition intr
+214B          	destin:	ds	1	;default destination of any messages
+		;--- Outgoing (to network) message frames --------------------------
+214C          	RESmsg:	ds	3
+214F          	ACKmsg:    ds	3	;DEST,CODE,SORC  (DEST is the only variable)
+2152          	NAKmsg:	ds	3
+2155          	BSYmsg:	ds	4
+2159          	POLLmsg:	ds	3
+215C          	PAKmsg:	ds	9	;printer acknowledge, CP/NET form
+2165          		ds	1
+2166          	RETmsg:	ds	10	;
+2170          		ds	1
+		
+2171          	TOKEN0msg: ds	3	;DEST,CODE,SORC
+2174          	net$table:
+2174          	nxt$sp:    ds	1	;next server to poll
+2175          	srvtbl:    ds	64	;status of all server nodes.
+0044          	tk0ml	equ	$-TOKEN0msg
+21B5          	SEQtbl:	ds	64
+		;-------------------------------------------------------------------
+21F5          	nxsrva:	ds	2
+21F7          	nxsrvn:	ds	1
+21F8          	ntype:	ds	1	; current node type/role, in high 4 bits
+		
+21F9          	nstat:	ds	1
+		
+21FA          	ctime:	ds	2
+21FC          	ltime:	ds	1
+		
+21FD          	deadct0:	ds	2
+21FF          	deadctr:	ds	2
+		
+2201          	eops:	ds	1	;End Of Process flags from DMA
+		
+0007          	hdrsiz	equ	7
+		
+2202          	ch2hdr:	ds	hdrsiz
+2209          	stshdr:	ds	hdrsiz
+2210          	rsphdr:	ds	hdrsiz
+2217          	cpnhdr:	ds	hdrsiz
+		
+221E          	from89:	ds	1
+221F          	outflg:	ds	1
+2220          	cpnflg:	ds	1
+2221          	didalt:	ds	1
+2222          	stsflg:	ds	1
+2223          	didsts:	ds	1
+2224          	rspflg:	ds	1
+2225          	didrsp:	ds	1
+2226          	to89:	ds	1
+2227          	dbgflg:	ds	1
+		
+2228          	ch3hda:	ds	2
+222A          	ch3adr:	ds	2
+222C          	ch3siz:	ds	2
+		
+222E          	pflag:	ds	1
+		
+222F          	retry:	ds	1
+2230          	prtflg:	ds	1
+2231          	endlst:	ds	1
+2232          	retflg:	ds	1
+		
+2233          	ch2alt:	ds	2
+2235          	ch2pri:	ds	2
+2237          	ch2siz:	ds	2
+		
+2239          	altaddr: ds	2	;alternate address for receive from network
+223B          	ch0addr: ds	2	;primary address for receive from network
+223D          	ch0size: ds	2	;size of message in primary buffer
+		
+0002          	bufsiz	equ	2	;I/O buffer sizes, in pages
+		
+223F          	hstbf:	ds	bufsiz*256	;
+243F          	ch2bf:	ds	bufsiz*256	;output (Z89 to network) buffer
+263F          	ch3bf:	ds	bufsiz*256	;input (from network to Z89) buffer
+283F          	netbf:	ds	bufsiz*256	;general network message buffer
+		
+2A3F          	prtpt0:	ds	2
+2A41          	prtpt1:	ds	2
+007F          	bufmsk	equ	01111111b	;32K circular buffer
+		buffer: ds	0
+		;--------- end of SUF422.ASM ---------
+2A43          		end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   471	symbols
+  8192	bytes
+
+  3547	macro calls
+  3826	macro bytes
+     0	invented symbols

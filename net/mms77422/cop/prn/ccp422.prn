@@ -1,0 +1,1278 @@
+ 6130 =         VERS equ '0a' ;  October 28, 1982  10:30  drm  "CCP422.ASM"
+                
+                	maclib	Z80
+                
+                ; Taken from MMS CCP 2.242a on 9-23-82
+                ; Copyright (C) 1982 Magnolia Microsystems
+                ;
+                ; System constants
+                ;
+ 003E =         NLINES	EQU	62		; # lines on LST:
+ 000D =         CR	EQU	0DH		;carriage return
+ 000A =         LF	EQU	0AH		;line feed
+ 0009 =         TAB	EQU	9		;tab
+ 000C =         FF	EQU	0CH		;form feed
+ 0060 =         chr422	EQU	'`'	;character to direct program to execute in 77422
+ 007E =         chrz89	EQU	'~'	;character to force execution in Z89
+                ;
+                ; System memory locations
+                ;
+ 0004 =         UDFLAG	EQU	4		; user # is in high nibble, disk in low
+ 0005 =         BDOS	EQU	5		;CP/M BDOS
+ 0080 =         TBUFF	EQU	80H		;Temporary buffer
+ 005C =         TFCB	EQU	5CH		;Temporary FCB
+ 0100 =         TPA	EQU	100H		;User programs
+                ;
+                ;	System Calls
+                ;
+ 0001 =         CONINF	EQU	1		; Console Input
+ 0002 =         OUTCON	EQU	2		; CONSOLE OUTPUT
+ 0005 =         OUTLST	EQU	5		; LIST OUTPUT
+ 0006 =         CONIO	EQU	6		; DIRECT CONSOLE I/O
+ 000A =         RDCON	EQU	10		; READ CONSOLE BUFFER
+ 000B =         CONSTF	EQU	11		; Console Status
+ 000D =         DSKRES	EQU	13		; DISK RESET
+ 000E =         DSKSEL	EQU	14		; SELECT DISK
+ 000F =         OPNFIL	EQU	15		; OPEN FILE
+ 0010 =         CLOFIL	EQU	16		; CLOSE FILE
+ 0011 =         SFIRST	EQU	17		; SEARCH FOR FIRST
+ 0012 =         SNEXT	EQU	18		; SEARCH FOR NEXT
+ 0013 =         DELFIL	EQU	19		; DELETE FILE
+ 0014 =         RDSEQ	EQU	20		; READ SEQUENTIAL
+ 0015 =         WRTSEQ	EQU	21		; WRITE SEQUENTIAL
+ 0016 =         MAKE	EQU	22		; MAKE FILE
+ 0017 =         RENAME	EQU	23		; RENAME A FILE
+ 0019 =         CURDSK	EQU	25		; GET CURRENT DISK
+ 001A =         SETDMA	EQU	26		; SET DMA ADDRESS
+ 0020 =         USERN	EQU	32		; GET/SET USER NUMBER
+                
+                	cseg
+ 0000           	ORG	0
+ 0000 C32303    @CCP:	JMP	CCP
+ 0003 C31F03    	JMP	CCP1
+                ;
+                ;  Input command line and "auto" command
+                ;
+                
+ 0006 8000202020MBUFF:	DB	128,0,'                                        '
+ 0030 2020202020	db	'                                        '
+ 0058 2020202020	db	'                                        '
+ 0080 2020202020	db	'        '
+ 0007 =         CBUFF	equ	MBUFF+1
+ 0008 =         CIBUFF	equ	MBUFF+2
+                
+ 0088 0000000000	dw	0,0,0,0,0,0,0,0,0,0	;zero out the stack.
+ 009C           STACK:	ds	0		;top of stack.
+                
+ 009C 0800      CIBPTR:  DW	CIBUFF		; pointer to command input buffer
+ 009E 0800      CIPTR:	 DW	CIBUFF		; current pointer
+ 00A0 FF        PPROMPT: DB	0FFH		;reset this to disable one (1) outputting of
+                				;the prompt (use for answers to questions that
+                				;require no prompt) in REDBUF.
+                ;
+                ;  I/O Utility Routines
+                ;
+                SPACER:
+ 00A1 3E20      	MVI	A,' '		;set a space
+                ;continues into CONOUT
+                CONOUT:
+ 00A3 C5        	PUSH	B
+ 00A4 E5        	PUSH	H
+ 00A5 0E02      	MVI	C,OUTCON
+ 00A7 5F        OUTPUT: MOV	E,A
+ 00A8 CD0500    	CALL	BDOS
+ 00AB E1        	POP	H
+ 00AC C1        	POP	B
+ 00AD C9        	RET
+                
+ 00AE C5        LSTOUT: PUSH	B
+ 00AF E5        	PUSH	H
+ 00B0 0E05      	MVI	C,OUTLST
+                	JR	OUTPUT
+ 00B2+18F3      	DB	18H,OUTPUT-$-1
+                
+ 00B4 3E0D      CRLF:	MVI	A,CR
+ 00B6 CDA300    	CALL	CONOUT
+ 00B9 3E0A      	MVI	A,LF
+                	JR	CONOUT
+ 00BB+18E6      	DB	18H,CONOUT-$-1
+                
+ 00BD E3        PRINT:	XTHL			; get ptr to string
+ 00BE F5        	PUSH	PSW
+ 00BF CDB400    	CALL	CRLF
+ 00C2 CDC800    	CALL	PRIN1
+ 00C5 F1        	POP	PSW
+ 00C6 E3        	XTHL			; restore HL and ret adr
+ 00C7 C9        	RET
+                
+ 00C8 7E        PRIN1:	MOV	A,M		; get next char
+ 00C9 23        	INX	H
+ 00CA B7        	ORA	A		; done if 0
+ 00CB C8        	RZ
+ 00CC CDA300    	CALL	CONOUT
+                	JR	PRIN1
+ 00CF+18F7      	DB	18H,PRIN1-$-1
+                
+ 00D1 C5        BDOSB:	PUSH	B
+ 00D2 CD0500    	CALL	BDOS
+ 00D5 C1        	POP	B
+ 00D6 C9        	RET
+                
+ 00D7 0E0D      RESET:	MVI	C,DSKRES
+                	JR	BDOSB
+ 00D9+18F6      	DB	18H,BDOSB-$-1
+                
+ 00DB 5F        LOGIN:	MOV	E,A
+ 00DC 0E0E      	MVI	C,DSKSEL
+                	JR	BDOSB
+ 00DE+18F1      	DB	18H,BDOSB-$-1
+                
+ 00E0 AF        OPENF:	XRA	A
+ 00E1 328907    	STA	FCBCR
+ 00E4 116907    	LXI	D,FCBDN
+ 00E7 0E0F      OPEN:	MVI	C,OPNFIL
+ 00E9 CD0500    GRBDOS: CALL	BDOS
+ 00EC 3C        	INR	A		; set Z flag if error (0FFH returned)
+ 00ED C9        	RET
+                
+ 00EE 0E10      CLOSE:	MVI	C,CLOFIL
+                	JR	GRBDOS
+ 00F0+18F7      	DB	18H,GRBDOS-$-1
+                
+ 00F2 116907    SEARF:	LXI	D,FCBDN 	; specify fcb
+ 00F5 0E11      SEAR1:	MVI	C,SFIRST
+                	JR	GRBDOS
+ 00F7+18F0      	DB	18H,GRBDOS-$-1
+                
+ 00F9 0E12      SEARN:	MVI	C,SNEXT
+                	JR	GRBDOS
+ 00FB+18EC      	DB	18H,GRBDOS-$-1
+                
+ 00FD 0E13      DELETE: MVI	C,DELFIL
+                	JR	BDOSB
+ 00FF+18D0      	DB	18H,BDOSB-$-1
+                
+ 0101 116907    READF:	LXI	D,FCBDN
+ 0104 0E14      READ:	MVI	C,RDSEQ
+ 0106 CDD100    GOBDOS: CALL	BDOSB		; preserve B
+ 0109 B7        	ORA	A
+ 010A C9        	RET
+                
+ 010B 0E15      WRITE:	MVI	C,WRTSEQ
+                	JR	GOBDOS
+ 010D+18F7      	DB	18H,GOBDOS-$-1
+                
+ 010F 0E16      CREATE: MVI	C,MAKE
+                	JR	GRBDOS
+ 0111+18D6      	DB	18H,GRBDOS-$-1
+                
+ 0113 1EFF      GETUSR: MVI	E,0FFH		; get curr user #
+ 0115 0E20      SETUSR: MVI	C,USERN 	; set/get user
+                	JR	BDOSB
+ 0117+18B8      	DB	18H,BDOSB-$-1
+                
+ 0119 0E19      GETDRV: MVI	C,CURDSK
+                	JR	BDOSB
+ 011B+18B4      	DB	18H,BDOSB-$-1
+                
+ 011D 118000    DEFDMA: LXI	D,80H
+ 0120 0E1A      DMASET: MVI	C,SETDMA
+                	JR	BDOSB
+ 0122+18AD      	DB	18H,BDOSB-$-1
+                
+                ;  set user/disk flag to curr user and default disk
+                ;
+ 0124 CD1301    SETUD:	CALL	GETUSR		; get # of curr user
+ 0127 87        	ADD	A		; to high nybble
+ 0128 87        	ADD	A
+ 0129 87        	ADD	A
+ 012A 87        	ADD	A
+ 012B 218D07    	LXI	H,TDRIVE	; DEFDRV to low nybble
+ 012E B6        	ORA	M		; mask in
+ 012F 320400    	STA	UDFLAG		; set user/disk #
+ 0132 C9        	RET
+                
+                ;	Set user/disk to user 0 & DEFDRV
+                ;
+ 0133 CD2401    SETU0D: CALL	SETUD
+ 0136 7E        	MOV	A,M
+                	JR	LOGIN
+ 0137+18A2      	DB	18H,LOGIN-$-1
+                
+                ;	Conv char in A to uppercase
+                ;
+ 0139 FE61      UCASE:	CPI	'a'
+ 013B D8        	RC
+ 013C FE7B      	CPI	'z'+1
+ 013E D0        	RNC
+ 013F E65F      	ANI	5FH
+ 0141 C9        	RET
+                
+                ;	Input next cmd to CCP
+                ;
+ 0142 3A4707    REDBUF: LDA	RNGSUB		; sub file active?
+ 0145 B7        	ORA	A		; 0=no
+                	JRZ	RB1		; get line from console if not
+ 0146+284D      	DB	28H,RB1-$-1
+ 0148 114807    	LXI	D,SUBFCB	; OPEN $$$.sub
+ 014B CDE700    	CALL	OPEN
+                	JRZ	RB1		; erase sub if EOF & get cmd
+ 014E+2845      	DB	28H,RB1-$-1
+ 0150 114807    	LXI	D,SUBFCB	; point to $$$.SUB fcb.
+ 0153 1A        	LDAX	D		; if drive # is default (00), replace w/TDRIVE
+ 0154 B7        	ORA	A		; now that $$$.SUB has been found.
+                	JRNZ	NOTDEF
+ 0155+2005      	DB	20H,NOTDEF-$-1
+ 0157 3A8D07    	LDA	TDRIVE		; fix drive number
+ 015A 3C        	INR	A		; change to range 1-16 from 0-15.
+ 015B 12        	STAX	D
+ 015C 3A5707    NOTDEF: LDA	SUBFRC		; get value of last rec in file
+ 015F 3D        	DCR	A		; pt to next to last rec
+ 0160 326807    	STA	SUBFCR		; save new last rec val
+ 0163 114807    	LXI	D,SUBFCB	; read last rec
+ 0166 CD0401    	CALL	READ
+                	JRNZ	RB1		; abort sub if err during read
+ 0169+202A      	DB	20H,RB1-$-1
+ 016B 110700    	LXI	D,CBUFF 	; copy last rec to CBUFF
+ 016E 218000    	LXI	H,TBUFF 	; from TBUFF
+ 0171 018000    	lxI	B,128		; # of bytes
+                	ldir
+ 0174+EDB0      	DB	0EDH,0B0H
+ 0176 215607    	LXI	H,SUBFs2	; set s2 to 0
+ 0179 3600      	MVI	M,0
+ 017B 23        	INX	H		; dec rec count of sub file
+ 017C 35        	DCR	M
+ 017D 114807    	LXI	D,SUBFCB	 ; close $$$.sub
+ 0180 CDEE00    	CALL	CLOSE
+                	JRZ	RB1		; abort $$$.sub if error
+ 0183+2810      	DB	28H,RB1-$-1
+ 0185 CD7F03    	CALL	PROMPT		;print the prompt if PPROMPT is not reset.
+ 0188 210800    	LXI	H,CIBUFF	 ; PRINT cmd line from $$$.sub
+ 018B CDC800    	CALL	PRIN1
+ 018E CDC101    	CALL	BREAK		; check for abort
+                	JRZ	CNVBUF		; if <null> (no abort)
+ 0191+2816      	DB	28H,CNVBUF-$-1
+                	JR	ERREND		; kill $$$.SUB and restart CCP
+ 0193+186E      	DB	18H,ERREND-$-1
+                
+                ;	Input cmd from console
+                ;
+ 0195 CDCF01    RB1:	CALL	SUBKIL		; erase $$$.sub if present
+ 0198 CD3301    	CALL	SETU0D		; set user & disk
+ 019B CD7F03    	CALL	PROMPT		;print the prompt, if PPROMPT is not reset.
+ 019E 0E0A      	MVI	C,RDCON 	; read cmd line from user
+ 01A0 110600    	LXI	D,MBUFF
+ 01A3 CD0500    	CALL	BDOS
+ 01A6 CD3301    	CALL	SETU0D		; set curr disk # in lower params
+                
+                ;	Capitalize string in CBUFF
+                ;
+ 01A9 210700    CNVBUF: LXI	H,CBUFF 	; pt to user's cmd
+ 01AC 46        	MOV	B,M		; char count in b
+ 01AD 04        	INR	B		;pre-increment character count for test
+ 01AE 23        CB1:	INX	H		;bump character pointer
+ 01AF 05        	DCR	B		;test for end of loop
+                	JRZ	CB2		;jump if so
+ 01B0+2807      	DB	28H,CB2-$-1
+ 01B2 7E        	MOV	A,M		; capitalize cmd char
+ 01B3 CD3901    	CALL	UCASE
+ 01B6 77        	MOV	M,A
+                	JR	CB1
+ 01B7+18F5      	DB	18H,CB1-$-1
+ 01B9 70        CB2:	MOV	M,B		; store ending <null>
+ 01BA 210800    	LXI	H,CIBUFF	; set cmd line ptr to 1st char
+ 01BD 229C00    	SHLD	CIBPTR
+ 01C0 C9        	RET
+                
+                ;	Check for char from console. Z set if none
+                ;
+ 01C1 0E0B      BREAK:	MVI	C,CONSTF	; test console status for key pressed.
+ 01C3 CDD100    	CALL	BDOSB		; BDOS with BC saved
+ 01C6 B7        	ORA	A		; end if no key pressed.
+ 01C7 C8        	RZ
+                ;overflow into CONIN.
+                
+                ;	Get the character from the console.  Set flags.
+                ;
+ 01C8 0E01      CONIN:	MVI	C,CONINF
+ 01CA CDD100    	CALL	BDOSB
+ 01CD B7        	ORA	A
+ 01CE C9        	RET
+                
+                ;	Abort sub file if active
+                ;
+ 01CF 214707    SUBKIL: LXI	H,RNGSUB	; sub file active?
+ 01D2 7E        	MOV	A,M
+ 01D3 B7        	ORA	A		; 0=no
+ 01D4 C8        	RZ
+ 01D5 AF        	XRA	A
+ 01D6 77        	MOV	M,A		; sub file not active now
+ 01D7 3A8D07    	LDA	TDRIVE
+ 01DA CDDB00    	CALL	LOGIN
+ 01DD 114807    	LXI	D,SUBFCB	; delete the $$$.SUB file
+ 01E0 CDFD00    	CALL	DELETE
+ 01E3 AF        	XRA	A
+ 01E4 324807    	STA	SUBFCB		; restore $$$.SUB fcb.
+ 01E7 C9        	RET
+                
+                ;	Display invalid cmd
+                ;
+ 01E8 CDB400    ERROR:	CALL	CRLF
+ 01EB 2A9E00    	LHLD	CIPTR		; pt to beginning of cmd line
+ 01EE 7E        ERR2:	MOV	A,M		; get char
+ 01EF FE20      	CPI	' '		; display '?' if <sp> or <null>
+                	JRZ	ERR1
+ 01F1+280B      	DB	28H,ERR1-$-1
+ 01F3 B7        	ORA	A
+                	JRZ	ERR1
+ 01F4+2808      	DB	28H,ERR1-$-1
+ 01F6 E5        	PUSH	H		; save ptr to error cmd char
+ 01F7 CDA300    	CALL	CONOUT
+ 01FA E1        	POP	H		; get ptr
+ 01FB 23        	INX	H		; pt to next
+                	JR	ERR2		; continue
+ 01FC+18F0      	DB	18H,ERR2-$-1
+ 01FE 3E3F      ERR1:	MVI	A,'?'
+ 0200 CDA300    	CALL	CONOUT
+ 0203 CDCF01    ERREND: CALL	SUBKIL
+ 0206 C34E03    	JMP	RESTRT
+                
+                ;	See if DE points to delimiter. Set Z if so
+                ;
+ 0209 1A        SDELM:	LDAX	D
+ 020A B7        	ORA	A		; 0=delimiter
+ 020B C8        	RZ
+ 020C FE20      	CPI	' '		; error if < space
+ 020E DAE801    	JC	ERROR
+ 0211 C8        	RZ			; <sp>=delimiter
+ 0212 FE5F      	CPI	'_'		; underline
+ 0214 C8        	RZ
+ 0215 FE2E      	CPI	'.'		; period
+ 0217 C8        	RZ
+ 0218 FE3A      	CPI	':'		; colon, semicolon
+ 021A D8        	RC			; left pointy thing, equal
+ 021B FE3E      	CPI	'>'		; right pointy thing
+ 021D D0        	RNC
+ 021E BF        	CMP	A		; set Z flag
+ 021F C9        	RET
+                
+                ;	Skip to next non-blank char in string pointed to
+                ;	by DE.
+                ;
+ 0220 1A        SBLANK: LDAX	D
+ 0221 B7        	ORA	A
+ 0222 C8        	RZ
+ 0223 FE20      	CPI	' '
+ 0225 C0        	RNZ
+ 0226 13        	INX	D
+                	JR	SBLANK
+ 0227+18F7      	DB	18H,SBLANK-$-1
+                
+                ;	Add A to HL
+                ;
+ 0229 85        ADDAH:	ADD	L
+ 022A 6F        	MOV	L,A
+ 022B D0        	RNC
+ 022C 24        	INR	H
+ 022D C9        	RET
+                
+                ;	extract token fm cmd line & put it into FCBDN
+                ;
+                ;	If token resembles filename.typ
+                ;	on input, cubptr => char at which to start scan
+                ;	on output, CIBPTR => char to cont at, and Z is set
+                ;	if '?' is in token
+ 022E 0600      SCANER: MVI	b,0		;
+ 0230 3E00      scan0:	mvi	a,0		; start at drive spec byte
+ 0232 328A07    	sta	tf1	;clear temporary f1 flag to default
+ 0235 216907    SCAN1:	LXI	H,FCBDN 	; point to FCBDN
+ 0238 CD2902    	CALL	ADDAH		; offset into fCB
+ 023B E5        	PUSH	H
+ 023C E5        	PUSH	H
+ 023D 3600      	mvi	m,0		; set drive name to default
+ 023F 2A9C00    	LHLD	CIBPTR		; get ptr to next char in cmd line
+ 0242 EB        	XCHG			; ptr in DE
+ 0243 CD2002    	CALL	SBLANK		; skip to non-blank or EOL
+ 0246 EB        	XCHG
+ 0247 229E00    	SHLD	CIPTR		; set ptr to non-blank or EOL
+ 024A EB        	XCHG			; de => next non-blank or EOL char
+ 024B E1        	POP	H		; get ptr to next byte in FCBDN
+ 024C 1A        sc14:	LDAX	D		; EOL?
+ 024D B7        	ORA	A		; 0=yes
+                	JRZ	SCAN2
+ 024E+2822      	DB	28H,SCAN2-$-1
+ 0250 04        	inr	b	;test entry flag
+ 0251 C26802    	jnz	sc15	;skip execution director test...
+ 0254 FE60      	cpi	chr422	;is this an execution director?
+                	jrnz	sc13
+ 0256+2008      	DB	20H,SC13-$-1
+ 0258 3EC0      	mvi	a,11000000b	;activate forced execution in 77422
+ 025A 328A07    sc16:	sta	tf1
+ 025D 13        	inx	d	;step to next character
+                	jr	sc14	;loop back for possible drive spec.
+ 025E+18EC      	DB	18H,SC14-$-1
+ 0260 FE7E      sc13:	cpi	chrz89
+                	jrnz	sc15
+ 0262+2004      	DB	20H,SC15-$-1
+ 0264 3E40      	mvi	a,01000000b	;force execution in Z89
+                	jr	sc16
+ 0266+18F2      	DB	18H,SC16-$-1
+ 0268 D640      sc15:	SUI	'A'-1		; make possible drive spec into 1-16
+ 026A 47        	MOV	B,A
+ 026B 13        	INX	D		; next char
+ 026C 1A        	LDAX	D
+ 026D FE3A      	CPI	':'		; delimiter?
+                	JRZ	SCAN3		; yes - drive spec
+ 026F+2807      	DB	28H,SCAN3-$-1
+ 0271 1B        	DCX	D		; else back up ptr to 1st non-blank
+ 0272 3A8D07    SCAN2:	LDA	TDRIVE		; set 1st byte of FCBDN as DEFDRV
+ 0275 3C        	INR	A		; convert to 1-16 range
+                	JR	SCAN4
+ 0276+1803      	DB	18H,SCAN4-$-1
+ 0278 78        SCAN3:	MOV	A,B		; we have a drive spec
+ 0279 70        	MOV	M,B		; set 1st byte of FCBDN as specified drive
+ 027A 13        	INX	D		; next byte after ':'
+                
+                ;	Extract filename
+                ;
+ 027B C640      SCAN4:	ADI	'A'-1
+ 027D 325E04    	STA	DNAM
+ 0280 0608      	MVI	B,8
+ 0282 CDB102    SCAN5:	CALL	EXTRAC		;extract 'B' characters from buffer into FCBDN
+                
+                ;	Extract .typ
+                ;
+ 0285 0603      SCAN10: MVI	B,3
+ 0287 FE2E      	CPI	'.'		; .typ delimiter?
+                	JRNZ	SCAN15		; no - pad with <sp>
+ 0289+2006      	DB	20H,SCAN15-$-1
+ 028B 13        	INX	D
+ 028C CDB102    SCAN11: CALL	EXTRAC		;extract 'B' characters from buffer into FCBDN
+                	JR	SCAN16		;skip padding with spaces
+ 028F+1805      	DB	18H,SCAN16-$-1
+ 0291 23        SCAN15: INX	H		; pad rest of .typ with <sp>
+ 0292 3620      	MVI	M,' '
+                	DJNZ	SCAN15
+ 0294+10FB      	DB	10H,SCAN15-$-1
+ 0296 0604      SCAN16: MVI	B,4
+ 0298 23        SCAN17: INX	H
+ 0299 3600      	MVI	M,0
+                	DJNZ	SCAN17
+ 029B+10FB      	DB	10H,SCAN17-$-1
+ 029D EB        	XCHG			; store ptr to next char in cmd
+ 029E 229C00    	SHLD	CIBPTR
+ 02A1 E1        	POP	H		; get ptr to FCBDN in HL
+ 02A2 01000B    	LXI	B,11*256	; scan for '?' in filename.typ
+ 02A5 23        SCAN18: INX	H
+ 02A6 7E        	MOV	A,M
+ 02A7 FE3F      	CPI	'?'
+                	JRNZ	SCAN19
+ 02A9+2001      	DB	20H,SCAN19-$-1
+ 02AB 0C        	INR	C		; C<>0 inidcates '?' found
+                SCAN19: DJNZ	SCAN18		; count down
+ 02AC+10F7      	DB	10H,SCAN18-$-1
+ 02AE 79        	MOV	A,C		; a=c=# of '?' found
+ 02AF B7        	ORA	A		; set Z flag
+ 02B0 C9        	RET
+                
+                ; EXTRAC -- Given the number of characters to extract from a buffer in 'B',
+                ; the destination FCB section in 'HL', the source buffer pointer in 'DE',
+                ; extract characters until done with expansion of wild cards, pad rest of
+                ; buffer with spaces.
+                ;
+ 02B1 CD0902    EXTRAC: CALL	SDELM		; done if delimiter
+                	JRZ	SCAN9		; so pad with spaces.
+ 02B4+2814      	DB	28H,SCAN9-$-1
+ 02B6 23        	INX	H		; next byte in FCBDN
+ 02B7 FE2A      	CPI	'*'		; wild card?
+                	JRNZ	SCAN6		; cont if not
+ 02B9+2004      	DB	20H,SCAN6-$-1
+ 02BB 363F      	MVI	M,'?'
+                	JR	SCAN7
+ 02BD+1802      	DB	18H,SCAN7-$-1
+ 02BF 77        SCAN6:	MOV	M,A		; store filename char in FCBDN
+ 02C0 13        	INX	D		; next char in cmd
+                SCAN7:	DJNZ	EXTRAC		; do all 8
+ 02C1+10EE      	DB	10H,EXTRAC-$-1
+ 02C3 CD0902    SCAN8:	CALL	SDELM
+ 02C6 C8        	RZ			; Z set if delimiter found, end.
+ 02C7 13        	INX	D		; next char
+                	JR	SCAN8
+ 02C8+18F9      	DB	18H,SCAN8-$-1
+ 02CA 23        SCAN9:	INX	H		;if not 'B' characters,
+ 02CB 3620      	MVI	M,' '		; pad with <sp>
+                	DJNZ	SCAN9
+ 02CD+10FB      	DB	10H,SCAN9-$-1
+ 02CF C9        	RET			;end
+                
+                ;  CCP built-in cmd table and cmd processor
+                ;
+ 0004 =         NCHARS	EQU	4		; # of chars/cmd
+                ;
+                ;	CCP Commands
+                ;
+ 02D0 44495220  CMDTBL: DB	'DIR '
+ 02D4 45524120  	DB	'ERA '
+ 02D8 54595045  	DB	'TYPE'
+ 02DC 53415645  	DB	'SAVE'
+ 02E0 52454E20  	DB	'REN '
+ 02E4 52455320  	DB	'RES '
+ 02E8 55534552  	DB	'USER'
+ 0007 =         NCMNDS	EQU	($-CMDTBL)/NCHARS
+                
+                ;	Command address table
+                ;
+ 02EC 0C04      REQTBL: DW	DIR		; DIRectory list command
+ 02EE BD04      	DW	ERA		; ERAse command
+ 02F0 F904      	DW	TYPE		; TYPE command
+ 02F2 5105      	DW	SAVE		; SAVE command
+ 02F4 A905      	DW	REN		; REName command
+ 02F6 3007      	DW	REST		; soft disk RESet
+ 02F8 1006      	DW	USER		; USER defined function
+ 02FA 2706      	DW	COM		; Default if .COM
+                
+                ;	Command table scanner
+                ;
+                ;	On exit: A=table entry #
+                ;
+ 02FC 21D002    CMDSER: LXI	H,CMDTBL	; pt to cmd table
+ 02FF 0E00      	MVI	C,0		; set cmd counter
+ 0301 79        CMS1:	MOV	A,C		; check for done
+ 0302 FE07      	CPI	NCMNDS
+ 0304 D0        	RNC
+ 0305 116A07    	LXI	D,FCBFN 	; pt to stored cmd name
+ 0308 0604      	MVI	B,NCHARS
+ 030A 1A        CMS2:	LDAX	D
+ 030B BE        	CMP	M
+                	JRNZ	CMS3		; no match
+ 030C+200B      	DB	20H,CMS3-$-1
+ 030E 13        	INX	D		; pt to next char
+ 030F 23        	INX	H
+                	DJNZ	CMS2		; count down
+ 0310+10F8      	DB	10H,CMS2-$-1
+ 0312 1A        	LDAX	D		; next char in input cmd must be <sp>
+ 0313 FE20      	CPI	' '
+                	JRNZ	CMS4
+ 0315+2005      	DB	20H,CMS4-$-1
+ 0317 79        	MOV	A,C		; table entry # in a
+ 0318 C9        	RET
+ 0319 23        CMS3:	INX	H		; skip to next entry
+                	DJNZ	CMS3
+ 031A+10FD      	DB	10H,CMS3-$-1
+ 031C 0C        CMS4:	INR	C		; inc table entry #
+                	JR	CMS1
+ 031D+18E2      	DB	18H,CMS1-$-1
+                
+                ;  CCP starting points
+ 031F AF        CCP1:	XRA	A		; set no default cmd
+ 0320 320700    	STA	CBUFF
+ 0323 319C00    CCP:	LXI	SP,STACK
+ 0326 C5        	PUSH	B
+ 0327 79        	MOV	A,C		; get user/disk  #
+ 0328 1F        	RAR			; extract user #
+ 0329 1F        	RAR
+ 032A 1F        	RAR
+ 032B 1F        	RAR
+ 032C E60F      	ANI	0FH
+ 032E 5F        	MOV	E,A		; set user #
+ 032F CD1501    	CALL	SETUSR
+ 0332 CDD700    	CALL	RESET		; reset disk system
+ 0335 C1        	POP	B
+ 0336 79        	MOV	A,C		; get user/disk #
+ 0337 E60F      	ANI	0FH		; extract drive
+ 0339 328D07    	STA	TDRIVE		; set it
+ 033C CDDB00    	CALL	LOGIN		; log in default disk
+ 033F 114807    	LXI	D,SUBFCB	; check for sub file
+ 0342 CDF500    	CALL	SEAR1		; 0 returned if no "$$$.SUB"
+ 0345 324707    	STA	RNGSUB		; set flag (0=no $$$.sub)
+ 0348 3A0700    	LDA	CBUFF		; exec default cmd?
+ 034B B7        	ORA	A		; 0=no
+                	JRNZ	RS1
+ 034C+2009      	DB	20H,RS1-$-1
+ 034E 319C00    RESTRT: LXI	SP,STACK
+ 0351 CD1D01    	CALL	DEFDMA		;set DMA before reading $$$.SUB
+ 0354 CD4201    	CALL	REDBUF
+ 0357 CD1D01    RS1:	CALL	DEFDMA		; point to cmd line buff & set def dma
+ 035A CD1901    	CALL	GETDRV		; set DEFDRV
+ 035D 328D07    	STA	TDRIVE
+ 0360 06FF      	mvi	b,0ffh
+ 0362 CD3002    	CALL	SCAN0		; parse cmd name
+ 0365 C4E801    	CNZ	ERROR		; error if it contains a '?'
+ 0368 3A6907    	LDA	FCBDN		; is cmd of form 'd:cmd'?
+ 036B B7        	ORA	A		; nz=yes
+ 036C C22706    	JNZ	COM		; process as COM file
+ 036F CDFC02    	CALL	CMDSER		; scan for resident cmd
+ 0372 21EC02    	LXI	H,REQTBL	; exec cmd
+ 0375 5F        	MOV	E,A		; compute offset into addr table
+ 0376 1600      	MVI	D,0
+ 0378 19        	DAD	D
+ 0379 19        	DAD	D
+ 037A 7E        	MOV	A,M		; get address in HL
+ 037B 23        	INX	H
+ 037C 66        	MOV	H,M		; msb
+ 037D 6F        	MOV	L,A		; lsb
+ 037E E9        	PCHL
+                
+                ; Print the prompt if PPROMPT is not reset, then set PPROMPT.
+                ;
+ 037F F5        PROMPT: PUSH	PSW
+ 0380 3AA000    	LDA	PPROMPT 	; test 'print prompt' flag.
+ 0383 B7        	ORA	A
+                	JRZ	PREND		; end if reset.
+ 0384+2825      	DB	28H,PREND-$-1
+ 0386 CDB400    	CALL	CRLF
+ 0389 CD1901    	CALL	GETDRV		; curr drive is part of prompt
+ 038C C661      	ADI	'a'		; make ascii, but lower case
+ 038E CDA300    	CALL	CONOUT
+ 0391 CD1301    	CALL	GETUSR		; get user #
+ 0394 FE0A      	CPI	10		; user < 10?
+                	JRC	prompt1
+ 0396+3809      	DB	38H,PROMPT1-$-1
+ 0398 D60A      	SUI	10		; sub 10 from it
+ 039A F5        	PUSH	PSW		; save it
+ 039B 3E31      	MVI	A,'1'		; output 10's digit
+ 039D CDA300    	CALL	CONOUT
+ 03A0 F1        	POP	PSW
+                PROMPT1:
+ 03A1 C630      	ADI	'0'		; output 1's digit
+ 03A3 CDA300    	CALL	CONOUT
+ 03A6 3E3E      	MVI	A,'>'		; display end of prompt
+ 03A8 CDA300    	CALL	CONOUT
+ 03AB 3EFF      PREND:	MVI	A,0FFH		;set 'print prompt' flag.
+ 03AD 32A000    	STA	PPROMPT
+ 03B0 F1        	POP	PSW		;restore registers
+ 03B1 C9        	RET			;end
+                
+                ;  Error messages
+                ;
+ 03B2 CDBD00    PRNNF:	CALL	PRINT
+ 03B5 4E6F206669	DB	'No file',0
+ 03BD C9        	RET
+                
+                ;  Extract number from cmd line
+                ;
+ 03BE CD2E02    NUMBER: CALL	SCANER		; parse # and place in FCBFN
+ 03C1 3A6907    	LDA	FCBDN		; token start with drive spec (d:)?
+ 03C4 B7        	ORA	A		; error if so
+ 03C5 C2E801    	JNZ	ERROR
+ 03C8 216A07    	LXI	H,FCBFN 	; pt to token for conversion
+ 03CB 010B00    	LXI	B,11		; B=accumulated value, C=char count
+ 03CE 7E        NUM1:	MOV	A,M		; get char
+ 03CF FE20      	CPI	' '		; done if <SP>
+                	JRZ	NUM2
+ 03D1+2824      	DB	28H,NUM2-$-1
+ 03D3 23        	INX	H		; pt to next char
+ 03D4 D630      	SUI	'0'		; make binary
+ 03D6 FE0A      	CPI	10		; error if >= 10
+ 03D8 D2E801    	JNC	ERROR
+ 03DB 57        	MOV	D,A		; digit in D
+ 03DC 78        	MOV	A,B		; get accumulated value
+ 03DD E6E0      	ANI	0E0h		; check for range error (>31)
+ 03DF C2E801    	JNZ	ERROR
+ 03E2 78        	MOV	A,B		; new val = old val * 10
+ 03E3 07        	RLC
+ 03E4 07        	RLC
+ 03E5 07        	RLC
+ 03E6 80        	ADD	B		; check for range error
+ 03E7 DAE801    	JC	ERROR
+ 03EA 80        	ADD	B		; check for range error
+ 03EB DAE801    	JC	ERROR
+ 03EE 82        	ADD	D		; new val = old val * 10 + digit
+ 03EF DAE801    	JC	ERROR		; check for range error
+ 03F2 47        	MOV	B,A		; set new value
+ 03F3 0D        	DCR	C		; count down
+                	JRNZ	NUM1
+ 03F4+20D8      	DB	20H,NUM1-$-1
+ 03F6 C9        	RET
+                
+                ;	Rest of token buffer must be <SP>
+                ;
+ 03F7 7E        NUM2:	MOV	A,M
+ 03F8 FE20      	CPI	' '
+ 03FA C2E801    	JNZ	ERROR
+ 03FD 23        	INX	H		; pt to next
+ 03FE 0D        	DCR	C		; count down
+                	JRNZ	NUM2
+ 03FF+20F6      	DB	20H,NUM2-$-1
+ 0401 78        	MOV	A,B		; get accumulated value
+ 0402 C9        	RET
+                
+                ;	Pt to DIR entry in TBUFF, offset is specified by A & C
+                ;
+ 0403 218000    DIRPTR: LXI	H,TBUFF 	; pt to temp buff
+ 0406 81        	ADD	C		; pt to 1st byte of DIR entry
+ 0407 CD2902    	CALL	ADDAH		; pt to desired byte in dir entry
+ 040A 7E        	MOV	A,M
+ 040B C9        	RET
+                
+                
+                ;	DIR routine
+                ;
+ 040C 3E80      DIR:	MVI	A,80H		; set to include sys files
+ 040E F5        	PUSH	PSW
+ 040F CD2E02    	CALL	SCANER		; SCAN for possible d:file.typ token
+ 0412 216A07    	LXI	H,FCBFN 	; make fCB all '?' if no file.typ
+ 0415 7E        	MOV	A,M		; get 1st char
+ 0416 FE20      	CPI	' '		; if <SP>, all wild
+                	JRZ	DIR0
+ 0418+280E      	DB	28H,DIR0-$-1
+ 041A FE40      	CPI	'@'		; system files?
+                	JRNZ	DIR2
+ 041C+2011      	DB	20H,DIR2-$-1
+ 041E 23        	INX	H		; just '@'?  <SP> must follow
+ 041F 7E        	MOV	A,M
+ 0420 2B        	DCX	H		; back up
+ 0421 FE20      	CPI	' '		; just '@' if <SP> follows
+                	JRNZ	DIR2
+ 0423+200A      	DB	20H,DIR2-$-1
+ 0425 F1        	POP	PSW		; get flag
+ 0426 AF        	XRA	A		; set no sys files
+ 0427 F5        	PUSH	PSW
+ 0428 060B      DIR0:	MVI	B,11
+ 042A 363F      DIR1:	MVI	M,'?'		; store '?'
+ 042C 23        	INX	H
+                	DJNZ	DIR1
+ 042D+10FB      	DB	10H,DIR1-$-1
+ 042F F1        DIR2:	POP	PSW		; get flag
+ 0430 CD3604    	CALL	DIRPR		; print dir
+ 0433 C33507    	JMP	RSTCCP		; restart CCP
+                
+                ;	DIR print rtn
+                ;
+ 0436 57        DIRPR:	MOV	D,A		; store system flag in D
+ 0437 1E05      	MVI	E,5		; column counter
+ 0439 D5        	PUSH	D
+ 043A CDF200    	CALL	SEARF
+ 043D CCB203    	CZ	PRNNF		; print no file msg
+                DIR3:	JRZ	DIR11		; done if Z flag set
+ 0440+286D      	DB	28H,DIR11-$-1
+ 0442 3D        	DCR	A		; adjust to returned value
+ 0443 0F        	RRC			; convert # to offset into TBUFF
+ 0444 0F        	RRC
+ 0445 0F        	RRC
+ 0446 E660      	ANI	60H
+ 0448 4F        	MOV	C,A		; offset into TBUFF
+ 0449 3E0A      	MVI	A,10		; offset to SYS file attrib bit
+ 044B CD0304    	CALL	DIRPTR
+ 044E D1        	POP	D		; get bit mask from D
+ 044F D5        	PUSH	D
+ 0450 A2        	ANA	D
+                	JRNZ	DIR10
+ 0451+2052      	DB	20H,DIR10-$-1
+ 0453 D1        	POP	D		; get entry count
+ 0454 7B        	MOV	A,E		; add 1 to it
+ 0455 1C        	INR	E
+ 0456 D5        	PUSH	D		; save it
+ 0457 FE04      	CPI	4		; if 5 entries printed send CRLF
+                	JRC	DIR4
+ 0459+380A      	DB	38H,DIR4-$-1
+ 045B CDBD00    	CALL	PRINT
+ 045E 413A00    DNAM:	DB	'A:',0
+ 0461 D1        	POP	D		; get counter off stack
+ 0462 1E00      	MVI	E,0		; RESET COUNTER
+ 0464 D5        	PUSH	D		; put counter back on stack.
+ 0465 3E09      DIR4:	MVI	A,9		; get a pointer to the first character
+ 0467 CD0304    	CALL	DIRPTR		; of the filetype on the stack
+ 046A E5        	PUSH	H		; save the pointer.
+ 046B 3E01      	MVI	A,1		; get a pointer to the first character
+ 046D CD0304    	CALL	DIRPTR		; of the filename on the stack
+ 0470 E5        	PUSH	H		; save the pointer, (A) = 1st byte in filename
+ 0471 E680      	ani	10000000b	;sense f1 attribute
+ 0473 3E20      	mvi	a,' '	;if f1=0 print a blank
+                	jrz	dir40
+ 0475+2802      	DB	28H,DIR40-$-1
+ 0477 3E60      	mvi	a,chr422	;if attribute on, print special character
+ 0479 CDA300    dir40:	call	conout	;preserves (BC),(HL)
+ 047C 0608      	MVI	B,8		; 8 characters in a filename, max.
+ 047E 78        	MOV	A,B		; pt to last char of filename
+ 047F CD0304    	CALL	DIRPTR		; in HL, and get that character.
+                DIR6:	;search for the last non-space in filename, leaving it in 'B'.
+ 0482 7E        	MOV	A,M		; get character from filename
+ 0483 E67F      	ANI	7FH		; mask off bit 7.
+ 0485 FE20      	CPI	' '		; test for space
+                	JRNZ	DIR7		; end loop if not, with Zero reset.
+ 0487+2003      	DB	20H,DIR7-$-1
+ 0489 2B        	DCX	H		; decrement pointer
+                	DJNZ	DIR6		; decrement count in 'B'.
+ 048A+10F6      	DB	10H,DIR6-$-1
+                				; if zero, no filename, end loop with Zero set,
+                				; else continue the loop.
+                DIR7:	;now, print the filename for the length given in 'B', unless B=0.
+                	;At this point, Zero flag set if no filename, reset otherwise.
+ 048C E1        	POP	H		; restore a pointer to the filename.
+ 048D C4B104    	CNZ	PRLENB		; print filename with length 'B', if length >0.
+ 0490 3E2E      	MVI	A,'.'		; add the period.
+ 0492 CDA300    	CALL	CONOUT		; output it.
+ 0495 E1        	POP	H		; restore a pointer to the filetype.
+                ;		    + min space between names
+ 0496 3E0A      	MVI	A,8+2		; constant to compute spaces between names
+ 0498 90        	SUB	B		; minus filename length
+ 0499 F5        	PUSH	PSW		; save spaces to output after filetype.
+ 049A 0603      	MVI	B,3		; filetype is 3 long.
+ 049C CDB104    	CALL	PRLENB		; print filetype with length 3.
+ 049F C1        	POP	B		; number of spaceout to output in 'B', 'B'>0.
+                DIR8:	;'B' will always be >0.
+ 04A0 CDA100    	CALL	SPACER		; output a space.
+                	DJNZ	DIR8		; decrement 'B', 0 if done, loop if not done.
+ 04A3+10FB      	DB	10H,DIR8-$-1
+ 04A5 CDC101    DIR10:	CALL	BREAK		; check for abort
+                	JRNZ	DIR11
+ 04A8+2005      	DB	20H,DIR11-$-1
+ 04AA CDF900    	CALL	SEARN		; search for next file
+                	JR	DIR3		; continue
+ 04AD+1891      	DB	18H,DIR3-$-1
+ 04AF D1        DIR11:	POP	D		; restore stack
+ 04B0 C9        	RET
+                
+                ; PRLENB:  Subroutine for DIR:	Prints the string at 'HL' for length 'B'.
+                ; Masks off bit 7.  Destroys 'A', Flags, 'HL'.	'B' MUST BE > 0.
+                ;
+ 04B1 C5        PRLENB: PUSH	B		;save BC
+ 04B2 7E        PRLEN1: MOV	A,M		;fetch character from 'HL'.
+ 04B3 E67F      	ANI	7FH		;mask bit 7 (file attribute)
+ 04B5 CDA300    	CALL	CONOUT		;output the character
+ 04B8 23        	INX	H		;point to next char.
+                	DJNZ	PRLEN1		;decrement count in 'B', loop if not 0.
+ 04B9+10F7      	DB	10H,PRLEN1-$-1
+ 04BB C1        	POP	B		;restore length, offset.
+ 04BC C9        	RET			;end
+                
+                ;	ERA routine
+                ;
+ 04BD CD2E02    ERA:	CALL	SCANER		; parse file spec
+ 04C0 FE0B      	CPI	11		; all wild?
+                	JRNZ	ERA1		; if not, do erases
+ 04C2+2027      	DB	20H,ERA1-$-1
+ 04C4 CDBD00    	CALL	PRINT
+ 04C7 414C4C2028	DB	'ALL (Y/N)?',0
+ 04D2 AF        	XRA	A		;clear 'print prompt' flag.
+ 04D3 32A000    	STA	PPROMPT
+ 04D6 CD4201    	CALL	REDBUF
+ 04D9 210700    	LXI	H,CBUFF
+ 04DC 35        	DCR	M
+ 04DD C24E03    	JNZ	RESTRT		; restart CCP if just <CR>
+ 04E0 23        	INX	H
+ 04E1 7E        	MOV	A,M
+ 04E2 FE59      	CPI	'Y'
+ 04E4 C24E03    	JNZ	RESTRT		; no - restart CCP
+ 04E7 23        	INX	H
+ 04E8 229C00    	SHLD	CIBPTR
+                ERA1:
+ 04EB 3E80      	MVI	A,80H		; skip SYS and R/O files
+ 04ED CD3604    	CALL	DIRPR		; print DIR of erased files
+ 04F0 116907    	LXI	D,FCBDN 	; delete file specified
+ 04F3 CDFD00    	CALL	DELETE
+ 04F6 C33507    	JMP	RSTCCP		; reenter CCP
+                
+                ;	TYPE routine
+                ;
+ 04F9 CD2E02    TYPE:	CALL	SCANER		; extract file.typ token
+ 04FC C2E801    	JNZ	ERROR		; error if any '?'
+ 04FF CDE000    	CALL	OPENF		; open selected file
+ 0502 CA4E05    	JZ	TYPE4		; abort if error
+ 0505 CDB400    	CALL	CRLF
+ 0508 218E07    	LXI	H,CHRCNT	; set char pos/count
+ 050B 36FF      	MVI	M,0FFH		; empty line
+ 050D 0600      	MVI	B,0		; set TAB char counter
+ 050F 218E07    TYPE1:	LXI	H,CHRCNT
+ 0512 7E        	MOV	A,M		; end of buffer?
+ 0513 FE80      	CPI	80H
+                	JRC	TYPE2
+ 0515+3809      	DB	38H,TYPE2-$-1
+ 0517 E5        	PUSH	H		; read next block
+ 0518 CD0101    	CALL	READF
+ 051B E1        	POP	H
+                	JRNZ	TYPE3		; error?
+ 051C+201E      	DB	20H,TYPE3-$-1
+ 051E AF        	XRA	A		; reset count
+ 051F 77        	MOV	M,A
+ 0520 34        TYPE2:	INR	M		; inc char count
+ 0521 218000    	LXI	H,TBUFF 	; pt to buffer
+ 0524 CD2902    	CALL	ADDAH
+ 0527 7E        	MOV	A,M		; get next char
+ 0528 E67F      	ANI	7FH		; mask out msb
+ 052A FE1A      	CPI	1AH		; EOF?
+ 052C CA3507    	JZ	RSTCCP		; yes - restart CCP
+ 052F F5        	PUSH	PSW
+ 0530 CDA300    	CALL	CONOUT
+ 0533 F1        	POP	PSW
+ 0534 CDC101    TYPE2L: CALL	BREAK		; check for abort
+                	JRZ	TYPE1		; cont if no char
+ 0537+28D6      	DB	28H,TYPE1-$-1
+ 0539 C33507    	JMP	RSTCCP		; abort if not
+ 053C 3D        TYPE3:	DCR	A		; no error?
+ 053D CA3507    	JZ	RSTCCP
+ 0540 CDBD00    	CALL	PRINT		; print read error msg
+ 0543 5265616420	DB	'Read error',0
+ 054E C3E801    TYPE4:	JMP	ERROR
+                
+                ;	SAVE routine
+                ;
+ 0551 CDBE03    SAVE:	CALL	NUMBER		; extract # from cmd line
+ 0554 F5        	PUSH	PSW
+ 0555 CD2E02    	CALL	SCANER		; extract filename.type
+ 0558 C2E801    	JNZ	ERROR		; must be no '?' in it
+ 055B 116907    	LXI	D,FCBDN 	; delete file if it already exists
+ 055E D5        	PUSH	D
+ 055F CDFD00    	CALL	DELETE
+ 0562 D1        	POP	D
+ 0563 CD0F01    	CALL	CREATE		; make new file
+                	JRZ	SAVE3		; error?
+ 0566+282F      	DB	28H,SAVE3-$-1
+ 0568 AF        	XRA	A		; set rec count field of new file's fCB
+ 0569 328907    	STA	FCBCR
+ 056C F1        	POP	PSW		; get page count
+ 056D 6F        	MOV	L,A		; HL=page count
+ 056E 2600      	MVI	H,0
+ 0570 29        	DAD	H		; double it (256 byte pages)
+ 0571 110001    	LXI	D,TPA		; save area
+ 0574 7C        SAVE1:	MOV	A,H		; done with save?
+ 0575 B5        	ORA	L		; HL=0 if so
+                	JRZ	SAVE2
+ 0576+2816      	DB	28H,SAVE2-$-1
+ 0578 2B        	DCX	H		; count down on secs
+ 0579 E5        	PUSH	H		; save ptr to block to save
+ 057A 218000    	LXI	H,128		; 128 bytes per sec
+ 057D 19        	DAD	D		; pt to next sector
+ 057E E5        	PUSH	H		; save on stack
+ 057F CD2001    	CALL	DMASET
+ 0582 116907    	LXI	D,FCBDN 	; write sector
+ 0585 CD0B01    	CALL	WRITE
+ 0588 D1        	POP	D
+ 0589 E1        	POP	H
+                	JRNZ	SAVE3		; write error?
+ 058A+200B      	DB	20H,SAVE3-$-1
+                	JR	SAVE1		; continue
+ 058C+18E6      	DB	18H,SAVE1-$-1
+ 058E 116907    SAVE2:	LXI	D,FCBDN 	; close saved file
+ 0591 CDEE00    	CALL	CLOSE
+ 0594 3C        	INR	A		; error?
+                	JRNZ	SAVE4
+ 0595+200C      	DB	20H,SAVE4-$-1
+ 0597 CDBD00    SAVE3:	CALL	PRINT
+ 059A 4E6F207370	DB	'No space',0
+ 05A3 CD1D01    SAVE4:	CALL	DEFDMA		; set DMA to 80h
+ 05A6 C33507    	JMP	RSTCCP		; restart CCP
+                
+                ;	REN routine
+                ;
+ 05A9 CD2E02    REN:	CALL	SCANER		; extract file name
+ 05AC C2E801    	JNZ	ERROR		; error if any '?'
+ 05AF 3A6907    	LDA	FCBDN		; save DEFDRV
+ 05B2 F5        	PUSH	PSW
+ 05B3 CDF200    	CALL	SEARF		; look for specified file
+                	JRZ	REN0		; cont if not found
+ 05B6+2812      	DB	28H,REN0-$-1
+ 05B8 CDBD00    	CALL	PRINT
+ 05BB 46696C6520	DB	'File exists',0
+ 05C7 C30A06    	JMP	RENRET
+ 05CA 216907    REN0:	LXI	H,FCBDN 	; save new file name
+ 05CD 117907    	LXI	D,FCBDM
+ 05D0 011000    	lxI	B,16		; 16 bytes
+                	ldir
+ 05D3+EDB0      	DB	0EDH,0B0H
+ 05D5 2A9C00    	LHLD	CIBPTR		; get ptr to next cmd char
+ 05D8 EB        	XCHG			; ... in de
+ 05D9 CD2002    	CALL	SBLANK		; skip to non-blank
+ 05DC FE3D      	CPI	'='
+                	JRZ	REN1
+ 05DE+2804      	DB	28H,REN1-$-1
+ 05E0 FE5F      	CPI	'_'
+                	JRNZ	REN4
+ 05E2+2029      	DB	20H,REN4-$-1
+ 05E4 EB        REN1:	XCHG
+ 05E5 23        	INX	H
+ 05E6 229C00    	SHLD	CIBPTR		; SAVE ptr to old file name
+ 05E9 CD2E02    	CALL	SCANER		; extract filename.typ token
+                	JRNZ	REN4		; ERROR if any '?'
+ 05EC+201F      	DB	20H,REN4-$-1
+ 05EE F1        	POP	PSW		; get old default drive
+ 05EF 47        	MOV	B,A		; save it
+ 05F0 216907    	LXI	H,FCBDN 	; comp to curr DEFDRV
+ 05F3 7E        	MOV	A,M		; match?
+ 05F4 B7        	ORA	A
+                	JRZ	REN2
+ 05F5+2804      	DB	28H,REN2-$-1
+ 05F7 B8        	CMP	B		; check for drive error
+ 05F8 70        	MOV	M,B
+                	JRNZ	REN4
+ 05F9+2012      	DB	20H,REN4-$-1
+ 05FB 70        REN2:	MOV	M,B
+ 05FC 116907    	LXI	D,FCBDN 	; rename file
+ 05FF 0E17      	MVI	C,RENAME	; BDOS rename fct
+ 0601 CD0500    	CALL	BDOS
+ 0604 3C        	INR	A		; error? - file not found if so
+                	JRNZ	RENRET
+ 0605+2003      	DB	20H,RENRET-$-1
+ 0607 CDB203    REN3:	CALL	PRNNF		; print no file msg
+ 060A C33507    RENRET: JMP	RSTCCP		; restart CCP
+ 060D C3E801    REN4:	JMP	ERROR
+                
+                ;	USER routine
+                ;
+ 000F =         MAXUSR	EQU	15		; max user #
+ 0610 CDBE03    USER:	CALL	NUMBER		; extract user # from cmd line
+ 0613 FE10      	CPI	MAXUSR+1	; error if > MAXUSR
+ 0615 D2E801    	JNC	ERROR
+ 0618 5F        	MOV	E,A		; user # to E
+ 0619 3A6A07    	LDA	FCBFN		; check for parse error
+ 061C FE20      	CPI	' '		; <SP>=error
+ 061E CAE801    	JZ	ERROR
+ 0621 CD1501    	CALL	SETUSR		; set specified user
+ 0624 C33507    	JMP	RCCPNL		; restart CCP (no default LOGIN)
+                
+                ;	Execute COM routine
+                ;
+ 0627 CD1301    COM:	CALL	GETUSR		; get curr user #
+ 062A 328F07    	STA	TMPUSR		; save it for later
+ 062D 329007    	STA	TSELUSR 	; temp user to select
+ 0630 3A6A07    	LDA	FCBFN		; any cmd?
+ 0633 FE20      	CPI	' '		; <SP> means D: type cmd
+                	JRNZ	COM1		; not <SP>, must be transient
+ 0635+2016      	DB	20H,COM1-$-1
+ 0637 3A6907    	LDA	FCBDN		; look for drive spec
+ 063A B7        	ORA	A		; if zero, just blank
+ 063B CA3507    	JZ	RCCPNL
+ 063E 3D        	DCR	A		; adjust for log in
+ 063F F5        	PUSH	PSW		; this is so we can recover from
+ 0640 CDDB00    	CALL	LOGIN		; a BDOS error when changing default
+ 0643 F1        	POP	PSW		; drives
+ 0644 328D07    	STA	TDRIVE		; set DEFDRV
+ 0647 CD3301    	CALL	SETU0D		; set drive with user 0
+ 064A C33507    	JMP	RCCPNL		; restart CCP
+ 064D 3A7207    COM1:	LDA	FCBFT		; check for error in FCB
+ 0650 FE20      	CPI	' '		; error if so
+ 0652 C2E801    	JNZ	ERROR
+                
+                ;	COMA - reenter here for non-STAndard cp/m modification
+                ;	this is the rtn that searchs for .COM files
+                ;
+ 0655 212D07    COMA:	LXI	H,COMMSG	; place 'COM' in FCB
+ 0658 117207    	LXI	D,FCBFT 	; pt to file type
+ 065B 010300    	lxi	b,3
+                	ldir
+ 065E+EDB0      	DB	0EDH,0B0H
+ 0660 CDE000    	CALL	OPENF		; open CMD.COM file
+                	JRNZ	COMA1		; error? [ZR] if not found.
+ 0663+2014      	DB	20H,COMA1-$-1
+ 0665 216907    COMA0:	LXI	H,FCBDN 	; get drive from curr cmd
+ 0668 AF        	XRA	A		; if drive specified on command line, 
+ 0669 BE        	CMP	M		; do not search unless default drive.
+                	JRNZ	COM8
+ 066A+2007      	DB	20H,COM8-$-1
+ 066C 3AFF07    	LDA	SYSDRV		; get user specified system drive
+ 066F BE        	CMP	M		; 1-16, see if it has already
+ 0670 77        	MOV	M,A		; in FCB
+                	JRNZ	COMA
+ 0671+20E2      	DB	20H,COMA-$-1
+ 0673 CD2607    COM8:	CALL	RESETUSR	; reset curr user #
+ 0676 C3E801    	JMP	ERROR
+                
+                ;	File found - proceed with load
+                ;
+ 0679 216907    COMA1:	lxi	h,fcbdn 	;put COM file specification in 50H for
+ 067C 115000    	lxi	d,50h		;user or "remote" execution
+ 067F 010C00    	lxi	b,12
+                	ldir
+ 0682+EDB0      	DB	0EDH,0B0H
+ 0684 3A8A07    	lda	tf1	;see if execution location is forced.
+                	bit	6,a	;
+ 0687+CB77      	DB	0CBH,6*8+A+40H
+                	jrnz	cm001
+ 0689+2003      	DB	20H,CM001-$-1
+ 068B 3A6A07    	lda	fcbfn		;get file name character "f1"
+ 068E E680      cm001:	ani	10000000b	;test associated attribute bit (bit 7)
+ 0690 328B07    	sta	f1		;save flag for later detection.
+ 0693 CAC606    	jz	com30		;if 0: skip local load but setup page 0...
+ 0696 210001    	LXI	H,TPA
+ 0699 E5        COM2:	PUSH	H		; save addr of next sec
+ 069A EB        	XCHG			; ... in de
+ 069B CD2001    	CALL	DMASET		; set DMA for load
+ 069E 116907    	LXI	D,FCBDN 	; read next sec
+ 06A1 CD0401    	CALL	READ
+ 06A4 E1        	POP	H		; address of this sector now
+                	JRNZ	COM3		; if error
+ 06A5+201C      	DB	20H,COM3-$-1
+ 06A7 118000    	LXI	D,128
+ 06AA 19        	DAD	D
+ 06AB 110000    	LXI	D,@CCP		; start of CCP
+ 06AE 7D        	MOV	A,L
+ 06AF 93        	SUB	E
+ 06B0 7C        	MOV	A,H
+ 06B1 9A        	SBB	D
+                	JRC	COM2		; otherwise cont
+ 06B2+38E5      	DB	38H,COM2-$-1
+ 06B4 CDBD00    PRNLE:	CALL	PRINT
+ 06B7 426164204C	DB	'Bad Load',0
+ 06C0 C33507    	jmp	RSTCCP
+ 06C3 3D        COM3:	DCR	A
+                	JRNZ	PRNLE
+ 06C4+20EE      	DB	20H,PRNLE-$-1
+ 06C6 CD2607    com30:	CALL	RESETUSR	; reset curr user #
+ 06C9 CD2E02    	CALL	SCANER		; scan for next token
+ 06CC 3E10      	MVI	A,10H		; offset for 2nd file spec
+ 06CE CD3502    	CALL	SCAN1		; put it into FCBDN+16
+ 06D1 AF        	XRA	A
+ 06D2 328907    	STA	FCBCR
+ 06D5 115C00    	LXI	D,TFCB		; copy to default FCB
+ 06D8 216907    	LXI	H,FCBDN 	; from FCBDN
+ 06DB 012100    	lxI	B,33		; set up default FCB
+                	ldir
+ 06DE+EDB0      	DB	0EDH,0B0H
+ 06E0 210800    	LXI	H,CIBUFF
+ 06E3 7E        COM4:	MOV	A,M		; skip to end of 2nd file name
+ 06E4 B7        	ORA	A		; end of line?
+                	JRZ	COM5
+ 06E5+2807      	DB	28H,COM5-$-1
+ 06E7 FE20      	CPI	' '		; end of token?
+                	JRZ	COM5
+ 06E9+2803      	DB	28H,COM5-$-1
+ 06EB 23        	INX	H
+                	JR	COM4
+ 06EC+18F5      	DB	18H,COM4-$-1
+ 06EE 0600      COM5:	MVI	B,0		; set char count
+ 06F0 118100    	LXI	D,TBUFF+1	; pt to char pos
+ 06F3 7E        COM6:	MOV	A,M		; copy cmd line to TBUFF
+ 06F4 12        	STAX	D
+ 06F5 B7        	ORA	A		; done if zero
+                	JRZ	COM7
+ 06F6+2805      	DB	28H,COM7-$-1
+ 06F8 04        	INR	B		; incr char count
+ 06F9 23        	INX	H		; pt to next
+ 06FA 13        	INX	D
+                	JR	COM6
+ 06FB+18F6      	DB	18H,COM6-$-1
+ 06FD 78        COM7:	MOV	A,B		; save char count
+ 06FE 328000    	STA	TBUFF
+ 0701 CD1D01    	CALL	DEFDMA
+ 0704 CD2401    	CALL	SETUD		; set user/disk
+ 0707 3A8B07    	lda	f1		;check "local" attribute again
+                	bit	7,a		;test attribute bit
+ 070A+CB7F      	DB	0CBH,7*8+A+40H
+ 070C CA1B07    	jz	remote	 ;tell remote to load-n-go if program is not for us.
+ 070F CDB400    	CALL	CRLF		;indicate to user that program has been loaded
+ 0712 CD0001    	CALL	TPA		; run it
+ 0715 CD3301    	CALL	SETU0D		; set user 0/disk
+ 0718 C34E03    	JMP	RESTRT		; restart CCP
+                
+ 071B 0EE0      remote: mvi	c,0e0h	;special BDOS function for "remote load-n-go"
+ 071D CD0500    	call	bdos	;control is returned when program has terminated.
+ 0720 CD3301    	call	setu0d
+ 0723 C34E03    	jmp	restrt
+                
+                ;	Reset selected user # if changed
+                ;
+                RESETUSR:
+ 0726 3A8F07    	LDA	TMPUSR		; get old user #
+ 0729 5F        	MOV	E,A
+ 072A C31501    	JMP	SETUSR		; reset
+                
+ 072D 434F4D    COMMSG: DB	'COM'
+                
+                ;	soft reset command
+                ;
+ 0730 CDD700    REST:	CALL	RESET
+                	JR	RCCPNL
+ 0733+1800      	DB	18H,RCCPNL-$-1
+                
+                ;	Enter here to restart CCP with LOGIN of DEFDRV
+                ;
+                RSTCCP:
+ 0735 CD2E02    RCCPNL: CALL	SCANER		; get next token
+ 0738 3A6A07    	LDA	FCBFN		; get 1st char of token
+ 073B D620      	SUI	' '		; any char?
+ 073D 216907    	LXI	H,FCBDN
+ 0740 B6        	ORA	M
+ 0741 C2E801    	JNZ	ERROR
+ 0744 C34E03    	JMP	RESTRT
+                
+ 0747 00        RNGSUB: DB	0		; 0=SUB not active
+ 0748 0024242420SUBFCB: DB	0,'$$$     SUB',0,0
+ 0756 00        SUBFS2: DB	0		; S2
+ 0757 00        SUBFRC: DB	0		; rec count
+ 0758 0000000000	dw	0,0,0,0,0,0,0,0 ; disk group map
+ 0768 00        SUBFCR: DB	0		; curr rec #
+                
+                ;  File control block
+                ;
+ 0769 00        FCBDN:	DB	0		; disk name
+ 076A 0000000000FCBFN:	DB	0,0,0,0,0,0,0,0 ; file name
+ 0772 0000000000FCBFT:	DB	0,0,0,0,0,0,0	; file type
+ 0779 0000000000FCBDM:	dw	0,0,0,0,0,0,0,0 ; disk group map
+ 0789 00        FCBCR:	DB	0		; curr rec #
+                
+                ;	Other buffers
+                ;
+ 078A 00        tf1:	db	0	;temporary attribute flag
+ 078B 00        f1	db	0	;file attribute "f1"
+ 078C 00        IORESL: DB	0		; i/o results
+ 078D 01        TDRIVE: DB	1		; temp drive # (current drive as per 0004)
+ 078E 00        CHRCNT: DB	0		; char count for type
+ 078F 00        TMPUSR: DB	0		; temp user # for COM
+ 0790 00        TSELUSR: DB	0		; temp selected user #
+                
+ 0791 0000000000	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 07AF 0000000000	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 07CD           	ds	0	;this prints address on listing
+                
+ 00CE #         @@ set ((($-@CCP)+1) and 0ffh)
+                 if @@ ne 0
+                 rept 100h-@@
+                 db 0
+                 endm
+ 07CD+00         DB 0
+ 07CE+00         DB 0
+ 07CF+00         DB 0
+ 07D0+00         DB 0
+ 07D1+00         DB 0
+ 07D2+00         DB 0
+ 07D3+00         DB 0
+ 07D4+00         DB 0
+ 07D5+00         DB 0
+ 07D6+00         DB 0
+ 07D7+00         DB 0
+ 07D8+00         DB 0
+ 07D9+00         DB 0
+ 07DA+00         DB 0
+ 07DB+00         DB 0
+ 07DC+00         DB 0
+ 07DD+00         DB 0
+ 07DE+00         DB 0
+ 07DF+00         DB 0
+ 07E0+00         DB 0
+ 07E1+00         DB 0
+ 07E2+00         DB 0
+ 07E3+00         DB 0
+ 07E4+00         DB 0
+ 07E5+00         DB 0
+ 07E6+00         DB 0
+ 07E7+00         DB 0
+ 07E8+00         DB 0
+ 07E9+00         DB 0
+ 07EA+00         DB 0
+ 07EB+00         DB 0
+ 07EC+00         DB 0
+ 07ED+00         DB 0
+ 07EE+00         DB 0
+ 07EF+00         DB 0
+ 07F0+00         DB 0
+ 07F1+00         DB 0
+ 07F2+00         DB 0
+ 07F3+00         DB 0
+ 07F4+00         DB 0
+ 07F5+00         DB 0
+ 07F6+00         DB 0
+ 07F7+00         DB 0
+ 07F8+00         DB 0
+ 07F9+00         DB 0
+ 07FA+00         DB 0
+ 07FB+00         DB 0
+ 07FC+00         DB 0
+ 07FD+00         DB 0
+ 07FE+00         DB 0
+                 endif
+                
+ 07FF 00        SYSDRV: DB	0
+                
+ 0800           	END
+

@@ -1,0 +1,167 @@
+ 6130 =         VERS EQU '0a' ; JANUARY 19, 1983  08:17  DRM  "SETEXEC.ASM"
+                ***************************************************************
+                ** SETS ".COM" FILE ATTRIBUTE BIT F1 TO "1" OR "0"	     **
+                ** TO CAUSE EXECUTION BY 77422 CPU OR Z89.		     **
+                ***************************************************************
+                	MACLIB	Z80
+                
+ 0000 =         CPM	EQU	0
+ 0004 =         DEFDSK	EQU	4
+ 0005 =         BDOS	EQU	5
+ 005C =         FCB	EQU	5CH
+ 0080 =         DMA	EQU	80H
+ 0100 =         TPA	EQU	100H
+                
+ 0009 =         MSGOUT	EQU	9
+ 001E =         SETATT	EQU	30
+                
+ 0007 =         BELL	EQU	7
+ 000A =         LF	EQU	10
+ 000D =         CR	EQU	13
+                
+ 0060 =         CHR422	EQU	'`'	;CHARACTER ASSOCIATED WITH 77422 EXECUTION
+ 007E =         CHRZ89	EQU	'~'	;CHARACTER TO CAUSE Z89 EXECUTION
+                
+ 0100           	ORG	TPA
+ 0100 C36502    	JMP	START
+ 0103 3130303138	DB	'100182DRM'
+                
+ 010C 0D0A534554SIGNON: DB	CR,LF,'SETEXEC version 2.29'
+ 0122 3061      	DW	VERS
+ 0124 0D0A286329	DB	CR,LF,'(c) 1983 Magnolia Microsystems$'
+                
+                HELP:
+ 0145 0D0A546869 DB CR,LF,'This program sets the default execution mode for ".COM" files.'
+ 0185 0D0A547970 DB CR,LF,'Type:  SETEXEC filename param'
+ 01A4 0D0A66696C DB CR,LF,'filename = name of a ".COM" file'
+ 01C6 0D0A706172 DB CR,LF,'param    = "77422" or "Z89"'
+ 01E3 24         DB '$'
+                
+ 01E4 0D0A22643ANAMMSG: DB	CR,LF,'"d:filename.typ"$'
+ 01F7 2073657420SETMSG: DB	' set for '
+ 0200 2E2E2E2E2EPARAM:	DB	'..... execution.$'
+ 0211 206E6F7420NOFMSG: DB	' not found.$'
+                
+ 021D 0D0A4D6973PARERR: DB	CR,LF,'Missing or invalid Parameter.$'
+ 023D 0D0A46696CFILERR: DB	CR,LF,'Filename must not have "?".$' 
+                
+ 025B 3737343232L7422:	DB	'77422'
+ 0260 5A38390000Z89:	DB	'Z89',0,0
+                
+ 0265 110C01    START:	LXI	D,SIGNON
+ 0268 0E09      	MVI	C,MSGOUT
+ 026A CD0500    	CALL	BDOS
+ 026D 114501    	LXI	D,HELP
+ 0270 3A5D00    	LDA	FCB+1
+ 0273 FE20      	CPI	' '
+ 0275 CA2C03    	JZ	MSGRET
+ 0278 FE3F      	CPI	'?'
+ 027A CA2C03    	JZ	MSGRET
+                	LXIX	FCB
+ 027D+DD21      	DB	0DDH,21H
+ 027F+5C00      	DW	FCB
+                	MVIX	'C',+9
+ 0281+DD360943  	DB	0DDH,36H,+9,'C'
+                	MVIX	'O',+10
+ 0285+DD360A4F  	DB	0DDH,36H,+10,'O'
+                	MVIX	'M',+11
+ 0289+DD360B4D  	DB	0DDH,36H,+11,'M'
+ 028D 215C00    	LXI	H,FCB
+ 0290 010800    	LXI	B,8
+ 0293 3E3F      	MVI	A,'?'	;CHECK FOR ANY "?" IN NAME (NOT ALLOWED)
+                	CCIR
+ 0295+EDB1      	DB	0EDH,0B1H
+ 0297 113D02    	LXI	D,FILERR
+ 029A CA2C03    	JZ	MSGRET
+ 029D 215C00    	LXI	H,FCB
+ 02A0 11E701    	LXI	D,NAMMSG+3
+ 02A3 7E        	MOV	A,M
+ 02A4 23        	INX	H
+ 02A5 B7        	ORA	A
+ 02A6 C2AF02    	JNZ	ST0
+ 02A9 3A0400    	LDA	DEFDSK
+ 02AC E60F      	ANI	00001111B
+ 02AE 3C        	INR	A
+ 02AF C640      ST0:	ADI	'A'-1
+ 02B1 12        	STAX	D
+ 02B2 13        	INX	D
+ 02B3 13        	INX	D
+ 02B4 010800    	LXI	B,8
+                	LDIR
+ 02B7+EDB0      	DB	0EDH,0B0H
+ 02B9 13        	INX	D
+ 02BA 0E03      	MVI	C,3
+                	LDIR		;"COM" FORCED
+ 02BC+EDB0      	DB	0EDH,0B0H
+ 02BE 0E80      	MVI	C,10000000B
+ 02C0 115B02    	LXI	D,L7422
+ 02C3 3A6D00    	LDA	FCB+17
+ 02C6 FE20      	CPI	' '
+ 02C8 CAE902    	JZ	INVPAR
+ 02CB FE60      	CPI	CHR422
+ 02CD CAEF02    	JZ	GOTSC
+ 02D0 CD3103    	CALL	CMPSTR
+ 02D3 CAF702    	JZ	GOT
+ 02D6 0E00      	MVI	C,00000000B
+ 02D8 116002    	LXI	D,Z89
+ 02DB 3A6D00    	LDA	FCB+17
+ 02DE FE7E      	CPI	CHRZ89
+ 02E0 CAEF02    	JZ	GOTSC
+ 02E3 CD3103    	CALL	CMPSTR
+ 02E6 CAF702    	JZ	GOT
+ 02E9 111D02    INVPAR: LXI	D,PARERR
+ 02EC C32C03    	JMP	MSGRET
+                
+ 02EF 3A6E00    GOTSC:	LDA	FCB+17+1
+ 02F2 FE20      	CPI	' '
+ 02F4 C2E902    	JNZ	INVPAR
+ 02F7 C5        GOT:	PUSH	B
+ 02F8 210002    	LXI	H,PARAM
+ 02FB 010500    	LXI	B,5
+ 02FE EB        	XCHG
+                	LDIR
+ 02FF+EDB0      	DB	0EDH,0B0H
+ 0301 C1        	POP	B
+                	LXIX	FCB
+ 0302+DD21      	DB	0DDH,21H
+ 0304+5C00      	DW	FCB
+                	LDX	A,+1
+ 0306+DD7E01    	DB	0DDH,A*8+46H,+1
+ 0309 E67F      	ANI	01111111B
+ 030B B1        	ORA	C	;SET/RESET F1'
+                	STX	A,+1
+ 030C+DD7701    	DB	0DDH,70H+A,+1
+ 030F 115C00    	LXI	D,FCB
+ 0312 0E1E      	MVI	C,SETATT
+ 0314 CD0500    	CALL	BDOS
+ 0317 F5        	PUSH	PSW
+ 0318 11E401    	LXI	D,NAMMSG
+ 031B 0E09      	MVI	C,MSGOUT
+ 031D CD0500    	CALL	BDOS
+ 0320 F1        	POP	PSW
+ 0321 FEFF      	CPI	255
+ 0323 111102    	LXI	D,NOFMSG
+ 0326 CA2C03    	JZ	MSGRET
+ 0329 11F701    	LXI	D,SETMSG
+ 032C 0E09      MSGRET: MVI	C,MSGOUT
+ 032E C30500    	JMP	BDOS
+                
+ 0331 216D00    CMPSTR: LXI	H,FCB+17 ;DE POINTS TO REFERENCE STRING, 5 CHARACTERS MAX
+ 0334 D5        	PUSH	D
+ 0335 0605      	MVI	B,5
+ 0337 1A        CS0:	LDAX	D
+ 0338 B7        	ORA	A
+ 0339 CA4603    	JZ	ENDREF
+ 033C BE        	CMP	M
+ 033D C24903    	JNZ	XIT	;[NZ]
+ 0340 23        	INX	H
+ 0341 13        	INX	D
+ 0342 05        	DCR	B
+ 0343 C23703    	JNZ	CS0
+ 0346 7E        ENDREF: MOV	A,M
+ 0347 FE20      	CPI	' '	;USERS STRING MUST END HERE ALSO
+ 0349 D1        XIT:	POP	D
+ 034A C9        	RET	;[ZR] IF ALLS WELL...
+                
+ 034B           	END
+
