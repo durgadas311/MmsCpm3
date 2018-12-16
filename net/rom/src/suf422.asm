@@ -977,7 +977,7 @@ SEQtbl:	ds	64
 ;-------------------------------------------------------------------
 nxsrva:	ds	2
 nxsrvn:	ds	1
-ntype:	ds	1	; current node type/role
+ntype:	ds	1	; current node type/role, in high 4 bits
 
 nstat:	ds	1
 

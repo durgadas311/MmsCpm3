@@ -119,6 +119,7 @@ EXEHST	equ	011h
 RBOOT	equ	020h
 NBOOT	equ	028h
 NSTS	equ	030h
+NRSP	equ	038h
 EXEC	equ	060h	; +01 = load only
 GDBG	equ	070h
 TOKEN	equ	0d0h	;TOKEN-0, DATA = NET.TABLE
@@ -460,7 +461,7 @@ gt2:
 	stx	a,DATA+SID	;SID
 
 	lxix	rsphdr
-	mvix	038h,ZCODE
+	mvix	NRSP,ZCODE
 	mvix	0,ZBC
 	mvix	0,ZBC+1
 	lxix	stshdr

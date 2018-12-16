@@ -66,7 +66,7 @@ chkeop:
 	jz	ce3
 	mvi	a,false
 	sta	from89
-	lda	ch2hdr
+	lda	ch2hdr+ZCODE
 	ani	11111100b
 	cpi	EXEC
 	lhld	ch2hdr+ZHL
@@ -88,7 +88,7 @@ ce4:	lded	ch2hdr+ZBC
 	ei
 	jmp	ce0
 ce3:			;we just finish receiving a message from Z89.
-	lda	ch2hdr	;what kind of message was it??
+	lda	ch2hdr+ZCODE	;what kind of message was it??
 	ani	11110000b
 	jm	hm2	;illegal message code from Host.
 	cpi	GDBG
@@ -110,7 +110,7 @@ ce3:			;we just finish receiving a message from Z89.
 	lixd	ch2alt
 	lda	maddr
 	stx	a,SORC
-	lda	ch2hdr		;function code
+	lda	ch2hdr+ZCODE	;function code
 	stx	a,CODE
 	lda	ch2hdr+ZDE+1	;destination
 	stx	a,DEST
@@ -216,7 +216,7 @@ ce1c:	lda	rspflg
 	ldx	a,SORC
 	sta	cpnhdr+ZDE+1
 	ldx	a,CODE
-	sta	cpnhdr
+	sta	cpnhdr+ZCODE
 	lhld	altaddr
 	lxi	b,DATA
 	dad	b
@@ -279,7 +279,7 @@ hm3:	lda	cpnflg
 	jz	ldngo1
 	ret
 
-godbg:	lda	ch2hdr
+godbg:	lda	ch2hdr+ZCODE
 	ani	1111b
 	mov	c,a
 	add	a
@@ -330,12 +330,12 @@ lg2:	mvi	a,false
 	sta	didalt
 	ret
 
-gldng:	lda	ch2hdr
+gldng:	lda	ch2hdr+ZCODE
 	ani	00000011b
 	jnz	hm2
 	lhld	ch2hdr+ZHL
 	call	gohl
-	jmp	hm2
+	jmp	hm2	;if code returns cleany, keep going
 
 ;*******************************************************************
 ;
@@ -508,7 +508,7 @@ sv2:	call	LEDgrn		;assume TOKEN-0
 	dad	b			;
 	mov	a,m			;
 	ani	11110000b		;
-	jnz	sv21
+	jnz	sv21	; node is online
 	mov	a,m
 	inr	a
 	ani	00001111b
@@ -618,15 +618,15 @@ send89:
 	lhld	ch2alt
 	lded	ch2siz
 	call	send
-	sta	rsphdr+ZDE
+	sta	rsphdr+ZDE	; status of send
 	lxi	h,rspflg
 	mvi	m,true
 	lxi	h,outflg
 	mvi	m,false
 	ora	a
-	rz
-	rm
-	cpi	002h
+	rz	; no error
+	rm	; busy
+	cpi	2	; NAK
 	rz
 	jmp	LEDred
 
@@ -765,7 +765,7 @@ LATCH:	push	psw	;save response status (or zero)
 
 getresponse:	;(B) must have the code of the previously sent message.
 	mov	a,b	;and (C) must have the destination address.
-	sui	ACK
+	sui	ACK	; base code for confirmations
 	ani	11110000b	;ACK-type messagess get no response.
 	rz
 	mov	a,c	;see if message is "global"
@@ -795,7 +795,7 @@ gr6:	mov	m,a
 	mov	a,b
 	ret
 
-gr1:	mvi	a,1
+gr1:	mvi	a,1	; BC=node address
 	out	cmdA
 	in	cmdA
 	mov	h,a
@@ -808,14 +808,14 @@ gr1:	mvi	a,1
 	rnz
 	lixd	ch0addr
 	ldx	a,CODE
-	cpi	0f2h	;printer-server busy
+	cpi	BSY	;printer-server busy
 	jz	gr4
-	sui	0f0h
-	jz	gr2
+	sui	ACK	;0=succes (ACK)
+	jz	gr2	;update net.table
 	dcr	a
 	mvi	a,2	;NAK received
 	rz
-	mvi	a,5
+	mvi	a,5	;protocol error,
 	jmp	gr3	;if response wasn't ACK or NAK.
 
 gr4:	ldx	a,DATA	;get node that caused BSY
@@ -823,10 +823,13 @@ gr4:	ldx	a,DATA	;get node that caused BSY
 gr2:	lxi	h,srvtbl
 	dad	b
 	mov	b,a
+	; A node might have been polled, come online, and received the token
+	; since we last had the token, so our net.table might be out of date.
+	; adjust our copy of net.table, until we get the token again.
 	mov	a,m
 	ani	11110000b
 	jnz	gr5
-	mvi	a,TUNK	;reset demerrit count to 0
+	mvi	a,TUNK	;node was not online, reset demerrit count to 0
 gr5:	mov	m,a
 	mov	a,b
 	lxi	h,stshdr+ZDE+1
@@ -1092,7 +1095,7 @@ ps4:			;build return frame to satisfy CP/NET.
 	ldx	c,SORC		;send to source of this message.
 	sty	c,DEST		;NOTE: node address is transfered in (C)
 	sty	a,DATA+DID	;
-	mviy	01h,DATA+FMT	;FMT=01
+	mviy	01h,DATA+FMT	;FMT=01, CP/NET response
 	mviy	01h,CODE	;
 	mviy	1,DATA+SIZ	;SIZ=2 bytes
 	mviy	0,DATA+MSG	;
@@ -1285,7 +1288,7 @@ xboot:	push	psw
 	lxi	h,eops
 	setb	2,m
 	mvi	a,RBOOT
-	sta	ch2hdr	;command: boot
+	sta	ch2hdr+ZCODE	;command: boot
 	lxi	h,1
 	shld	ch2hdr+ZBC
 	mvi	a,false
