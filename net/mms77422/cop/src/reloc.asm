@@ -123,7 +123,7 @@ re1:	inp	a	;wait for INT to be acknowledged
 	xchg		;(DE) =  ''
 	call	relocate	;relocate module.
 			;(IX) = next SPR module
-	mvi	a,0e1h	;function code for "execute module"
+	mvi	a,060h	;function code for "execute module"
 	sta	func
 	lxi	h,func
 	lxi	b,7
