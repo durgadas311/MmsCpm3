@@ -1,6 +1,8 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
+VERN	equ	11h	; version 1.1
 
 	maclib	z80
+	$*macro
 
 CR	equ	13
 LF	equ	10
@@ -815,7 +817,7 @@ baud2:
 	; compute checksum, compare
 	lxi	b,rombeg
 	exx
-	lxi	d,romend-rst0
+	lxi	d,romend-rombeg
 	lxi	h,0
 	mvi	b,0
 cksum0:
@@ -2298,8 +2300,11 @@ l318sz	equ	$-l318rt
 ; MMS 77422 (Network) boot loader
 bm422:
 	lxix	bootbf
-	mvix	0b1h,+0 ; Boot code = B1
-	stx	e,+4	; Unit number
+	mvix	020h,+0 ; Boot code = 20
+	stx	e,+4	; Unit number (server)
+	mvix	1,+1	; BC=0001, length
+	mvix	0,+2	;
+	mvix	1,+7	; device code, Z89
 	mvi	c,11b
 	call	getport
 	rnz
@@ -2326,22 +2331,27 @@ bm422$1:
 	lxi	h,bootbf
 	lxi	d,7
 	call	snd422
-	mvi	a,0d6h	; D6 = send status
+	mvi	a,038h	; 38 = send status
 	call	get422
-	ldx	a,+1	; error code
+	ldx	a,+3	; error code
 	ora	a
 	rnz	 ; abort if error
-	mvi	a,0b0h	; B0 = Boot response
+bm422$2:
+	mvi	a,011h	; 1x = Boot response
 	call	get422
 	ldx	l,+5	; Code address
 	ldx	h,+6	;
+	push	h	; return address, code entry
 	ldx	e,+1	; Code length
 	ldx	d,+2	;
-	ldx	a,+3	; error code
-	ora	a
-	rnz	; abort if error
-	push	h	; return to code address...
-	jmp	rcv422	; get the boot code... (OS code?)
+	mov	a,e
+	ora	d
+	cnz	rcv422	; get code, if any
+	ldx	a,+0
+	cpi	13h	; load only - no execute
+	rnz		; jump to code
+	pop	h	; discard unused addr
+	jmp	bm422$2	; keep receiving until execute
 
 ; Wait for network message type in A,
 ; must watch for stray CP/NET messages and discard
@@ -2352,12 +2362,12 @@ get422$0:
 	lxi	d,7
 	call	rcv422
 	ldx	a,+0
+	ani	11111001b
 	pop	b
 	cmp	b
 	rz	; got desired message type
 	push	b
-	ani	11110001b
-	cpi	0c0h	; CP/Net message
+	cpi	000h	; CP/Net message
 	jrnz	get422$0
 	lxi	h,bootbf	; Receive and discard...
 	ldx	e,+1
@@ -2603,7 +2613,7 @@ prtver:
 	ret
 
 versms:	db	'Version ',TRM
-vers:	db	010h	; version byte... "1.0"
+vers:	db	VERN	; version byte... "1.0"
 
 erprom:	db	CR,LF,BEL,'EPROM err',TRM
 
@@ -2613,7 +2623,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	099b6h	; checksum...
+	dw	089f3h	; checksum...
 
 if	($ != 1000h)
 	.error "i2732 ROM overrun"
