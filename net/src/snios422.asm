@@ -115,7 +115,7 @@ re0:	mov	a,c
 
 	call	runout	;clear any characters stacked up in DMA buffer.
 
-	mvi	a,0d1h	;request network status
+	mvi	a,030h	;request network status
 	sta	func
 	call	put
 	mvi	a,1000b ;wait for netsts frame
@@ -135,7 +135,7 @@ NTWKST:
 	res	0,m
 	res	1,m
 nws:	push	psw
-	mvi	a,0d1h	;request network status
+	mvi	a,030h	;request network status
 	sta	func
 	call	put
 	lxi	h,srsts
@@ -153,15 +153,15 @@ get$frames:
 	push	b	;POP PSW will put mask in A again.
 	call	get
 	lda	func
-	cpi	0d0h	;status frame
+	cpi	030h	;status frame
 	jrz	nsts
-	cpi	0d6h	;send status frame
+	cpi	038h	;send status frame
 	jrz	ssts
-	cpi	0c2h	;unsolicited message. (does not terminate routine)
+	cpi	002h	;unsolicited message. (does not terminate routine)
 	jrz	mail
-	cpi	0e0h	;execute
+	cpi	010h	;execute
 	jrz	exec
-	cpi	0c0h	;CP/NET message response
+	cpi	001h	;CP/NET message response
 	jrz	cpnet
 ; What else could it be??
 gf0:	pop	psw
@@ -243,7 +243,7 @@ SNDMSG:
 	dad	d
 	shld	rBC
 	push	h
-	mvi	a,0c1h	;cp/net message code
+	mvi	a,000h	;cp/net message code
 	sta	func
 	push	b
 	call	put
