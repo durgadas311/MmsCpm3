@@ -16,7 +16,6 @@ BDOS	equ	5	;BDOS entry for users
 RST1	equ	(1)*8
 clk	equ	RST1+3
 ictl	equ	RST1+5
-RST5	equ	(5)*8
 FCB	equ	5CH
 DMA	equ	80H
 TPA	equ	0100H
@@ -317,26 +316,12 @@ ws00:	di
 	sta	CPM
 	sta	BDOS
 	sta	RST1
-	sta	RST5
 	lhld	@BIOSa
 	shld	CPM+1
-	lxi	d,5	;
-	dad	d	;
-	mov	d,m	;
-	mvi	e,0	;
-	lxi	h,1feh	;
-	dad	d	;
-	mov	e,m	;
-	inx	h	;
-	mov	d,m	;
-	xchg		;
-	mvi	m,(RET) ;reset ESC-sequence trapping, just in case...
 	lxi	H,@BDOS
 	shld	BDOS+1
 	lxi	h,TIC
 	shld	RST1+1
-	lxi	h,INT5
-	shld	RST5+1
 	xra	a
 	sta	clk
 	lxi	h,ictl
@@ -466,9 +451,9 @@ pu4:	dcr	e
 	ret
 
 ; byte count (BC) must be greater than 1.
-get422: dcx	b	;count first byte,
+get422:
 	mov	a,c	;must handle blocks larger than 256 bytes
-	inr	a	;(Z80 OUTIR/INIR cannot)
+	ora	a	;(Z80 OUTIR/INIR cannot)
 	mov	e,b
 	jrz	ge6
 	inr	e
@@ -480,25 +465,17 @@ ge0:	inp	a
 	ani	1000b	;check channel 2 for idle
 	jrz	ge0
 	dcr	c
-	ini		;get first byte. must IN/MOV M,A in single instruction
-	inr	c	;in case the transfer is for only 2 bytes: interupt 
-	nop		;will occur and 1st byte must be saved.
-	inr	b	;we want to test (B) later...
-	inp	a	;if DMA is really active, the data register will
-	ani	1000b	;be reloaded immediatly.
-	jrnz	ge3	;character has valid...continue with transfer...
-	dcx	h	;character was invalid. rewind pointers and start over.
-	jmp	ge0
-ge3:	dcr	c
-	dcr	b	;test (B) now for 0
-	jrz	ge4
 ge2:	inir		;get the rest of the characters.
-ge4:	dcr	e
+	dcr	e
 	jrnz	ge2
 ge5:	inp	a	;at this point we have all the characters we want but
-	jr	ge5	;the 77422 still has more to send (or it would have
-			;interupted us before this point) so we must continue
-			;to take characters untill it interupts us.
+	inr	c	; status port
+	inp	a
+	dcr	c
+	ani	0010b	; INT?
+	rnz
+	jr	ge5	;the 77422 still has more to send so we must continue
+			;to take characters until we see DONE
 
 
 crlf:	mvi	e,cr
@@ -516,15 +493,6 @@ TIC:	push	psw
 	pop	b
 	pop	psw
 chain:	jmp	0
-
-
-INT5:	inr	c
-	outp	a	;this routine will usually terminate "get422".
-	dcr	c
-	ini		;get last byte of transfer.
-	pop	b	;discard interupt return address.
-	ei
-	ret		;and return to caller.
 
 func:	db	0	;function code or register (A)
 rBC:	dw	0	;parameter or registers (BC)

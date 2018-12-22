@@ -81,10 +81,6 @@ start:	lxi	sp,stack
 	cpi	16+1
 	jnc	errxit
 	sta	sysdrv	;save current system-drive designator
-	mvi	a,(JMP)
-	sta	RST5
-	lxi	h,INT5
-	shld	RST5+1
 	in	port
 	mvi	c,07cH
 	ani	11b
@@ -283,14 +279,6 @@ pu2:	outir
 pu4:	dcr	e
 	jnz	pu2
 	ret
-
-INT5:	inr	c
-	outp	a	;this routine will usually terminate "get422".
-	dcr	c
-	ini		;get last byte of transfer.
-	pop	b	;discard interupt return address.
-	ei
-	ret		;and return to caller.
 
 porta:	db	0
 sysdrv: db	0
