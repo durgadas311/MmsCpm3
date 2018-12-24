@@ -1,7 +1,7 @@
 ;****************************************************************
 ; H8-512K Banked Memory Test Program		 		*
 ;****************************************************************
-rev	equ	'1'
+rev	equ	'2'
 
 ; NOTE: This does not test every single bit in memory,
 ; but does confirm that 32 unique 16K pages can be mapped
@@ -27,7 +27,7 @@ ctl	equ	000dh
 msgout	equ	9
 vers	equ	12
 
-mmu	equ	000h	; H8-512K Bank Switch Board base port
+mmu	equ	050h	; H8-512K Bank Switch Board base port
 rd00K	equ	mmu+0
 rd16K	equ	mmu+1
 rd32K	equ	mmu+2
@@ -39,6 +39,12 @@ wr48K	equ	mmu+7
 
 	org	100h
 
+	mvi	a,mmu
+	lxi	h,port
+	call	hexout
+	lxi	d,signon
+	mvi	c,msgout
+	call	bdos
 	mvi	c,vers
 	call	bdos
 	mov	a,l
@@ -402,6 +408,8 @@ res3:	db	'hh',cr,lf,'$'
 
 noerr:	db	'No errors found.',cr,lf,'$'
 mmuerr:	db	'Aborting test: No MMU?',cr,lf,'$'
+signon:	db	'Test H8-512K rev ',rev,' port '
+port:	db	'hh',cr,lf,'$'
 
 banks:
 	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u

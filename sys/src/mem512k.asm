@@ -1,4 +1,4 @@
-vers equ '2 ' ; Oct 29, 2018  18:13   drm "MEM512K.ASM"
+vers equ '2b' ; Dec 23, 2018  18:13   drm "MEM512K.ASM"
 ;****************************************************************
 ; Banked Memory BIOS module for CP/M 3 (CP/M plus)		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -12,7 +12,7 @@ cr	equ 13
 lf	equ 10
 bell	equ 7
 
-mmu	equ	000h	; base port of RAM256K
+mmu	equ	050h	; base port of RAM256K
 
 rd	equ	0	; mmu offset for read
 wr	equ	4	; mmu offset for write
