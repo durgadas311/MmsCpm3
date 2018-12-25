@@ -1,7 +1,7 @@
 ;****************************************************************
 ; H8-512K Banked Memory Stress Test Program		 		*
 ;****************************************************************
-rev	equ	'1'
+rev	equ	'2'
 
 ; NOTE: This program does a continuous stress test of one
 ; page mapped into segment 4000H.
@@ -47,37 +47,8 @@ wr48K	equ	mmu+7
 
 	org	100h
 
-	lxi	h,cmd
-	mov	c,m
-	mvi	b,0
-	inx	h
-	dad	b
-	mvi	m,0	; NUL terminate
-	; TODO: check for 'X' = cross-bank copy/test
-	lxi	h,cmd+1
-	lxi	d,-1	; detect empty input
-	call	decin
-	jc	invprm
-	mov	a,e
-	ana	d
-	inr	a
-	jnz	param
-	lxi	d,1
-param:	mov	a,d
-	ora	a
-	jnz	invprm
-	mov	a,e
-	cpi	32
-	jnc	invprm
-	cpi	0
-	jz	invprm
-	cpi	2
-	jz	invprm
-	cpi	3
-	jz	invprm
+	mvi	a,1
 	sta	pgnum
-	lxi	h,page
-	call	decout
 	mvi	a,mmu
 	lxi	h,port
 	call	hexout
@@ -148,16 +119,16 @@ mmu$deinit:
 start:
 	lxi	sp,stack
 	call	mmu$init
-
-	lda	pgnum
-	ori	80h
-	out	rd16K	; map into 16K
-	out	wr16K	;
 	mvi	c,SEED0	; for now, just free-run seed since
 			; a BCD pattern won't repreat in a binary
 			; address space, at least not often.
-
 	di
+
+tst4:	lda	pgnum
+	ori	80h
+	out	rd16K	; map into 16K
+	out	wr16K	;
+
 tst1:	lxi	h,buf16K
 tst0:	mov	m,c
 	mov	a,m
@@ -187,9 +158,21 @@ byteok:	mov	a,c
 	mov	c,a
 	in	console+5
 	ani	1	; RxD ready
-	jz	tst1
+	jnz	done
+	lda	pgnum
+	cpi	1
+	jnz	tst2
+	inr	a
+	inr	a
+tst2:	inr	a
+	cpi	32
+	jc	tst3
+	mvi	a,1
+tst3:	sta	pgnum
+	jmp	tst4
+
 ; done with test... user intervention...
-	call	mmu$deinit	; enables intrs
+done:	call	mmu$deinit	; enables intrs
 	mvi	c,conin
 	call	bdos
 	lda	err0
@@ -297,13 +280,12 @@ hex0:	ani	0fh
 	inx	h
 	ret
 
-result:	db	'Page'
+result:	db	'Stopped at page'
 res0:	db	'nnn at 4000H errs '
 res1:	db	'nnn ',cr,lf,'$'
 
 signon:	db	'Stress H8-512K rev ',rev,' port '
-port:	db	'hh page '
-page:	db	'nnn at 4000H',cr,lf,'$'
+port:	db	'hh all pages 1,4-31',cr,lf,'$'
 
 	ds	256
 stack:	ds	0
