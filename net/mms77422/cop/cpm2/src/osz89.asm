@@ -468,15 +468,19 @@ ge0:	inp	a
 ge2:	inir		;get the rest of the characters.
 	dcr	e
 	jrnz	ge2
-ge5:	inp	a	;at this point we have all the characters we want but
-	inr	c	; status port
-	inp	a
+ge7:	inr	c	; status port
+ge4:	inp	a
+	bit	1,a	; INT?
+	jrnz	ge5
+	ani	1000b	;check channel 2 for idle
+	jrz	ge4
 	dcr	c
-	ani	0010b	; INT?
-	rnz
-	jr	ge5	;the 77422 still has more to send so we must continue
+	inp	a	;at this point we have all the characters we want but
+	jr	ge7	;the 77422 still has more to send so we must continue
 			;to take characters until we see DONE
 
+ge5:	outp	a	;clear interrupt
+	ret
 
 crlf:	mvi	e,cr
 	call	conout
