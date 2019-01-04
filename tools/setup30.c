@@ -126,8 +126,10 @@ static void dump_modules(uint8_t *spr) {
 	printf("    %s\n", get_string(spr, str));
 	str = spr[MEMSTR + 2];
 	str |= spr[MEMSTR + 3] << 8;
-	str += BIOS_START;
-	printf("    %s\n", get_string(spr, str));
+	if (str != 0) {
+		str += BIOS_START;
+		printf("    %s\n", get_string(spr, str));
+	}
 	int thrd = spr[THRDSTR];
 	thrd |= spr[THRDSTR + 1] << 8;
 	while (thrd != 0) {
