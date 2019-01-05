@@ -101,13 +101,13 @@ device.mod: mcd80a.obj device.obj plm80.lib
 	thames :f2:link mcd80a.obj,device.obj,plm80.lib to device.mod
 
 initdir.com: mcd80d.rel initdir.rel plidio.rel plibios3.rel
-	vcpm link initdir=mcd80d,initdir,plidio,plibios3'[a]'
+	vcpm link initdir=mcd80d,initdir,plidio,plibios3'[a,nr]'
 
 rename.mod: mcd80a.obj rename.obj parse.obj plm80.lib
 	thames :f2:link mcd80a.obj,rename.obj,parse.obj,plm80.lib to rename.mod
 
 initdir.rel: initdir.pli plibios.dcl
-	pli initdir '$$dl'
+	CPMDefault=a: vcpm pli d:initdir '$$dl'
 
 gencpm.com: gencpm
 pip.com: pip
