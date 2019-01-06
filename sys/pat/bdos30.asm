@@ -5085,7 +5085,7 @@ retmon:
 ;
 efcb:	db	empty	; 0e5=available dir entry
 rodsk:	dw	0	; read only disk vector
-dlog:	dw	0	; logged-in disks
+	dw	0	; logged-in disks
 
 if MPM
 
@@ -6134,5 +6134,7 @@ liststf	equ	writef+3	; list status function
 sectran	equ	liststf+3	; sector translate
 
 endif
+
+dlog	equ	$		; put login vector in BIOS dseg...
 
 		end
