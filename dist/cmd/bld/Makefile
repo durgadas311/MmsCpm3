@@ -100,7 +100,7 @@ dir.mod: mcd80a.obj main80.obj scan.obj search.obj sort.obj disp.obj util.obj dp
 device.mod: mcd80a.obj device.obj plm80.lib
 	thames :f2:link mcd80a.obj,device.obj,plm80.lib to device.mod
 
-initdir.com: mcd80d.rel initdir.rel plidio.rel plibios3.rel
+initdir.com: mcd80d.rel initdir.rel plidio.rel plibios3.rel plilib.irl
 	vcpm link initdir=mcd80d,initdir,plidio,plibios3'[a,nr]'
 
 rename.mod: mcd80a.obj rename.obj parse.obj plm80.lib
