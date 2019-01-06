@@ -11,8 +11,8 @@ export CPMDefault = d:
 all:	hexcom.com save.com \
 	gencpm.com pip.com help.com erase.com type.com setdef.com \
 	date.com ed.com gencom.com show.com put.com submit.com \
-	set.com get.com dir.com dump.com patch.com rename.com
-#	initdir.com	# need PL/I...
+	set.com get.com dir.com dump.com patch.com rename.com \
+	initdir.com sid.com
 
 %.obj: %.asm
 	thames :f3:asm80 $? debug
@@ -133,3 +133,17 @@ submit.com: submit subrsx.rel
 
 ccp.com: ccp3.hex loader3.prl datestr.hex ccp3.sub
 	vcpm ccp3.sub
+
+sid.com: prs1asm.asm prs2mon.asm prs0mov.asm
+	vcpm mac prs0mov.asm '$$SZ'
+	vcpm mac prs1asm.asm '$$SZ'
+	vcpm mac prs2mon.asm '$$SZ'
+	mv prs1asm.hex prs1asm0.hex
+	mv prs2mon.hex prs2mon0.hex
+	vcpm mac prs1asm.asm '$$SZ+R'
+	vcpm mac prs2mon.asm '$$SZ+R'
+	mv prs1asm.hex prs1asm1.hex
+	mv prs2mon.hex prs2mon1.hex
+	vcpm pip relprsid.hex=prs1asm0.hex[i],prs2mon0.hex,prs1asm1.hex[i],prs2mon1.hex
+	vcpm genmod relprsid.hex relprsid.com
+	vcpm mksid.sub
