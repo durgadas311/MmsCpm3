@@ -113,14 +113,15 @@ bdos:	;arrive here from user programs
 
 	cpi diskfx! jnc disk$func
 	
+	sta fx
 	lxi h,functab! mvi b,0
 	dad b! dad b! mov a,m
 	inx h! mov h,m! mov l,a! pchl
 
 	db	'COPYRIGHT (C) 1982,'
 	db	' DIGITAL RESEARCH '
-	db	'151282'
-	dw	0,0,0,0,0,0,0,0,0,0
+	db	'151282',0
+	dw	0,0,0,0,0,0,0,0
 
 functab:
 	dw	wbootf, bank$bdos, bank$bdos, func3
@@ -292,7 +293,7 @@ disk$function:
 
 	pop d ;restore FCB address
 	pop b! mov a,b ;restore fcbtbl byte & function #
-	ani 0f8h! rz
+	ani 0fch! rz
 	lxi h,commonfcb! xchg! lxi b,33
 	ral! jc copy$fcb$back			;fcbout test
 	mvi c,36! ral! jc copy$fcb$back		;pfcbout test
@@ -614,7 +615,7 @@ listfx:		jmp	listf
 olog:		dw	0
 rlog:		dw	0
 
-patch$flgs:	dw	0,0
+patch$flgs:	dw	0,0700h
 
 ; Base of RESBDOS
 
