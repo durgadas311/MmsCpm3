@@ -645,7 +645,7 @@ endif
 reboote: 
 	lxi h,0fffdh! jmp rebootx0 ; BDOS error
 rebootx:
-	lxi h,0fffeh ; CTL-C error
+	call l2d24h ; patch
 rebootx0:
 	shld clp$errcde
 rebootx1:
@@ -705,5 +705,3 @@ shell$rtn:
 	mov a,l! mov b,h! ret
 
 	page
-
-

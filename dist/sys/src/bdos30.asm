@@ -844,7 +844,7 @@ endif
 			rz ; no message if ok
 			; checksum error, are we beyond
 			; the end of the disk?
-			call nowrite! rnz
+			call nowrite! nop ; patch
 
 media$change:
 			call discard$data
@@ -1222,8 +1222,6 @@ if MPM
 initialize1:
 else
 	call test$media$flag! mvi m,0 ; Reset media change flag
-	call discard$data
-	call discard$dir
 endif
 
 if BANKED
@@ -1231,12 +1229,14 @@ if BANKED
 	call chksiz$eq$8000h! jnz initialize2 ; no
 	; Is this an initial login operation?
 	; register A = 0
-	lhld lsn$add! cmp m! mvi m,2! jz initialize2 ; yes
-	jmp copy$alv ; Copy 2nd ALV to 1st ALV
+	lhld lsn$add! cmp m! nop! nop! jz initialize2 ; patch - yes
+	jmp l2d40h ; patch - Copy 2nd ALV to 1st ALV
 initialize2:
 
 endif
 
+	call discard$data
+	call discard$dir
 	call get$nalbs ; Get # of allocation vector bytes
 	mov b,h! mov c,l ; Count down bc til zero
 	lhld alloca ; base of allocation vector
@@ -1265,7 +1265,7 @@ endif
 
 	initial2:
 		mvi c,true! call read$dir
-		call end$of$dir! jz copy$alv
+		call end$of$dir! jz l2d6ah ; patch
 		; not end of directory, valid entry?
 		call getdptra ; hl = buffa + dptr
 		xchg! lhld arecord1! mov a,h! ana l! inr a! xchg
@@ -1855,7 +1855,7 @@ endif
 
 open:
 	; Search for the directory entry, copy to fcb
-	call search$namlen
+	call l2d83h ; patch
 open1:
 	rz ; Return with lret=255 if end
 	; not end of directory, copy fcb information
@@ -1933,7 +1933,7 @@ if MPM
 	call set$fcb$cks$flag
 endif
 
-	call get$dir$ext! mov c,a
+	call l2cfch! mov c,a ; patch
 	mov b,m! push b
 	; b = original extent, c = directory extent
 	; Set fcb(ex) to directory extent
@@ -2064,7 +2064,7 @@ make:
 	; Create a new file by creating a directory entry
 	; then opening the file
 
-	lxi h,xdcnt! call test$ffff! cnz set$dcnt$dblk
+	call l2d76h! call test$ffff! cnz set$dcnt$dblk ; patch
 
 	lhld info! push h ; Save fcb address, Look for E5
 	lxi h,efcb! shld info ; info = .empty
@@ -2140,7 +2140,7 @@ if MPM
 		call set$sdcnt
 endif
 
-		call search$namlen ; Next extent found?
+		call l2d83h ; patch - Next extent found?
 		jnz open$reel1
 			; end of file encountered
 			lda rmf! inr a ; 0ffh becomes 00 if read
@@ -4160,7 +4160,7 @@ endif
 
 func19:
 	; Delete a file
-	call reselectx
+	call l2d7dh ; patch
 	jmp delete
 
 func20:
@@ -4341,7 +4341,7 @@ endif
 
 func23:
 	; Rename a file
-	call reselectx
+	call l2d7dh ; patch
 	jmp rename
 
 func24:
@@ -4394,7 +4394,7 @@ func29:
 func30:
 	; Set file indicators
 	call check$wild
-	call reselectx
+	call l2d7dh ; patch
 	call indicators
 	jmp copy$dirloc ; lret=dirloc
 
@@ -4631,7 +4631,7 @@ flush1:
 	lda fx! cpi 48! jz flush3
 	; Function 98 - reset allocation
 	; Copy 2nd ALV over 1st ALV
-	call copy$alv! jmp flush35
+	call copy$alv! jmp l2d3ah ; patch
 flush3:
 	call flushx
 	; if e = 0ffh then discard buffers after possible flush
@@ -5417,7 +5417,7 @@ endif
 	; Is command flush?
 	pop a! push a! cpi 4! jnc deblock1 ; yes
 	; Is referenced physical record already in buffer?
-	call compare! jz deblock45 ; yes
+	call l2d0bh! jz deblock45 ; patch - yes
 	xra a
 deblock1:
 	; Does buffer contain an updated record?
@@ -5450,7 +5450,7 @@ deblock2:
 deblock25:
 	; Discard BCB on read operations in case 
 	; I/O error occurs
-	lhld curbcba! mvi m,0ffh
+	call l2d1bh ! mvi m,0ffh ; patch
 	; Read physical record buffer
 	mvi a,2! jmp deblock35
 deblock3:
@@ -5550,7 +5550,7 @@ endif
 if BANKED
 
 get$bcba:
-	shld rootbcba
+	call l2d30h ; patch
 	lxi d,-13! dad d! shld lastbcba
 	call get$next$bcba! push h
 	; Is there only 1 bcb in list?
@@ -5571,7 +5571,7 @@ get$bcb11:
 	ora a! jz get$bcb14 ; yes
 	; Does bcb(5) [bcb sequence] = phymsk?
 	cmp m! jnz get$bcb14 ; no
-	lhld seqbcba! mov a,l! ora h! jnz get$bcb14
+	lda l2d39h! ora a! nop ! jnz get$bcb14 ; patch
 	lhld lastbcba! shld seqbcba
 get$bcb14:
 	xchg
@@ -5582,9 +5582,9 @@ get$bcb15:
 get$bcb2:
 	; Matching bcb not found
 	; Was a sequentially accessed bcb encountered?
-	lhld seqbcba! mov a,l! ora h! jnz get$bcb25 ; yes
+	lhld emptybcba! mov a,l! ora h! jnz get$bcb25 ; patch - yes
 	; Was a discarded bcb encountered?
-	lhld emptybcba! mov a,l! ora h! jz get$bcb3 ; no
+	lhld seqbcba! mov a,l! ora h! jz get$bcb3 ; patch - no
 get$bcb25:
 	shld lastbcba
 get$bcb3:
@@ -5998,6 +5998,90 @@ else
 endif
 
 	pop b! pop h! pop d! jmp movef
+
+; Patches
+l2cfch:	lda chksiz+1
+	ral
+	jc get$dir$ext ; 1497h
+	mvi a,0ffh
+	sta l2d23h
+	jmp get$dir$ext
+
+l2d0bh:	cpi 3
+	jnz compare
+	lda l2d23h
+	inr a
+	jnz compare
+	pop h
+	jmp deblock25
+
+l2d1bh:	xra a
+	sta l2d23h
+	lhld curbcba
+	ret
+
+l2d23h:	db	0
+
+l2d24h:	lxi h,0
+	shld conbuffadd
+	shld ccp$conbuff
+	dcx h
+	dcx h
+	ret
+
+l2d30h:	shld rootbcba
+	sui 3
+	sta l2d39h
+	ret
+
+l2d39h:	db	0
+
+l2d3ah:	call l2d43h
+	jmp flush4
+
+l2d40h:	call copy$alv
+l2d43h:	lhld dtabcba
+	mov a,l
+	ana h
+	inr a
+	rz
+l2d4ah:	mov e,m
+	inx h
+	mov d,m
+	mov a,d
+	ora e
+	rz
+	lxi h,adrive
+	ldax d
+	cmp m
+	jnz l2d63h
+	lxi h,4
+	dad d
+	mvi a,0ffh
+	cmp m
+	jnz l2d63h
+	stax d
+l2d63h:	lxi h,13
+	dad d
+	jmp l2d4ah
+
+l2d6ah:	call copy$alv
+	lhld lsn$add
+	mov a,m
+	ora a
+	rnz
+	mvi m,2
+	ret
+
+l2d76h:	call check$write
+	lxi h,xdcnt
+	ret
+
+l2d7dh:	call reselectx
+	jmp check$write
+
+l2d83h:	call setfwf
+	jmp search$namlen
 
 if not MPM
 if BANKED

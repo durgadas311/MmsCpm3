@@ -152,7 +152,7 @@ QCONOUTF:
 	;DOES FX = INPUT?
 	LDA FX! DCR A! JZ CONOUTF ;YES
 	;IS ESCAPE SEQUENCE DECODING IN EFFECT?
-	MOV A,B! ANI 8! JNZ SCONOUTF ;YES
+	MOV A,B! ANI 10h! JNZ SCONOUTF ;patch - YES
 	JMP CONOUTF
 ;
 conout:
@@ -688,9 +688,10 @@ if BANKED
 			call refresh
 		rdech2:
 endif
-			LDA CONMODE! ANI 08H! JNZ NOTC
+			LDA CONMODE! ANI 08H! JNZ NOTC1 ; patch
 			mov a,m ;recall char
 			cpi ctlc ;set flags for reboot test
+		notc1:
 			mov a,b ;move length to A
 			jnz notc ;skip if not a control c
 			cpi 1 ;control C, must be length 1
