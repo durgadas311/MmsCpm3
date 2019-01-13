@@ -16,11 +16,11 @@ patch1:	shld 777ah
 
 patch2:	lxi h,4661h
 	push h
-	mvi m,'c'
+	mvi m,'c'	; low 4663h
 	inx h
-	mvi m,'F'
+	mvi m,'F'	; high 4663h
 	pop h
-	call 1003h
+	call 1003h	; never returns (exit)
 
 ;	dw	0,0,0,0,0,0,0,0
 	dw	0,0,0,0,0; 0,0,0

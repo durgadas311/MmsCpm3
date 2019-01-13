@@ -63,7 +63,7 @@ buf	equ	080h			;Password Buffer
 	db	'COPYRIGHT 1982, '	;Copyright and Year
 	db	'DIGITAL RESEARCH'	
 	db	'151282'		;Version Date [day-month-year]
-	db	0,0,0,0			;Patch Bit Map
+	db	0,0,0,3			;Patch Bit Map
 	db	'654321'		;Serial Number Identifier
 	;
 	;********************************
@@ -402,7 +402,7 @@ prl$serial2:
 	ret
 	;
 serial:					;this routine checks a certain
-	lxi 	h,buff+122		;memory block and searches 6 
+	lxi 	h,buff+112		;memory block and searches 6
 	lxi	d,ser$table
 	mvi	b,5			;certain bytes to see if it is
 serial2:
@@ -650,7 +650,7 @@ plc$patch:				;This routine checks to see
 	lda	val			;what byte to alter 
 	cpi	9
 	jc	byte3			;inputed # is 1-8
-	cpi	24
+	cpi	25
 	jnc	byte0			;inputed # is 25-32
 	cpi	17
 	jc	byte2			;inputed # is 9-16
@@ -1058,7 +1058,7 @@ byte$pos:	db 0			;Postion of byte (0-3)
 patch$pos:	dw 0			;Holds address of patch byte
 com$table:	db 'COM'		;These tables are used to 
 prl$table:	db 'PRL'		;  compare file types in         
-ser$table:	db '654321'		;This table is for serial checker
+ser$table:	db '151282'		;This table is for serial checker
 table:		db 1,2,4,8,16,32,64,128	;This table is for bit manipulation
 		ds 16			;Stack area
 stack:

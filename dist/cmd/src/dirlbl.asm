@@ -167,7 +167,7 @@ dsksel:                                 ; select disk and get parameters
         lxi b,4 ! dad b                         ; HL = addr DIR BCB
         call gethl ! shld aDIRBCB
         lxi b,0ah ! dad b                       ; Hl => DIR buffer
-        shld bufptr                             ; use BDOS buffer for
+        call patch1                             ; use BDOS buffer for
                                                 ; BIOS reads & writes
                                                 ; must jam FF into it to
                                                 ; signal don't use when done
@@ -530,7 +530,18 @@ gobios: ;jump to bios entry point
 ;
 
 ret$stack:      dw      0
-                ds      32
+                ds      64
 loc$stack:
+
+patch1:	mov	e,m
+	inx	h
+	mov	d,m
+	xchg
+	shld	bufptr
+	ret
+here	equ	($-serial)
+	rept	((here+0ffh) and 0ff00h)-here
+	db	0
+	endm
 end
 

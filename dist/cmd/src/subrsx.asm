@@ -11,8 +11,7 @@ title	'GET.RSX 3.0 - CP/M 3.0 Input Redirection - August 1982'
 true		equ	0ffffh
 false		equ	00000h
 ;
-	maclib	getrsx		;[JCE] The Get/Submit equate 
-	maclib	makedate	;[JCE] Build date
+submit		equ	true	;true if submit RSX
 remove$rsx	equ	false	;true if RSX removes itself
 ;				;false if LOADER does removes
 ;
@@ -121,7 +120,7 @@ coninfx	equ	074h	;offset of conin JMP from page boundary
 
 
 ;******************************************************************
-;		RSX HEADER 
+;		RSX HEADER
 ;******************************************************************
 
 serial:	db	0,0,0,0,0,0
@@ -281,7 +280,7 @@ if submit
 	call	subdos		;delete SYSIN??.$$$ if not
 endif
 	lxi	h,kill
-	dcr	m		;set to 0ffh, so we are removed 
+	dcr	m		;set to 0ffh, so we are removed
 	xchg			; D = base of this RSX
 	lhld	scbadr
 	mvi	l,ccpflg+1	;hl = .ccp flag 2 in SCB
@@ -414,7 +413,7 @@ redirect:
 	push	d		;save info
 	mov	a,c		;function no. to A
 	lxi	h,retmon	;program return routine
-	push	h		;push on stack 
+	push	h		;push on stack
 	;
 	;
 	cpi	creadf
@@ -460,7 +459,7 @@ skip:	;
 	mov	a,m
 	ani	0feh		;turn off control C status
 	mov	m,a
-	;restore the BDOS call 
+	;restore the BDOS call
 	pop	d		;restore BDOS function no.
 	pop	b		;restore BDOS parameter
 	;restore the user's stack
@@ -590,7 +589,7 @@ rebootx:
 	jmp	wboot
 ;
 ;
-;	get input redirection mode to A 
+;	get input redirection mode to A
 ;	turn on ^C status mode for break
 ;	return .conmode+1 in HL
 ;	preserve registers BC and DE
@@ -662,7 +661,7 @@ echoc:
 conbrk:	;STATUS - check for character ready
 	lxi h,statflg
 	mov b,m! mvi m,0ffh	;set conditional status flag true
-	call getmode		;check input redirection status mode  
+	call getmode		;check input redirection status mode
 	cpi 1! rz		;actual status mode => return true
 	ora a! rz		;false status mode  => return false
 	;conditional status mode => false unless prev func was status
@@ -712,7 +711,7 @@ read:	;read to buffer address (max length, current length, buffer)
 			cpi ctlp! jnz notp 		;skip if not ctlp
 			;list toggle - change parity
 			push h!	push b			;save counters
-			lhld scbadr! mvi l,listcp	;hl =.listcp 
+			lhld scbadr! mvi l,listcp	;hl =.listcp
 			mvi a,1! sub m			;True-listcp
 			mov m,a 			;listcp = not listcp
 			pop b! pop h! jmp readnx 	;for another char
@@ -778,7 +777,7 @@ exit$table:			;addresses to go to on exit
 	endif
 	;
 movstart:
-init$table:			;addresses used by GET.COM for 
+init$table:			;addresses used by GET.COM for
 scbadr:	dw	kill		;address of System Control Block
 	;
 	if bios$functions	;GET.RSX initialization
@@ -860,10 +859,8 @@ ccpcnt:	db	1
 	endif
 patch$area:
 	ds	30h
-	db	' '
-	@BDATE
-	db	' '
-	@SCOPY
+	db	' 151282 '
+	db	' COPYR ''82 DRI '
 	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h
 	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h
 	db	67h,67h,67h,67h,67h, 67h,67h,67h,67h,67h

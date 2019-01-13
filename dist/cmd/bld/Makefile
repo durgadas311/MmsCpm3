@@ -8,11 +8,14 @@ export ISIS_F5 = $(HOME)/git/intel80tools/itools/isis_4.3
 export CPMDrive_D = $(PWD)
 export CPMDefault = d:
 
+MODS = $(wildcard *.mod)
+NOTYPES = $(subst .mod,,$(MODS))
+
 all:	hexcom.com save.com \
 	gencpm.com pip.com help.com erase.com type.com setdef.com \
 	date.com ed.com gencom.com show.com put.com submit.com \
 	set.com get.com dir.com dump.com patch.com rename.com \
-	initdir.com sid.com
+	initdir.com sid.com ccp.com device.com
 
 %.obj: %.asm
 	thames :f3:asm80 $? debug
@@ -40,7 +43,10 @@ all:	hexcom.com save.com \
 	vcpm link $*'[op,nr]'
 
 clobber:
-	rm -f *.obj *.hex *.rel *.mod *.com *.lst *.prn *.rsx
+	rm -f *.obj *.hex *.rel *.mod *.com *.lst *.prn *.rsx $(NOTYPES)
+
+%-patch: __FRC__
+	vcpm ./$@
 
 #
 # NOTE: conflict btw DATE.ASM and DATE.PLM, for DATE.OBJ
@@ -55,8 +61,8 @@ save.com: save.rel
 gencpm.mod: mcd80f.obj gencpm.obj setbuf.obj getdef.obj crdef.obj ldrlwr.obj datmod.obj plm80.lib
 	thames :f2:link mcd80f.obj,gencpm.obj,setbuf.obj,getdef.obj,crdef.obj,ldrlwr.obj,datmod.obj,plm80.lib to gencpm.mod
 
-pip.mod: mcd80f.obj inpout.obj pip.obj plm80.lib
-	thames :f2:link mcd80f.obj,inpout.obj,pip.obj,plm80.lib to pip.mod
+pip.mod: mcd80g.obj inpout.obj pip.obj plm80.lib
+	thames :f2:link mcd80g.obj,inpout.obj,pip.obj,plm80.lib to pip.mod
 
 help.mod: mcd80h.obj help.obj plm80.lib
 	thames :f2:link mcd80h.obj,help.obj,plm80.lib to help.mod
@@ -70,8 +76,8 @@ type.mod: mcd80a.obj type.obj parse.obj plm80.lib
 setdef.mod: mcd80a.obj setdef.obj plm80.lib
 	thames :f2:link mcd80a.obj,setdef.obj,plm80.lib to setdef.mod
 
-date.mod: mcd80d.obj date.obj plm80.lib
-	thames :f2:link mcd80d.obj,date.obj,plm80.lib to date.mod
+date.mod: mcd80a.obj date.obj plm80.lib
+	thames :f2:link mcd80a.obj,date.obj,plm80.lib to date.mod
 
 ed.mod: mcd80a.obj ed.obj plm80.lib
 	thames :f2:link mcd80a.obj,ed.obj,plm80.lib to ed.mod
@@ -119,17 +125,17 @@ date.com: date
 ed.com: ed
 gencom.com: gencom
 show.com: show
-set.com: set
-get.com: get
-put.com: put
 dir.com: dir
 device.com: device
 rename.com: rename
 
+dir: dir.mod
+	thames :f4:locate $? 'code(0100h)' 'stacksize(50)'
+
 submit.com: submit subrsx.rel
 	vcpm link sub.rsx=subrsx'[op,nr]'
 	obj2bin submit submit.com
-	vcpm gencom submit sub.rsx
+	vcpm gencom submit.com sub.rsx
 
 ccp.com: ccp3.hex loader3.prl datestr.hex ccp3.sub
 	vcpm ccp3.sub
@@ -147,3 +153,20 @@ sid.com: prs1asm.asm prs2mon.asm prs0mov.asm
 	vcpm pip relprsid.hex=prs1asm0.hex[i],prs2mon0.hex,prs1asm1.hex[i],prs2mon1.hex
 	vcpm genmod relprsid.hex relprsid.com
 	vcpm mksid.sub
+
+put.com: put putrsx.rel
+	vcpm link put.rsx=putrsx'[op,nr]'
+	obj2bin put put.com
+	vcpm gencom put.com put.rsx
+
+set.com: set dirlbl.rel
+	vcpm link dirlbl.rsx=dirlbl'[op,nr]'
+	obj2bin set set.com
+	vcpm gencom set.com dirlbl.rsx
+
+get.com: get getrsx.rel
+	vcpm link get.rsx=getrsx'[op,nr]'
+	obj2bin get get.com
+	vcpm gencom get.com get.rsx
+
+__FRC__:
