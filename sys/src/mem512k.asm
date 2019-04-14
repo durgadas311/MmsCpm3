@@ -12,7 +12,7 @@ cr	equ 13
 lf	equ 10
 bell	equ 7
 
-mmu	equ	050h	; base port of RAM256K
+mmu	equ	000h	; base port of RAM256K
 
 rd	equ	0	; mmu offset for read
 wr	equ	4	; mmu offset for write

@@ -35,7 +35,7 @@ conin	equ	1
 msgout	equ	9
 vers	equ	12
 
-mmu	equ	050h	; H8-512K Bank Switch Board base port
+mmu	equ	000h	; H8-512K Bank Switch Board base port
 rd00K	equ	mmu+0
 rd16K	equ	mmu+1
 rd32K	equ	mmu+2

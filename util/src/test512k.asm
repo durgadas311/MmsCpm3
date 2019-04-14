@@ -1,6 +1,7 @@
 ;****************************************************************
 ; H8-512K Banked Memory Test Program		 		*
 ;****************************************************************
+	$*MACRO
 rev	equ	'2'
 
 ; NOTE: This does not test every single bit in memory,
@@ -27,7 +28,7 @@ ctl	equ	000dh
 msgout	equ	9
 vers	equ	12
 
-mmu	equ	050h	; H8-512K Bank Switch Board base port
+mmu	equ	000h	; H8-512K Bank Switch Board base port
 rd00K	equ	mmu+0
 rd16K	equ	mmu+1
 rd32K	equ	mmu+2
