@@ -1,5 +1,5 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
-VERN	equ	11h	; version 1.1
+VERN	equ	12h	; version 1.2
 
 	maclib	z80
 	$*macro
@@ -77,7 +77,7 @@ bootms:	db	'oot ',TRM
 rst1:	call	intsetup
 	lhld	ticcnt
 	jmp	int1$cont
-if ((high int1$cont) != 0)
+if ((high int1$cont) <> 0)
 	.error "Overlapped NOP error"
 endif
 
@@ -114,7 +114,7 @@ mtms:	db	'emory test',TRM
 	rept	0066h-$
 	db	0
 	endm
-if	($ != 0066h)
+if	($ <> 0066h)
 	.error	"NMI location missed"
 endif
 
@@ -814,6 +814,8 @@ baud2:
 	dcr	a
 	jrnz	baud2
 	djnz	baud2
+	mvi	a,00001111b	; all outputs ON
+	out	0ech		; OUT2=1 hides 16C2550 intr enable diff
 	; compute checksum, compare
 	lxi	b,rombeg
 	exx
@@ -1041,7 +1043,7 @@ adrout:
 	call	hexout
 spout:
 	mvi	a,' '
-	jmp	conout
+	jr	conout
 
 hexout:
 	push	psw
@@ -1057,13 +1059,13 @@ hexdig:
 	daa
 	aci	040h
 	daa
-	jmp	conout
+	jr	conout
 
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 	rept	0613h-$
 	db	0
 	endm
-if	($ != 0613h)
+if	($ <> 0613h)
 	.error "HDOS entry overrun 0613h"
 endif
 	jmp	z47$dato ; Must be at 0613
@@ -2623,9 +2625,9 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	089f3h	; checksum...
+	dw	8ba6h	; checksum...
 
-if	($ != 1000h)
+if	($ <> 1000h)
 	.error "i2732 ROM overrun"
 endif
 	end

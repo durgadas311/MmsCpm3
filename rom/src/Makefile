@@ -1,4 +1,4 @@
-all: ../bin/mms_rom_84b.bin
+all: ../bin/mms_rom_84b.bin ../bin/PAM37_Monitor_ROM.bin
 
 ../bin/mms_rom_84b.bin: mms_rom_84b.asm
 	zmac --dri -i -8 -c -s -n mms_rom_84b.asm
@@ -6,3 +6,8 @@ all: ../bin/mms_rom_84b.bin
 	dd if=zout/mms_rom_84b.cim bs=1 skip=4094 2>/dev/null |od -tx2
 	cp zout/mms_rom_84b.cim $@
 	cp zout/mms_rom_84b.lst ../prn
+
+../bin/PAM37_Monitor_ROM.bin: PAM37_Monitor_ROM.asm
+	zmac -i -z -c -s -n PAM37_Monitor_ROM.asm
+	cp zout/PAM37_Monitor_ROM.cim $@
+	cp zout/PAM37_Monitor_ROM.lst ../prn

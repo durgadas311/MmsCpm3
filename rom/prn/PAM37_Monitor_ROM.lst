@@ -1,0 +1,3488 @@
+		;============================================================================
+		;  PAM/37 Front Panel Monitor for the Heath H8 Computer
+		;
+		;  Credits and basic information are hard to come by for the PAM/37 Monitor.
+		; As noted below, PAM/37 was issued in 1982; little or no information is
+		; still available today.  The only available User Manual seems to be
+		; truncated at 32 pages, and does not contain a listing, as is normal for all
+		; Heath ROM products.
+		;
+		;  The following credit information is is stored at the top end of
+		; the PAM/37 ROM, at address 0E8BH:
+		;
+		; ---------------------------------------------------------------------------
+		;
+		; Pam-80 - Front Panel Monitor for the Heath H8 and WH8 Digital Computers.
+		; Software Issue #01.03.00.
+		;
+		;    Copyright	February 1982
+		;		by Steve Parker
+		;		Firmware Engineer
+		;		Zenith Data Systems
+		;		St. Joseph, MI	49085
+		;
+		; Heath Part Number: 444-140
+		;
+		; Requires HA8-6 Z80 CPU and either a 444-70 or 444-124 ROM device.
+		; Use with 390-2333 keypad labels on front panel.
+		;----------------------------------------------------------------------------
+		;
+		; This PAM/37 source code was re-created by:
+		;
+		;	Terry Gulczynski	terryg@stack180.com
+		;	148 Reef Rd.
+		;	South Daytona, FL  32119
+		;	3 March 2011
+		;
+		;  The checksum for the original PAM37.BIN file (directly from the EPROM
+		; burner) is 073FF7.  This file matches it exactly.
+		;============================================================================
+		
+0009          	tab	equ	09h
+000A          	lf	equ	0ah
+000D          	cr	equ	0dh
+0007          	bel	equ	07h
+001B          	esc	equ	1bh
+		
+		;============================================================================
+		; H17 ROM Data Table / Routine Entry Point Addresses
+		;============================================================================
+1800          	H17RomStart	equ	1800H		; H17 ROM Base Address
+0800          	H17RomLen	equ	800h		; Length of H17 ROM Code
+198A          	ZeroMem		equ	198AH		; Memory Clear Routine
+1C19          	ROMClk		equ	1C19H		; Clock Interrupt Handler
+1F5A          	BootA		equ	1F5AH		; H17 Operating parameters
+0058          	BootALen	equ	88		; Length of H17 data table
+		
+		
+		; H17 Floppy ROM "Set Device Parameters" a.k.a. select drive
+1E32          	R.SDP	EQU	1E32H
+		
+		;============================================================================
+		; RAM Area Definitions, storage cells, and data bytes
+		;============================================================================
+2000          	StartRam	equ	2000h		; RAM Start Address
+2002          	IoWrk		equ	2002h		; I/O Work Area
+2004          	XinB		equ	2004h		; Transient Routine Area
+		
+		; The PrsRAM area is inited from ROM bytes at PrsROM
+2004          	PrsRAM		equ	2004h		; Cells initialized from PrsROM
+2005          	RegI		equ	2005h		; Index of Register under display
+2006          	DsProt		equ	2006h		; Period Flag byte
+2007          	DspMod		equ	2007h		; Display Mode
+2008          	MFlag		equ	2008h		; User Flag Options
+2009          	CtlFlg		equ	2009h		; Front Panel Control Bits
+200A          	Refind		equ	200ah		; Refresh Index (0-7)
+0007          	PrsLen		equ	Refind-PrsRAM+1	; Length of PrsRAM code block
+		
+200B          	FpLeds		equ	200bh		; Front Panel LED patterns
+200B          	ALeds		equ	200bh		; Address LEDs - Addr 0-5
+2011          	DLeds		equ	2011h		; Data LEDs - Data 0-2
+		
+200E          	I$200E	EQU	200EH	; ----I
+2010          	D$2010	EQU	2010H	; --S--
+		
+		
+2014          	ABUSS		equ	2014h		; Address Bus
+2016          	RckA		equ	2016h		; RCK Save Area
+2017          	CRCSUM		equ	2017h		; CRC-16 Checksum
+2019          	TPERRX		equ	2019h		; Tape Error Exit Address
+201B          	TicCnt		equ	201Bh		; Interrupt timer counter
+201D          	RegPtr		equ	201Dh		; Register Contents pointer
+201F          	UiVec		equ	201Fh		; User Interrupt Vectors
+		
+		
+		
+2028          	X_2028	EQU	2028H	; J-S--
+2029          	D$2029	EQU	2029H	; --S--
+202B          	J$202B	EQU	202BH	; J----
+202E          	J$202E	EQU	202EH	; J----
+2031          	J$2031	EQU	2031H	; J----
+2034          	D$2034	EQU	2034H	; ---L-
+		
+2036          	CtlFlg2		equ	2036h		; Control Byte for OP2_CTL
+		
+2037          	D_2037	EQU	2037H	; --SL-
+		
+		
+2039          	Radix		equ	2039h		; Octal or Hex Radix
+		
+		
+203C          	J_203C	EQU	203CH	; J---I
+203E          	D$203E	EQU	203EH	; --S--
+		
+		
+2048          	D_CON		EQU	2048h			;
+		
+		
+2061          	C$2061	EQU	2061H	; -C---
+2067          	C$2067	EQU	2067H	; -C---
+2076          	C$2076	EQU	2076H	; -C---
+2085          	C$2085	EQU	2085H	; -C---
+2086          	D$2086	EQU	2086H	; --S--
+208B          	C$208B	EQU	208BH	; -C---
+		
+		
+20A0          	D_RAM		equ	20A0h			;
+		
+		
+20A2          	D_20A2	EQU	20A2H	; --SL-
+20A3          	D$20A3	EQU	20A3H	; --S--
+20B4          	D$20B4	EQU	20B4H	; --S--
+		
+		
+2131          	AIO_UNI	EQU	2131H	; --SL-		; Active I/O unit #
+		
+		
+2132          	I_2132	EQU	2132H	; ----I
+2133          	D_2133	EQU	2133H	; --S--
+2138          	D$2138	EQU	2138H	; --S--
+213A          	D$213A	EQU	213AH	; --S--
+		
+		
+2150          	BDA		equ	2150h		; Boot Device Address
+2151          	BDF		equ	2151h		; Boot Device Flags
+2152          	TimOut		equ	2152h		; Boot 15 second timeout counter
+2154          	UsrClk		equ	2154h		; Boot clock interrupt routine
+		
+2156          	I$2156	EQU	2156H	; ----I
+		
+2280          	Stack	equ	2280h			; Top of Stack
+2280          	UsrFWA	equ	2280h			; User First Working Address
+		
+		; "standard" console INS8250 I/O ports
+00E8          	CO_DAT	equ	0e8h
+00E8          	CO_DLL	equ	0e8h
+00E9          	CO_DLM	equ	0e9h
+00E9          	CO_IER	equ	0e9h
+00EB          	CO_LCR	equ	0ebh
+00EC          	CO_MCR	equ	0ech
+00ED          	CO_LSR	equ	0edh
+000C          	B9600	equ	12	; DLL/DLM value for 9600 baud at 1.8432MHz
+0006          	B19200	equ	6	; DLL/DLM value for 19200 baud at 1.8432MHz
+0020          	TX_RDY	equ	00100000b	; THE
+		
+		;============================================================================
+		; Keyset Monitor Port and Bit Definitions
+		;
+		; I/O Port Base Addresses -- Input Ports
+		;============================================================================
+00F0          	IP_PAD	equ	0f0h			; KeyPad Input Port
+00F9          	IP_TPC	equ	0f9h			; Tape Control In
+00F8          	IP_TPD	equ	0f8h			; Tape Data In
+00F2          	IP_CON	equ	0f2h			; Configure Port In
+		
+		;============================================================================
+		; I/O Port Addresses -- Output Ports
+		;============================================================================
+00F0          	OP_CTL	equ	0f0h			; Control Output port
+00F0          	OP_DIG	equ	0f0h			; Digit Select Output Port
+00F1          	OP_SEG	equ	0f1h			; Segment Select output port
+00F9          	OP_TPC	equ	0f9h			; Tape Control Out
+00F8          	OP_TPD	equ	0f8h			; Tape Data Out
+00F2          	OP_CTL2	equ	0f2h			; Secondary Control port Out
+		
+		; Cassette Tape physical format:
+		;	RS-232 ASYNC 8-bit no-parity 1-stop, modulated with 4800Hz.
+		;	1200 baud is standard Heath media bit rate.
+		; Cassette Tape logical format:
+		;	16xSYN, STX, 81H+01H, CTH+CTL, PCH+PCL, ADH+ADL, DTA..., CSH+CSL, CSH+CSL
+		; Where:
+		;	SYN,STX are the ASCII control characters
+		;	81H+01H bit pattern of unknown signficance (hi bit EOF (last block)?)
+		;	CTH+CTL is byte count of block
+		;	PCH+PCL is PC (execution entry point?)
+		;	ADH+ADL is starting memory address of block
+		;	CSH+CSL is CRC, computed byte-wise after STX through last DTA byte.
+		;	See "CRC" routine for CRC computation.
+		; Cassette Tape read scans for at least 10xSYN,STX then confirms 8101/0101.
+		
+		;============================================================================
+		; Front Panel Hardware Control Bits
+		;============================================================================
+0010          	CB_SSI	equ	00010000b		; Single Step interrupt
+0020          	CB_MTL	equ	00100000b		; Monitor Light
+0040          	CB_CLI	equ	01000000b		; Clock Interrupt Enable
+0080          	CB_SPK	equ	10000000b		; Speaker Enable
+		
+		;============================================================================
+		; Port 0F2H Secondary Control Port Bits (WRITE)
+		;============================================================================
+0001          	CB2_SSI	equ	00000001b		; Single-Step enable
+0002          	CB2_CLI	equ	00000010b		; Clock Interrupt Enable
+0020          	CB2_ORG	equ	00100000b		; ORG-0 RAM Enable
+0040          	CB2_SID	equ	01000000b		; Side 1 select
+		
+		;============================================================================
+		; Display Mode Flags (in DspMod)
+		;============================================================================
+0000          	DM_MR	equ	0			; Memory Read
+0001          	DM_MW	equ	1			; Memory Write
+0002          	DM_RR	equ	2			; Register Read
+0003          	DM_RW	equ	3			; Register Write
+		
+		;============================================================================
+		; User Option Bits (in cell MFlag)
+		;============================================================================
+0080          	UO_HLT	equ	10000000b		; Disable HALT procesing
+0040          	UO_NFR	equ	CB_CLI			; No refresh of Front Panel
+0002          	UO_DDU	equ	00000010b		; Disable Display Update
+0001          	UO_CLK	equ	00000001b		; Allow private interrupt processing
+		
+		;============================================================================
+		; Configuration Flags
+		; Secondary Control Port (READ) Switch Content Bits
+		;============================================================================
+0003          	CN_174M	equ	00000011b		; Port 174Q device type mask
+000C          	CN_170M	equ	00001100b		; Port 170Q device type mask
+0010          	CN_PRI	equ	00010000b		; Primary/Secondary Flag - 1=Primary=170Q
+0020          	CN_MEM	equ	00100000b		; Auto Memory Test if = 1
+0040          	CN_BAU	equ	01000000b		; Baud Rate 0=9600, 1=19,200
+0080          	CN_ABO	equ	10000000b		; 0-No Autoboot, 1=AutoBoot
+		
+		;============================================================================
+		; Keypad Key Definitions
+		;============================================================================
+00AF          	K_Plus		equ	10101111b	; '+' (AFH)
+008F          	K_Minus		equ	10001111b	; '-' (8FH)
+006F          	K_Star		equ	01101111b	; '*' (6FH)
+004F          	K_Divide	equ	01001111b	; '/' (4FH)
+002F          	K_Number	equ	00101111b	; '#' (2FH)
+000F          	K_Dot		equ	00001111b	; '.' (0FH)
+		
+		;============================================================================
+		; H17 Disk UART Ports and Control Flags
+		;============================================================================
+007C          	UP_DP		equ	7ch		; Data Port (Read/Write)
+007D          	UP_FC		equ	7dh		; Fill character (Write)
+007D          	UP_ST		equ	7dh		; Status Flags (Read)
+007E          	UP_SC		equ	7eh		; Sync Character (Write)
+007E          	UP_SR		equ	7eh		; Sync Reset (Read)
+007F          	DP_DC		equ	7fh		; Disk Control Port
+		
+		; Status Flags
+0001          	UF_RDA		equ	00000001b	; Receive Data Available
+0002          	UF_ROR		equ	00000010b	; Receiver overrun
+0004          	UF_RPE		equ	00000100b	; Receiver Parity Error
+0040          	UF_FCT		equ	01000000b	; Fill Character Transmitted
+0080          	UF_TBM		equ	10000000b	; Transmitter buffer empty
+		
+		; Control Port Bits
+0001          	DF_WG		equ	00000001b	; Write Gate Enable
+0002          	DF_DS0		equ	00000010b	; Drive Select 0
+0004          	DF_DS1		equ	00000100b	; Drive Select 1
+0008          	DF_DS2		equ	00001000b	; Drive Select 3
+0010          	DF_MO		equ	00010000b	; All Motors On
+0020          	DF_DI		equ	00100000b	; Direction (0=Out to drive)
+0040          	DF_ST		equ	01000000b	; Step Command (active high)
+0080          	DF_WR		equ	10000000b	; Write Enable RAM
+		
+		
+		
+		;============================================================================
+		;		P R O G R A M   S T A R T   P O I N T
+		;============================================================================
+0000          		ORG	0
+		
+0000  110000  	Begin:	ld	de,0
+0003  C30E04  		jp	XInit
+		
+0006  FFFF    		db	0ffh, 0ffh
+		
+		; Restart 08H address
+0008  CD5A00  	Int1:	call	SavAll
+000B  1600    		ld	d,0
+000D  C38100  		jp	Clock
+		
+		; Restart 10h Address
+0010  CD5A00  	Int2:	call	SavAll
+0013  1A      		ld	a,(de)
+0014  C3A401  		jp	StpRtn
+		
+0017  FF      		db	0ffh
+		
+		; Restart 18h Address
+0018  C32520  	Int3:	jp	UiVec + 6		; J$2025
+001B  50616D33		db	"Pam37"
+      37
+		
+		; Restart 20h Address
+0020  C32820  	Int4:	jp	UiVec + 9		; X_2028
+0023  2F534150		db	"/SAP/"
+      2F
+		
+		; Restart 28h Address
+0028  C32B20  	Int5:	jp	UiVec + 12		; J$202B
+		
+002B  F5      	Dly:	push	af
+002C  AF      		xor	a			; Flag for no sound
+002D  C36302  		jp	Hrn0
+		
+		; Restart 30h Address
+0030  C32E20  	Int6:	jp	UiVec + 15		; J$202E
+0033  3ED0    	Go_:	ld	a,0d0h			; Off monitor mode light
+0035  C39D01  		jp	Sst1			; Return to user program
+		
+0038  C33120  	Int7:	jp	UiVec + 18		; J$2031
+		
+003B  1A      	Init:	ld	a,(de)
+003C  77      		ld	(hl),a
+003D  2B      		dec	hl
+003E  1C      		inc	e
+003F  C23B00  		jp	nz,Init
+0042  1604    		ld	d,4
+0044  210020  		ld	hl,StartRam
+0047  C30004  		jp	XInit1			; Find end of RAM
+		
+004A  48454154		db	"HEATH"
+      48
+		
+004F  2B      	Init2:	DEC	HL			; Point to last RAM address
+0050  F9      		LD	SP,HL			;  and set Stack pointer
+0051  CDBE07  		CALL	C$07BE
+0054  E5      		PUSH	HL
+0055  C37C0C  		jp	Init3
+0058  00      		nop
+0059          	Init4:
+0059  AF      		XOR	A
+		; fall through
+		
+		;============================================================================
+		;       Subroutine      SavAll
+		;
+		; SavAll is called when an interrupt is accepted, in order to
+		; save the contents of the registers on the Stack.
+		;
+		;	Entry	Called directly from interrupt handler
+		;	Exit	All registers pushed on Stack.
+		;
+		;  If not yet in Monitor Mode, REGPTR = Address of registers on Stack.
+		;
+		;  (DE) = Address of CTLFLG.
+		;============================================================================
+005A  D9      	SavAll:	EXX
+005B  08      		EX	AF,AF'
+005C  E3      		EX	(SP),HL			; Set HL on stack top. RET add to DE
+005D  D5      		PUSH	DE
+005E  C5      		PUSH	BC
+005F  F5      		PUSH	AF
+0060  ED5F    		LD	A,R
+0062  4F      		LD	C,A
+0063  C30608  		jp	SavAllExt		; Skip around the NMI address
+		
+0066  C30008  	NmiAdd:	jp	NmiHandler		; @ 0800H
+		
+0069          	SavAllRet:				; Return from SavAll extension
+0069  2F      		CPL
+006A  E630    		AND	30H			; Save register addr if user or single-step
+006C  C8      		RET	Z
+006D  210200  		LD	HL,2
+0070  39      		ADD	HL,SP			; HL = address of 'StackPtr' on stack
+0071  221D20  		LD	(RegPtr),HL
+0074  C9      		RET
+		
+		;============================================================================
+		;	CUI - Check for User Interrupt processing
+		;
+		;  CUI is called to see if the user has specified processing for the
+		; clock interrupt.
+		;============================================================================
+0075  0A      	CUI:	LD	A,(BC)
+0076  0F      		RRCA
+0077  DC1F20  		CALL	C,UiVec
+		
+		; Return to program from Interrupt.
+007A  F1      	IntXit:	POP	AF			; Remove fake 'Stack Register'
+007B  F1      		POP	AF			; Restore register contents
+007C  C1      		POP	BC
+007D  D1      		POP	DE
+007E  C32308  		JP	J$0823
+		
+		;============================================================================
+		;	Clock - Process Clock Interrupt
+		;
+		;  Clock is entered whenever a 2-Millisecond clock interrupt is
+		; processed.
+		;
+		;  TicCnt is incremented every interrupt, forming a 2mSec counter.
+		;============================================================================
+0081  2A1B20  	Clock:	LD	HL,(TicCnt)
+0084  23      		INC	HL
+0085  221B20  		LD	(TicCnt),HL		; Increment TicCnt
+		
+		;	Refresh front panel
+		;
+		;	  This code displays the appropriate pattern on the
+		;	front panel LEDs.  The LEDs are painted in reverse order,
+		;	one per interrupt.  First, # 9 is lit, then # 8, etc.
+		
+0088  210820  		LD	HL,MFlag
+008B  7E      		LD	A,(HL)
+008C  47      		LD	B,A			; B = current flag
+008D  E640    		AND	40H			; Front panel refresh wanted?
+008F  23      		INC	HL
+0090  7E      		LD	A,(HL)			; A = CtlFlg
+0091  4A      		LD	C,D			; C=0 in case no panel display
+0092  C29F00  		JP	NZ,Clk3			; Go if no front panel refresh
+		
+0095  23      		INC	HL			; Point to Refresh Index
+0096  35      		DEC	(HL)			; -1 for digit index
+0097  C29C00  		JP	NZ,Clk2			; Go if not wrapped around
+		
+009A  3609    		LD	(HL),9			; Esle, wrap around to start
+009C  5E      	Clk2:	LD	E,(HL)
+009D  19      		ADD	HL,DE			; HL -> address of pattern
+009E  4B      		LD	C,E
+009F  B1      	Clk3:	OR	C
+00A0  D3F0    		OUT	(OP_DIG),A		; Select digit
+00A2  7E      		LD	A,(HL)
+00A3  D3F1    		OUT	(OP_SEG),A		; Select segment
+		
+		; See if time to decode display values
+00A5  2E1B    		LD	L,low TicCnt
+00A7  7E      		LD	A,(HL)
+00A8  E61F    		AND	31			; Every 32 interrupts
+00AA  CC7103  		CALL	Z,UFD			; Update front panel displays
+		
+		; Exit clock interrupt
+00AD  010920  		LD	BC,CtlFlg
+00B0  0A      		LD	A,(BC)			; A = CtlFlg
+00B1  E620    		AND	20H
+00B3  C27A00  		JP	NZ,IntXit		; Go if in Monitor Mode
+		
+00B6  0B      		DEC	BC
+00B7  0A      		LD	A,(BC)			; A = MFlag
+00B8  17      		RLA				; Halt processing disabled?
+00B9  DACB00  		JP	C,Clk4			; Skip it if yes
+		
+		; Not in Monitor Mode.  Check for Halt
+00BC  3E18    		LD	A,24			; Locate PC Register
+00BE  CD2A03  		CALL	LRA_
+		
+00C1  5E      		LD	E,(HL)
+00C2  23      		INC	HL
+00C3  56      		LD	D,(HL)			; DE = PC contents
+00C4  1B      		DEC	DE			; Point to previous instruction
+00C5  1A      		LD	A,(DE)
+00C6  FE76    		CP	76H			; Previous instruction a HALT?
+00C8  CAD200  		jp	z,ErrorEnt		; If HALT, enter monitor mode
+		
+00CB  DBF0    	Clk4:	IN	A,(IP_PAD)
+00CD  FE2E    		CP	2EH			; See if '0' and '#'
+00CF  C27500  		JP	NZ,CUI			; If not, allow user clock processing
+		; fall through
+		
+		;============================================================================
+		;	ErrorEnt - Command Error
+		;
+		;  ErrorEnt is called as a 'bail out' routine.  It resets the operational
+		; mode and restores the stack pointer.
+		;============================================================================
+00D2          	ErrorEnt:
+00D2  210820  		LD	HL,MFlag
+00D5  7E      		LD	A,(HL)			; A = _MFlag
+00D6  E6BD    		and	0ffh-UO_DDU-UO_NFR	; Re-enable displays
+00D8  77      		LD	(HL),A
+00D9  23      		INC	HL
+00DA  36F0    		LD	(HL),0F0H		; Restore CtlFlg
+00DC  FB      		EI
+00DD  2A1D20  		LD	HL,(RegPtr)
+00E0  F9      		LD	SP,HL			; Set Stack Pointer to empty state
+00E1  CD5E02  		CALL	Alarm			; Alarm for 200mSec
+		; fall through
+		
+		;============================================================================
+		;	MTR - Monitor Loop
+		;
+		; This is the main executive loop for the Front Panel Emulator
+		;============================================================================
+00E4  FB      	MTR:	ei
+00E5  21E500  	Mtr1:	ld	hl,Mtr1
+00E8  E5      		push	hl			; Set Mtr1 as the return address
+00E9  010720  		ld	bc,DspMod
+00EC  0A      		ld	a,(bc)
+00ED  E601    		and	01h			; A = 1 if altered
+00EF  2F      	 	cpl
+00F0  320620  		ld	(DsProt),a		; Set flag bit if DspMod altered
+		
+		; Read Keypad
+00F3  CDB003  		CALL	RCK			; Read console keyset
+00F6  2A1420  		LD	HL,(ABUSS)
+00F9  FE0A    		CP	10
+00FB  D20501  		JP	NC,Mtr4			; Go if in 'always valid' group
+00FE  5F      		LD	E,A			; Save value
+00FF  0A      		LD	A,(BC)			; Get DspMod value
+0100  0F      		RRCA
+0101  DA2901  		JP	C,Mtr5			; Go if in Alter mode
+0104  7B      		LD	A,E			; Code to A
+		
+		; Have a command - not a value
+0105  D604    	Mtr4:	SUB	4			; A = command table index
+0107  DA6F04  		JP	C,ExtCmd	        ; Extended commands
+010A  5F      		LD	E,A
+010B  E5      		PUSH	HL			; Save ABUSS value
+010C  211D01  		LD	HL,MtrA			; Point to command table
+010F  1600    		LD	D,0			; Put command offset in DE
+0111  19      		ADD	HL,DE			; Add cmd offset to cmd tbl pointer
+0112  5E      		LD	E,(HL)			; Get command tble entry
+0113  19      		ADD	HL,DE			; HL gets address of cmd tbl entry
+0114  E3      		EX	(SP),HL			; Cmd adress on stack, ABUSS to HL
+0115  110520  		LD	DE,RegI			; Point to register index
+0118  0A      		LD	A,(BC)			; A = DspMod
+0119  E602    		and	2			; Set 'Z' if memory mode
+011B  0A      		LD	A,(BC)			; Reload DspMod to A
+011C  C9      		ret				;  and 'exit' to command
+		
+		; Command Jump table
+011D  75      	MtrA:	db	Go-$			; 4 - Go
+011E  61      		db	In-$			; 5 - Input
+011F  63      		db	Out-$			; 6 - Output
+0120  75      		db	SStep-$			; 7 - Single Step
+0121  90      		db	RMem-$			; 8 - Cassette Load (read)
+0122  DA      		db	WMem-$			; 9 - Cassette Dump (write)
+0123  37      		db	Next-$			; + - Next
+0124  44      		db	Last-$			; - - Last
+0125  42      		db	Abort-$			; * - Abort
+0126  30      		db	R$W-$			; / - Display/Alter
+0127  4E      		db	MemM-$			; # - Memory Mode
+0128  1C      		db	RegM-$			; . - Register Mode
+		
+		;============================================================================
+		;	Mtr5	Process Memory/Register Alterations
+		;
+		;	This code is entered if:
+		;
+		;	- We are in Alter mode, and
+		;	- A key from 0-7 was entered.
+		;============================================================================
+0129  0F      	Mtr5:	RRCA
+012A  7B      		LD	A,E			; A = value
+012B  DA3A01  		JP	C,Mtr6			; Go if it's a register
+012E  37      	        SCF				; Flag 1st digit in A
+012F  CD3603  		CALL	IOB			; Input octal byte
+0132  23      		INC	HL			; Display next location
+		; Fall through...
+		
+		;============================================================================
+		;	SAE	Store ABUSS and Exit
+		;============================================================================
+0133  221420  	SAE:	ld	(ABUSS),hl
+0136  C9      		ret
+		
+		;============================================================================
+		;	H89Pin	H89-compatible PIN routine
+		;============================================================================
+0000          		  if  $ != 0137h
+			  endif
+		
+0137  C34807  	H89Pin:	jp	PIN
+		
+		
+		; Continue with MTR code from Mtr5 above
+013A  F5      	Mtr6:	PUSH	AF
+013B  CD2703  		CALL	LRA
+013E  A7      		AND	A
+013F  C3D907  		JP	J$07D9
+		
+0142  FFFF    		db	0ffh, 0ffh
+		
+0000          		  if  $ != 0144h
+			  endif
+		;============================================================================
+		;	RegM	Enter Register Display Mode
+		;
+		;	On entry, A = (DspMod)
+		;============================================================================
+0144  3E02    	RegM:	ld	a,2			; Set 'Display Register' mode
+0146  02      		ld	(bc),a			; Store mode
+0147  0B      		dec	bc			; Point to DsProt
+0148  AF      		xor	a
+0149  02      		ld	(bc),a
+014A  CDB003  		call	RCK			; Read key entry
+014D  CD5208  		call	ExtRegTst
+0150  D2D200  		jp	nc,ErrorEnt		; Go if not 1-13
+0153  07      		rlca				; Divide by 2
+0154  12      		ld	(de),a			; Set new register index
+0155  C9      		ret
+		
+		;============================================================================
+		;	R$W	Toggle Display/Alter mode
+		;
+		;	On entry:	A = DspMod
+		;			BC points to DspMod
+		;============================================================================
+0156  EE01    	R$W:	XOR	01H			; Set 'other' mode
+0158  02      		LD	(BC),A			;  and save new DspMod
+0159  C9      		RET
+		
+		;============================================================================
+		;	Next	Increment Display Element
+		;
+		;	On entry:	HL points to ABUSS
+		;			DE has address of RegInd (Register Index)
+		;============================================================================
+015A  23      	Next:	INC	HL
+015B  CA3301  		JP	Z,SAE			; If memory mode, store ABUSS and exit
+015E  1A      		LD	A,(DE)			; Get (RegI) value
+015F  C602    		ADD	A,2			; Bump to next register
+0161  12      		LD	(DE),A			;  and save new index
+0162  FE1A    		CP	26
+0164  D8      		RET	C			; If not too large, exit
+0165  AF      		XOR	A			; Else wrap around
+0166  12      		LD	(DE),A			;  and save new index
+		; Fall through...
+		
+		;============================================================================
+		;	Abort	Exit current process
+		;============================================================================
+0167  C9      	Abort:	ret
+		
+		;============================================================================
+		;	Last	Decrement Display Element
+		;
+		;	On entry:	HL points to ABUSS
+		;			DE points to RegInd (Register Index)
+		;============================================================================
+0168  2B      	Last:	DEC	HL
+0169  CA3301  		JP	Z,SAE			; If memory mode, store and exit
+		
+		; We're in register mode
+016C  1A      		LD	A,(DE)			; Get current Register index
+016D  D602    		SUB	2			; -2 for register #
+016F  12      		LD	(DE),A			; Save in index pointer
+0170  D0      		RET	NC			; Exit if no wrap around
+0171  3E18    		LD	A,24			; Underflow, so set PC as
+0173  12      		LD	(DE),A			;  current register index
+0174  C9      		RET
+		
+		;============================================================================
+		;	MemM	Enter Display Memroy Mode
+		;
+		;	On Entry, BC has address of DspMod (Display Mode).
+		;============================================================================
+0175  AF      	MemM:	XOR	A
+0176  02      		LD	(BC),A			; Set DspMod to 'Display Memory'
+0177  0B      		DEC	BC			; Point to DsProt
+0178  02      		LD	(BC),A			; Set all periods on
+0179  211520  		LD	HL,ABUSS+1
+017C  C33203  		JP	IOA			; Input Octal address
+		
+		;============================================================================
+		;	In	Input Data Byte
+		;	Out	Output Data Byte
+		;
+		;	On entry, HL points to ABUSS (Address Bus)
+		;============================================================================
+017F  06DB    	In:	LD	B,0DBH			; 'IN' instruction
+		
+		; The "DB 11H" below is the precessor to LD DE,NNNN.  As a result, DE will be
+		; loaded with the code generated by the LD B, 0D3H code, which is meaningless.
+		; The end result is that the LD B,0D3H code is ignored.
+0181  11      		 db	11h			; Skip next instruction
+		
+0182  06D3    	Out:	ld	b,0D3H			; 'OUT' instruction
+0184  7C      		LD	A,H			; Put value in A
+0185  65      		LD	H,L			; Port in H
+0186  68      		LD	L,B			; IN/OUT instruction in L
+0187  220220  		LD	(IoWrk),HL		; Store 'IN port' at IoWrk
+018A  CD0220  		CALL	IoWrk			;  and execute the code
+018D  6C      		LD	L,H			; Put port in L
+018E  67      		LD	H,A			; Value in H
+018F  C33301  		JP	SAE			; Store ABUSS and Exit
+		
+		;============================================================================
+		;	Go	Return to User Mode
+		;============================================================================
+0192  C33300  	Go:	JP	Go_			; Routine is in waste space
+		
+		;============================================================================
+		;	SStep	Single Step Instruction
+		;============================================================================
+0195  F3      	SStep:	DI
+0196  3A0920  		LD	A,(CtlFlg)		; Get control Flag
+0199  EE10    		XOR	10h			; Disable sngl step inhibit
+019B  D3F0    		OUT	(0F0H),A		; Prime single step interrupt
+019D  320920  	Sst1:	LD	(CtlFlg),A		; Set new CtlFlg value
+01A0  E1      		POP	HL			; Clear rtn address from stack
+01A1  C37A00  		JP	IntXit			; Rtn to user routine for step
+		
+		;============================================================================
+		;	StpRtn	Signle Step Return
+		;
+		;	On entry:	DE points to CtlFlg
+		;============================================================================
+01A4  F610    	StpRtn:	OR	10H			; Disable single step interrupt
+01A6  D3F0    		OUT	(OP_CTL),A		; Turn off signle step enable
+01A8  12      		LD	(DE),A			; Set new CtlFlg
+01A9  E620    		AND	20H			; See if in Monitor Mode
+01AB  C2E400  		jp	nz,MTR			;  and go to MTR loop if so
+01AE  C33608  		JP	SStepRtnExt		; Enter Extended SS return processor
+		
+		;============================================================================
+		;	RMem	Load Memory from Tape
+		;============================================================================
+01B1          	RMem:
+01B1  21A402  		LD	HL,TPABT
+01B4  221920  		LD	(TPERRX),HL		; Setup error exit address
+		
+		; Fall through...
+		
+		;============================================================================
+		;	Load	Load memory from Tape
+		;
+		;	  Read the next record from cassette tape, using the load address
+		;	in the tape record.
+		;
+		;	Entry:	HL = Error Exit address
+		;	Exit	User P-Reg (on stack) set to entry address
+		;		To caller if OK
+		;		To Error Exit (HL) is tape errors detected
+		;============================================================================
+01B7  0100FE  	Load:	LD	BC,0FE00H	; Required type and #
+01BA  CDB502  	Load0:	CALL	SRS		; Scan for record start
+			; DE = leader (8101H)
+			; HL = byte count
+01BD  6F      		LD	L,A		; (HL) = count
+01BE  EB      		EX	DE,HL		; DE = count, HL = type and #
+01BF  0D      		DEC	C	; - next # (0FEFFH)
+01C0  09      		ADD	HL,BC	; 8101+FEFF=8000, 0101+FEFF=0000
+01C1  7C      		LD	A,H
+01C2  C5      		PUSH	BC		; Save type and #
+01C3  F5      		PUSH	AF		; Save type code
+01C4  E67F    		AND	7FH		; Clear end flag bit
+01C6  B5      		OR	L
+01C7  3E02    		LD	A,2		; Assume sequence error
+01C9  C28502  		JP	NZ,TpErr	;  and go if wrong type or sequence
+01CC  CDD502  		CALL	RNP		; Read PC
+01CF  44      		LD	B,H
+01D0  4F      		LD	C,A		; BC = P-Reg address
+01D1  3E18    		LD	A,24		; Offset to PC register
+01D3  D5      		PUSH	DE
+01D4  CD2A03  		CALL	LRA_		; Locate Register address
+01D7  D1      		POP	DE
+01D8  71      		LD	(HL),C		; Set P-Reg in mem
+01D9  23      		INC	HL
+01DA  70      		LD	(HL),B
+01DB  CDD502  		CALL	RNP		; Read mem address
+01DE  6F      		LD	L,A		; HL = Address, DE = count
+01DF  220020  	 	LD	(StartRam),HL
+		
+01E2  CDD902  	Load1:	CALL	RNB		; Read next byte
+01E5  77      		LD	(HL),A
+01E6  221420  		LD	(ABUSS),HL	; Set ABUSS for display
+01E9  23      		INC	HL
+01EA  1B      		DEC	DE
+01EB  7A      		LD	A,D
+01EC  B3      		OR	E
+01ED  C2E201  		JP	NZ,Load1	; Go if more remaining
+		
+01F0  CD7A02  		CALL	CTC		; Check tape checksum
+01F3  F1      		POP	AF		; File type byte
+01F4  C1      		POP	BC		; Last type, Last #
+01F5  07      		RLCA
+01F6  DA5B02  		JP	C,TFT		; If done, turn off tape
+01F9  C3BA01  		JP	Load0		;  else read next record
+		
+		;============================================================================
+		;	Dump	Dump Memory to Mag Tape
+		;
+		; Dump specified memory to mag tape.
+		;
+		;	Entry	(Start) = Start address
+		;		(ABUSS) = End Address
+		;		User PC = Entry Point address
+		;============================================================================
+0000          		  if  $ != 01fch
+			  endif
+01FC  21A402  	WMem:	LD	HL,TPABT
+01FF  221920  		LD	(TPERRX),HL	; Set up error exit
+		
+0202  3E01    		LD	A,1	; TxEn, no other bits
+0204  D3F9    		OUT	(OP_TPC),A	; Set up tape control
+0206  3E16    		LD	A,16H		; Sync character
+0208  2620    		LD	H,32		; # of sync characters
+		
+020A  CD1403  	WMem1:	CALL	WNB		; Write next byte
+020D  25      		DEC	H
+020E  C20A02  		JP	NZ,WMem1	; Loop for 32 sync chars
+0211  3E02    		LD	A,2		; STX char
+0213  CD1403  		CALL	WNB		; Write STX
+0216  6C      		LD	L,H		; HL = 0
+0217  221720  		LD	(CRCSUM),HL	; Init checksum counter
+021A  210181  		LD	HL,8101h	; Write header
+021D  CD0F03  		CALL	WNP
+0220  2A0020  		LD	HL,(StartRam)
+0223  EB      		EX	DE,HL		; DE gets Start address
+0224  2A1420  		LD	HL,(ABUSS)	; HL has end address
+		
+		; Calculate byte count
+0227  23      		INC	HL
+0228  7D      		LD	A,L
+0229  93      		SUB	E
+022A  6F      		LD	L,A
+022B  7C      		LD	A,H
+022C  9A      		SBC	A,D
+022D  67      		LD	H,A		; HL has byte count
+022E  CD0F03  		CALL	WNP		; Write byte count
+		
+0231  E5      		PUSH	HL
+0232  3E18    		LD	A,24
+0234  D5      		PUSH	DE
+0235  CD2A03  		CALL	LRA_		; Locate PC Reg address
+0238  7E      		LD	A,(HL)
+0239  23      		INC	HL
+023A  66      		LD	H,(HL)
+023B  6F      		LD	L,A		; HL = contents of PC
+023C  CD0F03  		CALL	WNP		; Write header
+023F  E1      		POP	HL		; HL = Address
+0240  D1      		POP	DE		; DE = Count
+0241  CD0F03  		CALL	WNP		; start address
+		
+0244  7E      	WMem2:	LD	A,(HL)
+0245  CD1403  		CALL	WNB			; Write byte
+0248  221420  		LD	(ABUSS),HL		; Set address for display
+024B  23      		INC	HL
+024C  1B      		DEC	DE
+024D  7A      		LD	A,D
+024E  B3      		OR	E
+024F  C24402  		JP	NZ,WMem2		; Loop if more to go
+		
+		; Write Checksum
+0252  2A1720  		LD	HL,(CRCSUM)
+0255  CD0F03  		CALL	WNP			; Write it
+0258  CD0F03  		CALL	WNP			; Flush it
+		; fall through
+		
+		;============================================================================
+		;	Subroutine	TFT - Turn Off Tape
+		;
+		;  Stop the tape transport.
+		;============================================================================
+025B  AF      	TFT:	xor	a	; all off: TxEn, RxEn, DTR, RTS
+025C  D3F9    		out	(OP_TPC),a		; Turn off tape
+		; Fall through...
+		
+		;============================================================================
+		;	Subroutine	Alarm
+		;
+		;	Entry:	A = Millisecond count / 2
+		;============================================================================
+025E  3E64    	Alarm:	ld	a,200/2			; 100mSec beep
+		; Fall through
+		
+0000          		  if  ($ != 0260h)
+			  endif
+		
+		;============================================================================
+		;	Subroutine	Horn
+		;
+		; Sound horm for mSec length in A.
+		;============================================================================
+0260  F5      	Horn:	push	af			; Save count
+0261  3E80    		ld	a,80h			; Turn on speaker
+0263  E3      	Hrn0:	ex	(sp),hl			; Save HL, H = count
+0264  D5      		push	de
+0265  EB      		ex	de,hl			; D = loop count
+0266  210920  		ld	hl,CtlFlg
+0269  AE      		xor	(hl)
+026A  5E      		ld	e,(hl)			; E = old CtlFlg value
+026B  77      		ld	(hl),a			; Turn on horn
+026C  2E1B    		ld	L,1BH
+026E  7A      		ld	a,d			; A = cycle count
+026F  86      		add	a,(hl)
+0270  BE      	Hrn2:	cp	(hl)			; Wait required TicCnt times
+0271  C27002  		jp	nz,Hrn2			;  loop if not done
+0274  2E09    		ld	L,9
+0276  73      		ld	(hl),e			; Turn horn off
+0277  D1      		pop	de
+0278  E1      		pop	hl
+0279  C9      		ret
+		
+		;============================================================================
+		;         Subroutine	CTC - Verify Checksum
+		;
+		;	Entry	Tape positioned just before CRC
+		;	Exit	To caller if OK
+		;		To TpErr if bad
+		;============================================================================
+027A  CDD502  	CTC:	CALL	RNP			; Read next Pair
+027D  2A1720  		LD	HL,(CRCSUM)
+0280  7C      		LD	A,H
+0281  B5      		OR	L
+0282  C8      		RET	Z			; Exit if OK
+0283  3E01    		LD	A,01h			; Tape Checksum Error
+		; fall through
+		
+		;============================================================================
+		;	Subroutine	TpErr - Process Tape Error
+		;
+		;  Display error number in low byte of ABUSS
+		;
+		; If error # even, don't allow #
+		; If error # odd, allow #
+		;============================================================================
+0285  321420  	TpErr:	LD	(ABUSS),A		; Save the error code
+0288  47      		LD	B,A
+0289  CD5B02  		CALL	TFT			; Turn off tape
+		
+028C  E6      		db	0e6h			; MI.ANI - Fall through w/carry clr
+028D  78      	Ter3:	LD	A,B
+028E  0F      		RRCA
+028F  D8      		RET	C			; Return if OK
+		
+		; Beep and flash error #
+		
+0290  DC5E02  	Ter1:	CALL	C,Alarm			; Alarm if proper time
+0293  CDAA02  		CALL	TpXit			; See if * entered
+0296  DBF0    		IN	A,(IP_PAD)
+0298  FE2F    		CP	K_Number		; Check for '#'
+029A  CA8D02  		JP	Z,Ter3
+029D  3A1C20  		LD	A,(TicCnt+1)		; Get TicCnt high byte
+02A0  1F      		RRA     			; C set if 1/2 second
+02A1  C39002  		JP	Ter1
+		
+		;============================================================================
+		;	Subroutine	TPABT - Abort Tape Load or Dump
+		;
+		; Entered when Loading or Dumping, and the '*' key is struck.
+		;============================================================================
+02A4  AF      	TPABT:	xor	a	; all off: RTS, DTR, TxEn, RxEn
+02A5  D3F9    		out	(OP_TPC),a
+02A7  C3D200  		jp	ErrorEnt
+		
+0000          		  if  ($ !=02aah)
+			  endif
+		
+		;============================================================================
+		;	Subroutine	TpXit - Check for User Forced Exit
+		;
+		; TpXit checks for a '*' keypad entry.  If so, take the tape driver
+		; abnormal exit.
+		;
+		;	Exit:	Via RET if not '*'
+		;		  A = port status
+		;		To (TpErrx) if '*' pressed
+		;============================================================================
+02AA  DBF0    	TpXit:	IN	A,(IP_PAD)		; Read keypad
+02AC  FE6F    		CP	K_Star			; '*' character?
+02AE  DBF9    		IN	A,(IP_TPC)		; Read tape status
+02B0  C0      		RET	NZ			; Not '*', so return with status
+02B1  2A1920  		LD	HL,(TPERRX)		; Get address of error handler
+02B4  E9      		JP	(HL)			;  and do it
+		
+		;============================================================================
+		;	Subroutine	SRS - Scan Record Start
+		;
+		; SRS scans bytes until it recognizes the start of a record.
+		; This requires at least 10 sync characters and 1 STX character.
+		; The CRC-16 is then initialized.
+		;============================================================================
+02B5  1600    	SRS:	LD	D,00H
+02B7  62      		LD	H,D
+02B8  6A      		LD	L,D
+02B9  CDD902  	Srs2:	CALL	RNB			; Read next byte
+02BC  14      		INC	D
+02BD  FE16    		CP	16H			; Sync byte?
+02BF  CAB902  		JP	Z,Srs2
+02C2  FE02    		CP	02H			; STX byte?
+02C4  C2B502  		JP	NZ,SRS			;  No - start over
+02C7  3E0A    		LD	A,10
+02C9  BA      		CP	D			; Enough SYNC characters received?
+02CA  D2B502  		JP	NC,SRS			;  go if no
+02CD  221720  		LD	(CRCSUM),HL		; Y - Clear CRC-16
+02D0  CDD502  		CALL	RNP			; Read Next Pair - leader
+		
+02D3  54      		LD	D,H
+02D4  5F      		LD	E,A
+		; Fall through...
+		
+		;============================================================================
+		;	Subroutine	RNP - Read Next Pair
+		;
+		; Read next two bytes from input device
+		;============================================================================
+		
+02D5  CDD902  	RNP:	call	RNB
+02D8  67      		ld	h,a
+		; Fall through...
+		
+		;============================================================================
+		;	Subroutine	RNB - Read Next Byte
+		;
+		;  RND reads the next single byte from the input device.  The CRC checksum
+		; is updated.
+		;============================================================================
+02D9  3E34    	RNB:	LD	A,34H	; Err Reset, RTS, RxEn, no DTR
+02DB  D3F9    		OUT	(OP_TPC),A
+02DD  CDAA02  	Rnb1:	call	TpXit	; Check for cancel, read status
+02E0  E602    		and	2	; test RxR
+02E2  CADD02  		jp	z,Rnb1	; Loop if not ready
+		
+02E5  DBF8    		IN	A,(IP_TPD)	; Else read data
+		; Fall through...
+		
+		;============================================================================
+		;	Subroutine	CRC - Computer CRC-16
+		;
+		; CRC computes a CRC-16 checksum from the polynomial:
+		;
+		;  (X + 1) * (X^15 + X + 1)
+		;
+		;  Since the checksum generated is a division remainder,
+		; a checksummed data sequence can be verified by running
+		; the data through CRC, and running the previously obtained
+		; checksum through CRC.  The resulting checksum should be 0.
+		;============================================================================
+02E7  C5      	CRC:	PUSH	BC
+02E8  0608    		LD	B,8			; B = bit count
+02EA  E5      		PUSH	HL
+02EB  2A1720  		LD	HL,(CRCSUM)		; Get current checksum value
+02EE  07      	Crc1:	RLCA
+02EF  4F      		LD	C,A			; C = bit
+02F0  7D      		LD	A,L
+02F1  87      		ADD	A,A
+02F2  6F      		LD	L,A
+02F3  7C      		LD	A,H
+02F4  17      		RLA
+02F5  67      		LD	H,A
+02F6  17      		RLA
+02F7  A9      		XOR	C
+02F8  0F      		RRCA
+02F9  D20403  		JP	NC,Crc2			; If not to XOR
+02FC  7C      		LD	A,H
+02FD  EE80    		XOR	80H
+02FF  67      		LD	H,A
+0300  7D      		LD	A,L
+0301  EE05    		XOR	05H
+0303  6F      		LD	L,A
+		
+0304  79      	Crc2:	LD	A,C
+0305  05      		DEC	B
+0306  C2EE02  		JP	NZ,Crc1			; Go if more to do
+		
+0309  221720  		LD	(CRCSUM),HL		; Store updated checksum/CRC
+030C  E1      		POP	HL			; Restore
+030D  C1      		POP	BC
+030E  C9      		RET
+		
+0000          		  if  ($ != 030fh)
+			  endif
+		
+		;============================================================================
+		;	Subroutine	WNP - Write Next Pair
+		;
+		; Writes two bytes to the tape drive.
+		;============================================================================
+030F  7C      	WNP:	LD	A,H
+0310  CD1403  		CALL	WNB			; Write 1st byte
+0313  7D      		LD	A,L			; 2nd byte in A
+		; Fall through...
+		
+		;============================================================================
+		;	Subroutine	WNB - Write Next Byte
+		;
+		; Writes next byte to cassette tape.
+		;============================================================================
+0314  F5      	WNB:	PUSH	AF		; Save byte to send
+0315  CDAA02  	Wnb1:	CALL	TpXit		; Check for cancel, read status
+0318  E601    		AND	01H		; TxRdy
+031A  CA1503  		JP	Z,Wnb1		; Loop if not ready
+031D  3E11    		LD	A,11H		; TxEn, Err reset
+031F  D3F9    		OUT	(OP_TPC),A	; Turn on tape drive
+0321  F1      		POP	AF		; Restore byte
+0322  D3F8    		OUT	(OP_TPD),A	; Output it
+0324  C3E702  		JP	CRC		; Exit via CRC calc
+		
+		;============================================================================
+		;	Subroutine	LRA - Locate Register Address
+		;============================================================================
+0327  3A0520  	LRA:	LD	A,(RegI)		; Load register index
+032A  5F      	LRA_:	LD	E,A
+032B  1600    		LD	D,0
+032D  2A1D20  		LD	HL,(RegPtr)		; Get address
+0330  19      		ADD	HL,DE			; Add index offset
+0331  C9      		RET				; Exit w/HL = address
+		
+		;============================================================================
+		;	Subroutine	IOA - Input Octal Address
+		;
+		;	HL has address of double byte entry
+		;============================================================================
+0332  C38A0B  	IOA:	JP	IoaExt
+		
+0335  FF      		db	0ffh			; Space waster for address
+		
+		;============================================================================
+		;	Subroutine	IOB - Input Octal Byte
+		;
+		; Read one Octal Byte from the keypad
+		;
+		;	Entry:	HL = address to put octal byte
+		;;===========================================================================
+0336  C3C00B  	IOB:	JP	IobExt
+		
+		; The rest ot the IOB code area below is unused.  It it maintained here to
+		; ensure the compiler generates a code file that is identical to the original
+		; PAM/37 code.
+		
+0000          		  if	($ != 0339h)
+			  endif
+		
+0339  FF      		RST	38H
+033A  FF      		RST	38H
+033B  FE08    		CP	08H
+033D  D2D200  		JP	NC,ErrorEnt
+0340  5F      		LD	E,A
+0341  7E      		LD	A,(HL)
+0342  07      		RLCA
+0343  07      		RLCA
+0344  07      		RLCA
+0345  E6F8    		AND	0F8H
+0347  B3      		OR	E
+0348  77      		LD	(HL),A
+0349  15      		DEC	D
+034A  C23803  		JP	NZ,0338h
+034D  3E0F    		LD	A,0Fh
+034F  C36002  		JP	Horn
+		
+		; End of unused code block
+		
+		;============================================================================
+		;	Subroutine	DOD - Decode Octal Display
+		;
+		;	Entry:	HL = Address of LED refresh area
+		;		B = OR pattern to force on bars or periods
+		;		A = Octal value
+		;		HL = HEX digit address
+		;============================================================================
+0352  C3E90B  	DOD:	JP	DodExt
+		
+0355  0E03    	DodRet:	LD	C,3
+0357  17      	DodR5:	RLA
+0358  17      		RLA
+0359  17      		RLA
+035A  F5      		PUSH	AF			; Save for next digit
+035B  E607    		AND	07H			; Mask
+		
+035D  C6EE    		add	a,low DodOct		; Add offset into table
+035F  5F      		LD	E,A
+0360  1A      		LD	A,(DE)
+0361  A8      		XOR	B
+0362  E67F    		AND	7FH
+0364  A8      		XOR	B
+0365  77      		LD	(HL),A
+0366  23      		INC	HL
+0367  78      		LD	A,B
+0368  07      		RLCA
+0369  47      		LD	B,A
+036A  F1      		POP	AF
+036B  0D      		DEC	C
+036C  C25703  		JP	NZ,DodR5
+036F  D1      		POP	DE
+0370  C9      		RET
+		
+		;============================================================================
+		;	Subroutine	UFD - Update Front Panel Displays
+		;
+		; UFD is called by the clock interrupt processor when it is
+		; time to update the display contents.  Currently, this is done
+		; every 32 interrupts, or about 32 times a second.
+		;============================================================================
+0371  3E02    	UFD:	LD	A,2
+0373  A0      		AND	B
+0374  C0      		RET	NZ			; Exit if not handling update
+		
+0375  2E06    		LD	L,low DsProt
+0377  7E      		LD	A,(HL)
+0378  07      		RLCA
+0379  77      		LD	(HL),A			; Rotate pattern
+037A  47      		LD	B,A
+037B  23      		INC	HL
+037C  7E      		LD	A,(HL)			; A= Display Mode (DspMod)
+037D  E602    		AND	2
+037F  2A1420  		LD	HL,(ABUSS)
+0382  CA9703  		JP	Z,Ufd1			; Go if displaying memory
+		
+		; Displaying registers
+0385  CD2703  		CALL	LRA			; Locate register address offset in DE
+0388  E5      		PUSH	HL			; Save pointer to (ABUSS)
+0389  21520C  		ld	hl,LedRegTbl		; Pointer to Register table
+038C  19      		ADD	HL,DE			; Offset HL to register name pattern
+038D  7E      		LD	A,(HL)
+038E  23      		INC	HL
+038F  66      		LD	H,(HL)
+0390  6F      		LD	L,A
+0391  E3      		EX	(SP),HL
+0392  B4      		OR	H
+0393  7E      		LD	A,(HL)
+0394  23      		INC	HL
+0395  66      		LD	H,(HL)
+0396  6F      		LD	L,A			; HL = address of reg pair contents
+		
+0397  F5      	Ufd1:	PUSH	AF
+0398  EB      		EX	DE,HL			; Register table to DE
+0399  210B20  		LD	HL,ALeds
+039C  7A      		LD	A,D
+039D  CD5203  		CALL	DOD			; Format ABANK high half
+03A0  7B      		LD	A,E
+03A1  CD5203  		CALL	DOD			; Format ABANK low half
+03A4  F1      		POP	AF
+03A5  1A      		LD	A,(DE)
+03A6  CA5203  		JP	Z,DOD			; Go if displaying memory
+		
+		; Is register display, set register name
+03A9  C1      		pop	bc			; Point BC to (ABUSS)
+03AA  111120  		ld	de,DLeds		; Data LEDs
+03AD  C3260C  		JP	Mov3Bytes		; Move 3 from (BC) to (DE)
+		
+		;============================================================================
+		;	Subroutine	RCK - Read Console Keyset
+		;
+		;  Called to read a keystroke from the console.  It performs
+		; de-bounce and auto-repeat.  A 'bip' is sounded when a value
+		; is accepted.
+		;
+		;	KeyPad	  Code	     Returned
+		;	 Key	  Value	       in A
+		;	  0	1111 1110	0
+		;	  1	1111 1100	1
+		;	  2	1111 1010	2
+		;	  3	1111 1000	3
+		;	  4	1111 0110	4
+		;	  5	1111 0100	5
+		;	  6	1111 0010	6
+		;	  7	1111 0000	7
+		;
+		;	  8	1110 1111	8
+		;	  9	1100 1111	9
+		;	  +	1010 1111	10
+		;	  -	1000 1111	11
+		;	  *	0110 1111	12
+		;	  /	0100 1111	13
+		;	  #	0010 1111	14
+		;	  .	0000 1111	15
+		;
+		;	Inputs		None
+		;	Outputs		A has keypad code 0-15 for key in above table
+		;============================================================================
+0000          		  if  $ != 03b0h
+			  endif
+		
+03B0  E5      	RCK:	PUSH	HL
+03B1  C5      		PUSH	BC
+03B2  0E14    		LD	C,400/20		; Wait 400 mSec
+03B4  211620  		LD	HL,RckA			; Storage in RAM
+03B7  DBF0    	Rck1:	IN	A,(0F0H)		; Input keypad value
+03B9  47      		LD	B,A
+03BA  3E0A    		LD	A,20/2			; Wait 20 mSec
+03BC  CD2B00  		CALL	Dly
+03BF  78      		LD	A,B
+03C0  BE      		CP	(HL)
+03C1  C2C803  		JP	NZ,Rck2			; Go if different key from last
+03C4  0D      		DEC	C
+03C5  C2B703  		JP	NZ,Rck1			; Wait N cycles
+		
+03C8  77      	Rck2:	LD	(HL),A			; Update last key received byte
+03C9  EEFE    		XOR	0FEH			; Invert all but group 0 flag
+03CB  0F      		RRCA
+03CC  D2D603  		JP	NC,Rck3			; Hit Bank 0
+03CF  0F      		RRCA
+03D0  0F      		RRCA
+03D1  0F      		RRCA
+03D2  0F      		RRCA
+03D3  D2B703  		JP	NC,Rck1			; No hit at all
+		
+03D6  47      	Rck3:	LD	B,A			; B gets key code
+03D7  3E02    		LD	A,4/2			; Bip sound timer
+03D9  CD6002  		CALL	Horn			; Make bip
+03DC  78      		LD	A,B			; Restore key code
+03DD  E60F    		AND	0FH			; Mask
+03DF  C1      		POP	BC
+03E0  E1      		POP	HL
+03E1  C9      		RET
+		
+		; This is the original DSPA data table for displaying the register names.  It
+		; is replaced in high ROM so the additional Z80 registers can be added.
+		
+03E2  A498    		dw	1001100010100100b	; SP
+03E4  909C    		dw	1001110010010000b	; AF
+03E6  868D    		dw	1000110110000110b	; BC
+03E8  C28C    		dw	1000110011000010b	; DE
+03EA  928F    		dw	1000111110010010b	; HL
+03EC  98CE    		dw	1100111010011000b	; PC
+		
+03EE          	DodOct:			; Octal to 7-Segment pattern
+03EE  01      		db	00000001b		; 0
+03EF  73      		db	01110011b		; 1
+03F0  48      		db	01001000b		; 2
+03F1  60      		db	01100000b		; 3
+03F2  32      		db	00110010b		; 4
+03F3  24      		db	00100100b		; 5
+03F4  04      		db	00000100b		; 6
+03F5  71      		db	01110001b		; 7
+03F6  00      		db	00000000b		; 8
+03F7  20      		db	00100000b		; 9
+		
+03F8  FF      		db	0ffh			; Space waster to put PRSROM at right location
+		
+0000          		  if  ($ !=03f9h)
+			  endif
+		
+		; I/O Routines copied to and used in RAM.
+		;
+		; Must Continue to 3777A for proper copy.  The table must also
+		; be backwards to the final RAM.
+03F9          	PRSROM:
+03F9  01      		db	1			; Refresh Index
+03FA  00      		db	0			; CtlFlg
+03FB  00      		db	0			; .MFlag
+03FC  00      		db	0			; DSPMOD Display Register
+03FD  00      		db	0			; DsProt
+03FE  00      		db	0			; RegI - Show SP Register
+03FF  C9      		db	0c9h			; Return instruction
+0000          		 if ((low $) != 0)
+			 endif
+		
+		;============================================================================
+		;	XInit1 - Size Memory
+		;
+		;  XInit1 is jumped to during PAM-8's memory sizing.
+		; This routine differes from the standard PAM-8 function
+		; in that it is non-destructive to what may be in RAM below
+		; 040000A, and it will not wrap-around in a 64K RAM system.
+		;
+		;	Entry:	Jumped to from old Init1
+		;		(DE) = Search increment
+		;		(HL) = First RAM search location
+		;
+		;	Exit:	(HL) = First location where no RAM found
+		;			(or zero if RAM through 64K present.)
+		;		(E) = 0 as required
+		;============================================================================
+0400  7E      	XInit1:	ld	a,(hl)			; Get RAM contents at current address
+0401  35      		dec	(hl)			; Change it
+0402  BE      		cp	(hl)			; Compare to old value
+0403  77      		ld	(hl),a			; Restore original value
+0404  CA4F00  		jp	z,Init2			; Go if contents did not change - no RAM here
+		
+0407  19      		add	hl,de			; Add the search increment
+0408  D20004  		jp	nc,XInit1		;  and loop back for next block, if no wrap-around
+040B  C34F00  		jp	Init2			; Search complete
+		
+		;============================================================================
+		;	XInit	- Extended Initialization
+		;
+		; Decide if there is RAM at 0.  If there is, then copy
+		; RAM Front Panel and H17 ROM to appropriate locations.
+		; Then jump back to inline init.
+		;
+		;  Modified to only do one move directly to RAM.
+		;
+		;	Entry:	(DE) = RAM8GO
+		;
+		;	Exit:	(DE) = PRSROM
+		;		(HL) = PrsRAM + PRSL - 1
+		;		RAM at 0000 set up if present
+		;============================================================================
+040E  AF      	XInit:	xor	a
+040F  323620  		ld	(CtlFlg2),a		; Initialize the flag
+		
+		; Copy RAM test routine to RAM
+0412  0E0A    		ld	c,XinAL			; Length byte
+0414  116504  		ld	de,XinA			; Source address
+0417  210420  		ld	hl,XinB			; Destination
+041A  1A      	XIn1:	ld	a,(de)			; MOve a byte
+041B  77      		ld	(hl),a
+041C  13      		inc	de
+041D  23      		inc	hl
+041E  0D      		dec	c			; -1 for count
+041F  C21A04  		jp	nz,XIn1			;  and loop if more to go
+		
+		; Test for RAM at location 0
+0422  210000  		ld	hl,0
+0425  3A3620  		ld	a,(CtlFlg2)		; Get original contents
+0428  47      		ld	b,a			; Save
+		
+		; The OR  F2H below is NOT the code needed to enable ORG-0 RAM, although it WILL work.
+		; Instead, OR  CB2.ORG or OR  00100000B would be used.  0F2H is the PORT used to enable
+		; or disable ORG-0 RAM.
+		
+0429  F6F2    		OR	0F2H			; Turn on RAM at 0000
+042B  113104  		LD	DE,XIn2			; DE = return address
+042E  C30420  		JP	XinB			; Execute test routine
+		
+0431  CA5C04  	XIn2:	JP	Z,XInit5		; Go if no change (no RAM at 0000)
+		
+0434  01E40C  		ld	bc,EndOfCode		; # of bytes to move
+0437  110000  		ld	de,0			; Start address of move
+		
+		; This part makes no sense, moving data from (DE) to (DE).  As far as the XinA routine
+		; is concerned, the memory map is set to ROM + RAM.  In other words, ORG-0 is NOT in
+		; effect, so there is no way to copy from ROM to RAM, unless there's one of those odd
+		; 'Read ROM, Write RAM' sort of mapping schemes in effect.
+		
+043A  1A      	XIn3:	LD	A,(DE)
+043B  12      		LD	(DE),A
+043C  13      		INC	DE
+043D  0B      		DEC	BC
+043E  78      		LD	A,B
+043F  B1      		OR	C
+0440  C23A04  		JP	NZ,XIn3			; Loop until all bytes copied
+		
+0443  010008  		LD	BC,H17RomLen
+0446  110018  		LD	DE,H17RomStart
+		
+		; Same as before - copying from (DE) to (DE).  This part makes no sense, moving data
+		; from (DE) to (DE).  As far as the XinA routine is concerned, the memory map is set
+		; to ROM + RAM.  In other words, ORG-0 is NOT in effect, so there is no way to copy
+		; from ROM to RAM, unless there's one of those odd 'Read ROM, Write RAM' sort of
+		; mapping schemes in effect.
+		
+0449  1A      	XIn4:	LD	A,(DE)
+044A  12      		LD	(DE),A
+044B  13      		INC	DE
+044C  0B      		DEC	BC
+044D  78      		LD	A,B
+044E  B1      		OR	C
+044F  C24904  		JP	NZ,XIn4
+		
+		; Now, put the RAM-only memory map in effect
+0452  3A3620  		LD	A,(CtlFlg2)		; Get current Control Port 2 Flags
+0455  F620    		OR	CB2_ORG			; ORG-0 RAM enable
+0457  323620  		LD	(CtlFlg2),A		; Save current bits
+045A  D3F2    		OUT	(OP_CTL2),A		; Set ORG0 in place
+		
+045C  11F903  	XInit5:	LD	DE,PRSROM		; Restore normal values
+045F  210A20  		ld	hl,PrsRAM + PrsLen - 1
+0462  C33B00  		JP	Init			; Return to in-line code
+		
+		; This routine is block moved to RAM @ 4002H for execution
+0465  D3F2    	XinA:	OUT	(OP_CTL2),A		; Swap in Page0 RAM
+0467  7E      		LD	A,(HL)			; Get value and save it
+0468  35      		DEC	(HL)			; Attept to change
+0469  BE      		CP	(HL)			; Set NZ if RAM changed
+046A  78      		LD	A,B			; Get original value for 0F2H port
+046B  D3F2    		OUT	(OP_CTL2),A		; Select ROM map
+046D  EB      		EX	DE,HL
+046E  E9      		JP	(HL)
+000A          	XinAL	equ	$-XinA
+		
+		;============================================================================
+		;	ExtCmd - Extended Command Processor
+		;
+		; Handler for commands 0-3
+		;============================================================================
+046F  C604    	ExtCmd:	ADD	A,4			; Convert keypad to numeric
+0471  87      		ADD	A,A			; A = 2 * A
+0472  117E04  		LD	DE,ExtTbl		; Point to command table
+0475  6F      		LD	L,A			; HL gets offset to command entry
+0476  2600    		LD	H,0
+0478  19      		ADD	HL,DE			;  added to table base address
+0479  7E      		LD	A,(HL)			; Get command address LSB
+047A  23      		INC	HL
+047B  66      		LD	H,(HL)			; Put command MSB address in H
+047C  6F      		LD	L,A			;  and LSB address in L
+047D  E9      		JP	(HL)			; Execute command
+		
+047E  AE0A    	ExtTbl:	dw	UnivBoot		; '0' - Universal boot???
+0480  A904    		dw	PriBoot			; '1' - Primary Boot
+0482  9D04    		dw	SecBoot			; '2' - Secondary Boot
+0484  410B    		dw	AutoBoot		; '3' - Radix mode
+		
+		;============================================================================
+		;	AutoB - Auto Boot
+		;
+		; Performs an auto boot of the primary device.
+		;============================================================================
+0486  210820  	AutoB:	LD	HL,MFlag
+0489  7E      		LD	A,(HL)
+048A  E6BD    		and	0ffh-UO_DDU-UO_NFR	; Enable display update, and refresh
+048C  77      		LD	(HL),A
+048D  23      		INC	HL
+048E  36F0    		LD	(HL),0F0H
+0490  3EFF    		LD	A,0FFH
+0492  320620  		LD	(DsProt),A		; All periods OFF
+0495  FB      		EI
+0496  2A1D20  		LD	HL,(RegPtr)
+0499  F9      		LD	SP,HL
+049A  C3A904  		jp	PriBoot			; Boot primary device
+		
+		;============================================================================
+		;	SecBoot - Secondary Boot
+		;	PriBoot - Primary Boot
+		;
+		;  PriBoot is called to boot from the primary boot device as defined in the
+		; configuration port IP.COM.  The alternate entry, SecBoot, is called to boot
+		; from the secondary boot device.  If the CN.PRI switch is one, the address
+		; 170 is the primary device; otherwise, address 174 is the boot device.  From
+		; there, the configuration switch further determines the device type with the
+		; appropriate masks.
+		;============================================================================
+049D          	SecBoot:
+049D  AF      		xor	a
+049E  323121  	SecBt1:	ld	(AIO_UNI),a		; Zero boot unit
+04A1  016D05  		ld	bc,MsgSec
+04A4  DBF2    		in	a,(IP_CON)
+04A6  2F      		cpl				; Invert Primary flag
+04A7  1809    		jr	Boot			; Boot Secondary device
+		
+04A9          	PriBoot:
+04A9  AF      		xor	a
+04AA  323121  	PriBt1:	ld	(AIO_UNI),a		; Zero boot unit
+04AD  016A05  		ld	bc,MsgPri
+04B0  DBF2    		in	a,(IP_CON)
+		; fall through
+		
+04B2  318022  	Boot:	ld	sp,Stack		; Init the stack pointer
+04B5  E610    		and	CN_PRI			; Booting primary?
+04B7  DBF2    		IN	A,(IP_CON)		; Read config switches
+04B9  F5      		PUSH	AF			;  and save
+04BA  2817    		JR	Z,Boot2			; 174 is the device to boot (secondary)
+		
+		; Booting 170q device
+04BC  3E78    		LD	A,78H			; Set Boot Dev Address to 170q
+04BE  325021  		LD	(BDA),A
+04C1  F1      		POP	AF			; Restore config switch data
+04C2  E60C    		AND	CN_170M			; Mask with 0000 1100
+04C4  2809    		jr	z,SetH37
+04C6  FE0C    		CP	CN_170M			; Is it 0000 1100?
+04C8  CA7005  		JP	Z,ErrDevice		; Go if device 3
+04CB  0F      		RRCA				; Shift bits to 0000 00xx
+04CC  0F      		RRCA
+04CD  1811    		jr	Boot3			;  and handle devices 0, 1, or 2
+		
+		; Soecial case.  Port 170 device 0 (H37) is treated as Device 3 in the lookup table
+04CF  3E03    	SetH37:	ld	a,3
+04D1  180D    		jr	Boot3			; Handle device 3
+		
+		; Booting 174q device
+04D3  3E7C    	Boot2:	LD	A,7CH			; Set Boot Dev Address to 174q
+04D5  325021  		LD	(BDA),A
+04D8  F1      		POP	AF			; Restore config switch data
+04D9  E603    		AND	CN_174M			; Mask with 0000 0011
+04DB  FE03    		CP	CN_174M			; Is it 0000 0011?
+04DD  CA7005  		JP	Z,ErrDevice		;  Go if device 3
+		
+04E0  325121  	Boot3:	ld	(BDF),a			; Save Boot Dev Flag
+04E3  C5      		push	bc			; Save message display pointer
+04E4  3ED0    		ld	a,CB_SSI + CB_CLI + CB_SPK	; Turn off monitor mode
+04E6  320920  		ld	(CtlFlg),A
+		
+		; Set all interrupt handlers to EI, RET
+04E9  3E07    		LD	A,7
+04EB  211F20  		LD	HL,UiVec
+04EE  36C3    	SetInt:	LD	(HL),0C3H		; Stuff interrupt vectors
+04F0  23      		INC	HL
+04F1  3624    		LD	(HL),low EiRet		;  with JP EiRet instruction
+04F3  23      		INC	HL
+04F4  3607    		LD	(HL),high EiRet
+04F6  23      		INC	HL
+04F7  3D      		DEC	A
+04F8  20F4    		JR	NZ,SetInt
+		
+04FA  AF      		xor	a
+04FB  325221  		ld	(TimOut),a		; Zero timeout counter
+04FE  21191C  		ld	hl,ROMClk		; H17 ROM clock routine
+0501  225421  		ld	(UsrClk),hl
+0504  21AF05  		ld	hl,ClkInt
+0507  222020  		ld	(UiVec+1),hl		; Init Clock Interrupt vector
+050A  015A1F  		ld	bc,BootA		; Point to H17 variables
+050D  114820  		ld	de,D_CON
+0510  CD7B07  		call	BlkMovStk		; Block move H17 tables into RAM
+0513  58      		 db	BootALen
+		
+0514  21A020  		LD	HL,D_RAM
+0517  061F    		LD	B,31
+0519  CD8A19  		CALL	ZeroMem
+		
+051C  3A0820  		LD	A,(MFlag)
+051F  F603    		or	UO_DDU + UO_CLK		; Enable clock interrupt, turn off display update
+0521  320820  		LD	(MFlag),A
+0524  C1      		POP	BC			; Restore message pointer
+0525  110B20  		LD	DE,ALeds		;  and move to address LEDs
+0528  CD7B07  		call	BlkMovStk
+052B  03      		 db	MsgLen
+		
+052C  2E06    		ld	L,9-MsgLen
+052E  3EFF    		ld	a,0ffh
+0530  12      	Boot5:	ld	(de),a			; Blank LED RAM after "PRI" or "SEC"
+0531  13      		inc	de
+0532  2D      		dec	L
+0533  20FB    		jr	nz,Boot5		; Loop 'til done
+		
+0535  114905  		ld	de,Boot6		; Return address
+0538  D5      		push	de
+0539  3A5121  		ld	a,(BDF)			; Get Boot Device Flags
+053C  87      		add	a,a			; Device flags x 2
+053D  6F      		ld	L,a			;  into HL
+053E  2600    		ld	h,0
+0540  116205  		ld	de,BootTbl		; Point to start of boot table
+0543  19      		add	hl,de			; Add offset in HL
+0544  7E      		ld	a,(hl)			; Get address from table, into HL
+0545  23      		inc	hl
+0546  66      		ld	h,(hl)
+0547  6F      		ld	L,a
+0548  E9      		jp	(hl)			;  and execute boot routine
+		
+0549  3A0820  	Boot6:	LD	A,(MFlag)
+054C  E6FD    		and	0ffh-UO_DDU		; Turn on Display Update
+054E  320820  		LD	(MFlag),A		; Restore original front panel mode
+0551  2A5421  		LD	HL,(UsrClk)
+0554  222020  		LD	(UiVec+1),HL		; Clear timeout vector to just user vector
+0557  215621  		LD	HL,I$2156
+055A  0605    		LD	B,5
+055C  CD8A19  		CALL	ZeroMem			; Zero 5-byte block
+		
+055F  C38022  		JP	UsrFWA			;  and enter boot code
+		
+0562          	BootTbl:
+0562  2606    		dw	H17Boot			; H-17 Boot
+0564  8306    		dw	H47Boot			; H-47 Boot
+0566  7609    		dw	H67Boot			; H-67 Boot
+0568  5E08    		dw	H37Boot			; H-37 Boot
+		
+056A  98DEDF  	MsgPri: db      10011000b,11011110b,11011111b   ; 'Pri'
+0003          	MsgLen  equ     $-MsgPri
+		
+056D  A48C8D  	MsgSec: db      10100100b,10001100b,10001101b   ; 'SEC'
+		
+		;============================================================================
+		;	Device Error Display Entry Point
+		;
+		; Displays the 'DEU' message (for 'DEV') on the front panel
+		;============================================================================
+0570          	ErrDevice:
+0570  F3      		di
+0571  012C0B  		ld	bc,DevMsg		; Display 'DEU' (for 'DEV')
+0574  111120  		ld	de,DLeds
+0577  CD7B07  		call	BlkMovStk
+057A  03      		 db	3
+		; fall through
+		
+		;============================================================================
+		;	Boot Error Display Entry Point
+		;
+		; Displays the 'Error ' message on the front panel
+		;============================================================================
+057B          	ErrorDisplay:
+057B  3A0820  		ld	a,(MFlag)
+057E  F602    		or	UO_DDU			; Disable display update
+0580  E6FE    		and	0ffh-UO_CLK		; Disable private clock processing
+0582  320820  		ld	(MFlag),a
+0585  FB      		ei
+0586  01A905  		LD	BC,ErrMsg		; Display 'Error '
+0589  110B20  		LD	DE,ALeds
+058C  CD7B07  		CALL	BlkMovStk
+058F  06      		 db	6
+		; fall through
+		
+		;============================================================================
+		;	Error Acknowledge
+		;
+		; Waits for the operator to acknoledge the error condition by:
+		;
+		; - Sound the error BEEP
+		; - Strobe the keypad for 1/2 second, waiting for '*' keypress
+		; - Repeat
+		;============================================================================
+0590          	ErrorAck:
+0590  3E19    		ld	a,50/2			; 50mSec error beep
+0592  CD6002  		CALL	Horn
+		
+0595  3A1B20  		ld	A,(TicCnt)		; Get current count LSB
+0598  3D      		dec	a			; -1 for 255*2mSec Tics (1/2 second)
+0599  47      		ld	b,a			; Load delay counter
+059A  DBF0    	EAck5:	in	a,(IP_PAD)		; Read keypad
+059C  FE6F    		cp	K_Star			; '*' pressed?
+059E  CAD200  		jp	z,ErrorEnt		; Go if cancel pressed
+		
+05A1  3A1B20  		ld	a,(TicCnt)		; Get current count LSB
+05A4  B8      		cp	b
+05A5  20F3    		jr	nz,EAck5		;  and go if not 1/2 second
+05A7  18E7    		jr	ErrorAck
+		
+		; "Error ' message string
+05A9  8CDEDE  	ErrMsg:	db	10001100b, 11011110b, 11011110b	; 'Err'
+05AC  C6DEFF  		db	11000110b, 11011110b, 11111111b	; 'or '
+		
+		;============================================================================
+		;	ClkInt - Clock Interrupt
+		;
+		; ClkInt is added to the normal Clock interrupt process during disk boot. It
+		; performs the following:
+		;
+		; - Check for keypad abort key ('*')
+		; - Every 1/2 second, bump the timeout counter
+		;
+		;  If the abort key (*) is pressed, exit the boot process by shutting down
+		; the selected disk drive, returning the clock processing to normal, and
+		; exiting via the ErrorEnt routine.
+		;
+		;  If the 15 second timeout expires, shut down the drives, restore normal
+		; clock processing, and exit via the ErrorDisplay routine.
+		;============================================================================
+05AF  F5      	ClkInt:	PUSH	AF
+05B0  DBF0    		IN	A,(IP_PAD)
+05B2  FE6F    		CP	K_Star
+05B4  2864    		JR	Z,BootAbort
+		
+05B6  3A1B20  		LD	A,(TicCnt)
+05B9  A7      		AND	A			; 1/2 second elapsed?
+05BA  200B    		JR	NZ,BtClkExit		;  go if no
+		
+05BC  3A5221  		LD	A,(TimOut)
+05BF  3C      		INC	A
+05C0  325221  		LD	(TimOut),A
+05C3  FE1E    		CP	30			; 30/2 = 15 second timeout
+05C5  3059    		JR	NC,BootTimeout		; Go if timed out
+		
+05C7          	BtClkExit:
+05C7  F1      		POP	AF
+05C8  E5      		PUSH	HL
+05C9  2A5421  		LD	HL,(UsrClk)
+05CC  E3      		EX	(SP),HL
+05CD  C9      		RET				; Exit to the H17ROM clock processor
+		
+		;============================================================================
+		;	DrvShutdown
+		;
+		;  DrvShutdown polls the Boot Device Flag (BDF) to determine the boot device,
+		; and then performs a command abort on that device.
+		;============================================================================
+05CE          	DrvShutdown:
+05CE  F3      		DI
+05CF  3A5121  		LD	A,(BDF)
+		; Was it Dev 0 (H17)?
+05D2  FE00    		CP	0
+05D4  2010    		JR	NZ,TestDev1
+		
+05D6  AF      		XOR	A
+05D7  32A320  		LD	(D$20A3),A
+05DA  3AA220  		LD	A,(D_20A2)
+05DD  E680    		AND	80H
+05DF  32A220  		LD	(D_20A2),A
+05E2  D37F    		OUT	(DP_DC),A
+05E4  181F    		JR	RestoreBtClk
+		
+		; Was it Dev 1 (H47)?
+05E6          	TestDev1:
+05E6  FE01    		CP	1
+05E8  2007    		JR	NZ,TestDev2
+05EA  CD3407  		CALL	ByteToPortOff
+		; Two data bytes, value, then port offset
+05ED  0200    		db	2,0			; Send 2 to port (BDA+0)
+		;	LD	(BC),A
+		;	NOP
+05EF  1814    		JR	RestoreBtClk
+		
+		; Was it Dev 2 (H67)?
+05F1          	TestDev2:
+05F1  FE02    		CP	2
+05F3  2007    		JR	NZ,TestDev3
+05F5  CD3407  		CALL	ByteToPortOff
+		; Two data bytes: value, then port offset
+05F8  1001    		db	10h, 1			; Send 10h to port (BDA+1)
+		;	DJNZ	J$05FB
+05FA  1809    		JR	RestoreBtClk
+		;J$05FB	EQU	$-1
+		
+		
+		; Was it Dev 3 (H37)?
+05FC          	TestDev3:
+05FC  FE03    		CP	3
+05FE  2005    		JR	NZ,RestoreBtClk
+0600  CD3407  		CALL	ByteToPortOff
+0603  0000    		 DB	0,0			; Send 0 to port (BDA+0)
+		
+0605          	RestoreBtClk:
+0605  2A5421  		LD	HL,(UsrClk)		; Get default H17ROM Clock interrupt address
+0608  222020  		LD	(UiVec+1),HL		;  and re-vector the clock int
+060B  C9      		RET
+		
+		;	-----------------
+		;?.060C:
+060C  FF      		RST	38H
+060D  FF      		RST	38H
+060E  FF      		RST	38H
+060F  FF      		RST	38H
+0610  FF      		RST	38H
+0611  FF      		RST	38H
+0612  FF      		RST	38H
+0613  C31307  		JP	C_0713
+		;
+		;	-----------------
+		;?.0616:
+0616  FF      		RST	38H
+0617  C3F906  		JP	J$06F9
+		;
+		;	-----------------
+061A          	BootAbort:
+061A  CDCE05  		CALL	DrvShutdown
+061D  C3D200  		jp	ErrorEnt
+		;
+		;	-----------------
+0620          	BootTimeout:
+0620  CDCE05  		CALL	DrvShutdown
+0623  C37B05  		JP	ErrorDisplay
+		
+		;============================================================================
+		;	Boot Processor - H-17
+		;============================================================================
+0626          	H17Boot:
+0626  018006  		LD	BC,H17BtMsg
+0629  111120  		LD	DE,DLeds
+062C  CD7B07  		CALL	BlkMovStk
+062F  03      		 db	3
+		
+0630  AF      		XOR	A
+0631  D37F    		OUT	(DP_DC),A
+0633  215B07  		LD	HL,R.SDP3
+0636  228620  		LD	(D$2086),HL
+0639  1E0A    	J$0639:	LD	E,0AH	; 10
+063B  CD7006  	J_063B:	CALL	C_0670
+		;
+063E  E601    		AND	01H	; 1
+0640  CA3B06  		JP	Z,J_063B
+		;
+0643  CD7006  	J$0643:	CALL	C_0670
+		;
+0646  E601    		AND	01H	; 1
+0648  C24306  		JP	NZ,J$0643
+		;
+064B  1D      		DEC	E
+064C  C23B06  		JP	NZ,J_063B
+		;
+064F  CD8520  		 CALL	C$2085
+		;
+0652  CD8B20  		 CALL	C$208B
+		;
+0655  3E0A    		LD	A,0AH	; 10
+0657  32A020  		LD	(D_RAM),A
+065A  CD7620  		 CALL	C$2076
+		;
+065D  CD6120  		 CALL	C$2061
+		;
+0660  118022  		LD	DE,UsrFWA
+0663  010009  		LD	BC,0900H
+0666  210000  		LD	HL,0
+0669  CD6720  		 CALL	C$2067
+		;
+066C  DA3906  		JP	C,J$0639
+		;
+066F  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0670  3A3121  	C_0670:	LD	A,(AIO_UNI)
+0673  47      		LD	B,A
+0674  04      		INC	B
+0675  AF      		XOR	A
+0676  CDE107  		 CALL	C_07E1
+		;
+0679  F610    		OR	10H	; 16
+067B  D37F    		OUT	(DP_DC),A
+067D  DB7F    		IN	A,(DP_DC)
+067F  C9      		RET
+		
+0680  92F3F1  	H17BtMsg:	db	10010010b, 11110011b, 11110001b	; Message 'H17'
+		
+		
+		;============================================================================
+		;	Boot Processor - H-47
+		;============================================================================
+0683          	H47Boot:
+0683  01F206  		LD	BC,H47BtMsg
+0686  111120  		LD	DE,DLeds
+0689  CD7B07  		CALL	BlkMovStk
+068C  03      		 db	3
+		
+068D  CD9906  	J$068D:	CALL	C$0699
+0690  D0      		RET	NC
+0691  3EFA    		LD	A,500/2			; 500 mSec delay
+0693  CD2B00  		CALL	Dly
+0696  C38D06  		JP	J$068D
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0699  CD3407  	C$0699:	CALL	ByteToPortOff
+069C  0200    		 db	2, 0			; Output data, then port offset
+		
+069E  3E14    		LD	A,20			; Short delay loop
+06A0  3D      	J$06A0:	DEC	A
+06A1  20FD    		JR	NZ,J$06A0
+06A3  CD8907  		CALL	C_0789
+06A6  D8      		RET	C
+		
+06A7  CD6E07  	J$06A7:	CALL	C_076E
+06AA  D8      		RET	C
+		
+06AB  CD6E07  		CALL	C_076E
+06AE  D8      		RET	C
+		
+06AF  3A3121  		LD	A,(AIO_UNI)
+06B2  47      		LD	B,A
+06B3  AF      		XOR	A
+06B4  CDE107  		CALL	C_07E1
+06B7  A5      		AND	L
+06B8  C2A706  		JP	NZ,J$06A7
+		
+06BB  CDF506  		CALL	C_06F5
+		
+06BE  03      		INC	BC
+06BF  D8      		RET	C
+		
+06C0  CD0F07  		CALL	C_070F
+06C3  00      		NOP
+06C4  D8      		RET	C
+		
+06C5  CD0F07  		CALL	C_070F
+06C8  02      		LD	(BC),A
+06C9  D8      		RET	C
+		;
+06CA  CD8907  		CALL	C_0789
+		;
+06CD  D8      		RET	C
+		;
+06CE  CDF506  		 CALL	C_06F5
+		;
+06D1  07      		RLCA
+06D2  D8      		RET	C
+		;
+06D3  CD0F07  		 CALL	C_070F
+		;
+06D6  00      		NOP
+06D7  D8      		RET	C
+		;
+06D8  3A3121  		LD	A,(AIO_UNI)
+06DB  0F      		RRCA
+06DC  0F      		RRCA
+06DD  0F      		RRCA
+06DE  F601    		OR	01H	; 1
+06E0  CD1307  		 CALL	C_0713
+		;
+06E3  D8      		RET	C
+		;
+06E4  118022  		LD	DE,UsrFWA
+06E7  CD4807  	J$06E7:	 CALL	PIN
+		;
+06EA  DA8907  		JP	C,C_0789
+		;
+06ED  12      		LD	(DE),A
+06EE  13      		INC	DE
+06EF  C3E706  		JP	J$06E7
+		
+06F2  92B2F1  	H47BtMsg:	db	10010010b, 10110010b, 11110001b	; Message 'H47'
+		
+		
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+		; Pop data into A from top of stack
+06F5  E3      	C_06F5:	EX	(SP),HL
+06F6  7E      		LD	A,(HL)
+06F7  23      		INC	HL
+06F8  E3      		EX	(SP),HL
+06F9  F5      	J$06F9:	PUSH	AF
+06FA  CD8907  		CALL	C_0789
+06FD  DA0C07  		JP	C,J$070C
+0700  F1      		POP	AF
+0701  CD3807  		CALL	AtoPortOff		; **************************************
+0704  01      		 db	1
+0705  0614    		mvi	b,20
+0707  05      	J$0707:	DEC	B
+0708  20FD    		JR	NZ,J$0707
+070A  A7      		AND	A
+070B  C9      		RET
+		;
+		;	-----------------
+070C  33      	J$070C:	INC	SP
+070D  33      		INC	SP
+070E  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+		; Pop byte off top of stack
+		
+070F  E3      	C_070F:	EX	(SP),HL
+0710  7E      		LD	A,(HL)
+0711  23      		INC	HL
+0712  E3      		EX	(SP),HL
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+		
+0713  F5      	C_0713:	PUSH	AF
+0714  CDA407  		CALL	C$07A4
+0717  DA2107  		JP	C,J$0721
+		
+071A  F1      		POP	AF
+071B  CD3807  		CALL	AtoPortOff
+071E  01      		 db	1
+071F  A7      		and	a
+0720  C9      		ret
+		
+0721  33      	J$0721:	INC	SP
+0722  33      		INC	SP
+0723  C9      		RET
+		;
+		;	-----------------
+		
+		
+0724  FB      	EiRet:	EI
+0725  C9      		RET
+		
+		;============================================================================
+		;	ByteFromPortOff
+		;
+		; Inputs a byte from the port at (BDA) + offset on top of Stack
+		;============================================================================
+0726          	ByteFromPortOff:
+0726  E3      		ex	(sp),hl
+0727  C5      		push	bc
+0728  4E      		ld	c,(hl)			; Get port offset from Stack
+0729  23      		inc	hl			; Bump past the byte
+072A  3A5021  		ld	a,(BDA)			; Get Boot Device Address
+072D  81      		add	a,c			; Add offset from Stack
+072E  4F      		ld	c,a
+072F  ED78    		in	a,(c)			; Input from the port
+0731  C1      		pop	bc			; Restore Stack
+0732  E3      		ex	(sp),hl
+0733  C9      		ret
+		
+		;============================================================================
+		;	ByteToPortOff
+		;
+		; Sends the byte on the top of the Stack to the port at Top of Stack + 1.
+		;============================================================================
+0734          	ByteToPortOff:
+0734  E3      		ex	(sp),hl
+0735  7E      		ld	a,(hl)			; Get the byte to send
+0736  23      		inc	hl			; Bump stack to next byte
+0737  E3      		ex	(sp),hl			;  and set new Stack pointer
+		; fall through
+		
+		;============================================================================
+		;	AtoPortOff
+		;
+		; Send byte in A to (BDA) + offset on top of stack
+		;============================================================================
+0738          	AtoPortOff:
+0738  E3      		ex	(sp),hl
+0739  C5      		push	bc
+073A  F5      		push	af			; Save output byte
+073B  4E      		ld	c,(hl)			; Get port offset from Stack
+073C  23      		inc	hl			; Bump Stack to new address
+073D  3A5021  		ld	a,(BDA)			; Get Boot Device Address
+0740  81      	J$0740:	add	a,c			; Add to offset value
+0741  4F      		ld	c,a
+0742  F1      		pop	af			; Restore byte to output
+0743  ED79    		out	(c),a			; Send it
+0745  C1      		pop	bc			; Restore Stack
+0746  E3      		ex	(sp),hl			;  and set new Stack pointer
+0747  C9      		ret
+		
+		;============================================================================
+		;	PIN - Port In
+		;
+		;  Input a byte of data from H47 with DTR handshake.
+		;
+		;	Outputs		'C' set if Error, else NC
+		;			A has data byte
+		;============================================================================
+0748  CD2607  	PIN:	CALL	ByteFromPortOff
+074B  00      		 db	0
+074C  E6A0    		AND	0A0H
+074E  CA4807  		JP	Z,PIN			; Not done, not ready to xfer
+		
+0751  E620    		AND	20H
+0753  37      		SCF
+0754  C0      		RET	NZ			; Error - done before DTR
+		
+0755  CD2607  		CALL	ByteFromPortOff
+0758  01      		 db	1
+0759  A7      		AND	A
+075A  C9      		RET
+		
+		
+		; Hack into the H17 Floppy ROM, to support 3 drives on H17...
+075B  3E0A    	R.SDP3:	LD	A,0AH	; 10	;; clone of R.SDP code
+075D  32B420  		LD	(D$20B4),A	;; (+2)
+0760  3A3121  		LD	A,(AIO_UNI)	;; (+5)
+0763  F5      		PUSH	AF		;; (+8)
+						;; (+9) end clone, patch starts here...
+0764  FE02    		CP	2		;; check if drive 0 or 1.
+0766  DA3B1E  		JP	C,R.SDP+9	;; drives 0, 1 handled normally
+0769  3E03    		LD	A,3		;; setup bit pattern for third drive
+076B  C33B1E  		JP	R.SDP+9		;; handle special case.
+			; drive unit + 1 is drive select port pattern:
+			;	0 = 00000001
+			;	1 = 00000010
+			;	2 = 00000100
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+076E  CDF506  	C_076E:	CALL	C_06F5
+0771  10CD    		DJNZ	J$0740
+0773  48      		LD	C,B
+0774  07      		RLCA
+0775  D8      		RET	C
+0776  6F      		LD	L,A
+0777  CD8907  		CALL	C_0789
+077A  C9      		RET
+		
+		;============================================================================
+		;	Subroutine	BlkMovStk - Block Move, Count on Stack
+		;
+		;  Move bytes from (BC) to (DE), with the byte count on the top of the stack.
+		;============================================================================
+077B          	BlkMovStk:
+077B  E3      		ex	(sp),hl			; Put SP in HL
+077C  7E      		ld	a,(hl)			; Get next byte
+077D  23      		inc	hl			; Bump HL
+077E  E3      		EX	(sp),hl			;  and put back in SP
+077F  6F      		ld	L,a			; Counter to L
+		
+0780  0A      	BLM55:	ld	a,(bc)			; Move from BC
+0781  12      		ld	(de),A			;  to DE
+0782  03      		inc	bc
+0783  13      		inc	de
+0784  2D      		dec	L			;  for L # of bytes
+0785  C28007  		jp	nz,BLM55
+0788  C9      		ret
+		
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0789  01007D  	C_0789:	LD	BC,32000
+078C  0B      	J$078C:	DEC	BC
+078D  78      		LD	A,B
+078E  B1      		OR	C
+078F  37      		SCF
+0790  C8      		RET	Z
+		;
+0791  CD2607  		CALL	ByteFromPortOff
+0794  00      		 db	0
+		
+0795  E620    		AND	20H	; " "
+0797  CA8C07  		JP	Z,J$078C
+		;
+079A  CD2607  		CALL	ByteFromPortOff
+079D  00      		 db	0
+		
+079E  E601    		AND	01H	; 1
+07A0  37      		SCF
+07A1  C0      		RET	NZ
+		;
+07A2  A7      		AND	A
+07A3  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+07A4  01007D  	C$07A4:	LD	BC,32000
+07A7  CD2607  	J$07A7:	CALL	ByteFromPortOff
+07AA  00      		 db	0
+		
+07AB  E620    		AND	20H	; " "
+07AD  37      		SCF
+07AE  C0      		RET	NZ
+		;
+07AF  0B      		DEC	BC
+07B0  78      		LD	A,B
+07B1  B1      		OR	C
+07B2  37      		SCF
+07B3  C8      		RET	Z
+		
+07B4  CD2607  		CALL	ByteFromPortOff
+07B7  00      		 db	0
+		
+07B8  E680    		AND	80H
+07BA  CAA707  		JP	Z,J$07A7
+		
+07BD  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+07BE  221420  	C$07BE:	LD	(ABUSS),HL
+07C1  AF      		XOR	A
+07C2  323920  		LD	(Radix),A
+07C5  21F407  		LD	HL,DefPC
+07C8  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+		; initial setup after RESET,
+		; 8251 is in "mode" state, so issue cassette mode.
+		; If AUTO BOOT set, setup jump vector accordingly (HL).
+07C9  3E4E    	C$07C9:	LD	A,4EH	; 1stop, no parity, 8data, 16x
+07CB  D3F9    		OUT	(OP_TPC),A
+07CD  21D200  		ld	hl,ErrorEnt
+07D0  DBF2    		IN	A,(IP_CON)
+07D2  E680    		AND	80H	; auto boot flag
+07D4  C8      		RET	Z
+		;
+07D5  218604  		LD	HL,AutoB
+07D8  C9      		RET
+		;
+		;	-----------------
+07D9  CAD200  	J$07D9:	jp	z,ErrorEnt
+		;
+07DC  23      		INC	HL
+07DD  F1      		POP	AF
+07DE  C33203  		JP	IOA
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+07E1  C5      	C_07E1:	PUSH	BC
+07E2  F5      		PUSH	AF
+07E3  3E80    		LD	A,80H
+07E5  04      		INC	B
+07E6  07      	J$07E6:	RLCA
+07E7  05      		DEC	B
+07E8  C2E607  		JP	NZ,J$07E6
+		
+07EB  4F      		ld	c,a
+07EC  F1      		pop	af
+07ED  B1      		or	c
+07EE  C1      		pop	bc
+07EF  C9      		ret
+		
+07F0  FFFFFFFF		db	0ffh, 0ffh, 0ffh, 0ffh
+		
+0000          		  if  ($ != 07F4H)
+			  endif
+		
+07F4  C3AA04  	DefPC:	jp	PriBt1
+07F7  C39E04  		jp	SecBt1
+07FA  C3FA07  		jp	$			; H89 compatibility
+07FD  C3FD07  		jp	$			; H89 compatibility
+		
+		
+0800          	NmiHandler:
+0800  E5      	J_0800:	PUSH	HL
+0801  2A3420  		LD	HL,(D$2034)
+0804  E3      		EX	(SP),HL
+0805  C9      		RET
+		;
+		;	-----------------
+		
+0806          	SavAllExt:
+0806  ED57    		LD	A,I
+0808  47      		LD	B,A
+0809  C5      		PUSH	BC
+080A  FDE5    		PUSH	IY
+080C  DDE5    		PUSH	IX
+080E  E5      		PUSH	HL
+080F  D9      		EXX
+0810  08      		EX	AF,AF'
+0811  E3      		EX	(SP),HL
+0812  D5      		PUSH	DE
+0813  C5      		PUSH	BC
+0814  F5      		PUSH	AF
+0815  EB      		EX	DE,HL			; DE gets return address
+0816  211800  		LD	HL,24
+0819  39      		ADD	HL,SP			; HL = address of users SP
+081A  E5      		PUSH	HL			; Set on stack as register
+081B  D5      		PUSH	DE			; Stack the return address
+081C  110920  		LD	DE,CtlFlg
+081F  1A      		LD	A,(DE)			; A gets CtlFlg contents
+0820  C36900  		JP	SavAllRet
+		;
+		;	-----------------
+0823  E1      	J$0823:	POP	HL
+0824  DDE1    		POP	IX
+0826  FDE1    		POP	IY
+0828  D9      		EXX
+0829  08      		EX	AF,AF'
+082A  C1      		POP	BC
+082B  78      		LD	A,B
+082C  ED47    		LD	I,A
+082E  F1      		POP	AF
+082F  C1      		POP	BC
+0830  D1      		POP	DE
+0831  E1      		POP	HL
+0832  D9      		EXX
+0833  08      		EX	AF,AF'
+0834  FB      		EI
+0835  C9      		RET
+		
+		
+		;============================================================================
+		;         Subroutine	SStepRtnExt - Single Step Return Extended
+		;
+		;  This is an extension of the PAM/8 Single Step Return routine.  There are
+		; many more registers that need to be restored in PAM/37 with the Z80 CPU.
+		;
+		; Exit is to the User Interrupt Vector
+		;============================================================================
+0836          	SStepRtnExt:
+0836  E1      		POP	HL
+0837  F1      		POP	AF
+0838  C1      		POP	BC
+0839  D1      		POP	DE
+083A  E1      		POP	HL
+083B  08      		EX	AF,AF'
+083C  D9      		EXX
+083D  E1      		POP	HL
+083E  E1      		POP	HL
+083F  E1      		POP	HL
+0840  F1      		POP	AF
+0841  C1      		POP	BC
+0842  D1      		POP	DE
+0843  E1      		POP	HL
+0844  08      		EX	AF,AF'
+0845  D9      		EXX
+0846  E5      		PUSH	HL
+0847  D5      		PUSH	DE
+0848  C5      		PUSH	BC
+0849  F5      		PUSH	AF
+084A  210A00  		LD	HL,10
+084D  39      		ADD	HL,SP
+084E  E5      		PUSH	HL
+084F  C32220  		jp	UiVec+3
+		
+		;============================================================================
+		;         Subroutine	ExtRegTest - Extended Register Test
+		;
+		;  Test for valid register #.  This is an extension of the PAM/8 register
+		; check.  PAM/8 only checks 6 registers; PAM/37 must check 13.
+		;
+		;	Entry	'A' has register #
+		;
+		;	Exit	'C' set & return to caller of OK
+		;		To ErrorEnt if bad register #
+		;============================================================================
+0852          	ExtRegTst:
+0852  FE0C    		cp	12			; Is register less than PC reg?
+0854  D8      		ret	c			;  exit if yes - valid register
+0855  D603    		sub	3			; Offset to PC register
+0857  FE0C    		cp	12			; Is it PC register?
+0859  37      		scf				; Assume yes - valid register
+085A  C8      		ret	z			;  and exit if PC reg
+085B  C3D200  		jp	ErrorEnt
+		
+		;============================================================================
+		;	Boot Processor - H-37
+		;============================================================================
+085E          	H37Boot:
+085E  017309  		LD	BC,H37BtMsg
+0861  111120  		LD	DE,DLeds
+0864  CD7B07  		call	BlkMovStk
+0867  03      		 db	3
+		
+0868  CD3407  		CALL	ByteToPortOff
+086B  0001    		 db	0, 1
+		
+086D  CD3407  		call	ByteToPortOff
+0870  D002    		 db	0d0h, 2		; FORCE INTR command
+		
+0872  3E01    		LD	A,2/2		; 2mSec delay
+0874  CD2B00  		CALL	Dly
+		;
+0877  CD2607  		CALL	ByteFromPortOff
+087A  02      		 db	2
+		
+087B  216909  		LD	HL,I$096B
+087E  222920  		LD	(D$2029),HL
+0881  3EC3    		LD	A,0C3H
+0883  322820  		LD	(X_2028),A
+0886  3A3121  		LD	A,(AIO_UNI)
+0889  C604    		ADD	A,04H	; 4 bits left (hi nibble)
+088B  47      		LD	B,A
+088C  AF      		XOR	A
+088D  CDE107  		 CALL	C_07E1
+		;
+0890  F60C    		OR	0CH	; DDEN, MOTOR
+0892  CD3807  		CALL	AtoPortOff
+0895  00      		 db	0
+		
+0896  47      		LD	B,A
+0897  C5      		PUSH	BC
+0898  FB      		EI
+0899  3E96    		LD	A,96H
+089B  CD2B00  		 CALL	Dly
+		;
+089E  21C508  		LD	HL,I$08BE
+08A1  CD3407  		CALL	ByteToPortOff
+08A4  0302    		 db	3, 2			; RESTORE command
+		
+08A6  01FFFF  		LD	BC,0FFFFh
+08A9  1606    		LD	D,06H	; 6
+08AB          	J_08AE:	; poll for command complete
+08AB  CD2607  		call	ByteFromPortOff
+08AE  02      		 db	2
+08AF  CB47    		bit	0,a	; BUSY
+08B1  C2B508  		jnz	K_08AE
+08B4  E9      		jp	(hl)	; terminate loop
+08B5  0B      	K_08AE:	DEC	BC
+08B6  78      		LD	A,B
+08B7  B1      		OR	C
+08B8  20F1    		JR	NZ,J_08AE
+		;
+08BA  15      		DEC	D
+08BB  20EE    		JR	NZ,J_08AE
+		;
+08BD  CD3407  		CALL	ByteToPortOff
+08C0  D002    		 db	0d0h,2		; FORCE INTR command
+		
+08C2  C31D09  		JP	J_091F
+		;
+		;	-----------------
+08C5  1E0A    	I$08BE:	LD	E,10		; step in 10 tracks
+08C7  21D208  		LD	HL,I$08CE
+08CA  CD3407  	J$08C6:	CALL	ByteToPortOff
+08CD  4302    		 db	43h, 2		; STEP IN command
+		
+08CF  C3AB08  		JP	J_08AE
+		;
+		;	-----------------
+08D2          	I$08CE:
+08D2  1D      		DEC	E
+08D3  C2CA08  		JP	NZ,J$08C6
+		;
+08D6  21E108  		LD	HL,I_08E3
+08D9  CD3407  		CALL	ByteToPortOff
+08DC  0302    		 db	3, 2		; RESTORE command
+		
+08DE  C3AB08  		JP	J_08AE
+		;
+		;	-----------------
+		
+		; Some sort of data table
+08E1  E604    	I_08E3:	AND	04H	; TR00 flag
+08E3  2838    		JR	Z,J_091F
+08E4          	I_08E6	EQU	$-1
+		;
+08E5  01800C  		LD	BC,3200
+08E8  0B      	J$08EA:	DEC	BC
+08E9  78      		LD	A,B
+08EA  B1      		OR	C
+08EB  20FB    		JR	NZ,J$08EA
+		;
+08ED  C1      		POP	BC
+08EE  78      		LD	A,B
+08EF  F603    		OR	03H	; INTEN, DDEN
+08F1  47      		LD	B,A
+08F2  C5      		PUSH	BC
+08F3  CD3807  		CALL	AtoPortOff
+08F6  00      		 db	0
+		
+08F7  CD2509  		 CALL	C_0927
+		
+08FA  C1      		POP	BC
+08FB  F5      		PUSH	AF
+08FC  78      		LD	A,B
+08FD  E6FB    		AND	0FBH	; ~DDEN
+08FF  47      		LD	B,A
+0900  F1      		POP	AF
+0901  2008    		JR	NZ,J$090D
+		;
+0903  2180DD  		LD	HL,-UsrFWA
+0906  19      		ADD	HL,DE
+0907  7C      		LD	A,H
+0908  FE09    		CP	09H	; Should have >= 10 pages
+090A  D0      		RET	NC
+		;
+090B  78      	J$090D:	LD	A,B
+090C  CD3807  		CALL	AtoPortOff
+090F  00      		 db	0
+		
+0910  CD2509  		 CALL	C_0927
+		;
+0913  2008    		JR	NZ,J_091F
+		;
+0915  2180DD  		LD	HL,-UsrFWA
+0918  19      		ADD	HL,DE
+0919  7C      		LD	A,H
+091A  FE09    		CP	09H	; Should have >= 10 pages
+091C  D0      		RET	NC
+		;
+091D  CD3407  	J_091F:	 CALL	ByteToPortOff
+0920  0000    		DB	0,0			; control port all-off
+		
+0922  C37B05  		JP	ErrorDisplay
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0925  CD3407  	C_0927:	CALL	ByteToPortOff
+0928  0101    		 db	01, 01		; Mux port 1 (trk/sec regs)
+		
+092A  CD3807  		call	0738h		; SECTOR = 1
+092D  02      		LD	(BC),A
+092E  CD3407  		CALL	ByteToPortOff
+0931  0001    		 db	0, 1		; Mux port 0 (cmd-sts/dat regs)
+		
+0933  015909  		ld	bc,I$095B	; copy template into RAM
+0936  113C20  		LD	DE,J_203C
+0939  CD7B07  		call	BlkMovStk
+093C  06      		 db	6
+		
+093D  3A5021  		ld	a,(BDA)
+0940  C603    		add	a,3		; compute FDC data register
+0942  323E20  		LD	(D$203E),A	; put port adr into routine
+0945  215F09  		LD	HL,I$0961
+0948  223720  		LD	(D_2037),HL
+094B  213C20  		LD	HL,J_203C
+094E  118022  		LD	DE,UsrFWA
+0951  CD3407  		CALL	ByteToPortOff
+0954  9C02    		 db	9ch, 2		; READ SECTOR, MULTI, command
+		
+0956  C33C20  		JP	J_203C
+		;
+		;	-----------------
+		;	Template for H37 read data routine
+0959  76      	I$095B:	HALT
+095A  DB03    		IN	A,(03H)	; real port adr substituted later
+095C  12      		LD	(DE),A
+095D  13      		INC	DE
+095E  E9      		JP	(HL)
+		;
+		;	-----------------
+095F  F5      	I$0961:	PUSH	AF
+0960  CD3407  		CALL	ByteToPortOff
+0963  0800    		 db	8,0	; only MOTOR on
+		
+0965  F1      		POP	AF	; restore FDC status
+0966  E6AC    		AND	0ACH	; check NOTRDY, DELDAT, CRCERR, DATLOST
+0968  C9      		RET
+		;
+		;	-----------------
+0969  CD2607  	I$096B:	CALL	ByteFromPortOff
+096C  02      		 db	2	; FDC status register, also turns off INTRQ
+		
+096D  E1      		POP	HL
+096E  2A3720  		LD	HL,(D_2037)
+0971  FB      		EI
+0972  E9      		JP	(HL)
+		;
+		;	-----------------
+0973  92E0F1  	H37BtMsg:	db	10010010b, 11100000b, 11110001b	; Message 'H37'
+		
+		;============================================================================
+		;	Boot Processor - H-67
+		;============================================================================
+0976          	H67Boot:
+0976  01AB0A  		LD	BC,H67BtMsg
+0979  111120  		LD	DE,DLeds
+097C  CD7B07  		call	BlkMovStk
+097F  03      		 db	3
+		
+0980  3EFA    		LD	A,500/2			; 1/2 second delay (500 mSec)
+0982  CD2B00  		 CALL	Dly
+		;
+0985  3A0820  		LD	A,(MFlag)
+0988  E6FE    		and	0ffh-UO_CLK		; Disable clock processing
+098A  320820  		LD	(MFlag),A
+098D  CD3407  		CALL	ByteToPortOff
+0990  1001    		 db	10h, 1			; Output data, then port offset
+		
+0992  3E04    		LD	A,8/2			; 8mSec delay
+0994  CD2B00  		CALL	Dly
+		;
+0997  213221  		LD	HL,I_2132
+099A  3600    		LD	(HL),00H
+099C  0E05    		LD	C,05H	; 5
+099E  23      	J$09A0:	INC	HL
+099F  3600    		LD	(HL),00H
+09A1  0D      		DEC	C
+09A2  20FA    		JR	NZ,J$09A0
+		;
+09A4  CD040A  		 CALL	C_0A06
+		;
+09A7  323321  		LD	(D_2133),A
+09AA  CD0D0A  	J$09AC:	 CALL	C_0A0F
+		;
+09AD  300A    		JR	NC,J$09BB
+		;
+09AF  CA7B05  		JP	Z,ErrorDisplay
+		;
+09B2  3EFF    		LD	A,0FFH
+09B4  CD2B00  		 CALL	Dly
+		;
+09B7  18F1    		JR	J$09AC
+		;
+		;	-----------------
+09B9  213221  	J$09BB:	LD	HL,I_2132
+09BC  3601    		LD	(HL),01H	; 1
+09BE  CD0D0A  		 CALL	C_0A0F
+		;
+09C1  DA7B05  		JP	C,ErrorDisplay
+		;
+09C4  3A3121  		LD	A,(AIO_UNI)
+09C7  A7      		AND	A
+09C8  C2E909  		JP	NZ,J$09EB
+		;
+09CB  213221  		LD	HL,I_2132
+09CE  360B    		LD	(HL),0BH	; 11
+09D0  23      		INC	HL
+09D1  23      		INC	HL
+09D2  3607    		LD	(HL),07H	; 7
+09D4  CD0D0A  		 CALL	C_0A0F
+		;
+09D7  DA7B05  		JP	C,ErrorDisplay
+		;
+09DA  213221  		LD	HL,I_2132
+09DD  3601    		LD	(HL),01H	; 1
+09DF  23      		INC	HL
+09E0  23      		INC	HL
+09E1  3600    		LD	(HL),00H
+09E3  CD0D0A  		 CALL	C_0A0F
+		;
+09E6  DA7B05  		JP	C,ErrorDisplay
+		;
+09E9  213221  	J$09EB:	LD	HL,I_2132
+09EC  3608    		LD	(HL),08H	; 8
+09EE  23      		INC	HL
+09EF  23      		INC	HL
+09F0  23      		INC	HL
+09F1  23      		INC	HL
+09F2  360A    		LD	(HL),0AH	; 10
+09F4  23      		INC	HL
+09F5  3680    		LD	(HL),80H
+09F7  CD040A  		 CALL	C_0A06
+		;
+09FA  323321  		LD	(D_2133),A
+09FD  CD0D0A  		 CALL	C_0A0F
+		;
+0A00  DA7B05  		JP	C,ErrorDisplay
+		;
+0A03  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0A04  3A3121  	C_0A06:	LD	A,(AIO_UNI)
+0A07  0F      		RRCA
+0A08  0F      		RRCA
+0A09  0F      		RRCA
+0A0A  E660    		AND	60H	; "`"
+0A0C  C9      		RET
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0A0D  F3      	C_0A0F:	DI
+0A0E  01FFFF  		LD	BC,0FFFFh
+0A11  1602    		LD	D,02H	; 2
+0A13  CD2607  	J_0A15:	 CALL	ByteFromPortOff			; ************************************
+0A16  01      		db	1
+0A17  E608    		and	08H
+0A19  280A    		JR	Z,J$0A27
+		;
+0A1B  0B      		DEC	BC
+0A1C  78      		LD	A,B
+0A1D  B1      		OR	C
+0A1E  20F3    		JR	NZ,J_0A15
+		;
+0A20  15      		DEC	D
+0A21  20F0    		JR	NZ,J_0A15
+		;
+0A23  37      		SCF
+0A24  C9      		RET
+		;
+		;	-----------------
+0A25  CD3407  	J$0A27:	CALL	ByteToPortOff
+0A28  4001    		 db	40h, 1			; Output data, then port offset
+		
+0A2A  CD2607  	J$0A2C:	call	ByteFromPortOff
+0A2D  01      		db	1
+0A2E  E608    		and	08H
+0A30  2007    		JR	NZ,J$0A3B
+		;
+0A32  0B      		DEC	BC
+0A33  78      		LD	A,B
+0A34  B1      		OR	C
+0A35  20F3    		JR	NZ,J$0A2C
+		;
+0A37  37      		SCF
+0A38  C9      		RET
+		;
+		;	-----------------
+0A39  CD3407  	J$0A3B:	CALL	ByteToPortOff
+0A3C  0201    		 db	02, 01			; Output data, then port offset
+		
+0A3E  213221  	 	ld	hl,2132h
+		
+0A41  CD2607  	J_0A43:	call	ByteFromPortOff
+0A44  01      		 db	1
+0A45  4F      		ld	c,a
+0A46  A7      		and	a
+0A47  F2410A  		JP	P,J_0A43
+		;
+0A4A  E610    		AND	10H	; 16
+0A4C  2844    		JR	Z,J$0A94
+		;
+0A4E  79      		LD	A,C
+0A4F  E640    		AND	40H	; "@"
+0A51  2808    		JR	Z,J_0A5D
+		;
+0A53  7E      		LD	A,(HL)
+0A54  CD3807  		CALL	AtoPortOff
+0A57  00      		 db	0
+		
+0A58  23      	 	INC	HL
+0A59  18E6    		JR	J_0A43
+		;
+		;	-----------------
+0A5B  CD2607  	J_0A5D:	 CALL	ByteFromPortOff			; ****************************************
+		
+0A5E  01E6D0  		LD	BC,0D0E6H
+0A61  FE90    		CP	90H
+0A63  20F6    		JR	NZ,J_0A5D
+		;
+0A65  CD2607  		 CALL	ByteFromPortOff
+		;
+0A68  00      		NOP
+0A69  4F      		LD	C,A
+0A6A  323821  		LD	(D$2138),A
+0A6D  CD2607  	J$0A6F:	CALL	ByteFromPortOff			; ****************************************
+		
+0A70  014732  		LD	BC,03247H
+0A73  39      		ADD	HL,SP
+0A74  21E6E0  		LD	HL,0E0E6H
+0A77  FEA0    		CP	0A0H
+0A79  20F2    		JR	NZ,J$0A6F
+		;
+0A7B  323A21  		LD	(D$213A),A
+0A7E  FB      		EI
+0A7F  CD2607  		CALL	ByteFromPortOff
+0A82  00      		 db	0
+		
+0A83  B7      		OR	A
+0A84  37      		SCF
+0A85  C0      		RET	NZ
+		;
+0A86  79      		LD	A,C
+0A87  E603    		AND	03H	; 3
+0A89  37      		SCF
+0A8A  C0      		RET	NZ
+		;
+0A8B  78      		LD	A,B
+0A8C  E602    		AND	02H	; 2
+0A8E  37      		SCF
+0A8F  C0      		RET	NZ
+		;
+0A90  AF      		XOR	A
+0A91  C9      		RET
+		;
+		;	-----------------
+0A92  218022  	J$0A94:	LD	HL,UsrFWA
+0A95  CD2607  	J_0A97:	 CALL	ByteFromPortOff			; ******************************************
+		
+0A98  014FE6  		LD	BC,0E64FH
+0A9B  80      		ADD	A,B
+0A9C  28F7    		JR	Z,J_0A97
+		;
+0A9E  79      		LD	A,C
+0A9F  E610    		AND	10H	; 16
+0AA1  20B8    		JR	NZ,J_0A5D
+		;
+0AA3  CD2607  		CALL	ByteFromPortOff
+0AA6  00      		 db	0
+		
+0AA7  77      		LD	(HL),A
+0AA8  23      		INC	HL
+0AA9  18EA    		JR	J_0A97
+		;
+		;	-----------------
+0AAB  9284F1  	H67BtMsg:	db	10010010b, 10000100b, 11110001b	; Message 'H67'
+		
+		
+		; Universal Boot.  This is a 'possible' name - not certain about it yet.
+		
+0AAE          	UnivBoot:
+0AAE  3A0820  		LD	A,(MFlag)
+0AB1  F602    		or	UO_DDU			; Disable display update
+0AB3  320820  		LD	(MFlag),A
+0AB6  012C0B  		LD	BC,DevMsg		; Display the DEV msg
+0AB9  110B20  		LD	DE,ALeds
+0ABC  CD7B07  		call	BlkMovStk
+0ABF  03      		 db	3
+		
+0AC0  2E06    		LD	L,6			; Set 6 bytes
+0AC2  3EFF    		LD	A,0FFH			;  to 0FFh
+0AC4  12      	J$0AC6:	LD	(DE),A
+0AC5  13      		INC	DE
+0AC6  2D      		DEC	L
+0AC7  C2C40A  		JP	NZ,J$0AC6
+		;
+0ACA  CD1B0B  		 CALL	C_0B1D			; Get boot device selection
+		;
+0ACD  325121  		LD	(BDF),A			; Save boot device flag
+0AD0  87      		ADD	A,A
+0AD1  6F      		LD	L,A
+0AD2  2600    		LD	H,0
+0AD4  11350B  		LD	DE,I$0B37
+0AD7  19      		ADD	HL,DE
+0AD8  4E      		LD	C,(HL)
+0AD9  23      		INC	HL
+0ADA  46      		LD	B,(HL)
+0ADB  110B20  		LD	DE,ALeds
+0ADE  CD7B07  		call	BlkMovStk
+0AE1  03      		 db	3
+		
+0AE2  012F0B  		LD	BC,I$0B31
+0AE5  CD7B07  		call	BlkMovStk
+0AE8  03      		 db	3
+		
+0AE9  CD1B0B  		CALL	C_0B1D			; Get boot device selection
+		;
+0AEC  F5      		PUSH	AF
+0AED  6F      		LD	L,A
+0AEE  2600    		LD	H,00H
+0AF0  113D0B  		LD	DE,I$0B3F
+0AF3  19      		ADD	HL,DE
+0AF4  7E      		LD	A,(HL)
+0AF5  325021  		LD	(BDA),A
+0AF8  06FF    		LD	B,0FFH
+0AFA  210E20  		LD	HL,I$200E
+0AFD  CD5203  		CALL	DOD			; Decode Octal Display
+		;
+0B00  54      		LD	D,H
+0B01  5D      		LD	E,L
+0B02  01320B  		LD	BC,I_0B34
+0B05  CD7B07  		call	BlkMovStk
+0B08  03      		 db	3
+		
+0B09  CD1B0B  		CALL	C_0B1D
+		;
+0B0C  323121  		LD	(AIO_UNI),A
+0B0F  318022  		ld	sp,Stack
+0B12  3A5121  		LD	A,(BDF)
+0B15  01320B  		LD	BC,I_0B34
+0B18  C3E004  		JP	Boot3
+		;
+		;	-----------------
+		;
+		;	  Subroutine __________________________
+		;	     Inputs  ________________________
+		;	     Outputs ________________________
+		;
+0B1B  CDB003  	C_0B1D:	CALL	RCK			; Read keypad
+0B1E  FE04    		CP	04H			;  and rtn if 0-3 pressed
+0B20  D8      		RET	C
+0B21  FE0C    		CP	0CH			; See if '*' pressed
+0B23  CAD200  		jp	z,ErrorEnt		;  and exit via error if so
+0B26  CD5E02  		CALL	Alarm			; Non valid key, sound error
+0B29  C31B0B  		JP	C_0B1D
+		
+0B2C  C28C83  	DevMsg:	db	0c2h, 08ch, 083h	; 'DEV' display (Device)
+		
+		
+		; ASCII data table
+		
+0B2F  98C6DE  	I$0B31:	db	098h,0c6h,0deh  ; "Por"
+0B32  83D6F7  	I_0B34:	db	083h,0d6h,0f7h  ; "Uni"
+		
+0B35  8006    	I$0B37:	dw	H17BtMsg	; "H17"
+0B37  F206    		dw	H47BtMsg	; "H47"
+0B39  AB0A    		dw	H67BtMsg	; "H67"
+0B3B  7309    		dw	H37BtMsg	; "H37"
+		
+0B3D  787CB8BC	I$0B3F:	db	078h,07ch,0b8h,0bch	; Port options
+		
+		
+		; This is the AutoBoot entry from the jump table, but it seems to only perform
+		; the RADIX function, then exits via HORN.
+		;
+		; Auto Boot? 0b43h
+0B41          	AutoBoot:
+0B41  3A0820  		LD	A,(MFlag)
+0B44  F602    		OR	UO_DDU			; Disable display update
+0B46  320820  		LD	(MFlag),A
+0B49  01870B  		LD	BC,I$0B89		; Display "rAd" (Radix) message
+0B4C  110B20  		LD	DE,ALeds
+0B4F  CD7B07  		call	BlkMovStk
+0B52  03      		 db	3
+		
+0B53  2E06    		LD	L,6
+0B55  3EFF    		LD	A,0FFH			; Turn off next 6 LEDs
+0B57  12      	AB010:	LD	(DE),A
+0B58  13      		INC	DE
+0B59  2D      		DEC	L
+0B5A  C2570B  		JP	NZ,AB010		; Loop until 6 blank LEDs
+		
+		
+0B5D  3A3920  		LD	A,(Radix)		; Get current Radix flag
+0B60  A7      		AND	A			; Clear flags
+0B61  2F      		CPL				; Complement (Z to NZ or NZ to Z)
+0B62  CA660B  		JP	Z,AB015			; Go if Radix now Z
+0B65  AF      		XOR	A			; Else set to Z
+		
+0B66  323920  	AB015:	LD	(Radix),A
+0B69  E613    		AND	13H	; 19
+0B6B  EE81    		XOR	81H
+0B6D  321020  		LD	(D$2010),A
+		
+0B70  3EFA    		LD	A,250			; Wait 2*250 mSec (500 mSec)
+0B72  CD2B00  		CALL	Dly
+0B75  3EFA    		LD	A,250
+0B77  CD2B00  		CALL	Dly			; Wait 2*250 mSec (500mSec)
+		
+0B7A  3A0820  		LD	A,(MFlag)
+0B7D  E6FD    		and	0ffh-UO_DDU		; Enable display update
+0B7F  320820  		LD	(MFlag),A
+0B82  3E11    		LD	A,17			; 34 mSec (17*2) horn sound
+0B84  C36002  		JP	Horn
+		
+0B87          	I$0B89:
+0B87  DE90C2  		db	0deh, 90h, 0c2h		; "rAd" message (Radix)
+		
+		
+0B8A          	IoaExt:
+0B8A  F5      		push	af
+0B8B  3A3920  		ld	a,(Radix)		; Test the radix
+0B8E  A7      		and	A
+0B8F  C29A0B  		JP	NZ,J$0B9C		; Go if radix is HEX
+		
+0B92  F1      		POP	AF
+0B93  CDCD0B  		CALL	ExtOct
+0B96  2B      		DEC	HL
+0B97  C3CD0B  		JP	ExtOct
+		;
+		;	-----------------
+0B9A  F1      	J$0B9C:	POP	AF
+0B9B  CDA10B  		CALL	IobExtHEX		; Get first byte of HEX address
+0B9E  2B      		DEC	HL
+0B9F  AF      		XOR	A
+0BA0  37      		SCF				; Flag cannot be a zero byte
+		;  and fall through for second byte
+		
+		;============================================================================
+		;         Subroutine	IobExtHEX - HEX Byte Input
+		;
+		;  This is the HEX byte input, vectored from the IobExt routine below.
+		;============================================================================
+0BA1          	IobExtHEX:
+0BA1  D4B003  		call	nc,RCK			; Get zero character???
+0BA4  A7      		and	a
+0BA5  C2D200  		jp	nz,ErrorEnt		; Go if non-zero entered???
+0BA8  1602    		ld	d,2			; 2 digit input
+0BAA          	ExtHex5:
+0BAA  CDB003  		call	RCK			; Get character
+0BAD  5F      		ld	e,a			;  and save
+0BAE  7E      		ld	a,(hl)			; Get previous character
+0BAF  07      		rlca				; Shift 4 bits left
+0BB0  07      		rlca
+0BB1  07      		rlca
+0BB2  07      		rlca
+0BB3  E6F0    		and	0f0h			;  and mask
+0BB5  B3      		or	e			; OR in new character
+0BB6  77      		ld	(hl),a			;  and save
+0BB7  15      		dec	d			; -1 for loop count
+0BB8  C2AA0B  		jp	nz,ExtHex5		; Loop for 2nd hex char
+		
+0BBB  3E0F    		ld	a,30/2			; 30mSec beep to acknowledge entry
+0BBD  C36002  		jp	Horn
+		
+		;============================================================================
+		;         Subroutine	IobExt - Input Octal Byte Extension
+		;
+		;  The XCON/8 IOB routine is replaced by IobExt to allow for HEX or OCTAL
+		; character entry, depending on the (Radix) value.
+		;
+		;  Check the Radix, and dispatch to the HEX or Octal routines, as required.
+		;============================================================================
+0BC0  F5      	IobExt:	PUSH	AF
+0BC1  3A3920  		LD	A,(Radix)
+0BC4  A7      		AND	A
+0BC5  CACC0B  		JP	Z,IobExtOct		; Go if Octal radix?
+0BC8  F1      		POP	AF
+0BC9  C3A10B  		JP	IobExtHEX
+		
+		;============================================================================
+		;         Subroutine	IobExtOct - Octal Byte Input
+		;
+		;  This is the Octal byte input, vectored from the IobExt routine above.
+		;============================================================================
+0BCC          	IobExtOct:
+0BCC  F1      		pop	af
+0BCD  1603    	ExtOct:	ld	d,3			; Digit counter
+0BCF          	ExtOct5:
+0BCF  D4B003  		CALL	NC,RCK			; Read keypad
+0BD2  FE08    		CP	8
+0BD4  D2D200  		jp	nc,ErrorEnt		; Error if input above 7
+0BD7  5F      		LD	E,A			; Keypad value to E
+0BD8  7E      		LD	A,(HL)			; Get current byte contents
+0BD9  07      		RLCA				; Rotate left 3
+0BDA  07      		RLCA
+0BDB  07      		RLCA
+0BDC  E6F8    		AND	11111000b		; Mask
+0BDE  B3      		OR	E			; OR in new keypad value
+0BDF  77      		LD	(HL),A			; Replace old value
+0BE0  15      		DEC	D			; -1 for digit counter
+0BE1  C2CF0B  		JP	NZ,ExtOct5		; Loop for all 3 digits
+0BE4  3E0F    		LD	A,30/2			; 30mSec beep to acknowledge entry
+0BE6  C36002  		JP	Horn
+		
+		;============================================================================
+		;         Subroutine	DodExt - Decode Octal Display Extension
+		;
+		;  This is the Decode Octal Display extension.  The original DOD routine is
+		; vectored here to test the Radix flag prior to execution.  If the current
+		; Radix is Octal, the routine returns to the standard Octal DOD routine.  If
+		; the Radix is HEX, it is handled here, then returned to the routine that
+		; called DOD in the first place.
+		;============================================================================
+0BE9  4F      	DodExt:	ld	c,a			; Save value being displayed
+0BEA  3A3920  		ld	a,(Radix)
+0BED  A7      		and	a			; Set 'Z' if Octal
+0BEE  79      		ld	a,c			; Restore display value
+0BEF  C2F80B  		jp	nz,DodExtHex
+		
+0BF2  D5      		push	de
+0BF3  1603    		ld	d,DodOct/256		; DODA/256
+0BF5  C35503  		jp	DodRet
+		
+0BF8          	DodExtHex:
+0BF8  D5      		push	de			; Save DE
+0BF9  0E02    		ld	c,2			; 2 characters
+		
+0BFB  07      	DEH55:	RLCA				; Put high nibble in low
+0BFC  07      		RLCA
+0BFD  07      		RLCA
+0BFE  07      		RLCA
+0BFF  F5      		PUSH	AF			; Save
+0C00  E60F    		AND	0Fh			; Mask to low nibble only
+0C02  C66C    		ADD	A,low DodHex
+0C04  5F      		LD	E,A
+0C05  3E0C    		LD	A,high DodHex
+0C07  CE00    		ADC	A,0
+0C09  57      		LD	D,A
+0C0A  1A      		LD	A,(DE)
+0C0B  A8      		XOR	B
+0C0C  E67F    		AND	7FH
+0C0E  A8      		XOR	B
+0C0F  77      		LD	(HL),A
+0C10  23      		INC	HL
+0C11  78      		LD	A,B
+0C12  07      		RLCA
+0C13  47      		LD	B,A
+0C14  F1      		POP	AF
+0C15  0D      		DEC	C			; -1 for character
+0C16  C2FB0B  		JP	NZ,DEH55		; Loop for 2nd char
+		
+0C19  D1      		POP	DE			; Restore
+0C1A  3E6F    		LD	A,6FH	; "o"
+0C1C  A8      		XOR	B
+0C1D  E67F    		AND	7FH
+0C1F  A8      		XOR	B
+0C20  77      		LD	(HL),A
+0C21  23      		INC	HL
+0C22  78      		LD	A,B
+0C23  07      		RLCA
+0C24  47      		LD	B,A
+0C25  C9      		ret
+		
+		;============================================================================
+		;	Subroutine	Move3Bytes
+		;
+		; Continuation of
+		;============================================================================
+0C26          	Mov3Bytes:
+0C26  CD7B07  		call	BlkMovStk
+0C29  03      		 db	3			; Move 3 bytes
+0C2A  C9      		ret				;  and exit
+		
+		;============================================================================
+		;	Display Segment Coding
+		;
+		;	Byte = 76 543  210
+		;
+		;	 1		----
+		;      6   2	       |    |
+		;        0		----
+		;      5   3	       |    |
+		;        4		----
+		;	      7		     DP
+		;============================================================================
+		
+0C2B  FFA498  	DispSP:		db	0ffh, 0a4h, 098h
+0C2E  FF909C  	DispAF:		db	0ffh, 090h, 09ch
+0C31  FF868D  	DispBC:		db	0ffh, 086h, 08dh
+0C34  FFC28C  	DispDE:		db	0ffh, 0c2h, 08ch
+0C37  FF928F  	DispHL:		db	0ffh, 092h, 08fh
+0C3A  FFF3B6  	DispIX:		db	0ffh, 0f3h, 0b6h
+0C3D  FFF3A2  	DispIY:		db	0ffh, 0f3h, 0a2h
+0C40  FFF3DE  	DispIR:		db	0ffh, 0f3h, 0deh
+0C43  909CBF  	DispAFp:	db	090h, 09ch, 0bfh
+0C46  868DBF  	DispBCp:	db	086h, 08dh, 0bfh
+0C49  C28CBF  	DispDEp:	db	0c2h, 08ch, 0bfh
+0C4C  928FBF  	DispHLp:	db	092h, 08fh, 0bfh
+0C4F  FF98CE  	DispPC:		db	0ffh, 098h, 0ceh
+		
+0C52          	LedRegTbl:
+0C52  2B0C    		dw	DispSP			; SP
+0C54  2E0C    		dw	DispAF			; AF
+0C56  310C    		dw	DispBC			; BC
+0C58  340C    		dw	DispDE			; DE
+0C5A  370C    		dw	DispHL			; HL
+0C5C  3A0C    		dw	DispIX			; IX
+0C5E  3D0C    		dw	DispIY			; IY
+0C60  400C    		dw	DispIR			; IR
+0C62  430C    		dw	DispAFp			; AF'
+0C64  460C    		dw	DispBCp			; BC'
+0C66  490C    		dw	DispDEp			; DE'
+0C68  4C0C    		dw	DispHLp			; HL'
+0C6A  4F0C    		dw	DispPC			; Program Counter
+		
+		
+		; Hex to 7-Segment patterns
+0C6C          	DodHex:
+0C6C  01      		db	00000001b		; 0
+0C6D  73      		db	01110011b		; 1
+0C6E  48      		db	01001000b		; 2
+0C6F  60      		db	01100000b		; 3
+0C70  32      		db	00110010b		; 4
+0C71  24      		db	00100100b		; 5
+0C72  04      		db	00000100b		; 6
+0C73  71      		db	01110001b		; 7
+0C74  00      		db	00000000b		; 8
+0C75  20      		db	00100000b		; 9
+0C76  10      		db	10h			; A
+0C77  06      		db	06h			; B
+0C78  0D      		db	0dh			; C
+0C79  42      		db	42h			; D
+0C7A  0C      		db	0ch			; E
+0C7B  1C      		db	1ch			; F
+		
+		; Patch to allow more init calls without disturbing code locations
+0C7C          	Init3:
+0C7C  CDC907  		CALL	C$07C9
+0C7F  E5      		PUSH	HL
+0C80  CD860C  		call	IniCRT
+0C83  C35900  		jp	Init4
+		
+		; Initialize INS8250 at port 0E8H (350Q) - the console
+		; display message "H8 is up and running"...
+0C86          	IniCRT:
+0C86  210C00  		ld	hl,B9600
+0C89  DBF2    		in	IP_CON
+0C8B  E640    		ani	CN_BAU
+0C8D  CA930C  		jp	z,inicrt2
+0C90  210600  		ld	hl,B19200
+0C93          	inicrt2:
+0C93  3E83    		ld	a,10000011b	; 8 data, 1 stop, no parity, DLAB
+0C95  D3EB    		out	CO_LCR
+0C97  7D      		ld	a,l
+0C98  D3E8    		out	CO_DLL
+0C9A  7C      		ld	a,h
+0C9B  D3E9    		out	CO_DLM
+0C9D  3E03    		ld	a,00000011b	; 8 data, 1 stop, no parity
+0C9F  D3EB    		out	CO_LCR
+0CA1  AF      		xor	a
+0CA2  D3E9    		out	CO_IER		; ensure interrupts OFF
+0CA4  3E0F    		ld	a,00001111b	; all outputs ON
+0CA6  D3EC    		out	CO_MCR		; OUT2=1 hides 16C2550 intr enable diff
+0CA8  DBED    		in	CO_LSR		; If Tx not ready now, assume no port
+0CAA  E620    		and	a,TX_RDY
+0CAC  C8      		ret	z
+0CAD  21C00C  		ld	hl,crtmsg
+			; We know Tx is ready at this point...
+0CB0          	inicrt0:
+0CB0  7E      		ld	a,(hl)
+0CB1  B7      		or	a
+0CB2  C8      		ret	z
+0CB3  D3E8    		out	CO_DAT
+0CB5          	inicrt1:
+0CB5  DBED    		in	CO_LSR
+0CB7  E620    		and	a,TX_RDY
+0CB9  CAB50C  		jp	z,inicrt1
+0CBC  23      		inc	hl
+0CBD  C3B00C  		jp	inicrt0
+		
+0CC0  1B4507  	crtmsg:	db	ESC,'E',BEL
+0CC3  76312E32		db	'v1.2',CR,LF
+      0D0A
+0CC9  48382043		db	'H8 Console initialized!',CR,LF,LF,0
+      6F6E736F
+      6C652069
+      6E697469
+      616C697A
+      6564210D
+      0A0A00
+		
+		;	  if  ($ != 0c7ch)
+		;	error	"* End of Code Address Error *"
+		;	  endif
+		
+0CE4          	EndOfCode	equ	$
+		
+		
+0CE4  FFFFFFFF		rept	0e8bh-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFF
+		
+0E8B          	Credits:
+0E8B  0D0A0D0A		db	cr,lf,cr,lf
+0E8F  50616D2D		db	"Pam-80 - Front Panel Monitor for the Heath H8 and WH8 Digital Computers."
+      3830202D
+      2046726F
+      6E742050
+      616E656C
+      204D6F6E
+      69746F72
+      20666F72
+      20746865
+      20486561
+      74682048
+      3820616E
+      64205748
+      38204469
+      67697461
+      6C20436F
+      6D707574
+      6572732E
+0ED7  0D0A    		db	cr,lf
+0ED9  536F6674		db	"Software Issue #01.03.00."
+      77617265
+      20497373
+      75652023
+      30312E30
+      332E3030
+      2E
+0EF2  0D0A0D0A		db	cr,lf,cr,lf
+0EF6  20202020		db	"    Copyright",tab,"February 1982"
+      436F7079
+      72696768
+      74094665
+      62727561
+      72792031
+      393832
+0F11  0D0A    		db	cr,lf
+0F13  09096279		db	tab,tab,"by Steve Parker"
+      20537465
+      76652050
+      61726B65
+      72
+0F24  0D0A    		db	cr,lf
+0F26  09094669		db	tab,tab,"Firmware Engineer"
+      726D7761
+      72652045
+      6E67696E
+      656572
+0F39  0D0A    		db	cr,lf
+0F3B  09095A65		db	tab,tab,"Zenith Data Systems"
+      6E697468
+      20446174
+      61205379
+      7374656D
+      73
+0F50  0D0A    		db	cr,lf
+0F52  09095374		db	tab,tab,"St. Joseph, MI	49085"
+      2E204A6F
+      73657068
+      2C204D49
+      09343930
+      3835
+0F68  0D0A0D0A		db	cr,lf,cr,lf
+0F6C  48656174		db	"Heath Part Number: 444-140"
+      68205061
+      7274204E
+      756D6265
+      723A2034
+      34342D31
+      3430
+0F86  0D0A0D0A		db	cr,lf,cr,lf
+0F8A  52657175		db	"Requires HA8-6 Z80 CPU and either a 444-70 or 444-124 ROM device."
+      69726573
+      20484138
+      2D36205A
+      38302043
+      50552061
+      6E642065
+      69746865
+      72206120
+      3434342D
+      3730206F
+      72203434
+      342D3132
+      3420524F
+      4D206465
+      76696365
+      2E
+0FCB  0D0A5573		db	cr,lf,"Use with 390-2333 keypad labels on front panel."
+      65207769
+      74682033
+      39302D32
+      33333320
+      6B657970
+      6164206C
+      6162656C
+      73206F6E
+      2066726F
+      6E742070
+      616E656C
+      2E
+0FFC  0D0A0D0A		db	cr,lf,cr,lf
+		
+0175          	LenCredit	equ	$-Credits
+		
+0000          		  if  ($ != 1000h)
+			  endif
+		
+1000          		end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   391	symbols
+  4096	bytes
+
+   423	macro calls
+    16	macro bytes
+     0	invented symbols

@@ -156,6 +156,7 @@ CO_DLL	equ	0e8h
 CO_DLM	equ	0e9h
 CO_IER	equ	0e9h
 CO_LCR	equ	0ebh
+CO_MCR	equ	0ech
 CO_LSR	equ	0edh
 B9600	equ	12	; DLL/DLM value for 9600 baud at 1.8432MHz
 B19200	equ	6	; DLL/DLM value for 19200 baud at 1.8432MHz
@@ -3227,6 +3228,8 @@ inicrt2:
 	out	CO_LCR
 	xor	a
 	out	CO_IER		; ensure interrupts OFF
+	ld	a,00001111b	; all outputs ON
+	out	CO_MCR		; OUT2=1 hides 16C2550 intr enable diff
 	in	CO_LSR		; If Tx not ready now, assume no port
 	and	a,TX_RDY
 	ret	z
@@ -3244,7 +3247,9 @@ inicrt1:
 	inc	hl
 	jp	inicrt0
 
-crtmsg:	db	ESC,'E',BEL,'H8 Console initialized!',CR,LF,LF,0
+crtmsg:	db	ESC,'E',BEL
+	db	'v1.2',CR,LF
+	db	'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)
 ;	error	"* End of Code Address Error *"
