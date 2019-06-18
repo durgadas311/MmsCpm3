@@ -46,3 +46,13 @@ netstat.com: netstat.asm
 wizcfg.com: wizcfg.asm
 	vcpm mac wizcfg.asm '$$SZLAPO'
 	vcpm hexcom wizcfg
+
+wizdbg.com: wizdbg.asm
+	vcpm mac wizdbg.asm '$$SZLAPO'
+	vcpm hexcom wizdbg
+
+wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com
+
+usb: ntpdt-u.com ndos3-u.com
+
+mms: ntpdt-m.com ndos3-m.com
