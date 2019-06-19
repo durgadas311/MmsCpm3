@@ -6,7 +6,7 @@
 
 	maclib	z80
 
-wiz	equ	40h	; base port of H8-WIZ550io
+wiz	equ	40h	; base port of H8-WIZx50io SPI interface
 
 wiz$dat	equ	wiz+0
 wiz$ctl	equ	wiz+1
@@ -31,8 +31,8 @@ getver	equ	12
 
 	jmp	start
 
-usage:	db	'Usage: WIZCFG {G bsb off num}',CR,LF
-	db	'       WIZCFG {S bsb off dat...}',CR,LF
+usage:	db	'Usage: WIZDBG {G bsb off num}',CR,LF
+	db	'       WIZDBG {S bsb off dat...}',CR,LF
 	db	'       bsb = Block Select Bits, hex 00..1F',CR,LF
 	db	'       off = Offset within BSB, hex',CR,LF
 	db	'       num = Number of bytes to GET, dec',CR,LF
@@ -69,6 +69,7 @@ pars0:
 	jmp	help
 
 pars1:
+	ani	5fh	; toupper
 	cpi	'G'
 	jz	pars2
 	cpi	'S'
@@ -107,16 +108,19 @@ pars2:
 	lxix	buf
 set0:
 	call	parshx
-	jc	help
+	jc	help2
 	mov	a,d
 	ora	a
-	jnz	help
+	jnz	help3
 	stx	e,+0
 	inxix
 	inr	c	; can't overflow with 128-byte buffer
+	mov	a,b
+	ora	a
+	jz	set1
 	call	skipb
 	jnc	set0
-
+set1:
 	mov	a,c
 	sta	num
 	call	wizset
@@ -166,8 +170,21 @@ get2:
 exit:
 	jmp	cpm
 
+usage2:	db	' help2',CR,LF,'$'
+usage3:	db	' help3',CR,LF,'$'
+
+help2:
+	call	wrdout
+	mov	a,b
+	call	hexout
+	lxi	d,usage2
+	jmp	help0
+help3:
+	lxi	d,usage3
+	jmp	help0
 help:
 	lxi	d,usage
+help0:
 	mvi	c,print
 	call	bdos
 	jmp	exit
@@ -330,6 +347,7 @@ skipb:
 	stc
 	rz
 skip0:	mov	a,m
+	ora	a
 	cpi	' '
 	rnz	; no carry?
 	inx	h
@@ -344,7 +362,7 @@ parshx:
 	lxi	d,0
 pm0:	mov	a,m
 	cpi	' '
-	jz	nzret
+	rz
 	sui	'0'
 	rc
 	cpi	'9'-'0'+1
