@@ -138,6 +138,10 @@ get:
 ; dump 'num' bytes from 'buf'... label with bsb/off...
 get0:
 	lda	bsb
+	ani	11111000b
+	rrc
+	rrc
+	rrc
 	call	hexout
 	mvi	a,':'
 	call	chrout
