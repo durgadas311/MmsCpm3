@@ -38,6 +38,7 @@ usage:	db	'Usage: WIZDBG {G bsb off num}',CR,LF
 	db	'       num = Number of bytes to GET, dec',CR,LF
 	db	'       dat = Byte(s) to SET, hex',CR,LF,'$'
 nocpn:	db	'CP/NET is running. Stop it first',CR,LF,'$'
+cpnet:	db	0
 
 start:
 	sspd	usrstk
@@ -46,12 +47,7 @@ start:
 	call	bdos
 	mov	a,h
 	ani	02h
-	jz	nocpnt
-	lxi	d,nocpn
-	mvi	c,print
-	call	bdos
-	jmp	exit
-nocpnt:
+	sta	cpnet
 	lda	cmd
 	ora	a
 	jz	help
@@ -72,6 +68,10 @@ pars1:
 	jz	pars2
 	cpi	'S'
 	jnz	help
+	lda	cpnet
+	ora	a
+	jnz	nocpnt
+	mvi	a,'S'
 pars2:
 	sta	com
 	call	skipb
@@ -170,9 +170,14 @@ exit:
 
 help:
 	lxi	d,usage
+xitmsg:
 	mvi	c,print
 	call	bdos
 	jmp	exit
+
+nocpnt:
+	lxi	d,nocpn
+	jmp	xitmsg
 
 ; Read (GET) data from chip.
 ; 'num', 'bsb', 'off' setup.
