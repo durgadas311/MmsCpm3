@@ -10,7 +10,7 @@
 
 	maclib	z80
 
-wiz	equ	40h	; base port of H8-WIZ550io
+wiz	equ	40h	; base port of H8-WIZx50io SPI interface
 
 wiz$dat	equ	wiz+0
 wiz$ctl	equ	wiz+1
@@ -72,7 +72,7 @@ ipmsg:	db	'IP Addr:  $'
 usage:	db	'Usage: WIZCFG {G|I|S ipadr}',CR,LF
 	db	'       WIZCFG {M macadr}',CR,LF
 	db	'       WIZCFG {N cid}',CR,LF
-	db	'       WIZCFG {0|1|2|3 sid ipadr port}',CR,LF,'$'
+	db	'       WIZCFG {0..7 sid ipadr port}',CR,LF,'$'
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'

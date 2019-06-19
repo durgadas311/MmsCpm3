@@ -37,7 +37,6 @@ usage:	db	'Usage: WIZDBG {G bsb off num}',CR,LF
 	db	'       off = Offset within BSB, hex',CR,LF
 	db	'       num = Number of bytes to GET, dec',CR,LF
 	db	'       dat = Byte(s) to SET, hex',CR,LF,'$'
-done:	db	'Set',CR,LF,'$'
 nocpn:	db	'CP/NET is running. Stop it first',CR,LF,'$'
 
 start:
@@ -69,7 +68,6 @@ pars0:
 	jmp	help
 
 pars1:
-	ani	5fh	; toupper
 	cpi	'G'
 	jz	pars2
 	cpi	'S'
@@ -108,10 +106,10 @@ pars2:
 	lxix	buf
 set0:
 	call	parshx
-	jc	help2
+	jc	help
 	mov	a,d
 	ora	a
-	jnz	help3
+	jnz	help
 	stx	e,+0
 	inxix
 	inr	c	; can't overflow with 128-byte buffer
@@ -170,21 +168,8 @@ get2:
 exit:
 	jmp	cpm
 
-usage2:	db	' help2',CR,LF,'$'
-usage3:	db	' help3',CR,LF,'$'
-
-help2:
-	call	wrdout
-	mov	a,b
-	call	hexout
-	lxi	d,usage2
-	jmp	help0
-help3:
-	lxi	d,usage3
-	jmp	help0
 help:
 	lxi	d,usage
-help0:
 	mvi	c,print
 	call	bdos
 	jmp	exit
@@ -251,70 +236,6 @@ crlf:
 	call	chrout
 	mvi	a,LF
 	call	chrout
-	ret
-
-dec16:
-	xchg	; remainder in HL
-	mvi	c,0
-	lxi	d,10000
-	call	div16
-	lxi	d,1000
-	call	div16
-	lxi	d,100
-	call	div16
-	lxi	d,10
-	call	div16
-	mov	a,l
-	adi	'0'
-	call	chrout
-	ret
-
-div16:	mvi	b,0
-dv0:	ora	a
-	dsbc	d
-	inr	b
-	jrnc	dv0
-	dad	d
-	dcr	b
-	jrnz	dv1
-	bit	0,c
-	jrnz	dv1
-	ret
-dv1:	setb	0,c
-	mvi	a,'0'
-	add	b
-	call	chrout
-	ret
-
-; leading zeroes blanked - must preserve B
-decout:
-	push	b
-	mvi	c,0
-	mvi	d,100
-	call	divide
-	mvi	d,10
-	call	divide
-	adi	'0'
-	call	chrout
-	pop	b
-	ret
-
-divide:	mvi	e,0
-div0:	sub	d
-	inr	e
-	jrnc	div0
-	add	d
-	dcr	e
-	jrnz	div1
-	bit	0,c
-	jrnz	div1
-	ret
-div1:	setb	0,c
-	push	psw	; remainder
-	mvi	a,'0'
-	add	e
-	call	chrout
-	pop	psw	; remainder
 	ret
 
 ; Print 16-bit hex value from HL
@@ -394,48 +315,6 @@ nzret:
 	inr	a	; NZ
 	ret
 pme:	xchg
-	stc
-	ret
-
-; IX=destination
-parsadr:
-	mvi	c,'.'
-pa00:
-	mvi	d,0
-pa0:	mov	a,m
-	cmp	c
-	jz	pa1
-	cpi	' '
-	jz	pa2
-	cpi	'0'
-	rc
-	cpi	'9'+1
-	cmc
-	rc
-	ani	0fh
-	mov	e,a
-	mov	a,d
-	add	a	; *2
-	add	a	; *4
-	add	d	; *5
-	add	a	; *10
-	add	e
-	rc
-	mov	d,a
-	inx	h
-	djnz	pa0
-pa2:
-	; TODO: check for 4 bytes...
-	stx	d,+0
-	ora	a
-	ret
-
-pa1:
-	stx	d,+0
-	inxix
-	inx	h
-	djnz	pa00
-	; error if ends here...
 	stc
 	ret
 
