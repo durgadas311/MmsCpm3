@@ -51,7 +51,10 @@ wizdbg.com: wizdbg.asm
 	vcpm mac wizdbg.asm '$$SZLAPO'
 	vcpm hexcom wizdbg
 
-wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com
+snios-w.spr: snioswiz.rel snios12.rel
+	vcpm link "snios-w=snios12.rel,snioswiz.rel[os,nr]"
+
+wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com snios-w.spr
 
 usb: ntpdt-u.com ndos3-u.com
 
