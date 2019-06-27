@@ -1,4 +1,11 @@
-all: ../bin/mms_rom_84b.bin ../bin/PAM37_Monitor_ROM.bin
+H8BINS = ../bin/PAM37_Monitor_ROM.bin
+MMSBINS = ../bin/mms_rom_84b.bin
+
+all: $(MMSBINS) $(H8BINS)
+
+mms: $(MMSBINS)
+
+h8: $(H8BINS)
 
 ../bin/mms_rom_84b.bin: mms_rom_84b.asm
 	zmac --dri -i -8 -c -s -n mms_rom_84b.asm

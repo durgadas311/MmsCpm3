@@ -1,0 +1,519 @@
+CP/M RMAC ASSEM 1.1	#001	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 2031 =         VERS EQU '1 ' ; June 28, 2019 21:42 drm "GIDE'3.ASM"
+                *************************************************************************
+                
+                	TITLE	'GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE'
+                	MACLIB	Z80
+                	$*MACRO
+                
+                	extrn	@dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
+                	extrn	@dtacb,@dircb,@scrbf,@rcnfg,@cmode,@lptbl,@login
+                	extrn	?bnksl,?halloc
+                
+ 004E =         nsegmt	equ	004eh	; where to pass segment to CP/M 3
+                
+                **************************************************************************
+                ; Configure the number of partitions (numparX) on each LUN in your system
+                ;  and if the LUN is removable (true) or not (false).
+                **************************************************************************
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                ; Logical Unit 0 characteristics
+                
+ 0008 =         numpar0 equ	8		; number of partitions on LUN
+                
+ 0008 =         ndev	equ	numpar0
+ 0046 =         dev0	equ	70
+                
+                *************************************************************************
+                **  PORTS AND CONSTANTS
+                *************************************************************************
+                
+ 00F2 =         GPIO	EQU	0F2H		; SWITCH 501
+                
+ 0060 =         GIDE$DA	equ	060h	; GIDE data port
+ 0061 =         GIDE$EF	equ	061h	; GIDE feature/error register
+ 0062 =         GIDE$SC	equ	062h	; GIDE sector count
+ 0063 =         GIDE$SE	equ	063h	; GIDE sector number	(lba7:0)
+ 0064 =         GIDE$CL	equ	064h	; GIDE cylinder low	(lba15:8)
+ 0065 =         GIDE$CH	equ	065h	; GIDE cylinder high	(lba23:16)
+ 0066 =         GIDE$DH	equ	066h	; GIDE drive+head	(drive+lba27:24)
+ 0067 =         GIDE$CS	equ	067h	; GIDE command/status
+                
+ 0001 =         ERR	equ	00000001b	; error bit in GIDE$CS
+ 0040 =         RDY	equ	01000000b	; ready bit in GIDE$CS
+ 0008 =         DRQ	equ	00001000b	; DRQ bit in GIDE$CS
+ 0080 =         BSY	equ	10000000b	; busy bit in GIDE$CS
+                
+ 0011 =         dpbl	equ	17	; length of CP/M 3.0 dpb
+ 0200 =         alvl	equ	512	; size of allocation vector
+ 0100 =         csvl	equ	256	; size of check sum vector
+ 0008 =         modlen	equ	8	; length of each mode byte table entry
+ 0013 =         datlen	equ	19	; length of each lun data entry
+ 0010 =         bcode	equ	16	; offset in lun data of the blk code
+ 0010 =         initflg equ	16	;    "   "   "   "   of lun initialization flag
+ 0011 =         parstr	equ	17	;    "   "   "   "   of partition start of lun
+CP/M RMAC ASSEM 1.1	#002	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 0012 =         numpar	equ	18	;    "   "   "   "   of the number of partitions
+                
+ 000D =         CSTRNG	EQU	13	; Offsets of data in magic sector
+ 0013 =         NPART	EQU	19
+ 0004 =         CBYTE	EQU	4
+ 0005 =         DDATA	EQU	5
+ 0003 =         DCTYPE	EQU	3
+ 0014 =         SECTBL	EQU	20
+ 002F =         DDPB	EQU	47
+                
+ 0000 =         WRALL	EQU	0	; WRITE TO ALLOCATED
+ 0001 =         WRDIR	EQU	1	; WRITE TO DIRECTORY
+ 0002 =         WRUNA	EQU	2	; WRITE TO UNALLOCATED
+ 0003 =         READOP	EQU	3	; READ OPERATION
+                
+                ***************************************************
+                	cseg
+                
+ 0000 2901      	dw	thread
+ 0002 4608      driv0	db	dev0,ndev
+ 0004 C3C810    	jmp	init$gide
+ 0007 C3D010    	jmp	login
+ 000A C37D11    	jmp	read$gide
+ 000D C3AA11    	jmp	write$gide
+ 0010 1600      	dw	string
+ 0012 00004300  	dw	dphtbl,modtbl
+                
+ 0016 4749444520string: db	'GIDE ',0,'ATA Interface ('
+ 002B 38        	db	ndev+'0'
+ 002C 2070617274	db	' partitions) ',0,'v3.10'
+ 003F 31202400  	dw	VERS,'$'
+                
+                ; Mode byte table for GIDE driver
+                
+                modtbl:
+ 0000 #         drv	set	0
+                	rept	numpar0
+                	db	1000$0000b+drv,000$00000b,00000000b,00000000b
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+                	endm
+ 0043+80000000
+ 0047+FFFFFFFF
+ 004B+81000000
+ 004F+FFFFFFFF
+ 0053+82000000
+ 0057+FFFFFFFF
+ 005B+83000000
+ 005F+FFFFFFFF
+ 0063+84000000
+ 0067+FFFFFFFF
+ 006B+85000000
+ 006F+FFFFFFFF
+ 0073+86000000
+ 0077+FFFFFFFF
+ 007B+87000000
+CP/M RMAC ASSEM 1.1	#003	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 007F+FFFFFFFF
+                
+                ; Disk parameter tables
+                
+                dpb:
+                	rept	ndev
+                	ds	dpbl
+                	endm
+ 0083+
+ 0094+
+ 00A5+
+ 00B6+
+ 00C7+
+ 00D8+
+ 00E9+
+ 00FA+
+                
+                	$-MACRO
+                ;
+                ;	ACTUAL READ-WRITE OF DATA
+                ;
+                
+                giderd:
+ 010B 3A0000    	lda	@dbnk
+ 010E CD0000    	call	?bnksl
+ 0111           	inir
+ 0113           	inir
+ 0115 AF        	xra	a
+ 0116 CD0000    	call	?bnksl		; re-select bank 0
+ 0119 C9        	ret
+                
+                gidewr:
+ 011A 3A0000    	lda	@dbnk
+ 011D CD0000    	call	?bnksl
+ 0120           	outir
+ 0122           	outir
+ 0124 AF        	xra	a
+ 0125 CD0000    	call	?bnksl		; re-select bank 0
+ 0128 C9        	ret
+                
+ 0129 =         thread	equ	$
+                
+                	dseg
+                	$*MACRO
+                
+                
+                ; Disk parameter headers for the GIDE driver
+                
+ 0000 #         ncsv	set	0
+ 0000 #         drv	set	0
+                
+                dphtbl:
+                	rept	numpar0
+                	dw	0,0,0,0,0,0,dpb+(drv*dpbl)
+                	dw	0	; no CSV - DPB.CKS must be 8000h
+                	dw	alv+(drv*alvl),@dircb,@dtacb,0
+CP/M RMAC ASSEM 1.1	#004	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+                	db	0
+                drv	set	drv+1
+                	endm
+ 0000+0000000000
+ 000E+0000
+ 0010+C800000000
+ 0018+00
+ 0019+0000000000
+ 0027+0000
+ 0029+C802000000
+ 0031+00
+ 0032+0000000000
+ 0040+0000
+ 0042+C804000000
+ 004A+00
+ 004B+0000000000
+ 0059+0000
+ 005B+C806000000
+ 0063+00
+ 0064+0000000000
+ 0072+0000
+ 0074+C808000000
+ 007C+00
+ 007D+0000000000
+ 008B+0000
+ 008D+C80A000000
+ 0095+00
+ 0096+0000000000
+ 00A4+0000
+ 00A6+C80C000000
+ 00AE+00
+ 00AF+0000000000
+ 00BD+0000
+ 00BF+C80E000000
+ 00C7+00
+                
+                ; Allocation vectors
+                
+                alv:
+                	rept	ndev
+                	ds	alvl
+                	endm
+ 00C8+
+ 02C8+
+ 04C8+
+ 06C8+
+ 08C8+
+ 0AC8+
+ 0CC8+
+ 0EC8+
+                
+                ; Check sum vectors for removable media (none)
+                
+                csv:
+                	rept	ncsv
+                	ds	csvl
+CP/M RMAC ASSEM 1.1	#005	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+                	endm
+                
+                	$-MACRO
+                
+                ;
+                ;	DRIVER INITIALIZATION CODE
+                ;
+                
+                init$gide:
+                	; anything to do? Leave reading of magic sector until
+                	; first drive access?
+ 10C8 2A4E00    	lhld	nsegmt		;grab this before it's gone...
+ 10CB 223012    	shld	segoff
+ 10CE AF        	xra	a
+ 10CF C9        	ret
+                
+ 10D0 3A5A12    login:	lda	init
+ 10D3 3C        	inr	a
+ 10D4           	jrnz	login0
+ 10D6 325A12    	sta	init
+ 10D9 CD0311    	call	init$hard
+                login0:
+ 10DC 3A1300    	lda	npart
+ 10DF 5F        	mov	e,a
+ 10E0 3A0000    	lda	@rdrv
+ 10E3 BB        	cmp	e	; See if loging in a drive that doesn't exist
+ 10E4 D2A711    	jnc	rwerr
+                	; Note: computation not needed if already set.
+                	; ?halloc takes are of that.
+ 10E7 2A0000    	lhld	@dph
+ 10EA 110C00    	lxi	d,12	; offset of DPH.DPB
+ 10ED 19        	dad	d
+ 10EE 5E        	mov	e,m
+ 10EF 23        	inx	h
+ 10F0 56        	mov	d,m
+ 10F1 210700    	lxi	h,7	; offset of DPB.DRM
+ 10F4 19        	dad	d
+ 10F5 7E        	mov	a,m
+ 10F6 23        	inx	h
+ 10F7 66        	mov	h,m
+ 10F8 6F        	mov	l,a	; HL=DRM
+ 10F9 23        	inx	h	; num DIR ents
+                	; TODO: check overflow? must be < 8192
+ 10FA 29        	dad	h
+ 10FB 29        	dad	h	; HL*=4: HASH size
+ 10FC 4D        	mov	c,l
+ 10FD 44        	mov	b,h
+ 10FE CD0000    	call	?halloc
+ 1101 AF        	xra	a
+ 1102 C9        	ret
+                
+                init$hard:
+                	; since we only have one disk, init partn table now.
+                	; read "magic sector" - LBA 0 of chosen disk segment.
+ 1103 210000    	lxi	h,@scrbf	; use bios scratch buffer for magic sector
+ 1106 220000    	shld	@dma	; is this safe now?
+CP/M RMAC ASSEM 1.1	#006	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 1109 AF        	xra	a
+ 110A 320000    	sta	@dbnk	; is this safe now?
+ 110D 2A3012    	lhld	segoff
+ 1110 223212    	shld	curlba+0
+ 1113 210000    	lxi	h,0
+ 1116 223412    	shld	curlba+2		; phy sec 0 = partition table
+ 1119 CD1412    	call	stlba2
+ 111C CD8011    	call	read$raw
+ 111F C0        	rnz	; error
+ 1120 3A1300    	lda	@scrbf+NPART
+ 1123 FE08      	cpi	numpar0
+ 1125           	jrc	ih3
+ 1127 3E08      	mvi	a,numpar0
+ 1129 321300    ih3:	sta	npart		; use all partitions (and no more)
+                	; copy over all DPBs, add PSH,PSK
+ 112C 212F00    	lxi	h,@scrbf+DDPB	; CP/M 2.2 DPBs in magic sector
+ 112F 118300    	lxi	d,dpb		; Our CP/M 3 DPBs
+                ih0:
+ 1132 F5        	push	psw		; num partitions
+ 1133 010F00    	lxi	b,15	; CP/M 2.2 DPB length
+ 1136           	ldir
+ 1138 3E02      	mvi	a,2	; 512 byte shift, from 128 byte
+ 113A 12        	stax	d
+ 113B 13        	inx	d
+ 113C 3E03      	mvi	a,3	; 512 byte mask, from 128 byte
+ 113E 12        	stax	d
+ 113F 13        	inx	d
+ 1140 010600    	lxi	b,6	; skip mode bytes
+ 1143 09        	dad	b
+ 1144 F1        	pop	psw
+ 1145 3D        	dcr	a
+ 1146           	jrnz	ih0
+                	; copy over sector (partition) offsets,
+                	; converting from LBA and 4-byte entries.
+ 1148 211400    	lxi	h,@scrbf+SECTBL
+ 114B           	lxix	partbl
+ 114F 3A1300    	lda	npart		; num entries
+ 1152 47        	mov	b,a
+ 1153 C5        ih1:	push	b
+ 1154           	lded	segoff+0; E = LBA27:24 (future seg off)
+                	;		; D = LBA23:19 is segment offset, carry-in
+ 1158           	stx	e,+0	; LBA27:24 is fixed
+ 115B           	inxix
+ 115D 0603      	mvi	b,3
+ 115F 7E        	mov	a,m
+ 1160 E61F      	ani	00011111b	; must clear LUN bits
+ 1162 77        	mov	m,a
+                ih2:
+ 1163 1E00      	mvi	e,0
+ 1165 7E        	mov	a,m
+ 1166 23        	inx	h
+ 1167           	srlr	a
+ 1169           	rarr	e
+ 116B           	srlr	a
+ 116D           	rarr	e	; carry-out
+ 116F B2        	ora	d	; carry-in from previous
+CP/M RMAC ASSEM 1.1	#007	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 1170           	stx	a,+0
+ 1173           	inxix
+ 1175 53        	mov	d,e	; carry-out becomes next carry-in
+ 1176           	djnz	ih2
+ 1178 C1        	pop	b
+ 1179           	djnz	ih1
+                	; anything else to do?
+ 117B AF        	xra	a
+ 117C C9        	ret
+                
+                ;	READ - WRITE ROUTINES
+                ;
+                ;	READ A PHYSICAL SECTOR CODE
+                ;
+                read$gide:
+ 117D CDD911    	call	set$lba
+                read$raw:
+ 1180 3E20      	mvi	a,20h
+ 1182 D367      	out	GIDE$CS
+ 1184 DB67      gider0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+ 1186           	bit	7,a		; BSY
+ 1188           	jrnz	gider0
+ 118A           	bit	0,a		; ERR
+ 118C           	jrnz	rwerr0
+ 118E           	bit	6,a		; RDY
+ 1190           	jrz	rwerr
+ 1192           	bit	3,a		; DRQ
+ 1194           	jrz	gider0
+ 1196 2A0000    	lhld	@dma		; data buffer address
+ 1199 0E60      	mvi	c,GIDE$DA
+ 119B 0600      	mvi	b,0
+ 119D CD0B01    	call	giderd
+ 11A0 AF        	xra	a
+ 11A1 C9        	ret
+                
+                rwerr0:
+ 11A2 DB61      	in	GIDE$EF
+ 11A4 325B12    	sta	dskerr
+                rwerr:
+ 11A7 AF        	xra	a
+ 11A8 3C        	inr	a
+ 11A9 C9        	ret
+                
+                ;
+                ;	WRITE A PHYSICAL SECTOR CODE
+                ;
+                write$gide:
+ 11AA CDD911    	call	set$lba
+ 11AD 3E30      	mvi	a,30h
+ 11AF D367      	out	GIDE$CS
+ 11B1 DB67      gidew0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+ 11B3           	bit	7,a		; BSY
+ 11B5           	jrnz	gidew0
+ 11B7           	bit	6,a		; RDY
+ 11B9           	jrz	rwerr
+ 11BB           	bit	0,a		; ERR
+CP/M RMAC ASSEM 1.1	#008	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+ 11BD           	jrnz	rwerr0
+ 11BF           	bit	3,a		; DRQ
+ 11C1           	jrz	gidew0
+ 11C3 2A0000    	lhld	@dma		; data buffer address
+ 11C6 0E60      	mvi	c,GIDE$DA
+ 11C8 0600      	mvi	b,0
+ 11CA CD1A01    	call	gidewr
+                gidew2:
+ 11CD DB67      	in	GIDE$CS		; wait for not busy
+ 11CF           	bit	7,a		; BSY
+ 11D1           	jrnz	gidew2
+ 11D3           	bit	0,a		; ERR
+ 11D5           	jrnz	rwerr0
+                	; TODO: confirm DRQ also off?
+ 11D7 AF        	xra	a
+ 11D8 C9        	ret
+                
+                ;	CALCULATE THE REQUESTED SECTOR
+                ;
+                set$lba:
+                	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
+                	; so H,D are LSB and L,E are MSB.
+ 11D9 2A0000    	lhld	@trk		; get requested track
+ 11DC 5D        	mov	e,l	;
+ 11DD 6C        	mov	l,h	;
+ 11DE 63        	mov	h,e	; bswap HL
+ 11DF 110000    	lxi	d,0
+ 11E2 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
+                stlba0:
+ 11E4           	slar	h
+ 11E6           	ralr	l
+ 11E8           	ralr	d	; can't carry out
+ 11EA           	djnz	stlba0
+                	; sector can't carry - 0-15 into vacated bits
+ 11EC 3A0000    	lda	@sect		; get requested sector
+ 11EF B4        	ora	h
+ 11F0 67        	mov	h,a
+ 11F1 223412    	shld	curlba+2
+ 11F4 EB        	xchg
+ 11F5 223212    	shld	curlba+0	; CURLBA = (@trk << 4) | @sec
+                	; compute &partbl[@rdrv]+3.
+                	; We'd like to only do this only if seldsk changes,
+                	; but we have no callback for that.
+ 11F8 3A0000    	lda	@rdrv
+ 11FB 87        	add	a
+ 11FC 87        	add	a	; *4
+ 11FD C603      	adi	3	; can't carry
+ 11FF 5F        	mov	e,a
+ 1200 1600      	mvi	d,0
+ 1202 213612    	lxi	h,partbl
+ 1205 19        	dad	d
+ 1206 EB        	xchg		; DE = &partbl[@rdrv]+3
+                	; add 32-bit values CURLBA += PARTBL[@rdrv]
+ 1207 213512    	lxi	h,curlba+3
+ 120A AF        	xra	a	; clear CY
+ 120B 0604      	mvi	b,4
+CP/M RMAC ASSEM 1.1	#009	GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE
+
+                stlba1:
+ 120D 1A        	ldax	d
+ 120E 8E        	adc	m
+ 120F 77        	mov	m,a
+ 1210 2B        	dcx	h
+ 1211 1B        	dcx	d
+ 1212           	djnz	stlba1
+                stlba2:	; setup controller regs from CURLBA
+ 1214 213212    	lxi	h,curlba
+ 1217 7E        	mov	a,m
+ 1218 F6E0      	ori	11100000b	; LBA mode, etc
+ 121A D366      	out	GIDE$DH
+ 121C 23        	inx	h
+ 121D 7E        	mov	a,m
+ 121E D365      	out	GIDE$CH
+ 1220 23        	inx	h
+ 1221 7E        	mov	a,m
+ 1222 D364      	out	GIDE$CL
+ 1224 23        	inx	h
+ 1225 7E        	mov	a,m
+ 1226 D363      	out	GIDE$SE
+ 1228 3E01      	mvi	a,1
+ 122A D362      	out	GIDE$SC	; always 1 sector at a time
+ 122C AF        	xra	a
+ 122D D361      	out	GIDE$EF	; feature always zero?
+ 122F C9        	ret
+                
+                ;
+                ;	DATA BUFFERS AND STORAGE
+                ;
+                
+ 1230 0000      segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
+ 1232 00000000  curlba:	db	0,0,0,0
+                
+                ; Partition start LBAs for each partition.
+                ; Loaded from the magic sector, converted to LBA.
+                
+                partbl:
+ 1236 00000000  	db	0,0,0,0
+ 123A 00000000  	db	0,0,0,0
+ 123E 00000000  	db	0,0,0,0
+ 1242 00000000  	db	0,0,0,0
+ 1246 00000000  	db	0,0,0,0
+ 124A 00000000  	db	0,0,0,0
+ 124E 00000000  	db	0,0,0,0
+ 1252 00000000  	db	0,0,0,0
+ 1256 00000000  	db	0,0,0,0
+                
+ 125A FF        init:	db	0ffh	; one-time initialization
+ 125B 00        dskerr:	db	0
+                
+ 125C           	END
+

@@ -1,5 +1,6 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
-VERN	equ	12h	; version 1.2
+; Z89/Z90/H8-Z80 Monitor EPROM 444-84D, June 29, 2019, drm
+VERN	equ	13h	; version 1.3
 
 	maclib	z80
 	$*macro
@@ -10,6 +11,15 @@ BEL	equ	7
 ESC	equ	27
 TRM	equ	0
 DEL	equ	127
+
+GIDE$DA	equ	060h	; GIDE data port
+GIDE$ER	equ	061h	; GIDE error register
+GIDE$SC	equ	062h	; GIDE sector count
+GIDE$SE	equ	063h	; GIDE sector number
+GIDE$CL	equ	064h	; GIDE cylinder low
+GIDE$CH	equ	065h	; GIDE cylinder high
+GIDE$DH	equ	066h	; GIDE drive/head
+GIDE$CS	equ	067h	; GIDE command/status
 
 	org	01800h	; H17 Floppy ROM routines
 	ds	1014
@@ -59,7 +69,7 @@ cport:	ds	1	; - 02150h
 SEC$CNT:	ds	1	; - 02152h
 l2153h:	ds	1
 	ds	2
-l2156h:	ds	6	; ??? for SASI?
+l2156h:	ds	6	; cmdbuf for SASI, segoff for GIDE
 	ds	292
 bootbf:	ds	0	; - 02280h
 
@@ -394,8 +404,7 @@ gtdev0:
 	cpi	10b
 	mvi	d,3
 	rz		; Z67/MMS77320
-	mvi	d,60
-	ret		; MMS77422 Network
+	jmp	error	; fatal error... not defined
 
 ; determine device for port 078H
 ; return phy drv number in D.
@@ -418,7 +427,7 @@ gtdfbt:
 	jmp	gtdvtb		; get MMS device
 
 ; Check SW501 for installed device.
-; C = desired port pattern, 00=Z17/Z37, 01=Z47, 10=Z67, 11=77422
+; C = desired port pattern, 00=Z17/Z37, 01=Z47, 10=Z67, 11=undefined
 ; returns base I/O port adr in B.
 getport:
 	mvi	b,07ch
@@ -476,7 +485,7 @@ digerr:
 	call	belout
 	jr	btdig0
 ; Got a digit in boot command, parse it
-btdig:
+btdig:	; boot by phys drive number, E=0
 	call	conout	; echo digit
 	ani	00fh	; convert to binary
 	mov	d,a
@@ -500,7 +509,7 @@ btdig1:
 	jnc	error
 	jr	btdig0
 
-gotnum:
+gotnum:	; Boot N... "N" in D
 	mov	a,d
 	cpi	5
 	jc	goboot
@@ -513,6 +522,8 @@ gotnum:
 cmdboot:
 	lxi	h,bootms
 	call	msgout	; complete (B)oot
+	mvi	a,0c3h
+	sta	bootbf	; mark "no string"
 	lxi	sp,bootbf
 	call	gtdfbt
 	mvi	c,CR	; end input on CR
@@ -528,7 +539,7 @@ boot0:
 	jrc	nodig
 	cpi	'9'+1
 	jrc	btdig
-nodig:
+nodig:	; boot by letter... Boot alpha-
 	ani	05fh ; toupper
 	cpi	'Z'+1
 	jrnc	bterr
@@ -573,14 +584,14 @@ luboot0:
 	jrnc	lunerr
 	call	conout
 	sui	'0'
-	mov	e,a
+	mov	e,a	; single digit (0..9)
 luboot1:
 	call	conin
 	cmp	c
 	jrz	goboot
-	cpi	':'
+	cpi	':'	; Boot alpha-dig:str
 	jrz	colon
-	cpi	' '
+	cpi	' '	; cosmetic spaces?
 	jrz	space
 	mvi	a,BEL
 space:
@@ -605,6 +616,8 @@ btstr1:	; use stack as char array...
 	dcx	h
 	mov	a,m
 	djnz	btstr1
+; D=Phys Drive base number, E=Unit number
+; (or, D=Phys Drive unit, E=0)
 goboot:
 	call	crlf
 goboot0:
@@ -612,9 +625,9 @@ goboot0:
 	push	h
 	call	h17init
 	mov	a,e
-	sta	AIO$UNI
+	sta	AIO$UNI	; relative unit num
 	add	d
-	sta	l2034h
+	sta	l2034h	; boot phys drv unit num
 	mov	a,d
 	cpi	3	; 0,1,2
 	jrc	bz17	; Z17 boot
@@ -622,7 +635,7 @@ goboot0:
 	sui	5
 	cpi	4	; 5,6,7,8
 	jrc	bz47	; Z47 boot
-	jmp	exboot
+	jmp	exboot	;
 
 bz17:
 	add	e
@@ -893,7 +906,7 @@ intsetup:
 initms:	db	080h,ESC,'[?2h',ESC,'Z',TRM
 	db	ESC,'z',TRM
 
-unsupm:	db	'Unsupported CPU speed',TRM
+unsupm:	db	'Unsupp CPU speed',TRM
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Substitute command
@@ -1384,6 +1397,8 @@ xcmds:
 	jz	prtver
 	ret
 
+; D=Phys Drive base, E=Unit
+; (or D=Phys Drive unit, E=0)
 exboot:
 	mov	a,d
 	sui	200
@@ -1479,14 +1494,14 @@ devtbl:
 	dw	bm314c
 	db	29,8
 	dw	bm316
-	db	37,1
-	dw	bm317
 	db	40,1
 	dw	bm318
 	db	46,4
 	dw	bz37
 	db	60,1
-	dw	bm422
+	dw	bwiznet
+	db	70,9
+	dw	bgide
 	db	168,4
 	dw	bm320
 	db	172,4
@@ -1511,8 +1526,8 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	0ffh	; -010---- n/a  (port 7CH)
 	db	0ffh	; -011---- n/a  (port 78H)
 	db	0ffh	; -100---- none
-	db	0ffh	; -101---- none
-	db	60	; -110---- MMS 77422 Network
+	db	70	; -101---- GIDE disk part 0
+	db	60	; -110---- WIZNET Network
 	db	0feh	; -111---- redirect to I/O board dipsw
 
 auxbt:	; default boot redirect (aux dipsw) bits 11100000b
@@ -1520,9 +1535,9 @@ auxbt:	; default boot redirect (aux dipsw) bits 11100000b
 	db	200+5	; 001----- MMS 77314 REMEX (Z47)
 	db	0ffh	; 010----- none
 	db	37	; 011----- MMS 77317 XCOMP
-	db	60	; 100----- MMS 77422 Network
+	db	60	; 100----- WIZNET Network
 	db	168	; 101----- MMS 77320 SASI
-	db	0ffh	; 110----- none
+	db	70	; 110----- GIDE disk
 	db	0ffh	; 111----- none
 
 bootb2:
@@ -1530,9 +1545,7 @@ bootb2:
 	db	'H',15		; MMS 77314 Corvus
 	db	'I',29		; MMS 77316 8"
 	db	'J',33		; MMS 77316 5"
-	db	'K',37		; MMS 77317 XCOMP
 	db	'M',40		; MMS 77318 RAM-disk
-	db	'N',60		; MMS 77422 Network
 	db	'O',168		; SASI ctrl 0
 	db	'P',172		; SASI ctrl 1
 	db	'Q',176		; SASI ctrl 2
@@ -1541,6 +1554,8 @@ bootb2:
 	db	'T',188		; SASI ctrl 5
 	db	'U',192		; SASI ctrl 6
 	db	'V',196		; SASI ctrl 7
+	db	'W',60		; WIZNET Network
+	db	'X',70		; GIDE ctrl/disk
 	db	0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1843,180 +1858,65 @@ intz37:	in	07ah
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; MMS 77317 XCOM HDD boot
-bm317:
-	ora	a
-	rnz
-	out	04ch
-	out	048h
-	out	049h
-	call	s0b65h
-	lxi	h,l0b76h
-	mov	a,m
-	out	04ch
-	inx	h
-	mov	a,m
-	out	04dh
-	inx	h
-	mvi	c,04eh
-bm317$0:
-	mov	a,m
-	ora	a
-	jrz	bm317$3
-	inx	h
-	mov	b,a
-	ral
-	jrc	bm317$1
-	outir
-	jr	bm317$0
-bm317$1:
-	ora	a
-	rar
-	mov	b,a
-	mov	a,m
-	inx	h
-bm317$2:
-	out	04eh
-	djnz	bm317$2
-	jr	bm317$0
-; done with OUT "program"
-bm317$3:
-	mvi	a,041h
-	out	049h
-	mvi	a,002h
-	out	048h
-	call	s0b34h
-	rnz
-	call	s0af4h
-	rnz
-	mvi	a,002h
-	out	04ch
-	xra	a
-	out	04dh
-	mov	b,a
-	mvi	c,04eh
-	lxi	h,bootbf
-	in	04eh
-	inir
-	jmp	hwboot
-
-s0af4h:
-	mvi	d,00ah
-	mvi	a,004h
-	out	04ch
-	mvi	a,0eah
-	out	04dh
-	mvi	b,4
-	xra	a
-l0b01h:
-	out	04eh
-	djnz	l0b01h
-l0b05h:
-	call	s0b56h
-	rnz
-	xra	a
-	out	04ch
-	mvi	a,0d7h
-	out	04dh
-	mvi	a,008h
-	out	04ch
-l0b14h:
-	in	04ch
-	rrc
-	jnc	l0b14h
-	nop
-	in	04ch
-	mov	b,a
-	xra	a
-	out	04ch
+; GIDE HDD boot
+bgide:
+	cpi	9 ; 9 partitons, max
+	rnc
+	; Partition is passed to bootloader, but we need
+	; segment offset before we can start.
+	pop	d	; error return address
+	pop	b	; possible string
+	push	b
+	push	d
+	; parse a single letter
+	lxi	h,0	; def segment off
+	mov	a,c
+	cpi	0c3h	; JMP means no string present
+	jrz	nostr
 	mov	a,b
-	ani	00eh
-	mov	b,a
-	in	048h
-	ani	002h
-	cnz	s0b5dh
-	ora	b
+	ora	a	; limit to 1 char?
+	rnz
+	mov	a,c
+	ani	5fh
+	sui	'A'	; 000sssss = segment ID
+	rc
+	rlc
+	rlc
+	rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
+	mov	h,a	; swap for little endian SHLD/LHLD
+nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
+	; absolute LBA 0 is where we boot...
+	mvi	a,11100000b	; LBA mode + std "1" bits
+	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
+	xra	a
+	out	GIDE$CH	; LBA 23:16
+	out	GIDE$CL	; LBA 15:8
+	out	GIDE$SE	; LBA 7:0
+	mvi	a,10
+	out	GIDE$SC	; 10 sectors (standard boot length)
+	mvi	a,20h	; READ SECTORS
+	out	GIDE$CS
+	lxi	h,bootbf
+	mvi	c,GIDE$DA
+	mvi	e,10
+	mvi	b,0	; should always be 0 after inir
+bgide0:
+	in	GIDE$CS
+	bit	7,a	; busy
+	jrnz	bgide0
+	bit	0,a	; error
+	rnz
+	bit	6,a	; ready
 	rz
-	dcr	d
-	jrnz	l0b05h
-l0b31h:
-	ori	001h
-	ret
-s0b34h:
-	mvi	b,0
-l0b36h:
-	in	048h
-	ani	004h
-	xri	004h
-	rz
-	dcr	b
-	jrz	l0b31h
-	xra	a
-	out	04bh
-	inr	a
-	out	04ah
-	mvi	a,003h
-	out	048h
-	call	s0b50h
-	jmp	l0b36h
-
-s0b50h:
-	in	048h
-	ral
-	jrnc	s0b50h
-	ret
-
-s0b56h:
-	in	048h
-	ani	001h
-	xri	001h
-	ret
-
-s0b5dh:
-	xra	a
-	out	049h
-	mvi	a,041h
-	out	049h
-	ret
-
-s0b65h:
-	xra	a
-	call	s0b6bh
-	mvi	a,001h
-s0b6bh:
-	out	04ch
-	mvi	b,128
-	mvi	a,00fh
-l0b71h:
-	out	04eh
-	djnz	l0b71h
-	ret
-
-RPT	equ	80h
-
-l0b76h:
-	db	0	;out 4C
-	db	0d7h	;out 4D
-	db	2,	040h,041h	; -> 4E
-	db	RPT+3,	040h	; 3x040h -> 4E
-	db	RPT+12,	06dh	; 12x06dh -> 4E
-	db	1,	063h
-	db	RPT+4,	065h
-	db	RPT+2,	067h
-	db	1,	049h
-	db	RPT+2,	040h
-	db	RPT+12,	06dh
-	db	3,	063h,0e7h,067h
-	db	RPT+7,	00fh
-	db	2,	040h,041h
-	db	RPT+3,	040h
-	db	RPT+12,	06dh
-	db	1,	063h
-	db	RPT+2,	065h
-	db	RPT+2,	060h
-	db	RPT+2,	067h
-	db	1,	00fh
-	db	0
+	bit	3,a	; DRQ
+	jrz	bgide0
+	inir	; 256 bytes
+	inir	; 512 bytes
+	dcr	e
+	jrnz	bgide0
+	; final status check?
+	pop	h	; adj stack for possible string
+	jmp	hwboot
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77320 SASI HDD boot
@@ -2299,163 +2199,11 @@ l318sz	equ	$-l318rt
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; MMS 77422 (Network) boot loader
-bm422:
-	lxix	bootbf
-	mvix	020h,+0 ; Boot code = 20
-	stx	e,+4	; Unit number (server)
-	mvix	1,+1	; BC=0001, length
-	mvix	0,+2	;
-	mvix	1,+7	; device code, Z89
-	mvi	c,11b
-	call	getport
-	rnz
-	mov	a,b
-	sta	cport
-	lxi	h,int422
-	shld	vrst5+1
-	ei
-	call	syn422
-	lxi	h,0	; delay count for "ready"
-	lda	cport	; Port
-	mov	c,a
-	inr	c
-bm422$0:
-	inp	a
-	ani	00000100b
-	jnz	bm422$1
-	dcx	h
-	mov	a,h
-	ora	l
-	jnz	bm422$0
+; WIZNET WIZ850io (Network) boot loader
+bwiznet:
+	; TODO: implement this
+	; How? chip is not initialized yet!
 	ret
-bm422$1:
-	lxi	h,bootbf
-	lxi	d,7
-	call	snd422
-	mvi	a,038h	; 38 = send status
-	call	get422
-	ldx	a,+3	; error code
-	ora	a
-	rnz	 ; abort if error
-bm422$2:
-	mvi	a,011h	; 1x = Boot response
-	call	get422
-	ldx	l,+5	; Code address
-	ldx	h,+6	;
-	push	h	; return address, code entry
-	ldx	e,+1	; Code length
-	ldx	d,+2	;
-	mov	a,e
-	ora	d
-	cnz	rcv422	; get code, if any
-	ldx	a,+0
-	cpi	13h	; load only - no execute
-	rnz		; jump to code
-	pop	h	; discard unused addr
-	jmp	bm422$2	; keep receiving until execute
-
-; Wait for network message type in A,
-; must watch for stray CP/NET messages and discard
-get422:
-	push	psw
-get422$0:
-	lxi	h,bootbf
-	lxi	d,7
-	call	rcv422
-	ldx	a,+0
-	ani	11111001b
-	pop	b
-	cmp	b
-	rz	; got desired message type
-	push	b
-	cpi	000h	; CP/Net message
-	jrnz	get422$0
-	lxi	h,bootbf	; Receive and discard...
-	ldx	e,+1
-	ldx	d,+2
-	call	rcv422
-	jmp	get422$0
-
-; Gobble data until we reach a sync point
-syn422:
-	lxi	d,0		; delay count
-	lxi	h,nowhere
-	lda	cport	; port
-	mov	c,a
-syn422$0:
-	inp	a
-	inr	c
-	inp	a
-	dcr	c
-	ani	00001000b	; sync?
-	rz
-	dcx	d	; timeout
-	mov	a,d
-	ora	e
-	jnz	syn422$0
-	ret
-
-nowhere: db	0,0,0
-
-snd422:
-	mov	a,e
-	ora	a
-	mov	e,d
-	jz	snd422$0
-	inr	e	; round up to 256-byte page
-snd422$0:
-	mov	b,a
-	lda	cport
-	mov	c,a
-snd422$1:
-	inr	c
-snd422$2:
-	inp	a
-	ani	00000100b
-	jz	snd422$2
-	dcr	c
-	outi
-	jnz	snd422$1
-	dcr	e
-	jnz	snd422$1
-	ret
-
-rcv422:
-	dcx	d
-	mov	a,e
-	ora	a
-	mov	e,d
-	jrz	rcv422$0
-	inr	e
-rcv422$0:
-	mov	b,a
-	lda	cport	; port
-	mov	c,a
-rcv422$1:
-	inr	c
-rcv422$2:
-	inp	a
-	ani	00001000b	; rcv data ready...
-	jrz	rcv422$2
-	dcr	c
-	ini
-	jnz	rcv422$1
-	dcr	e
-	jrnz	rcv422$1
-rcv422$3:
-	inp	a		; keep tugging on data port until interrupt
-	jr	rcv422$3	; wait for completion...
-
-; Interrupt handler for MMS 77422
-int422:
-	inr	c
-	outp	a	; reset?
-	dcr	c
-	ini		; one last data byte???
-	pop	b	; discard INT addr
-	ei
-	ret	; return to caller of rcv422
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Terminal mode - shuttle I/O between H19 and serial port
@@ -2625,7 +2373,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	8ba6h	; checksum...
+	dw	0908fh	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"

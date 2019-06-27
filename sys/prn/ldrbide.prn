@@ -1,0 +1,140 @@
+ 2031 =         VERS	EQU   '1 '  ; June 27, 2019 05:26 drm "ldrbide.asm"
+                
+                	MACLIB	z80
+                	$-MACRO
+                
+                	extrn cboot,btend,loader
+                
+                ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
+                *****					      *****
+                *****	   50 - 58 Sasi drives		      *****
+                *****					      *****
+                ***************************************************
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+                
+ 00F2 =         ?PORT	EQU	0F2H
+                
+ 2377 =         SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
+                				; SHOULD BE FOR BOOT LOADER TO PUT PARTITION
+                				; ADDRESS IN.
+ 2156 =         SEGOFF	EQU	2156H		; address where ROM put segment offset
+                
+ 0060 =         GIDE$DA	equ	060h	; GIDE data port
+ 0061 =         GIDE$ER	equ	061h	; GIDE error register
+ 0062 =         GIDE$SC	equ	062h	; GIDE sector count
+ 0063 =         GIDE$SE	equ	063h	; GIDE sector number
+ 0064 =         GIDE$CL	equ	064h	; GIDE cylinder low
+ 0065 =         GIDE$CH	equ	065h	; GIDE cylinder high
+ 0066 =         GIDE$DH	equ	066h	; GIDE drive/head
+ 0067 =         GIDE$CS	equ	067h	; GIDE command/status
+                
+ 0008 =         DRQ	EQU	00001000B
+ 0040 =         RDY	EQU	01000000B
+ 0001 =         ERR	EQU	00000001B
+ 0080 =         BUSY	EQU	10000000B
+                
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK BOOT MODULE
+                *************************************************** 
+                	aseg
+ 2280           	org	2280H
+ 2280 C38B22    boot:	jmp	around
+                
+ 2283 0000      sysend: dw	btend
+ 2285 0000      systrt: dw	loader
+ 2287 00        drive:	db	0	;boot drive - calculated at run time
+ 2288 00        btmode: db	0	;not used by this hard disk loader
+ 2289 46        	db	70	;first drive
+ 228A 09        	db	9	;number of drives
+                
+ 228B E1        around: pop	h	;ADDRESS OF ERROR ROUTINE
+ 228C 31FF23    	lxi	sp,?stack
+ 228F E5        	push	h
+                
+                *****************************************
+                * Start of unique routine for booting 
+                *****************************************
+                
+ 2290 210000    	lxi	h,btend
+ 2293 110000    	lxi	d,loader
+ 2296 B7        	ora	a
+ 2297           	dsbc	d		;length of system in bytes
+ 2299 227C23    	shld	syssiz
+ 229C 110001    	lxi	d,100h		;add boot module size
+ 229F 19        	dad	d
+ 22A0 0609      	mvi	b,9	; 2^9 = 512
+ 22A2           	srlr	h	; >>9 == >>8 (byte) and >>1
+ 22A4 24        	inr	h		; PHYSICAL SECTORS TO BE BOOTED (rounded up)
+ 22A5 5C        	mov	e,h	; sector count to E
+                	; SYSADR already has SEGOFF...
+ 22A6 3A7723    	lda	SYSADR+0
+ 22A9 F6E0      	ori	11100000b
+ 22AB D366      	out	GIDE$DH	; LBA 27:24, drive and mode
+ 22AD 3A7823    	lda	SYSADR+1
+ 22B0 D365      	out	GIDE$CH	; LBA 23:16
+ 22B2 3A7923    	lda	SYSADR+2
+ 22B5 D364      	out	GIDE$CL	; LBA 15:8
+ 22B7 3A7A23    	lda	SYSADR+3
+ 22BA D363      	out	GIDE$SE	; LBA 7:0
+ 22BC 7B        	mov	a,e
+ 22BD D362      	out	GIDE$SC
+ 22BF 3E20      	mvi	a,20h
+ 22C1 D367      	out	GIDE$CS
+ 22C3 210030    	lxi	h,3000h
+ 22C6 0E60      	mvi	c,GIDE$DA
+ 22C8 0600      	mvi	b,0	; should always be 0 after inir
+                load:
+ 22CA DB67      	in	GIDE$CS
+ 22CC           	bit	7,a	; BUSY
+ 22CE           	jrnz	load
+ 22D0           	bit	0,a	; ERR
+ 22D2 C0        	rnz
+ 22D3           	bit	6,a	; RDY
+ 22D5 C8        	rz
+ 22D6           	bit	3,a	; DRQ
+ 22D8           	jrz	load
+ 22DA           	inir	; 256 bytes
+ 22DC           	inir	; 512 bytes
+ 22DE 1D        	dcr	e
+ 22DF           	jrnz	load
+                
+ 22E1 F3        DONE:	DI
+ 22E2 3E9F      	mvi	a,10011111b	; H8 2mS off, display blank
+ 22E4 D3F0      	out	0f0h	; H89 NMI here should be OK
+ 22E6 21FE22    	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
+ 22E9 0607      	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
+ 22EB 0EF2      	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
+ 22ED           	OUTIR
+ 22EF 210031    	lxi	h,3000h+256
+ 22F2 110000    	lxi	d,loader
+ 22F5           	lbcd	syssiz
+ 22F9           	ldir
+ 22FB C30000    	jmp	cboot
+                
+ 22FE 04        ?CODE	DB	0000$01$00B
+ 22FF 0C        	DB	0000$11$00B
+ 2300 04        	DB	0000$01$00B
+ 2301 08        	DB	0000$10$00B
+ 2302 0C        	DB	0000$11$00B
+ 2303 08        	DB	0000$10$00B
+ 2304 22        	DB	0010$00$10B	;changes memory if "-FA" also
+ 0007 =         ?CODE$LEN	EQU	$-?CODE
+                
+                	; TODO: detect overrun at assembler  time
+ 2377           	ORG	SYSADR
+ 2377 00000000  LBA:	DB	0,0,0,0	; synonymous with SYSADR
+ 237B 00        STAT:	DB	0
+ 237C 0000      syssiz	dw	0
+                
+                	REPT	256-($-BOOT)-1
+                	DB	0
+                	ENDM
+                
+ 23FF =         ?stack: equ	$+128
+                
+ 237F           	END
+
