@@ -1885,11 +1885,12 @@ bgide:
 	rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
 	mov	h,a	; swap for little endian SHLD/LHLD
 nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
-	; absolute LBA 0 is where we boot...
-	mvi	a,11100000b	; LBA mode + std "1" bits
+	mov	a,l
+	ori	11100000b	; LBA mode + std "1" bits
 	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
-	xra	a
+	mov	a,h
 	out	GIDE$CH	; LBA 23:16
+	xra	a
 	out	GIDE$CL	; LBA 15:8
 	out	GIDE$SE	; LBA 7:0
 	mvi	a,10
@@ -2373,7 +2374,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	0908fh	; checksum...
+	dw	090a6h	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
