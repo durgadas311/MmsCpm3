@@ -7,6 +7,8 @@
 ;	i <ip>			Set node IP addr
 ;	m <ma>			Set node h/w addr
 ;	0 <id> <ip> <pt>	Set sock 0
+;	v			Save WIZNET config to NVRAM
+;	r			Restore WIZNET config from NVRAM
 
 	maclib	z80
 
@@ -16,9 +18,18 @@ wiz$dat	equ	wiz+0
 wiz$ctl	equ	wiz+1
 wiz$sts	equ	wiz+1
 
-SCS	equ	1	; ctl port
-BSY	equ	1	; sts port
+SCS	equ	01b	; SCS for WIZNET
+NVSCS	equ	10b	; SCS for NVRAM
 
+; NVRAM/SEEPROM commands
+NVRD	equ	00000011b
+NVWR	equ	00000010b
+RDSR	equ	00000101b
+WREN	equ	00000110b
+; NVRAM/SEEPROM status bits
+WIP	equ	00000001b
+
+; WIZNET CTRL bit for writing
 WRITE	equ	00000100b
 
 GAR	equ	1	; offset of GAR, etc.
@@ -41,6 +52,9 @@ SnCR	equ	1
 SnIR	equ	2
 SnSR	equ	3
 SnPORT	equ	4
+SnDIPR	equ	12
+SnDPORT	equ	16
+SnTXBUF	equ	31	; TXBUF_SIZE
 
 ; Socket SR values
 CLOSED	equ	00h
@@ -72,11 +86,14 @@ ipmsg:	db	'IP Addr:  $'
 usage:	db	'Usage: WIZCFG {G|I|S ipadr}',CR,LF
 	db	'       WIZCFG {M macadr}',CR,LF
 	db	'       WIZCFG {N cid}',CR,LF
-	db	'       WIZCFG {0..7 sid ipadr port}',CR,LF,'$'
+	db	'       WIZCFG {0..7 sid ipadr port}',CR,LF
+	db	'       WIZCFG {V|R}',CR,LF,'$'
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
 ncfg:	db	'- Not Configured',CR,LF,'$'
+nocpn:	db	'CP/NET is running. Stop it first',CR,LF,'$'
+nverr:	db	'NVRAM block not initialized',CR,LF,'$'
 
 start:
 	sspd	usrstk
@@ -108,6 +125,11 @@ pars0:
 	jmp	show
 
 pars1:
+	; These have no params...
+	cpi 	'R'
+	jz	pars5
+	cpi 	'V'
+	jz	pars6
 	mov	c,a
 	call	skipb
 	jc	help
@@ -158,20 +180,10 @@ pars1:
 	sta	nskdpt+1
 ; Now prepare to update socket config
 	; set Sn_MR separate, to avoid writing CR and SR...
-	mvi	a,1	; TCP
-	sta	sokmr
-	lda	sokn
-	sui	'0'
-	rlc
-	rlc
-	rlc		; xxx00000
-	ori	SOCK0	; xxx01000
+	call	getsokn
 	mov	d,a
-	mvi	e,SnMR
 	push	d
-	lxi	h,sokmr
-	mvi	b,1
-	call	wizset	; force TCP/IP mode
+	call	settcp	; force TCP mode
 	; Get current values, cleanup as needed
 	lxi	h,sokregs
 	mvi	e,SnMR
@@ -183,7 +195,7 @@ pars1:
 	ldir
 	lda	sokpt
 	cpi	31h
-	jnz	ntcpnet	; don't care about CP/NET either
+	jnz	ntcpnet	; don't care about sockets not configured
 	lda	cpnet
 	ora	a
 	jz	ntcpnet	; skip CFGTBL cleanup if not CP/NET
@@ -258,16 +270,99 @@ setit:
 	;lxi	d,done
 	;mvi	c,print
 	;call	bdos
+	jmp	exit
 
+pars5:	; restore config from NVRAM
+	lda	cpnet
+	ora	a
+	jnz	xocpnt
+	lxi	h,0
+	lxi	d,512
+	call	nvget
+	call	vcksum
+	jnz	cserr
+	lxi	h,buf+GAR
+	mvi	d,0
+	mvi	e,GAR
+	mvi	b,18	; GAR, SUBR, SHAR, SIPR
+	call	wizset
+	lxi	h,buf+PMAGIC
+	mvi	d,0
+	mvi	e,PMAGIC
+	mvi	b,1
+	call	wizset
+	lxix	buf+32
+	mvi	d,SOCK0
+	mvi	b,8
+rest0:
+	push	b
+	ldx	a,SnPORT
+	cpi	31h
+	jnz	rest1	; skip unconfigured sockets
+	call	close	; CP/NET not active - already checked
+	mvi	e,SnPORT
+	mvi	b,2
+	call	setsok
+	mvi	e,SnDIPR
+	mvi	b,6	; DIPR and DPORT
+	call	setsok
+rest1:
+	lxi	b,32
+	dadx	b
+	mvi	a,001$00$000b	; socket BSB incr value
+	add	d
+	mov	d,a
+	pop	b
+	djnz	rest0
+
+	jmp	exit
+	;...
+
+pars6:	; save config to NVRAM
+	lxi	h,buf
+	mvi	m,0ffh	; EEPROM "unprogrammed"
+	lxi	d,buf+1
+	lxi	b,511
+	ldir
+	lxi	h,buf
+	mvi	b,32	; save all between, restore skips
+	mvi	e,0	; offset +0
+	mvi	d,0	; BSB 0 = Common Register Block
+	call	wizget
+	lxi	h,buf+32
+	mvi	d,SOCK0	; BSB 08h = Socket 0 Register Block
+	mvi	e,0	; offset +0
+	mvi	b,8	; num sockets
+save0:	push	b
+	mvi	b,32	; save all between, restore skips
+	call	wizget	; HL = next block
+	pop	b
+	mvi	a,001$00$000b	; socket BSB incr value
+	add	d
+	mov	d,a
+	djnz	save0
+	; got data off WIZNET chip, now save to NVRAM
+	call	scksum
+	lxi	h,0	; WIZNET uses 512 bytes at 0000 in NVRAM
+	lxi	d,512
+	call	nvset
+	;jmp	exit
 exit:
 	jmp	cpm
 
+cserr:	lxi	d,nverr
+	jr	xtmsg
+xocpnt:	lxi	d,nocpn
+	jr	xtmsg
 help:
 	lxi	d,usage
-	mvi	c,print
+xtmsg:	mvi	c,print
 	call	bdos
 	jmp	exit
 
+; Send socket command to WIZNET chip, wait for done.
+; A = command, D = socket BSB
+; Destroys A
 wizcmd:
 	push	psw
 	mvi	a,SCS
@@ -302,6 +397,7 @@ wc0:
 	jnz	wc0
 	ret
 
+; E = BSB, D = CTL, HL = data, B = length
 wizget:
 	mvi	a,SCS
 	out	wiz$ctl
@@ -318,6 +414,8 @@ wizget:
 	out	wiz$ctl
 	ret
 
+; HL = data to send, E = offset, D = BSB, B = length
+; destroys HL, B, C, A
 wizset:
 	mvi	a,SCS
 	out	wiz$ctl
@@ -332,6 +430,56 @@ wizset:
 	outir
 	xra	a	; not SCS
 	out	wiz$ctl
+	ret
+
+; Close socket if active (SR <> CLOSED)
+; D = socket BSB
+; Destroys HL, E, B, C, A
+close:
+	lxi	h,sokmr+SnSR
+	mvi	e,SnSR
+	mvi	b,1
+	call	wizget
+	lda	sokmr+SnSR
+	cpi	CLOSED
+	rz
+	mvi	a,DISCON
+	call	wizcmd
+	; don't care about results?
+	ret
+
+; Convert 'sokn' (ASCII digit) to socket BSB
+getsokn:
+	lda	sokn
+	sui	'0'
+	rlc
+	rlc
+	rlc		; xxx00000
+	ori	SOCK0	; xxx01000
+	ret
+
+; IX = base data buffer for socket, D = socket BSB, E = offset, B = length
+; destroys HL, B, C
+setsok:
+	pushix
+	pop	h
+	push	d
+	mvi	d,0
+	dad	d	; HL points to data in 'buf'
+	pop	d
+	call	wizset
+	ret
+
+; Set socket MR to TCP.
+; D = socket BSB (result of "getsokn")
+; Destroys all registers except D.
+settcp:
+	mvi	a,1	; TCP
+	sta	sokmr
+	mvi	e,SnMR
+	lxi	h,sokmr
+	mvi	b,1
+	call	wizset	; force TCP/IP mode
 	ret
 
 show:
@@ -759,6 +907,128 @@ pd0:	mov	a,m
 pd1:	pop	h
 	ret	; CY still set
 
+; IX = buffer, BC = length
+; return: HL = cksum hi, DE = cksum lo
+cksum32:
+	lxi	h,0
+	lxi	d,0
+cks0:	ldx	a,+0
+	inxix
+	add	e
+	mov	e,a
+	jrnc	cks1
+	inr	d
+	jrnz	cks1
+	inr	l
+	jrnz	cks1
+	inr	h
+cks1:	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	cks0
+	ret
+
+; Validates checksum in 'buf'
+; return: NZ on error
+vcksum:
+	lxix	buf
+	lxi	b,508
+	call	cksum32
+	lbcd	buf+510
+	ora	a
+	dsbc	b
+	rnz
+	lbcd	buf+508
+	xchg
+	dsbc	b	; CY is clear
+	ret
+
+; Sets checksum in 'buf'
+scksum:
+	lxix	buf
+	lxi	b,508
+	call	cksum32
+	shld	buf+510
+	sded	buf+508
+	ret
+
+; Get a block of data from NVRAM to 'buf'
+; HL = nvram address, DE = length
+nvget:
+	mvi	a,NVSCS
+	out	wiz$ctl
+	mvi	a,NVRD
+	out	wiz$dat
+	mov	a,h
+	out	wiz$dat
+	mov	a,l
+	out	wiz$dat
+	in	wiz$dat	; prime pump
+	mvi	c,wiz$dat
+	mov	a,e
+	ora	a
+	jz	nvget1
+	inr	d	; TODO: handle 64K... and overflow of 'buf'...
+nvget1:	lxi	h,buf
+	mov	b,e
+nvget0:	inir	; B = 0 after
+	dcr	d
+	jrnz	nvget0
+	xra	a	; not SCS
+	out	wiz$ctl
+	ret
+
+; Put block of data to NVRAM from 'buf'
+; HL = nvram address, DE = length
+; Must write in 128-byte blocks (pages).
+; HL must be 128-byte aligned, DE must be multiple of 128
+nvset:
+	push	h
+	lxi	h,buf	; HL = buf, TOS = nvadr
+	mvi	c,wiz$ctl
+nvset0:
+	; wait for WIP=0...
+	mvi	a,NVSCS
+	outp	a
+	mvi	a,RDSR
+	out	wiz$dat
+	in	wiz$dat	; prime pump
+	in	wiz$dat	; status register
+	outz		; not SCS
+	ani	WIP
+	jrnz	nvset0
+	mvi	a,NVSCS
+	outp	a
+	mvi	a,WREN
+	out	wiz$dat
+	outz		; not SCS
+	mvi	a,NVSCS
+	out	wiz$ctl
+	mvi	a,NVWR
+	out	wiz$dat
+	xthl	; get nvadr
+	mov	a,h
+	out	wiz$dat
+	mov	a,l
+	out	wiz$dat
+	lxi	b,128
+	dad	b	; update nvadr
+	xchg
+	ora	a
+	dsbc	b	; update length
+	xchg
+	xthl	; get buf adr
+	mov	b,c	; B = 128
+	mvi	c,wiz$dat
+	outir		; HL = next page in 'buf'
+	mvi	c,wiz$ctl
+	outz		; not SCS
+	mov	a,e
+	ora	d
+	jrnz	nvset0
+	pop	h
+	ret
+
 	ds	40
 stack:	ds	0
 usrstk:	dw	0
@@ -789,5 +1059,7 @@ nskmac:	ds	6	; DHAR
 nskip:	ds	4	; DIPR
 nskdpt:	ds	2	; DPORT
 nsklen	equ	$-sokregs
+
+buf:	ds	512
 
 	end

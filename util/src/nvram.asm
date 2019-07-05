@@ -101,14 +101,14 @@ nvrd:
 	xchg
 	shld	num
 	call	nvget
+	lxi	h,buf
+	push	h
 read0:
 	lhld	adr
 	call	wrdout
 	mvi	a,':'
 	call	chrout
 	mvi	b,16
-	lxi	h,buf
-	push	h
 read1:
 	mvi	a,' '
 	call	chrout
@@ -127,7 +127,6 @@ read1:
 	ora	l
 	jz	read2
 	djnz	read1
-	pop	h
 	call	crlf
 	jmp	read0
 read2:
