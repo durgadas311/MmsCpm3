@@ -21,6 +21,85 @@ GIDE$CH	equ	065h	; GIDE cylinder high
 GIDE$DH	equ	066h	; GIDE drive/head
 GIDE$CS	equ	067h	; GIDE command/status
 
+; WIZNET/NVRAM (SPI adapter) defines
+spi	equ	40h	; base port
+spi$dat	equ	spi+0
+spi$ctl	equ	spi+1	; must be spi$dat+1
+spi$sta	equ	spi+1
+
+WZSCS	equ	01b	; /SCS for WIZNET
+NVSCS	equ	10b	; /SCS for NVRAM
+
+; NVRAM constants
+; NVRAM/SEEPROM commands
+NVRD	equ	00000011b
+NVWR	equ	00000010b
+RDSR	equ	00000101b
+WREN	equ	00000110b
+; NVRAM/SEEPROM status bits
+WIP	equ	00000001b
+
+; WIZNET constants
+nsocks	equ	8
+sock0	equ	000$01$000b	; base pattern for Sn_ regs
+txbuf0	equ	000$10$100b	; base pattern for Tx buffer
+rxbuf0	equ	000$11$000b	; base pattern for Rx buffer
+
+; common regs
+gar	equ	1
+subr	equ	5
+shar	equ	9
+sipr	equ	15
+ir	equ	21
+sir	equ	23
+pmagic	equ	29
+
+; socket regs, relative
+sn$mr	equ	0
+sn$cr	equ	1
+sn$ir	equ	2
+sn$sr	equ	3
+sn$prt	equ	4
+sn$dipr	equ	12
+sn$dprt	equ	16
+sn$txwr	equ	36
+sn$rxrsr equ	38
+sn$rxrd	equ	40
+
+; socket commands
+OPEN	equ	01h
+CONNECT	equ	04h
+SEND	equ	20h
+RECV	equ	40h
+
+; socket status
+SOKINIT	equ	13h
+ESTABLISHED equ	17h
+
+	org	2280h
+server:	ds	1	; SID, dest of send
+nodeid:	ds	1	; our node id
+cursok:	ds	1	; current socket select patn
+curptr:	ds	2	; into chip mem
+msgptr:	ds	2
+msglen:	ds	2
+totlen:	ds	2
+dma:	ds	2
+
+	org	2300h
+msgbuf:	ds	0
+msg$fmt: ds	1
+msg$did: ds	1
+msg$sid: ds	1
+msg$fnc: ds	1
+msg$siz: ds	1
+msg$dat: ds	128
+
+	org	2400h
+nvbuf:	ds	512
+
+; Legacy devices and defines
+
 	org	01800h	; H17 Floppy ROM routines
 	ds	1014
 R$ABORT: ds	35	;00011011.11110110	033.366	R.ABORT
@@ -609,6 +688,8 @@ btstr0:
 	mov	m,a
 	cmp	c
 	jrnz	btstr0
+	mov	a,b
+	sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
 	xra	a	; TRM - string terminator
 btstr1:	; use stack as char array...
 	push	psw
@@ -766,14 +847,6 @@ z47$rd1:
 	dcr	b
 	jrnz	z47$rd0
 	ret
-
-; Heath/Zenith device boot table
-bootb1:
-	db	'B',0	; Z17
-	db	'C',46	; Z37
-	db	'D',5	; Z47
-	db	'E',3	; Z67
-	db	0
 
 ; ROM start point - initialize everything
 init:
@@ -1085,6 +1158,14 @@ endif
 	db	0
 	jmp	z47$cmdo ; Must be at 0617
 
+; Heath/Zenith device boot table
+bootb1:
+	db	'B',0	; Z17
+	db	'C',46	; Z37
+	db	'D',5	; Z47
+	db	'E',3	; Z67
+	db	0
+
 waitcr:
 	call	conin
 	cpi	CR
@@ -1389,8 +1470,6 @@ nulfn:
 
 xcmds:
 	mov	a,c
-	cpi	'T'	; Terminal mode
-	jz	termod
 	cpi	'R'	; set baud Rate
 	jz	setbr
 	cpi	'V'	; eprom Version
@@ -1400,11 +1479,6 @@ xcmds:
 ; D=Phys Drive base, E=Unit
 ; (or D=Phys Drive unit, E=0)
 exboot:
-	mov	a,d
-	sui	200
-	jrc	exboot0	; < 200
-	mov	d,a	; MMS 77314 REMEX (Z47)
-exboot0:
 	lxi	h,devtbl
 exboot1:
 	mov	a,d
@@ -1488,10 +1562,6 @@ mmslk0:
 devtbl:
 	db	3,2
 	dw	bz67
-	db	5,4
-	dw	bm314r
-	db	15,9
-	dw	bm314c
 	db	29,8
 	dw	bm316
 	db	40,1
@@ -1531,8 +1601,8 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	0feh	; -111---- redirect to I/O board dipsw
 
 auxbt:	; default boot redirect (aux dipsw) bits 11100000b
-	db	15	; 000----- MMS 77314 Corvus
-	db	200+5	; 001----- MMS 77314 REMEX (Z47)
+	db	0ffh	; 000----- none (was MMS 77314 Corvus)
+	db	0ffh	; 001----- none (was MMS 77314 REMEX (Z47))
 	db	0ffh	; 010----- none
 	db	37	; 011----- MMS 77317 XCOMP
 	db	60	; 100----- WIZNET Network
@@ -1541,8 +1611,6 @@ auxbt:	; default boot redirect (aux dipsw) bits 11100000b
 	db	0ffh	; 111----- none
 
 bootb2:
-	db	'G',200+5	; MMS 77314 REMEX (a.k.a. Z47)
-	db	'H',15		; MMS 77314 Corvus
 	db	'I',29		; MMS 77316 8"
 	db	'J',33		; MMS 77316 5"
 	db	'M',40		; MMS 77318 RAM-disk
@@ -1557,132 +1625,6 @@ bootb2:
 	db	'W',60		; WIZNET Network
 	db	'X',70		; GIDE ctrl/disk
 	db	0
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; MMS 77314 Corvus boot
-bm314c:
-	mov	d,a
-	mvi	a,10
-	call	take$A
-	in	058h
-	ani	080h
-	rnz
-	mvi	b,0
-	in	058h
-	mov	c,a
-	mvi	a,0ffh
-	out	059h
-bm314$0:
-	in	058h
-	cmp	c
-	jrnz	bm314$1
-	djnz	bm314$0
-	ret
-bm314$1:
-	mvi	b,0
-bm314$2:
-	xthl
-	xthl
-	mvi	a,0ffh
-	out	059h
-bm314$3:
-	in	058h
-	rrc
-	jrc	bm314$3
-	rrc
-	jrc	bm314$4
-	djnz	bm314$2
-	ret
-bm314$4:
-	call	cvs$dat
-	cpi	08fh
-	rnz
-	lxiy	bootbf
-	mov	a,d
-	cpi	9
-	rnc
-	mov	d,a
-	add	a
-	add	d
-	mov	c,a
-	mvi	b,0
-	dady	b
-	lxix	bootbf
-	lxi	b,256
-	lxi	d,0
-	call	cvs$read
-	rc
-	ldy	a,+0
-	ral
-	rc
-	ldy	c,+0
-	ldy	d,+1
-	ldy	e,+2
-	lxix	bootbf
-	mvi	b,2	; retry count?
-	call	cvs$read
-	rc
-	jmp	hwboot
-
-cvs$read:
-	mvi	a,012h	; read command
-	call	cvs$cmd
-	mov	a,c
-	add	a
-	add	a
-	add	a
-	add	a
-	inr	a
-	call	cvs$cmd	; command params
-	mov	a,e
-	call	cvs$cmd	; command params
-	mov	a,d
-	call	cvs$cmd	; command params
-cvs$rd0:
-	in	058h
-	ani	002h	; done
-	jrz	cvs$rd0
-	mvi	a,8
-cvs$rd1:
-	dcr	a
-	jnz	cvs$rd1
-	call	cvs$dat
-	rlc	; error bit
-	rc
-	mvi	l,128
-cvs$rd2:
-	call	cvs$dat
-	stx	a,+0
-	inxix
-	dcr	l
-	jrnz	cvs$rd2
-	inr	e
-	jrnz	cvs$rd3
-	inr	d
-	jrnz	cvs$rd3
-	inr	c
-cvs$rd3:
-	djnz	cvs$read
-	ora	a
-	ret
-
-; Corvus I/O
-cvs$cmd:
-	push	psw
-cvs$cmd0:
-	in	058h
-	rar
-	jrc	cvs$cmd0
-	pop	psw
-	out	059h
-	ret
-
-cvs$dat:
-	in	058h
-	rar
-	jrc	cvs$dat
-	in	059h
-	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77316 Floppy boot
@@ -2082,92 +2024,6 @@ sscmd7:
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; MMS 77314 REMEX boot
-bm314r:
-	cpi	004h
-	rnc
-	rrc
-	rrc
-	rrc
-	inr	a
-	mov	d,a
-	mvi	a,5
-	call	take$A
-	in	05bh
-	ani	004h
-	rnz
-	out	05bh
-bm314$5:
-	in	05bh
-	ral
-	jrc	bm314$5
-bm314$6:
-	mvi	a,007h
-	out	05ah
-	xra	a
-	call	rmxout
-	mov	a,d
-	call	rmxout
-bm314$7:
-	in	05bh
-	ani	080h
-	jrz	bm314$7
-bm314$8:
-	in	05bh
-	ani	040h
-	jrnz	bm314$8
-	in	05bh
-	ani	010h
-	rnz
-	lxi	h,bootbf
-	mvi	b,080h
-	mvi	c,05ah
-bm314$9:
-	in	05bh
-	ani	040h
-	jrnz	bm314$9
-	ini
-	jrnz	bm314$9
-	mvi	b,000h
-bm314$A:
-	in	05bh
-	ani	040h
-	jrz	bm314$B
-	djnz	bm314$A
-	in	05bh
-	ani	010h
-	rnz
-	inr	d
-	mov	a,d
-	ani	00fh
-	cpi	003h
-	jrc	bm314$6
-	jmp	hwboot
-
-bm314$B:
-	mvi	b,080h
-bm314$D:
-	in	05bh
-	ani	040h
-	jrnz	bm314$D
-	ini
-	jrnz	bm314$D
-	in	05bh
-	ani	010h
-	rnz
-	jmp	hwboot
-
-rmxout:
-	push	psw
-rmxout0:
-	in	05bh
-	ani	060h
-	jrnz	rmxout0
-	pop	psw
-	out	05ah
-	ret
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77318 (RAM-disk) boot
 bm318:
 	di
@@ -2201,65 +2057,532 @@ l318sz	equ	$-l318rt
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; WIZNET WIZ850io (Network) boot loader
+
+getwiz1:
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outz	; hi adr byte always 0
+	outp	e
+	res	2,d
+	outp	d
+	inz	; prime MISO
+	inp	a
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+putwiz1:
+	push	psw
+	mvi	a,WZSCS
+	out	spi$ctl
+	pop	psw
+	mvi	c,spi$dat
+	outz	; hi adr byte always 0
+	outp	e
+	setb	2,d
+	outp	d
+	outp	a	; data
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; Get 16-bit value from chip
+; Prereq: IDM_AR0 already set, auto-incr on
+; Entry: A=value for IDM_AR1
+; Return: HL=register pair contents
+getwiz2:
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outz	; hi adr byte always 0
+	outp	e
+	res	2,d
+	outp	d
+	inz	; prime MISO
+	inp	h	; data
+	inp	l	; data
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; HL = output data, E = off, D = BSB, B = len
+wizset:
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outz		; hi adr always 0
+	outp	e
+	setb	2,d
+	outp	d
+	outir
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; Put 16-bit value to chip
+; Prereq: IDM_AR0 already set, auto-incr on
+; Entry: A=value for IDM_AR1
+;        HL=register pair contents
+putwiz2:
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outz	; hi adr byte always 0
+	outp	e
+	setb	2,d
+	outp	d
+	outp	h	; data to write
+	outp	l
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; Issue command, wait for complete
+; D=Socket ctl byte
+; Returns: A=Sn_SR
+wizcmd:	mov	b,a
+	mvi	e,sn$cr
+	setb	2,d
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outz	; hi adr byte always 0
+	outp	e
+	outp	d
+	outp	b	; command
+	inr	c	; ctl port
+	outz		; clear SCS
+wc0:	call	getwiz1
+	ora	a
+	jrnz	wc0
+	mvi	e,sn$sr
+	call	getwiz1
+	ret
+
+; HL=socket relative pointer (TX_WR)
+; DE=length (preserved, not used)
+; Returns: HL=msgptr, C=spi$dat
+cpsetup:
+	mvi	a,WZSCS
+	out	spi$ctl
+	mvi	c,spi$dat
+	outp	h
+	outp	l
+	lda	cursok
+	ora	b
+	outp	a
+	lhld	msgptr
+	ret
+
+; length always <= 133 bytes, never overflows OUTIR/INIR
+cpyout:
+	mvi	b,txbuf0
+	call	cpsetup
+	mov	b,e	; length
+	outir		; send data
+	shld	msgptr
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; HL=socket relative pointer (RX_RD)
+; DE=length
+; Destroys IDM_AR0, IDM_AR1
+; length always <= 133 bytes, never overflows OUTIR/INIR
+cpyin:
+	mvi	b,rxbuf0
+	call	cpsetup	;
+	inz	; prime MISO
+	mov	b,e	; fraction of page
+	inir		; recv data
+	shld	msgptr
+	inr	c	; ctl port
+	outz		; clear SCS
+	ret
+
+; L=bits to reset
+; D=socket base
+wizsts:
+	mvi	e,sn$ir
+	call	getwiz1	; destroys C
+	push	psw
+	ana	l
+	jrz	ws0	; don't reset if not set (could race)
+	mov	a,l
+	call	putwiz1
+ws0:	pop	psw
+	ret
+
+;	WIZNET boot routine
+;
 bwiznet:
-	; TODO: implement this
-	; How? chip is not initialized yet!
+	push	d
+	; extract optional string. must do it now, before we
+	; overwrite bootbf.
+	lxi	h,bootbf
+	mov	a,m
+	mov	c,a
+	; we send N+1 bytes, NUL term
+	sta	msg$siz
+	mvi	b,0
+	lxi	d,msg$dat
+	ldir
+	xra	a
+	stax	d	; NUL term
+	pop	d
+	mov	a,e	; server id, 0..9
+	sta	server
+	; look at WIZNET hard, init as needed
+	lxi	d,pmagic	; D = 0 (comm regs), E = PMAGIC offset
+	call	getwiz1
+	ora	a
+	cz	wizcfg	; configure chip from nvram
+	rc
+	sta	nodeid ; our slave (client) ID
+	; locate server node id in chip's socket regs.
+	;
+	mvi	b,nsocks
+	lxi	d,(sock0 shl 8) + sn$prt
+nb1:
+	call	getwiz2	; destroys C,HL
+	mov	a,h
+	cpi	31h
+	jrnz	nb0
+	lda	server
+	cmp	l
+	jrz	nb2	; found server socket
+nb0:
+	mvi	a,001$00$000b
+	add	d	; next socket
+	mov	d,a
+	djnz	nb1
+	ret	; error: server not configured
+nb2:	; D = server socket BSB
+	mov	a,d
+	ani	11100000b
+	sta	cursok
+	mvi	e,sn$sr
+	call	getwiz1
+	cpi	ESTABLISHED
+	jrz	nb3	; ready to rock-n-roll...
+	; try to open...
+	cpi	SOKINIT
+	jrz	nb4
+	mvi	a,OPEN
+	call	wizcmd
+	cpi	SOKINIT
+	rnz	; failed to open (init)
+nb4:	mvi	a,CONNECT
+	call	wizcmd
+	cpi	ESTABLISHED
+	rnz	; failed to open (connect)
+nb3:
+	mvi	a,1	; FNC for "boot me"
+	sta	msg$fnc
+	; string already setup
+loop:
+	mvi	a,020h	; FMT for client boot messages
+	sta	msg$fmt
+	call	sndrcv
+	rc	; network failure
+	lda	msg$fmt
+	cpi	021h	; FMT for server boot responses
+	rnz
+	; TODO: verify SID?
+	lda	msg$fnc
+	ora	a
+	rz	; NAK - error
+	dcr	a
+	jrz	ldmsg
+	dcr	a
+	jrz	stdma
+	dcr	a
+	jrz	load
+	dcr	a
+	rnz	; unsupported FNC
+	; done: execute boot code
+	; TODO: enable ORG0 (MMS77318?)
+	lhld	msg$dat
+	pchl
+load:	lhld	dma
+	xchg
+	lxi	h,msg$dat
+	lxi	b,128
+	ldir
+ack:	xra	a	; FNC 0 = ACK
+	sta	msg$fnc
+	jr	loop
+stdma:	lhld	msg$dat
+	shld	dma
+	jr	ack
+ldmsg:	lxi	h,msg$dat
+ldm0:	mov	a,m
+	inx	h
+	cpi	'$'
+	jrz	ack
+	call	conout
+	jr	ldm0
+
+; Wait for message response, with timeout.
+; D = socket BSB (preserved).
+check:
+	lxi	h,32000	; do check for sane receive time...
+chk0:	push	h
+	mvi	l,00000100b	; RECV data available bit
+	call	wizsts
+	ana	l	; RECV data available
+	jrnz	chk4	; D=socket
+	pop	h
+	dcx	h
+	mov	a,h
+	ora	l
+	jrnz	chk0
+	stc	; CY = error
+	ret
+chk4:	pop	h
+	ret
+
+;	Send Message on Network, receive response
+;	msgbuf setup with FMT, FNC, LEN, data
+;	msg len always <= 128 (133 total) bytes.
+sndrcv:			; BC = message addr
+	; TODO: drain/flush receiver
+; begin send phase
+	lxi	h,msgbuf
+	shld	msgptr
+	lda	cursok
+	ori	sock0
+	mov	d,a
+	; D=socket patn
+	lda	server
+	sta	msg$did	; Set Server ID (dest) in header
+	lda	nodeid
+	sta	msg$sid	; Set Slave ID (src) in header
+	lda	msg$siz	; msg siz (-1)
+	adi	5+1	; hdr, +1 for (-1)
+	mov	l,a
+	mvi	h,0
+	shld	msglen
+	mvi	e,sn$txwr
+	call	getwiz2
+	shld	curptr
+	lhld	msglen
+	lbcd	curptr
+	dad	b
+	mvi	e,sn$txwr
+	call	putwiz2
+	; send data
+	lhld	msglen
+	xchg
+	lhld	curptr
+	call	cpyout
+	lda	cursok
+	ori	sock0
+	mov	d,a
+	mvi	a,SEND
+	call	wizcmd
+	; ignore Sn_SR?
+	mvi	l,00010000b	; SEND_OK bit
+	call	wizsts
+	cma	; want "0" on success
+	ana	l	; SEND_OK
+	stc
+	rnz	; CY = failure (here: send failed)
+; begin recv phase - loop
+	lda	cursok	; is D still socket BSB?
+	ori	sock0
+	mov	d,a
+;	Receive Message from Network
+	lxi	h,msgbuf
+	shld	msgptr
+	call	check	; check for recv within timeout
+	jrc	rerr
+	lxi	h,0
+	shld	totlen
+rm0:	; D must be socket base...
+	mvi	e,sn$rxrsr	; length
+	call	getwiz2
+	mov	a,h
+	ora	l
+	jrz	rm0
+	shld	msglen		; not CP/NET msg len
+	mvi	e,sn$rxrd	; pointer
+	call	getwiz2
+	shld	curptr
+	lbcd	msglen	; BC=Sn_RX_RSR
+	lhld	totlen
+	ora	a
+	dsbc	b
+	shld	totlen	; might be negative...
+	lbcd	curptr
+	lhld	msglen	; BC=Sn_RX_RD, HL=Sn_RX_RSR
+	dad	b	; HL=nxt RD
+	mvi	e,sn$rxrd
+	call	putwiz2
+	; DE destroyed...
+	lded	msglen
+	lhld	curptr
+	call	cpyin
+	lda	cursok
+	ori	sock0
+	mov	d,a
+	mvi	a,RECV
+	call	wizcmd
+	; ignore Sn_SR?
+	lhld	totlen	; might be neg (first pass)
+	mov	a,h
+	ora	a
+	jp	rm1
+	; can we guarantee at least msg hdr?
+	lda	msg$siz	; msg siz (-1)
+	adi	5+1	; header, +1 for (-1)
+	mov	e,a
+	mvi	a,0
+	adc	a
+	mov	d,a	; true msg len
+	dad	d	; subtract what we already have
+	jrnc	rerr	; something is wrong, if still neg
+	shld	totlen
+	mov	a,h
+rm1:	ora	l
+	jnz	rm0
+	ret	; success (A=0)
+
+rerr:
+err:	xra	a
+	dcr	a	; NZ
+	ret
+
+; Try to read NVRAM config for WIZNET.
+; Returns: A = node id (PMAGIC) or CY if error (no config)
+wizcfg:	; restore config from NVRAM
+	lxi	h,0
+	lxi	d,512
+	call	nvget
+	call	vcksum
+	stc
+	rnz	; checksum wrong - no config available
+	lxi	h,nvbuf+gar
+	mvi	d,0
+	mvi	e,gar
+	mvi	b,18	; GAR+SUBR+SHAR+SIPR
+	call	wizset
+	lxi	h,nvbuf+pmagic
+	mvi	d,0
+	mvi	e,pmagic
+	mvi	b,1
+	call	wizset
+	lxix	nvbuf+32	; start of socket0 data
+	mvi	d,SOCK0
+	mvi	b,8
+rest0:
+	push	b
+	ldx	a,sn$prt
+	cpi	31h
+	jrnz	rest1	; skip unconfigured sockets
+	mvi	e,sn$prt
+	mvi	b,2
+	call	setsok
+	mvi	e,sn$dipr
+	mvi	b,6	; DIPR and DPORT
+	call	setsok
+rest1:
+	lxi	b,32
+	dadx	b
+	mvi	a,001$00$000b	; socket BSB incr value
+	add	d
+	mov	d,a
+	pop	b
+	djnz	rest0
+	lda	nvbuf+pmagic	; our node id
+	ora	a	; NC
+	ret
+
+; IX = base data buffer for socket, D = socket BSB, E = offset, B = length
+; destroys HL, B, C
+setsok:
+	pushix
+	pop	h
+	push	d
+	mvi	d,0
+	dad	d	; HL points to data in 'buf'
+	pop	d
+	call	wizset
+	ret
+
+; Set socket MR to TCP.
+; D = socket BSB (result of "getsokn")
+; Destroys all registers except D.
+settcp:
+	mvi	a,1	; TCP mode
+	mvi	e,sn$mr
+	jmp	putwiz1	; force TCP/IP mode
+
+cksum32:
+	lxi	h,0
+	lxi	d,0
+cks0:	ldx	a,+0
+	inxix
+	add	e
+	mov	e,a
+	jrnc	cks1
+	inr	d
+	jrnz	cks1
+	inr	l
+	jrnz	cks1
+	inr	h
+cks1:	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	cks0
+	ret
+
+; Validates checksum in 'buf'
+; return: NZ on error
+vcksum:
+	lxix	nvbuf
+	lxi	b,508
+	call	cksum32
+	lbcd	nvbuf+510
+	ora	a
+	dsbc	b
+	rnz
+	lbcd	nvbuf+508
+	xchg
+	dsbc	b	; CY is clear
+	ret
+
+; Get a block of data from NVRAM to 'buf'
+; HL = nvram address, DE = length (always multiple of 256)
+nvget:
+	mvi	a,NVSCS
+	out	spi$ctl
+	mvi	a,NVRD
+	out	spi$dat
+	mov	a,h
+	out	spi$dat
+	mov	a,l
+	out	spi$dat
+	in	spi$dat	; prime pump
+	mvi	c,spi$dat
+	lxi	h,nvbuf
+	mov	b,e
+nvget0:	inir	; B = 0 after
+	dcr	d
+	jrnz	nvget0
+	xra	a	; not SCS
+	out	spi$ctl
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Terminal mode - shuttle I/O between H19 and serial port
-; since both ports operate at the same speed, don't need
-; to check ready as often.
-termod:
-	lxi	h,terms
-	call	msgout
-	call	waitcr
-termfl:
-	in	0edh
-	ani	01100000b
-	cpi	01100000b
-	jnz	termfl	; wait for output to flush
-	in	0ebh
-	ori	10000000b
-	out	0ebh
-	out	0dbh
-	in	0e8h
-	out	0d8h
-	in	0e9h
-	out	0d9h
-	in	0ebh
-	ani	01111111b
-	out	0ebh
-	out	0dbh
-	xra	a
-	out	0d9h
-	in	0d8h
-	mvi	a,00fh
-	out	0dch
-termlp:
-	in	0ddh
-	ani	00000001b
-	jz	terml0
-	in	0d8h
-	out	0e8h
-terml0:
-	in	0edh
-	ani	00000001b
-	jz	termlp
-	in	0e8h
-	out	0d8h
-	jmp	termlp
-
-terms:	db	'Terminal Mode',TRM
-
+; Set BAUD command
 setber:
 	mvi	a,BEL
 	call	conout
 	pop	h
 	ret
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Set BAUD command
 setbr:
 	lxi	h,ratems
 	call	msgout
@@ -2374,7 +2697,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	090a6h	; checksum...
+	dw	063fch	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
