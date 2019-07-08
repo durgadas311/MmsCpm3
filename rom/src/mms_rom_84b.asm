@@ -2,6 +2,18 @@
 ; Z89/Z90/H8-Z80 Monitor EPROM 444-84D, June 29, 2019, drm
 VERN	equ	13h	; version 1.3
 
+false	equ	0
+true	equ	not false
+
+; TODO: alter version based on config (or some string)
+gide	equ	true
+wiznet	equ	true
+mms422	equ	false
+remex	equ	false
+corvus	equ	false
+xcomp	equ	false
+terminal equ	false
+
 	maclib	z80
 	$*macro
 
@@ -12,6 +24,7 @@ ESC	equ	27
 TRM	equ	0
 DEL	equ	127
 
+if gide
 GIDE$DA	equ	060h	; GIDE data port
 GIDE$ER	equ	061h	; GIDE error register
 GIDE$SC	equ	062h	; GIDE sector count
@@ -20,7 +33,9 @@ GIDE$CL	equ	064h	; GIDE cylinder low
 GIDE$CH	equ	065h	; GIDE cylinder high
 GIDE$DH	equ	066h	; GIDE drive/head
 GIDE$CS	equ	067h	; GIDE command/status
+endif
 
+if wiznet
 ; WIZNET/NVRAM (SPI adapter) defines
 spi	equ	40h	; base port
 spi$dat	equ	spi+0
@@ -97,6 +112,7 @@ msg$dat: ds	128
 
 	org	2400h
 nvbuf:	ds	512
+endif
 
 ; Legacy devices and defines
 
@@ -483,7 +499,12 @@ gtdev0:
 	cpi	10b
 	mvi	d,3
 	rz		; Z67/MMS77320
+if mms422
+	mvi	d,60
+	ret		; MMS77422 Network
+else
 	jmp	error	; fatal error... not defined
+endif
 
 ; determine device for port 078H
 ; return phy drv number in D.
@@ -1470,6 +1491,10 @@ nulfn:
 
 xcmds:
 	mov	a,c
+if terminal
+	cpi	'T'	; Terminal mode
+	jz	termod
+endif
 	cpi	'R'	; set baud Rate
 	jz	setbr
 	cpi	'V'	; eprom Version
@@ -1479,6 +1504,13 @@ xcmds:
 ; D=Phys Drive base, E=Unit
 ; (or D=Phys Drive unit, E=0)
 exboot:
+if remex
+	mov	a,d
+	sui	200
+	jrc	exboot0	; < 200
+	mov	d,a	; MMS 77314 REMEX (Z47)
+exboot0:
+endif
 	lxi	h,devtbl
 exboot1:
 	mov	a,d
@@ -1562,16 +1594,36 @@ mmslk0:
 devtbl:
 	db	3,2
 	dw	bz67
+if remex
+	db	5,4
+	dw	bm314r
+endif
+if corvus
+	db	15,9
+	dw	bm314c
+endif
 	db	29,8
 	dw	bm316
+if xcomp
+	db	37,1
+	dw	bm317
+endif
 	db	40,1
 	dw	bm318
 	db	46,4
 	dw	bz37
+if mms422
+	db	60,1
+	dw	bm422
+endif
+if wiznet
 	db	60,1
 	dw	bwiznet
+endif
+if gide
 	db	70,9
 	dw	bgide
+endif
 	db	168,4
 	dw	bm320
 	db	172,4
@@ -1596,24 +1648,56 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	0ffh	; -010---- n/a  (port 7CH)
 	db	0ffh	; -011---- n/a  (port 78H)
 	db	0ffh	; -100---- none
+if gide
 	db	70	; -101---- GIDE disk part 0
-	db	60	; -110---- WIZNET Network
+else
+	db	0ffh	; -101---- none
+endif
+	db	60	; -110---- Network
 	db	0feh	; -111---- redirect to I/O board dipsw
 
 auxbt:	; default boot redirect (aux dipsw) bits 11100000b
+if corvus
+	db	15	; 000----- MMS 77314 Corvus
+else
 	db	0ffh	; 000----- none (was MMS 77314 Corvus)
+endif
+if remex
+	db	200+5	; 001----- MMS 77314 REMEX (Z47)
+else
 	db	0ffh	; 001----- none (was MMS 77314 REMEX (Z47))
+endif
 	db	0ffh	; 010----- none
+if xcomp
 	db	37	; 011----- MMS 77317 XCOMP
-	db	60	; 100----- WIZNET Network
+else
+	db	0ffh	; 011----- none
+endif
+	db	60	; 100----- Network
 	db	168	; 101----- MMS 77320 SASI
+if gide
 	db	70	; 110----- GIDE disk
+else
+	db	0ffh	; 110----- none
+endif
 	db	0ffh	; 111----- none
 
 bootb2:
+if remex
+	db	'G',200+5	; MMS 77314 REMEX (a.k.a. Z47)
+endif
+if corvus
+	db	'H',15		; MMS 77314 Corvus
+endif
 	db	'I',29		; MMS 77316 8"
 	db	'J',33		; MMS 77316 5"
+if xcomp
+	db	'K',37		; MMS 77317 XCOMP
+endif
 	db	'M',40		; MMS 77318 RAM-disk
+if mms422
+	db	'N',60		; MMS 77422 Network
+endif
 	db	'O',168		; SASI ctrl 0
 	db	'P',172		; SASI ctrl 1
 	db	'Q',176		; SASI ctrl 2
@@ -1622,9 +1706,141 @@ bootb2:
 	db	'T',188		; SASI ctrl 5
 	db	'U',192		; SASI ctrl 6
 	db	'V',196		; SASI ctrl 7
+if wiznet
 	db	'W',60		; WIZNET Network
+endif
+if gide
 	db	'X',70		; GIDE ctrl/disk
+endif
 	db	0
+
+if corvus
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77314 Corvus boot
+bm314c:
+	mov	d,a
+	mvi	a,10
+	call	take$A
+	in	058h
+	ani	080h
+	rnz
+	mvi	b,0
+	in	058h
+	mov	c,a
+	mvi	a,0ffh
+	out	059h
+bm314$0:
+	in	058h
+	cmp	c
+	jrnz	bm314$1
+	djnz	bm314$0
+	ret
+bm314$1:
+	mvi	b,0
+bm314$2:
+	xthl
+	xthl
+	mvi	a,0ffh
+	out	059h
+bm314$3:
+	in	058h
+	rrc
+	jrc	bm314$3
+	rrc
+	jrc	bm314$4
+	djnz	bm314$2
+	ret
+bm314$4:
+	call	cvs$dat
+	cpi	08fh
+	rnz
+	lxiy	bootbf
+	mov	a,d
+	cpi	9
+	rnc
+	mov	d,a
+	add	a
+	add	d
+	mov	c,a
+	mvi	b,0
+	dady	b
+	lxix	bootbf
+	lxi	b,256
+	lxi	d,0
+	call	cvs$read
+	rc
+	ldy	a,+0
+	ral
+	rc
+	ldy	c,+0
+	ldy	d,+1
+	ldy	e,+2
+	lxix	bootbf
+	mvi	b,2	; retry count?
+	call	cvs$read
+	rc
+	jmp	hwboot
+
+cvs$read:
+	mvi	a,012h	; read command
+	call	cvs$cmd
+	mov	a,c
+	add	a
+	add	a
+	add	a
+	add	a
+	inr	a
+	call	cvs$cmd	; command params
+	mov	a,e
+	call	cvs$cmd	; command params
+	mov	a,d
+	call	cvs$cmd	; command params
+cvs$rd0:
+	in	058h
+	ani	002h	; done
+	jrz	cvs$rd0
+	mvi	a,8
+cvs$rd1:
+	dcr	a
+	jnz	cvs$rd1
+	call	cvs$dat
+	rlc	; error bit
+	rc
+	mvi	l,128
+cvs$rd2:
+	call	cvs$dat
+	stx	a,+0
+	inxix
+	dcr	l
+	jrnz	cvs$rd2
+	inr	e
+	jrnz	cvs$rd3
+	inr	d
+	jrnz	cvs$rd3
+	inr	c
+cvs$rd3:
+	djnz	cvs$read
+	ora	a
+	ret
+
+; Corvus I/O
+cvs$cmd:
+	push	psw
+cvs$cmd0:
+	in	058h
+	rar
+	jrc	cvs$cmd0
+	pop	psw
+	out	059h
+	ret
+
+cvs$dat:
+	in	058h
+	rar
+	jrc	cvs$dat
+	in	059h
+	ret
+endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77316 Floppy boot
@@ -1799,6 +2015,185 @@ intz37:	in	07ah
 	ei
 	ret
 
+if xcomp
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77317 XCOM HDD boot
+bm317:
+	ora	a
+	rnz
+	out	04ch
+	out	048h
+	out	049h
+	call	s0b65h
+	lxi	h,l0b76h
+	mov	a,m
+	out	04ch
+	inx	h
+	mov	a,m
+	out	04dh
+	inx	h
+	mvi	c,04eh
+bm317$0:
+	mov	a,m
+	ora	a
+	jrz	bm317$3
+	inx	h
+	mov	b,a
+	ral
+	jrc	bm317$1
+	outir
+	jr	bm317$0
+bm317$1:
+	ora	a
+	rar
+	mov	b,a
+	mov	a,m
+	inx	h
+bm317$2:
+	out	04eh
+	djnz	bm317$2
+	jr	bm317$0
+; done with OUT "program"
+bm317$3:
+	mvi	a,041h
+	out	049h
+	mvi	a,002h
+	out	048h
+	call	s0b34h
+	rnz
+	call	s0af4h
+	rnz
+	mvi	a,002h
+	out	04ch
+	xra	a
+	out	04dh
+	mov	b,a
+	mvi	c,04eh
+	lxi	h,bootbf
+	in	04eh
+	inir
+	jmp	hwboot
+
+s0af4h:
+	mvi	d,00ah
+	mvi	a,004h
+	out	04ch
+	mvi	a,0eah
+	out	04dh
+	mvi	b,4
+	xra	a
+l0b01h:
+	out	04eh
+	djnz	l0b01h
+l0b05h:
+	call	s0b56h
+	rnz
+	xra	a
+	out	04ch
+	mvi	a,0d7h
+	out	04dh
+	mvi	a,008h
+	out	04ch
+l0b14h:
+	in	04ch
+	rrc
+	jnc	l0b14h
+	nop
+	in	04ch
+	mov	b,a
+	xra	a
+	out	04ch
+	mov	a,b
+	ani	00eh
+	mov	b,a
+	in	048h
+	ani	002h
+	cnz	s0b5dh
+	ora	b
+	rz
+	dcr	d
+	jrnz	l0b05h
+l0b31h:
+	ori	001h
+	ret
+s0b34h:
+	mvi	b,0
+l0b36h:
+	in	048h
+	ani	004h
+	xri	004h
+	rz
+	dcr	b
+	jrz	l0b31h
+	xra	a
+	out	04bh
+	inr	a
+	out	04ah
+	mvi	a,003h
+	out	048h
+	call	s0b50h
+	jmp	l0b36h
+
+s0b50h:
+	in	048h
+	ral
+	jrnc	s0b50h
+	ret
+
+s0b56h:
+	in	048h
+	ani	001h
+	xri	001h
+	ret
+
+s0b5dh:
+	xra	a
+	out	049h
+	mvi	a,041h
+	out	049h
+	ret
+
+s0b65h:
+	xra	a
+	call	s0b6bh
+	mvi	a,001h
+s0b6bh:
+	out	04ch
+	mvi	b,128
+	mvi	a,00fh
+l0b71h:
+	out	04eh
+	djnz	l0b71h
+	ret
+
+RPT	equ	80h
+
+l0b76h:
+	db	0	;out 4C
+	db	0d7h	;out 4D
+	db	2,	040h,041h	; -> 4E
+	db	RPT+3,	040h	; 3x040h -> 4E
+	db	RPT+12,	06dh	; 12x06dh -> 4E
+	db	1,	063h
+	db	RPT+4,	065h
+	db	RPT+2,	067h
+	db	1,	049h
+	db	RPT+2,	040h
+	db	RPT+12,	06dh
+	db	3,	063h,0e7h,067h
+	db	RPT+7,	00fh
+	db	2,	040h,041h
+	db	RPT+3,	040h
+	db	RPT+12,	06dh
+	db	1,	063h
+	db	RPT+2,	065h
+	db	RPT+2,	060h
+	db	RPT+2,	067h
+	db	1,	00fh
+	db	0
+endif
+
+if gide
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; GIDE HDD boot
 bgide:
@@ -2023,6 +2418,94 @@ sscmd7:
 	xra	a	; success
 	ret
 
+if remex
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77314 REMEX boot
+bm314r:
+	cpi	004h
+	rnc
+	rrc
+	rrc
+	rrc
+	inr	a
+	mov	d,a
+	mvi	a,5
+	call	take$A
+	in	05bh
+	ani	004h
+	rnz
+	out	05bh
+bm314$5:
+	in	05bh
+	ral
+	jrc	bm314$5
+bm314$6:
+	mvi	a,007h
+	out	05ah
+	xra	a
+	call	rmxout
+	mov	a,d
+	call	rmxout
+bm314$7:
+	in	05bh
+	ani	080h
+	jrz	bm314$7
+bm314$8:
+	in	05bh
+	ani	040h
+	jrnz	bm314$8
+	in	05bh
+	ani	010h
+	rnz
+	lxi	h,bootbf
+	mvi	b,080h
+	mvi	c,05ah
+bm314$9:
+	in	05bh
+	ani	040h
+	jrnz	bm314$9
+	ini
+	jrnz	bm314$9
+	mvi	b,000h
+bm314$A:
+	in	05bh
+	ani	040h
+	jrz	bm314$B
+	djnz	bm314$A
+	in	05bh
+	ani	010h
+	rnz
+	inr	d
+	mov	a,d
+	ani	00fh
+	cpi	003h
+	jrc	bm314$6
+	jmp	hwboot
+
+bm314$B:
+	mvi	b,080h
+bm314$D:
+	in	05bh
+	ani	040h
+	jrnz	bm314$D
+	ini
+	jrnz	bm314$D
+	in	05bh
+	ani	010h
+	rnz
+	jmp	hwboot
+
+rmxout:
+	push	psw
+rmxout0:
+	in	05bh
+	ani	060h
+	jrnz	rmxout0
+	pop	psw
+	out	05ah
+	ret
+endif
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77318 (RAM-disk) boot
 bm318:
@@ -2055,6 +2538,168 @@ l318lz	equ	$-l318ul
 l318sz	equ	$-l318rt
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+if mms422
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; MMS 77422 (Network) boot loader
+bm422:
+	lxix	bootbf
+	mvix	020h,+0 ; Boot code = 20
+	stx	e,+4	; Unit number (server)
+	mvix	1,+1	; BC=0001, length
+	mvix	0,+2	;
+	mvix	1,+7	; device code, Z89
+	mvi	c,11b
+	call	getport
+	rnz
+	mov	a,b
+	sta	cport
+	lxi	h,int422
+	shld	vrst5+1
+	ei
+	call	syn422
+	lxi	h,0	; delay count for "ready"
+	lda	cport	; Port
+	mov	c,a
+	inr	c
+bm422$0:
+	inp	a
+	ani	00000100b
+	jnz	bm422$1
+	dcx	h
+	mov	a,h
+	ora	l
+	jnz	bm422$0
+	ret
+bm422$1:
+	lxi	h,bootbf
+	lxi	d,7
+	call	snd422
+	mvi	a,038h	; 38 = send status
+	call	get422
+	ldx	a,+3	; error code
+	ora	a
+	rnz	 ; abort if error
+bm422$2:
+	mvi	a,011h	; 1x = Boot response
+	call	get422
+	ldx	l,+5	; Code address
+	ldx	h,+6	;
+	push	h	; return address, code entry
+	ldx	e,+1	; Code length
+	ldx	d,+2	;
+	mov	a,e
+	ora	d
+	cnz	rcv422	; get code, if any
+	ldx	a,+0
+	cpi	13h	; load only - no execute
+	rnz		; jump to code
+	pop	h	; discard unused addr
+	jmp	bm422$2	; keep receiving until execute
+
+; Wait for network message type in A,
+; must watch for stray CP/NET messages and discard
+get422:
+	push	psw
+get422$0:
+	lxi	h,bootbf
+	lxi	d,7
+	call	rcv422
+	ldx	a,+0
+	ani	11111001b
+	pop	b
+	cmp	b
+	rz	; got desired message type
+	push	b
+	cpi	000h	; CP/Net message
+	jrnz	get422$0
+	lxi	h,bootbf	; Receive and discard...
+	ldx	e,+1
+	ldx	d,+2
+	call	rcv422
+	jmp	get422$0
+
+; Gobble data until we reach a sync point
+syn422:
+	lxi	d,0		; delay count
+	lxi	h,nowhere
+	lda	cport	; port
+	mov	c,a
+syn422$0:
+	inp	a
+	inr	c
+	inp	a
+	dcr	c
+	ani	00001000b	; sync?
+	rz
+	dcx	d	; timeout
+	mov	a,d
+	ora	e
+	jnz	syn422$0
+	ret
+
+nowhere: db	0,0,0
+
+snd422:
+	mov	a,e
+	ora	a
+	mov	e,d
+	jz	snd422$0
+	inr	e	; round up to 256-byte page
+snd422$0:
+	mov	b,a
+	lda	cport
+	mov	c,a
+snd422$1:
+	inr	c
+snd422$2:
+	inp	a
+	ani	00000100b
+	jz	snd422$2
+	dcr	c
+	outi
+	jnz	snd422$1
+	dcr	e
+	jnz	snd422$1
+	ret
+
+rcv422:
+	dcx	d
+	mov	a,e
+	ora	a
+	mov	e,d
+	jrz	rcv422$0
+	inr	e
+rcv422$0:
+	mov	b,a
+	lda	cport	; port
+	mov	c,a
+rcv422$1:
+	inr	c
+rcv422$2:
+	inp	a
+	ani	00001000b	; rcv data ready...
+	jrz	rcv422$2
+	dcr	c
+	ini
+	jnz	rcv422$1
+	dcr	e
+	jrnz	rcv422$1
+rcv422$3:
+	inp	a		; keep tugging on data port until interrupt
+	jr	rcv422$3	; wait for completion...
+
+; Interrupt handler for MMS 77422
+int422:
+	inr	c
+	outp	a	; reset?
+	dcr	c
+	ini		; one last data byte???
+	pop	b	; discard INT addr
+	ei
+	ret	; return to caller of rcv422
+endif
+
+if wiznet
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; WIZNET WIZ850io (Network) boot loader
 
@@ -2481,6 +3126,7 @@ rest0:
 	ldx	a,sn$prt
 	cpi	31h
 	jrnz	rest1	; skip unconfigured sockets
+	call	settcp
 	mvi	e,sn$prt
 	mvi	b,2
 	call	setsok
@@ -2545,12 +3191,21 @@ vcksum:
 	lxi	b,508
 	call	cksum32
 	lbcd	nvbuf+510
-	ora	a
+	mov	a,b	;
+	ora	c	; check first half zero
 	dsbc	b
 	rnz
 	lbcd	nvbuf+508
+	ora	b	;
+	ora	c	; check second half zero
 	xchg
-	dsbc	b	; CY is clear
+	dsbc	b
+	rnz
+	ora	a	; was checksum all zero?
+	jrz	vcksm0
+	xra	a	; ZR
+	ret
+vcksm0:	inr	a	; NZ
 	ret
 
 ; Get a block of data from NVRAM to 'buf'
@@ -2574,6 +3229,55 @@ nvget0:	inir	; B = 0 after
 	xra	a	; not SCS
 	out	spi$ctl
 	ret
+endif
+
+if terminal
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Terminal mode - shuttle I/O between H19 and serial port
+; since both ports operate at the same speed, don't need
+; to check ready as often.
+termod:
+	lxi	h,terms
+	call	msgout
+	call	waitcr
+termfl:
+	in	0edh
+	ani	01100000b
+	cpi	01100000b
+	jnz	termfl	; wait for output to flush
+	in	0ebh
+	ori	10000000b
+	out	0ebh
+	out	0dbh
+	in	0e8h
+	out	0d8h
+	in	0e9h
+	out	0d9h
+	in	0ebh
+	ani	01111111b
+	out	0ebh
+	out	0dbh
+	xra	a
+	out	0d9h
+	in	0d8h
+	mvi	a,00fh
+	out	0dch
+termlp:
+	in	0ddh
+	ani	00000001b
+	jz	terml0
+	in	0d8h
+	out	0e8h
+terml0:
+	in	0edh
+	ani	00000001b
+	jz	termlp
+	in	0e8h
+	out	0d8h
+	jmp	termlp
+
+terms:	db	'Terminal Mode',TRM
+endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Set BAUD command
@@ -2697,7 +3401,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	063fch	; checksum...
+	dw	05f60h	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
