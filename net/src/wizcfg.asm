@@ -300,6 +300,7 @@ rest0:
 	cpi	31h
 	jnz	rest1	; skip unconfigured sockets
 	call	close	; CP/NET not active - already checked
+	call	settcp	; ensure MR is set to TCP/IP
 	mvi	e,SnPORT
 	mvi	b,2
 	call	setsok
