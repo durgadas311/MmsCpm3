@@ -8,15 +8,21 @@
                 
  0040 =         SPI	EQU	40H	; BASE PORT OF SPI INTERFACE
                 
- 0040 =         NV$DAT	EQU	SPI+0
- 0041 =         NV$CTL	EQU	SPI+1
+ 0040 =         SPI$DAT	EQU	SPI+0
+ 0041 =         SPI$CTL	EQU	SPI+1
                 
- 0002 =         SCS	EQU	10B	; CTL PORT
+ 0002 =         NVSCS	EQU	10B	; CHIP SELECT FOR NVRAM
                 
  0003 =         READ	EQU	00000011B
  0002 =         WRITE	EQU	00000010B
  0005 =         RDSR	EQU	00000101B
  0006 =         WREN	EQU	00000110B
+ 00C7 =         CE	EQU	11000111B
+ 00D8 =         SE	EQU	11011000B
+ 0042 =         PE	EQU	01000010B
+                
+                ; SR BITS
+ 0001 =         WIP	EQU	00000001B
                 
  000D =         CR	EQU	13
  000A =         LF	EQU	10
@@ -25,332 +31,469 @@
  0005 =         BDOS	EQU	5
  0080 =         CMD	EQU	0080H
                 
+ 0001 =         CONIN	EQU	1
  0009 =         PRINT	EQU	9
  000C =         GETVER	EQU	12
                 
  0100           	ORG	00100H
                 
- 0100 C33701    	JMP	START
+ 0100 C3CB01    	JMP	START
                 
  0103 5573616765USAGE:	DB	'Usage: NVRAM R adr len',CR,LF
- 011B 2020202020	DB	'       NVRAM W adr val...',CR,LF,'$'
+ 011B 2020202020	DB	'       NVRAM W adr val...',CR,LF
+ 0136 2020202020	DB	'       NVRAM CE',CR,LF
+ 0147 2020202020	DB	'       NVRAM SE adr',CR,LF
+ 015C 2020202020	DB	'       NVRAM PE adr',CR,LF,'$'
+                
+ 0172 4572617365CEMSG:	DB	'Erase Entire Chip$'
+ 0184 4572617365SEMSG:	DB	'Erase Sector $'
+ 0192 4572617365PEMSG:	DB	'Erase Page $'
+ 019E 2028792F6EYNMSG:	DB	' (y/n)? $'
+ 01A7 4572617365CANCEL:	DB	'Erase Canceled',CR,LF,'$'
+ 01B8 4572617369ERASING: DB	'Erasing...$'
+ 01C3 446F6E652EDONE:	DB	'Done.',CR,LF,'$'
                 
                 START:
-                	SSPD	USRSTK
- 0137+ED73      	DB	0EDH,73H
- 0139+3003      	DW	USRSTK
- 013B 313003    	LXI	SP,STACK
- 013E 3A8000    	LDA	CMD
- 0141 B7        	ORA	A
- 0142 CAFC01    	JZ	HELP
+                	SSPD	USRSTK
+ 01CB+ED73      	DB	0EDH,73H
+ 01CD+AF04      	DW	USRSTK
+ 01CF 31AF04    	LXI	SP,STACK
+ 01D2 3A8000    	LDA	CMD
+ 01D5 B7        	ORA	A
+ 01D6 CA3F03    	JZ	HELP
                 
- 0145 218000    	LXI	H,CMD
- 0148 46        	MOV	B,M
- 0149 23        	INX	H
+ 01D9 218000    	LXI	H,CMD
+ 01DC 46        	MOV	B,M
+ 01DD 23        	INX	H
                 PARS0:
- 014A 7E        	MOV	A,M
- 014B FE20      	CPI	' '
- 014D C25601    	JNZ	PARS1
- 0150 23        	INX	H
+ 01DE 7E        	MOV	A,M
+ 01DF FE20      	CPI	' '
+ 01E1 C2EA01    	JNZ	PARS1
+ 01E4 23        	INX	H
                 	DJNZ	PARS0
- 0151+10F7      	DB	10H,PARS0-$-1
- 0153 C3FC01    	JMP	HELP
+ 01E5+10F7      	DB	10H,PARS0-$-1
+ 01E7 C33F03    	JMP	HELP
                 
                 PARS1:
- 0156 FE52      	CPI 	'R'
- 0158 CA6001    	JZ	PARS2
- 015B FE57      	CPI 	'W'
- 015D C2FC01    	JNZ	HELP
- 0160 323203    PARS2:	STA	COM
- 0163 CD9202    	CALL	SKIPB
- 0166 DAFC01    	JC	HELP
- 0169 CDA002    	CALL	PARSHX
- 016C DAFC01    	JC	HELP
- 016F EB        	XCHG
- 0170 223303    	SHLD	ADR
- 0173 EB        	XCHG
- 0174 CD9202    	CALL	SKIPB
- 0177 DAFC01    	JC	HELP
- 017A 3A3203    	LDA	COM
- 017D FE52      	CPI	'R'
- 017F CAB001    	JZ	NVRD
- 0182 0E00      	MVI	C,0
+ 01EA FE52      	CPI 	'R'
+ 01EC CA1002    	JZ	PARS2
+ 01EF FE57      	CPI 	'W'
+ 01F1 CA1002    	JZ	PARS2
+ 01F4 FE43      	CPI	'C'
+ 01F6 CA0302    	JZ	PARS3
+ 01F9 FE53      	CPI	'S'
+ 01FB CA0302    	JZ	PARS3
+ 01FE FE50      	CPI	'P'
+ 0200 C23F03    	JNZ	HELP
+ 0203 23        PARS3:	INX	H
+ 0204 05        	DCR	B
+ 0205 CA3F03    	JZ	HELP
+ 0208 4F        	MOV	C,A
+ 0209 7E        	MOV	A,M
+ 020A FE45      	CPI	'E'
+ 020C C23F03    	JNZ	HELP
+ 020F 79        	MOV	A,C
+ 0210 32B104    PARS2:	STA	COM
+ 0213 FE43      	CPI	'C'	; ENTIRE CHIP, NO PARAMS
+ 0215 CABE02    	JZ	CECMD
+ 0218 CD1104    	CALL	SKIPB
+ 021B DA3F03    	JC	HELP
+ 021E CD1F04    	CALL	PARSHX
+ 0221 DA3F03    	JC	HELP
+ 0224 EB        	XCHG
+ 0225 22B204    	SHLD	ADR
+ 0228 EB        	XCHG
+ 0229 3AB104    	LDA	COM
+ 022C FE50      	CPI	'P'
+ 022E CA0403    	JZ	PECMD
+ 0231 FE53      	CPI	'S'
+ 0233 CAE902    	JZ	SECMD
+ 0236 CD1104    	CALL	SKIPB
+ 0239 DA3F03    	JC	HELP
+ 023C 3AB104    	LDA	COM
+ 023F FE52      	CPI	'R'
+ 0241 CA7202    	JZ	NVRD
+ 0244 0E00      	MVI	C,0
                 	LXIX	BUF
- 0184+DD21      	DB	0DDH,21H
- 0186+3703      	DW	BUF
+ 0246+DD21      	DB	0DDH,21H
+ 0248+B604      	DW	BUF
                 NVWR:
- 0188 CDA002    	CALL	PARSHX
- 018B DAFC01    	JC	HELP
- 018E 7A        	MOV	A,D
- 018F B7        	ORA	A
- 0190 C2FC01    	JNZ	HELP
+ 024A CD1F04    	CALL	PARSHX
+ 024D DA3F03    	JC	HELP
+ 0250 7A        	MOV	A,D
+ 0251 B7        	ORA	A
+ 0252 C23F03    	JNZ	HELP
                 	STX	E,+0
- 0193+DD7300    	DB	0DDH,70H+E,+0
+ 0255+DD7300    	DB	0DDH,70H+E,+0
                 	INXIX
- 0196+DD23      	DB	0DDH,23H
- 0198 0C        	INR	C
- 0199 78        	MOV	A,B
- 019A B7        	ORA	A
- 019B CAA401    	JZ	WRITE1
- 019E CD9202    	CALL	SKIPB
- 01A1 D28801    	JNC	NVWR
+ 0258+DD23      	DB	0DDH,23H
+ 025A 0C        	INR	C
+ 025B 78        	MOV	A,B
+ 025C B7        	ORA	A
+ 025D CA6602    	JZ	WRITE1
+ 0260 CD1104    	CALL	SKIPB
+ 0263 D24A02    	JNC	NVWR
                 WRITE1:
- 01A4 69        	MOV	L,C
- 01A5 2600      	MVI	H,0
- 01A7 223503    	SHLD	NUM
- 01AA CD3402    	CALL	NVSET
- 01AD C3F901    	JMP	EXIT
+ 0266 69        	MOV	L,C
+ 0267 2600      	MVI	H,0
+ 0269 22B404    	SHLD	NUM
+ 026C CDB303    	CALL	NVSET
+ 026F C3BB02    	JMP	EXIT
                 
                 NVRD:
- 01B0 CDD702    	CALL	PARSNM
- 01B3 DAFC01    	JC	HELP
+ 0272 CD5604    	CALL	PARSNM
+ 0275 DA3F03    	JC	HELP
                 	; TODO: LIMIT TO SPACE IN 'BUF'
- 01B6 EB        	XCHG
- 01B7 223503    	SHLD	NUM
- 01BA CD0702    	CALL	NVGET
- 01BD 213703    	LXI	H,BUF
- 01C0 E5        	PUSH	H
-                READ0:
- 01C1 2A3303    	LHLD	ADR
- 01C4 CD7702    	CALL	WRDOUT
- 01C7 3E3A      	MVI	A,':'
- 01C9 CD5F02    	CALL	CHROUT
- 01CC 0610      	MVI	B,16
+ 0278 EB        	XCHG
+ 0279 22B404    	SHLD	NUM
+ 027C CD8603    	CALL	NVGET
+ 027F 21B604    	LXI	H,BUF
+ 0282 E5        	PUSH	H
+                READ0:
+ 0283 2AB204    	LHLD	ADR
+ 0286 CDF603    	CALL	WRDOUT
+ 0289 3E3A      	MVI	A,':'
+ 028B CDDE03    	CALL	CHROUT
+ 028E 0610      	MVI	B,16
                 READ1:
- 01CE 3E20      	MVI	A,' '
- 01D0 CD5F02    	CALL	CHROUT
- 01D3 E1        	POP	H
- 01D4 7E        	MOV	A,M
- 01D5 23        	INX	H
- 01D6 E5        	PUSH	H
- 01D7 CD7E02    	CALL	HEXOUT
- 01DA 2A3303    	LHLD	ADR
- 01DD 23        	INX	H
- 01DE 223303    	SHLD	ADR
- 01E1 2A3503    	LHLD	NUM
- 01E4 2B        	DCX	H
- 01E5 223503    	SHLD	NUM
- 01E8 7C        	MOV	A,H
- 01E9 B5        	ORA	L
- 01EA CAF501    	JZ	READ2
+ 0290 3E20      	MVI	A,' '
+ 0292 CDDE03    	CALL	CHROUT
+ 0295 E1        	POP	H
+ 0296 7E        	MOV	A,M
+ 0297 23        	INX	H
+ 0298 E5        	PUSH	H
+ 0299 CDFD03    	CALL	HEXOUT
+ 029C 2AB204    	LHLD	ADR
+ 029F 23        	INX	H
+ 02A0 22B204    	SHLD	ADR
+ 02A3 2AB404    	LHLD	NUM
+ 02A6 2B        	DCX	H
+ 02A7 22B404    	SHLD	NUM
+ 02AA 7C        	MOV	A,H
+ 02AB B5        	ORA	L
+ 02AC CAB702    	JZ	READ2
                 	DJNZ	READ1
- 01ED+10DF      	DB	10H,READ1-$-1
- 01EF CD6C02    	CALL	CRLF
- 01F2 C3C101    	JMP	READ0
+ 02AF+10DF      	DB	10H,READ1-$-1
+ 02B1 CDEB03    	CALL	CRLF
+ 02B4 C38302    	JMP	READ0
                 READ2:
- 01F5 E1        	POP	H
- 01F6 CD6C02    	CALL	CRLF
+ 02B7 E1        	POP	H
+ 02B8 CDEB03    	CALL	CRLF
                 EXIT:
- 01F9 C30000    	JMP	CPM
+ 02BB C30000    	JMP	CPM
+                
+ 02BE 117201    CECMD:	LXI	D,CEMSG
+ 02C1 0E09      	MVI	C,PRINT
+ 02C3 CD0500    	CALL	BDOS
+ 02C6 0600      	MVI	B,0	; ADR FLAG
+ 02C8 0EC7      	MVI	C,CE	; COMMAND
+ 02CA C5        ECMDS:	PUSH	B
+ 02CB CD1D03    	CALL	GETYN
+ 02CE 11B801    	LXI	D,ERASING
+ 02D1 0E09      	MVI	C,PRINT
+ 02D3 CD0500    	CALL	BDOS
+ 02D6 C1        	POP	B
+ 02D7 79        	MOV	A,C
+ 02D8 CD6103    	CALL	NVCMD
+ 02DB CD4A03    	CALL	NVWAIT
+ 02DE 11C301    	LXI	D,DONE
+ 02E1 0E09      	MVI	C,PRINT
+ 02E3 CD0500    	CALL	BDOS
+ 02E6 C3BB02    	JMP	EXIT
+                
+ 02E9 118401    SECMD:	LXI	D,SEMSG
+ 02EC 0E09      	MVI	C,PRINT
+ 02EE CD0500    	CALL	BDOS
+ 02F1 2AB204    	LHLD	ADR
+ 02F4 2E00      	MVI	L,0
+ 02F6 7C        	MOV	A,H
+ 02F7 E6C0      	ANI	11000000B
+ 02F9 67        	MOV	H,A
+ 02FA CDF603    	CALL	WRDOUT
+ 02FD 0601      	MVI	B,1	; ADR FLAG
+ 02FF 0ED8      	MVI	C,SE	; COMMAND
+ 0301 C3CA02    	JMP	ECMDS
+                
+ 0304 119201    PECMD:	LXI	D,PEMSG
+ 0307 0E09      	MVI	C,PRINT
+ 0309 CD0500    	CALL	BDOS
+ 030C 2AB204    	LHLD	ADR
+ 030F 7D        	MOV	A,L
+ 0310 E680      	ANI	10000000B
+ 0312 6F        	MOV	L,A
+ 0313 CDF603    	CALL	WRDOUT
+ 0316 0601      	MVI	B,1	; ADR FLAG
+ 0318 0E42      	MVI	C,PE	; COMMAND
+ 031A C3CA02    	JMP	ECMDS
+                
+                ; DOES NOT RETURN UNLESS 'Y' IS THE REPOSNSE.
+                GETYN:
+ 031D 119E01    	LXI	D,YNMSG
+ 0320 0E09      	MVI	C,PRINT
+ 0322 CD0500    	CALL	BDOS
+ 0325 0E01      	MVI	C,CONIN
+ 0327 CD0500    	CALL	BDOS
+ 032A F5        	PUSH	PSW
+ 032B CDEB03    	CALL	CRLF
+ 032E F1        	POP	PSW
+ 032F E65F      	ANI	5FH
+ 0331 FE59      	CPI	'Y'
+ 0333 C8        	RZ
+ 0334 11A701    	LXI	D,CANCEL
+ 0337 0E09      	MVI	C,PRINT
+ 0339 CD0500    	CALL	BDOS
+ 033C C3BB02    	JMP	EXIT
                 
                 HELP:
- 01FC 110301    	LXI	D,USAGE
- 01FF 0E09      	MVI	C,PRINT
- 0201 CD0500    	CALL	BDOS
- 0204 C3F901    	JMP	EXIT
+ 033F 110301    	LXI	D,USAGE
+ 0342 0E09      	MVI	C,PRINT
+ 0344 CD0500    	CALL	BDOS
+ 0347 C3BB02    	JMP	EXIT
+                
+                ; WAITS FOR WIP == 0
+                NVWAIT:
+ 034A 3E02      	MVI	A,NVSCS
+ 034C D341      	OUT	SPI$CTL
+ 034E 3E05      	MVI	A,RDSR
+ 0350 D340      	OUT	SPI$DAT
+ 0352 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 0354 DB40      	IN	SPI$DAT
+ 0356 F5        	PUSH	PSW
+ 0357 AF        	XRA	A
+ 0358 D341      	OUT	SPI$CTL	; SCS OFF
+ 035A F1        	POP	PSW
+ 035B E601      	ANI	WIP
+ 035D C24A03    	JNZ	NVWAIT
+ 0360 C9        	RET
+                
+                ; SEND NVRAM COMMAND, PREFIXED BY WREN.
+                ; A = COMMAND, B==0 IF NO ADDRESS IN 'ADR'
+                NVCMD:
+ 0361 F5        	PUSH	PSW
+ 0362 3E02      	MVI	A,NVSCS
+ 0364 D341      	OUT	SPI$CTL
+ 0366 3E06      	MVI	A,WREN
+ 0368 D340      	OUT	SPI$DAT
+ 036A AF        	XRA	A	; NOT SCS
+ 036B D341      	OUT	SPI$CTL
+ 036D 3E02      	MVI	A,NVSCS
+ 036F D341      	OUT	SPI$CTL
+ 0371 F1        	POP	PSW	; COMMAND
+ 0372 D340      	OUT	SPI$DAT
+ 0374 78        	MOV	A,B
+ 0375 B7        	ORA	A
+ 0376 CA8203    	JZ	NVCMD0
+ 0379 2AB204    	LHLD	ADR
+ 037C 7C        	MOV	A,H
+ 037D D340      	OUT	SPI$DAT
+ 037F 7D        	MOV	A,L
+ 0380 D340      	OUT	SPI$DAT
+ 0382 AF        NVCMD0:	XRA	A
+ 0383 D341      	OUT	SPI$CTL	; SCS OFF
+ 0385 C9        	RET
                 
                 NVGET:
- 0207 3E02      	MVI	A,SCS
- 0209 D341      	OUT	NV$CTL
- 020B 3E03      	MVI	A,READ
- 020D D340      	OUT	NV$DAT
- 020F 2A3303    	LHLD	ADR
- 0212 7C        	MOV	A,H
- 0213 D340      	OUT	NV$DAT
- 0215 7D        	MOV	A,L
- 0216 D340      	OUT	NV$DAT
- 0218 DB40      	IN	NV$DAT	; PRIME PUMP
- 021A 0E40      	MVI	C,NV$DAT
- 021C 2A3503    	LHLD	NUM
- 021F EB        	XCHG
- 0220 7B        	MOV	A,E
- 0221 B7        	ORA	A
- 0222 CA2602    	JZ	NVGET1
- 0225 14        	INR	D	; TODO: HANDLE 64K... AND OVERFLOW OF 'BUF'...
- 0226 213703    NVGET1:	LXI	H,BUF
- 0229 43        	MOV	B,E
+ 0386 3E02      	MVI	A,NVSCS
+ 0388 D341      	OUT	SPI$CTL
+ 038A 3E03      	MVI	A,READ
+ 038C D340      	OUT	SPI$DAT
+ 038E 2AB204    	LHLD	ADR
+ 0391 7C        	MOV	A,H
+ 0392 D340      	OUT	SPI$DAT
+ 0394 7D        	MOV	A,L
+ 0395 D340      	OUT	SPI$DAT
+ 0397 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 0399 0E40      	MVI	C,SPI$DAT
+ 039B 2AB404    	LHLD	NUM
+ 039E EB        	XCHG
+ 039F 7B        	MOV	A,E
+ 03A0 B7        	ORA	A
+ 03A1 CAA503    	JZ	NVGET1
+ 03A4 14        	INR	D	; TODO: HANDLE 64K... AND OVERFLOW OF 'BUF'...
+ 03A5 21B604    NVGET1:	LXI	H,BUF
+ 03A8 43        	MOV	B,E
                 NVGET0:	INIR	; B = 0 AFTER
- 022A+EDB2      	DB	0EDH,0B2H
- 022C 15        	DCR	D
- 022D C22A02    	JNZ	NVGET0
- 0230 AF        	XRA	A	; NOT SCS
- 0231 D341      	OUT	NV$CTL
- 0233 C9        	RET
+ 03A9+EDB2      	DB	0EDH,0B2H
+ 03AB 15        	DCR	D
+ 03AC C2A903    	JNZ	NVGET0
+ 03AF AF        	XRA	A	; NOT SCS
+ 03B0 D341      	OUT	SPI$CTL
+ 03B2 C9        	RET
                 
                 NVSET:
                 	; TODO: WAIT FOR WIP=0...
- 0234 3E02      	MVI	A,SCS
- 0236 D341      	OUT	NV$CTL
- 0238 3E06      	MVI	A,WREN
- 023A D340      	OUT	NV$DAT
- 023C AF        	XRA	A	; NOT SCS
- 023D D341      	OUT	NV$CTL
- 023F 3E02      	MVI	A,SCS
- 0241 D341      	OUT	NV$CTL
- 0243 3E02      	MVI	A,WRITE
- 0245 D340      	OUT	NV$DAT
- 0247 2A3303    	LHLD	ADR
- 024A 7C        	MOV	A,H
- 024B D340      	OUT	NV$DAT
- 024D 7D        	MOV	A,L
- 024E D340      	OUT	NV$DAT
- 0250 2A3503    	LHLD	NUM	; CAN'T EXCEED 128?
- 0253 45        	MOV	B,L
- 0254 213703    	LXI	H,BUF
- 0257 0E40      	MVI	C,NV$DAT
+ 03B3 3E02      	MVI	A,NVSCS
+ 03B5 D341      	OUT	SPI$CTL
+ 03B7 3E06      	MVI	A,WREN
+ 03B9 D340      	OUT	SPI$DAT
+ 03BB AF        	XRA	A	; NOT SCS
+ 03BC D341      	OUT	SPI$CTL
+ 03BE 3E02      	MVI	A,NVSCS
+ 03C0 D341      	OUT	SPI$CTL
+ 03C2 3E02      	MVI	A,WRITE
+ 03C4 D340      	OUT	SPI$DAT
+ 03C6 2AB204    	LHLD	ADR
+ 03C9 7C        	MOV	A,H
+ 03CA D340      	OUT	SPI$DAT
+ 03CC 7D        	MOV	A,L
+ 03CD D340      	OUT	SPI$DAT
+ 03CF 2AB404    	LHLD	NUM	; CAN'T EXCEED 128?
+ 03D2 45        	MOV	B,L
+ 03D3 21B604    	LXI	H,BUF
+ 03D6 0E40      	MVI	C,SPI$DAT
                 	OUTIR
- 0259+EDB3      	DB	0EDH,0B3H
- 025B AF        	XRA	A	; NOT SCS
- 025C D341      	OUT	NV$CTL
- 025E C9        	RET
+ 03D8+EDB3      	DB	0EDH,0B3H
+ 03DA AF        	XRA	A	; NOT SCS
+ 03DB D341      	OUT	SPI$CTL
+ 03DD C9        	RET
                 
                 CHROUT:
- 025F E5        	PUSH	H
- 0260 D5        	PUSH	D
- 0261 C5        	PUSH	B
- 0262 5F        	MOV	E,A
- 0263 0E02      	MVI	C,002H
- 0265 CD0500    	CALL	BDOS
- 0268 C1        	POP	B
- 0269 D1        	POP	D
- 026A E1        	POP	H
- 026B C9        	RET
+ 03DE E5        	PUSH	H
+ 03DF D5        	PUSH	D
+ 03E0 C5        	PUSH	B
+ 03E1 5F        	MOV	E,A
+ 03E2 0E02      	MVI	C,002H
+ 03E4 CD0500    	CALL	BDOS
+ 03E7 C1        	POP	B
+ 03E8 D1        	POP	D
+ 03E9 E1        	POP	H
+ 03EA C9        	RET
                 
                 CRLF:
- 026C 3E0D      	MVI	A,CR
- 026E CD5F02    	CALL	CHROUT
- 0271 3E0A      	MVI	A,LF
- 0273 CD5F02    	CALL	CHROUT
- 0276 C9        	RET
-                
+ 03EB 3E0D      	MVI	A,CR
+ 03ED CDDE03    	CALL	CHROUT
+ 03F0 3E0A      	MVI	A,LF
+ 03F2 CDDE03    	CALL	CHROUT
+ 03F5 C9        	RET
+                
                 WRDOUT:
- 0277 E5        	PUSH	H
- 0278 7C        	MOV	A,H
- 0279 CD7E02    	CALL	HEXOUT
- 027C E1        	POP	H
- 027D 7D        	MOV	A,L
+ 03F6 E5        	PUSH	H
+ 03F7 7C        	MOV	A,H
+ 03F8 CDFD03    	CALL	HEXOUT
+ 03FB E1        	POP	H
+ 03FC 7D        	MOV	A,L
                 HEXOUT:
- 027E F5        	PUSH	PSW
- 027F 0F        	RRC
- 0280 0F        	RRC
- 0281 0F        	RRC
- 0282 0F        	RRC
- 0283 CD8702    	CALL	HEXDIG
- 0286 F1        	POP	PSW
+ 03FD F5        	PUSH	PSW
+ 03FE 0F        	RRC
+ 03FF 0F        	RRC
+ 0400 0F        	RRC
+ 0401 0F        	RRC
+ 0402 CD0604    	CALL	HEXDIG
+ 0405 F1        	POP	PSW
                 	;JMP	HEXDIG
                 HEXDIG:
- 0287 E60F      	ANI	0FH
- 0289 C690      	ADI	90H
- 028B 27        	DAA
- 028C CE40      	ACI	40H
- 028E 27        	DAA
- 028F C35F02    	JMP	CHROUT
+ 0406 E60F      	ANI	0FH
+ 0408 C690      	ADI	90H
+ 040A 27        	DAA
+ 040B CE40      	ACI	40H
+ 040D 27        	DAA
+ 040E C3DE03    	JMP	CHROUT
                 
                 SKIPB:
- 0292 23        	INX	H	; SKIP OPTION LETTER
- 0293 05        	DCR	B
- 0294 37        	STC
- 0295 C8        	RZ
- 0296 7E        SKIP0:	MOV	A,M
- 0297 B7        	ORA	A
- 0298 FE20      	CPI	' '
- 029A C0        	RNZ	; NO CARRY?
- 029B 23        	INX	H
+ 0411 23        	INX	H	; SKIP OPTION LETTER
+ 0412 05        	DCR	B
+ 0413 37        	STC
+ 0414 C8        	RZ
+ 0415 7E        SKIP0:	MOV	A,M
+ 0416 B7        	ORA	A
+ 0417 FE20      	CPI	' '
+ 0419 C0        	RNZ	; NO CARRY?
+ 041A 23        	INX	H
                 	DJNZ	SKIP0
- 029C+10F8      	DB	10H,SKIP0-$-1
- 029E 37        	STC
- 029F C9        	RET
+ 041B+10F8      	DB	10H,SKIP0-$-1
+ 041D 37        	STC
+ 041E C9        	RET
                 
                 ; PARSE (UP TO) 16-BIT HEX VALUE.
                 ; INPUT: HL IS CMD BUF, B REMAINING CHARS
                 ; RETURNS NUMBER IN DE, CY IF ERROR, NZ END OF TEXT
                 PARSHX:
- 02A0 110000    	LXI	D,0
- 02A3 7E        PM0:	MOV	A,M
- 02A4 FE20      	CPI	' '
- 02A6 C8        	RZ
- 02A7 D630      	SUI	'0'
- 02A9 D8        	RC
- 02AA FE0A      	CPI	'9'-'0'+1
- 02AC DAB802    	JC	PM3
- 02AF D611      	SUI	'A'-'0'
- 02B1 D8        	RC
- 02B2 FE06      	CPI	'F'-'A'+1
- 02B4 3F        	CMC
- 02B5 D8        	RC
- 02B6 C60A      	ADI	10
+ 041F 110000    	LXI	D,0
+ 0422 7E        PM0:	MOV	A,M
+ 0423 FE20      	CPI	' '
+ 0425 C8        	RZ
+ 0426 D630      	SUI	'0'
+ 0428 D8        	RC
+ 0429 FE0A      	CPI	'9'-'0'+1
+ 042B DA3704    	JC	PM3
+ 042E D611      	SUI	'A'-'0'
+ 0430 D8        	RC
+ 0431 FE06      	CPI	'F'-'A'+1
+ 0433 3F        	CMC
+ 0434 D8        	RC
+ 0435 C60A      	ADI	10
                 PM3:
- 02B8 E60F      	ANI	0FH
- 02BA EB        	XCHG
- 02BB 29        	DAD	H
- 02BC DAD402    	JC	PME
- 02BF 29        	DAD	H
- 02C0 DAD402    	JC	PME
- 02C3 29        	DAD	H
- 02C4 DAD402    	JC	PME
- 02C7 29        	DAD	H
- 02C8 DAD402    	JC	PME
- 02CB EB        	XCHG
- 02CC 83        	ADD	E	; CARRY NOT POSSIBLE
- 02CD 5F        	MOV	E,A
- 02CE 23        	INX	H
+ 0437 E60F      	ANI	0FH
+ 0439 EB        	XCHG
+ 043A 29        	DAD	H
+ 043B DA5304    	JC	PME
+ 043E 29        	DAD	H
+ 043F DA5304    	JC	PME
+ 0442 29        	DAD	H
+ 0443 DA5304    	JC	PME
+ 0446 29        	DAD	H
+ 0447 DA5304    	JC	PME
+ 044A EB        	XCHG
+ 044B 83        	ADD	E	; CARRY NOT POSSIBLE
+ 044C 5F        	MOV	E,A
+ 044D 23        	INX	H
                 	DJNZ	PM0
- 02CF+10D2      	DB	10H,PM0-$-1
+ 044E+10D2      	DB	10H,PM0-$-1
                 NZRET:
- 02D1 AF        	XRA	A
- 02D2 3C        	INR	A	; NZ
- 02D3 C9        	RET
- 02D4 EB        PME:	XCHG
- 02D5 37        	STC
- 02D6 C9        	RET
-                
+ 0450 AF        	XRA	A
+ 0451 3C        	INR	A	; NZ
+ 0452 C9        	RET
+ 0453 EB        PME:	XCHG
+ 0454 37        	STC
+ 0455 C9        	RET
+                
                 ; PARSE A 16-BIT (MAX) DECIMAL NUMBER
                 PARSNM:
- 02D7 110000    	LXI	D,0
- 02DA 7E        PD0:	MOV	A,M
- 02DB FE20      	CPI	' '
- 02DD C8        	RZ
- 02DE FE30      	CPI	'0'
- 02E0 D8        	RC
- 02E1 FE3A      	CPI	'9'+1
- 02E3 3F        	CMC
- 02E4 D8        	RC
- 02E5 E60F      	ANI	0FH
- 02E7 E5        	PUSH	H
- 02E8 62        	MOV	H,D
- 02E9 6B        	MOV	L,E
- 02EA 29        	DAD	H	; *2
- 02EB DA0603    	JC	PD1
- 02EE 29        	DAD	H	; *4
- 02EF DA0603    	JC	PD1
- 02F2 19        	DAD	D	; *5
- 02F3 DA0603    	JC	PD1
- 02F6 29        	DAD	H	; *10
- 02F7 DA0603    	JC	PD1
- 02FA 5F        	MOV	E,A
- 02FB 1600      	MVI	D,0
- 02FD 19        	DAD	D
- 02FE EB        	XCHG
- 02FF E1        	POP	H
- 0300 D8        	RC
- 0301 23        	INX	H
-                	DJNZ	PD0
- 0302+10D6      	DB	10H,PD0-$-1
- 0304 B7        	ORA	A	; NC
- 0305 C9        	RET
+ 0456 110000    	LXI	D,0
+ 0459 7E        PD0:	MOV	A,M
+ 045A FE20      	CPI	' '
+ 045C C8        	RZ
+ 045D FE30      	CPI	'0'
+ 045F D8        	RC
+ 0460 FE3A      	CPI	'9'+1
+ 0462 3F        	CMC
+ 0463 D8        	RC
+ 0464 E60F      	ANI	0FH
+ 0466 E5        	PUSH	H
+ 0467 62        	MOV	H,D
+ 0468 6B        	MOV	L,E
+ 0469 29        	DAD	H	; *2
+ 046A DA8504    	JC	PD1
+ 046D 29        	DAD	H	; *4
+ 046E DA8504    	JC	PD1
+ 0471 19        	DAD	D	; *5
+ 0472 DA8504    	JC	PD1
+ 0475 29        	DAD	H	; *10
+ 0476 DA8504    	JC	PD1
+ 0479 5F        	MOV	E,A
+ 047A 1600      	MVI	D,0
+ 047C 19        	DAD	D
+ 047D EB        	XCHG
+ 047E E1        	POP	H
+ 047F D8        	RC
+ 0480 23        	INX	H
+                	DJNZ	PD0
+ 0481+10D6      	DB	10H,PD0-$-1
+ 0483 B7        	ORA	A	; NC
+ 0484 C9        	RET
                 
- 0306 E1        PD1:	POP	H
- 0307 C9        	RET	; CY STILL SET
+ 0485 E1        PD1:	POP	H
+ 0486 C9        	RET	; CY STILL SET
                 
- 0308           	DS	40
- 0330           STACK:	DS	0
- 0330 0000      USRSTK:	DW	0
+ 0487           	DS	40
+ 04AF           STACK:	DS	0
+ 04AF 0000      USRSTK:	DW	0
                 
- 0332 00        COM:	DB	0
- 0333 0000      ADR:	DW	0
- 0335 0000      NUM:	DW	0
+ 04B1 00        COM:	DB	0
+ 04B2 0000      ADR:	DW	0
+ 04B4 0000      NUM:	DW	0
                 
- 0337           BUF:	DS	0
+ 04B6           BUF:	DS	0
                 
- 0337           	END
-
+ 04B6           	END
+

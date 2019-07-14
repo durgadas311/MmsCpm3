@@ -8,15 +8,21 @@
 
 spi	equ	40h	; base port of SPI interface
 
-nv$dat	equ	spi+0
-nv$ctl	equ	spi+1
+spi$dat	equ	spi+0
+spi$ctl	equ	spi+1
 
-SCS	equ	10b	; ctl port
+NVSCS	equ	10b	; chip select for NVRAM
 
 READ	equ	00000011b
 WRITE	equ	00000010b
 RDSR	equ	00000101b
 WREN	equ	00000110b
+CE	equ	11000111b
+SE	equ	11011000b
+PE	equ	01000010b
+
+; SR bits
+WIP	equ	00000001b
 
 CR	equ	13
 LF	equ	10
@@ -25,6 +31,7 @@ cpm	equ	0
 bdos	equ	5
 cmd	equ	0080h
 
+conin	equ	1
 print	equ	9
 getver	equ	12
 
@@ -33,7 +40,18 @@ getver	equ	12
 	jmp	start
 
 usage:	db	'Usage: NVRAM R adr len',CR,LF
-	db	'       NVRAM W adr val...',CR,LF,'$'
+	db	'       NVRAM W adr val...',CR,LF
+	db	'       NVRAM CE',CR,LF
+	db	'       NVRAM SE adr',CR,LF
+	db	'       NVRAM PE adr',CR,LF,'$'
+
+cemsg:	db	'Erase Entire Chip$'
+semsg:	db	'Erase Sector $'
+pemsg:	db	'Erase Page $'
+ynmsg:	db	' (y/n)? $'
+cancel:	db	'Erase Canceled',CR,LF,'$'
+erasing: db	'Erasing...$'
+done:	db	'Done.',CR,LF,'$'
 
 start:
 	sspd	usrstk
@@ -57,8 +75,24 @@ pars1:
 	cpi 	'R'
 	jz	pars2
 	cpi 	'W'
+	jz	pars2
+	cpi	'C'
+	jz	pars3
+	cpi	'S'
+	jz	pars3
+	cpi	'P'
 	jnz	help
+pars3:	inx	h
+	dcr	b
+	jz	help
+	mov	c,a
+	mov	a,m
+	cpi	'E'
+	jnz	help
+	mov	a,c
 pars2:	sta	com
+	cpi	'C'	; entire chip, no params
+	jz	cecmd
 	call	skipb
 	jc	help
 	call	parshx
@@ -66,6 +100,11 @@ pars2:	sta	com
 	xchg
 	shld	adr
 	xchg
+	lda	com
+	cpi	'P'
+	jz	pecmd
+	cpi	'S'
+	jz	secmd
 	call	skipb
 	jc	help
 	lda	com
@@ -135,24 +174,128 @@ read2:
 exit:
 	jmp	cpm
 
+cecmd:	lxi	d,cemsg
+	mvi	c,print
+	call	bdos
+	mvi	b,0	; adr flag
+	mvi	c,CE	; command
+ecmds:	push	b
+	call	getyn
+	lxi	d,erasing
+	mvi	c,print
+	call	bdos
+	pop	b
+	mov	a,c
+	call	nvcmd
+	call	nvwait
+	lxi	d,done
+	mvi	c,print
+	call	bdos
+	jmp	exit
+
+secmd:	lxi	d,semsg
+	mvi	c,print
+	call	bdos
+	lhld	adr
+	mvi	l,0
+	mov	a,h
+	ani	11000000b
+	mov	h,a
+	call	wrdout
+	mvi	b,1	; adr flag
+	mvi	c,SE	; command
+	jmp	ecmds
+
+pecmd:	lxi	d,pemsg
+	mvi	c,print
+	call	bdos
+	lhld	adr
+	mov	a,l
+	ani	10000000b
+	mov	l,a
+	call	wrdout
+	mvi	b,1	; adr flag
+	mvi	c,PE	; command
+	jmp	ecmds
+
+; Does not return unless 'Y' is the reposnse.
+getyn:
+	lxi	d,ynmsg
+	mvi	c,print
+	call	bdos
+	mvi	c,conin
+	call	bdos
+	push	psw
+	call	crlf
+	pop	psw
+	ani	5fh
+	cpi	'Y'
+	rz
+	lxi	d,cancel
+	mvi	c,print
+	call	bdos
+	jmp	exit
+
 help:
 	lxi	d,usage
 	mvi	c,print
 	call	bdos
 	jmp	exit
 
-nvget:
-	mvi	a,SCS
-	out	nv$ctl
-	mvi	a,READ
-	out	nv$dat
+; Waits for WIP == 0
+nvwait:
+	mvi	a,NVSCS
+	out	spi$ctl
+	mvi	a,RDSR
+	out	spi$dat
+	in	spi$dat	; prime pump
+	in	spi$dat
+	push	psw
+	xra	a
+	out	spi$ctl	; SCS off
+	pop	psw
+	ani	WIP
+	jnz	nvwait
+	ret
+
+; Send NVRAM command, prefixed by WREN.
+; A = command, B==0 if no address in 'adr'
+nvcmd:
+	push	psw
+	mvi	a,NVSCS
+	out	spi$ctl
+	mvi	a,WREN
+	out	spi$dat
+	xra	a	; not SCS
+	out	spi$ctl
+	mvi	a,NVSCS
+	out	spi$ctl
+	pop	psw	; command
+	out	spi$dat
+	mov	a,b
+	ora	a
+	jz	nvcmd0
 	lhld	adr
 	mov	a,h
-	out	nv$dat
+	out	spi$dat
 	mov	a,l
-	out	nv$dat
-	in	nv$dat	; prime pump
-	mvi	c,nv$dat
+	out	spi$dat
+nvcmd0:	xra	a
+	out	spi$ctl	; SCS off
+	ret
+
+nvget:
+	mvi	a,NVSCS
+	out	spi$ctl
+	mvi	a,READ
+	out	spi$dat
+	lhld	adr
+	mov	a,h
+	out	spi$dat
+	mov	a,l
+	out	spi$dat
+	in	spi$dat	; prime pump
+	mvi	c,spi$dat
 	lhld	num
 	xchg
 	mov	a,e
@@ -165,33 +308,33 @@ nvget0:	inir	; B = 0 after
 	dcr	d
 	jnz	nvget0
 	xra	a	; not SCS
-	out	nv$ctl
+	out	spi$ctl
 	ret
 
 nvset:
 	; TODO: wait for WIP=0...
-	mvi	a,SCS
-	out	nv$ctl
+	mvi	a,NVSCS
+	out	spi$ctl
 	mvi	a,WREN
-	out	nv$dat
+	out	spi$dat
 	xra	a	; not SCS
-	out	nv$ctl
-	mvi	a,SCS
-	out	nv$ctl
+	out	spi$ctl
+	mvi	a,NVSCS
+	out	spi$ctl
 	mvi	a,WRITE
-	out	nv$dat
+	out	spi$dat
 	lhld	adr
 	mov	a,h
-	out	nv$dat
+	out	spi$dat
 	mov	a,l
-	out	nv$dat
+	out	spi$dat
 	lhld	num	; can't exceed 128?
 	mov	b,l
 	lxi	h,buf
-	mvi	c,nv$dat
+	mvi	c,spi$dat
 	outir
 	xra	a	; not SCS
-	out	nv$ctl
+	out	spi$ctl
 	ret
 
 chrout:
