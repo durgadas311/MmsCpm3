@@ -931,17 +931,28 @@ cks1:	dcx	b
 
 ; Validates checksum in 'buf'
 ; return: NZ on error
+; a checksum of 00 00 00 00 means the buffer was all 00,
+; which is invalid.
 vcksum:
 	lxix	buf
 	lxi	b,508
 	call	cksum32
 	lbcd	buf+510
-	ora	a
+	mov	a,b	;
+	ora	c	; check first half zero
 	dsbc	b
 	rnz
 	lbcd	buf+508
+	ora	b	;
+	ora	c	; check second half zero
 	xchg
 	dsbc	b	; CY is clear
+	rnz
+	ora	a	; was checksum all zero?
+	jrz	vcksm0
+	xra	a	; ZR
+	ret
+vcksm0:	inr	a	; NZ
 	ret
 
 ; Sets checksum in 'buf'
