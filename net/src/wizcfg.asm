@@ -453,9 +453,9 @@ close:
 getsokn:
 	lda	sokn
 	sui	'0'
-	rlc
-	rlc
-	rlc		; xxx00000
+	rrc
+	rrc
+	rrc		; xxx00000
 	ori	SOCK0	; xxx01000
 	ret
 
@@ -990,6 +990,21 @@ nvget0:	inir	; B = 0 after
 	out	wiz$ctl
 	ret
 
+; NOTE: this delay varies with CPU clock speed.
+msleep:
+	push	h
+mslp0:	push	psw
+	lxi	h,79	; ~1mS at 2.048MHz (200uS at 10.24MHz)
+mslp1:	dcx	h
+	mov	a,h
+	ora	l
+	jrnz	mslp1
+	pop	psw
+	dcr	a
+	jrnz	mslp0
+	pop	h
+	ret
+
 ; Put block of data to NVRAM from 'buf'
 ; HL = nvram address, DE = length
 ; Must write in 128-byte blocks (pages).
@@ -1006,16 +1021,20 @@ nvset0:
 	out	wiz$dat
 	in	wiz$dat	; prime pump
 	in	wiz$dat	; status register
-	outz		; not SCS
+	push	psw
+	xra	a
+	outp	a	; not SCS
+	pop	psw
 	ani	WIP
 	jrnz	nvset0
 	mvi	a,NVSCS
 	outp	a
 	mvi	a,WREN
 	out	wiz$dat
-	outz		; not SCS
+	xra	a
+	outp	a	; not SCS
 	mvi	a,NVSCS
-	out	wiz$ctl
+	outp	a
 	mvi	a,NVWR
 	out	wiz$dat
 	xthl	; get nvadr
@@ -1034,7 +1053,10 @@ nvset0:
 	mvi	c,wiz$dat
 	outir		; HL = next page in 'buf'
 	mvi	c,wiz$ctl
-	outz		; not SCS
+	xra	a
+	outp	a	; not SCS
+;	mvi	a,50
+;	call	msleep	; wait for WIP to go "1"?
 	mov	a,e
 	ora	d
 	jrnz	nvset0

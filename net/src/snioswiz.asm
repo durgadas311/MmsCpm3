@@ -94,29 +94,33 @@ getwiz1:
 	mvi	a,SCS
 	out	wiz$ctl
 	mvi	c,wiz$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr byte always 0
 	outp	e
 	res	2,d
 	outp	d
-	inz	; prime MISO
+	inp	a	; prime MISO
 	inp	a
-	inr	c	; ctl port
-	outz		; clear SCS
+	push	psw
+	xra	a
+	out	wiz$ctl	; clear SCS
+	pop	psw
 	ret
 
 putwiz1:
 	push	psw
 	mvi	a,SCS
 	out	wiz$ctl
-	pop	psw
 	mvi	c,wiz$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr byte always 0
 	outp	e
 	setb	2,d
 	outp	d
+	pop	psw
 	outp	a	; data
-	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	out	wiz$ctl	; clear SCS
 	ret
 
 ; Get 16-bit value from chip
@@ -127,15 +131,16 @@ getwiz2:
 	mvi	a,SCS
 	out	wiz$ctl
 	mvi	c,wiz$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr byte always 0
 	outp	e
 	res	2,d
 	outp	d
-	inz	; prime MISO
+	inp	h	; prime MISO
 	inp	h	; data
 	inp	l	; data
-	inr	c	; ctl port
-	outz		; clear SCS
+	; A still 00
+	out	wiz$ctl	; clear SCS
 	ret
 
 ; Put 16-bit value to chip
@@ -146,14 +151,15 @@ putwiz2:
 	mvi	a,SCS
 	out	wiz$ctl
 	mvi	c,wiz$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr byte always 0
 	outp	e
 	setb	2,d
 	outp	d
 	outp	h	; data to write
 	outp	l
-	inr	c	; ctl port
-	outz		; clear SCS
+	; A still 00
+	out	wiz$ctl	; clear SCS
 	ret
 
 ; Issue command, wait for complete
@@ -165,17 +171,40 @@ wizcmd:	mov	b,a
 	mvi	a,SCS
 	out	wiz$ctl
 	mvi	c,wiz$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr byte always 0
 	outp	e
 	outp	d
 	outp	b	; command
-	inr	c	; ctl port
-	outz		; clear SCS
+	; A still 00
+	out	wiz$ctl	; clear SCS
 wc0:	call	getwiz1
 	ora	a
 	jrnz	wc0
 	mvi	e,sn$sr
 	call	getwiz1
+	ret
+
+; wait for socket state
+; D=socket, C=bits (destroys B)
+; returns A=Sn_IR - before any bits are reset
+wizist:	lxi	h,32000
+wst0:	push	b
+	push	h
+	mov	l,c
+	call	wizsts
+	pop	h
+	pop	b
+	mov	b,a
+	ana	c
+	jrnz	wst1
+	dcx	h
+	mov	a,h
+	ora	l
+	jrnz	wst0
+	stc
+	ret
+wst1:	mov	a,b
 	ret
 
 ; B=Server ID, preserves HL
@@ -194,12 +223,12 @@ gs1:
 	ret
 gs0:	; found...
 	mvi	a,nsocks
-	sub	c	; socket num
-	rlc
-	rlc
-	rlc
+	sub	c	; socket num 00000sss
+	rrc		; s00000ss
+	rrc		; ss00000s
+	rrc		; sss00000
 	sta	cursok
-	ori	sock0
+	ori	sock0	; sss01000
 	mov	d,a
 	mvi	e,sn$sr
 	call	getwiz1
@@ -214,7 +243,10 @@ gs0:	; found...
 	jrnz	gs2
 gs3:	mvi	a,CONNECT
 	call	wizcmd
-	cpi	ESTABLISHED
+	mvi	c,00001011b	; CON, DISCON, or TIMEOUT
+	call	wizist	; returns when one is set
+	cma	; want "0" on success
+	ani	00000001b	; CON
 	rz
 gs2:	stc	; failed to open
 	ret
@@ -248,8 +280,8 @@ cpyout:
 	jrz	co1
 co0:	outir	; 256 (more) bytes to xfer
 co1:	shld	msgptr
-	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	out	wiz$ctl	; clear SCS
 	ret
 
 ; HL=socket relative pointer (RX_RD)
@@ -258,7 +290,7 @@ co1:	shld	msgptr
 cpyin:
 	mvi	b,rxbuf0
 	call	cpsetup	;
-	inz	; prime MISO
+	inp	a	; prime MISO
 	mov	b,e	; fraction of page
 	mov	a,e
 	ora	a
@@ -270,12 +302,13 @@ cpyin:
 	jrz	ci1
 ci0:	inir	; 256 (more) bytes to xfer
 ci1:	shld	msgptr
-	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	out	wiz$ctl	; clear SCS
 	ret
 
 ; L=bits to reset
 ; D=socket base
+; Destroys C,E
 wizsts:
 	mvi	e,sn$ir
 	call	getwiz1	; destroys C
@@ -354,11 +387,11 @@ SNDMSG:			; BC = message addr
 	mvi	a,SEND
 	call	wizcmd
 	; ignore Sn_SR?
-	mvi	l,00010000b	; SEND_OK bit
-	call	wizsts
+	mvi	c,00011010b	; SEND_OK, DISCON, or TIMEOUT bit
+	call	wizist
 	cma	; want "0" on success
-	ana	l	; SEND_OK
-	rz
+	ani	00010000b	; SEND_OK
+	rz	; else TIMEOUT/DISCON
 serr:	lda	CFGTBL
 	ori	senderr
 	sta	CFGTBL
