@@ -170,6 +170,9 @@ COLDSE:	; BC and DE are pushed...
 
 ; Not a true cold start - we are in context of a valid BDOS call...
 COLDST:
+	mov	a,c
+	cpi	scbf	; hack to avoid init too soon (in LOADER3)
+	jz	next	;
 	push	d
 	push	b
 	call	NTWKIN

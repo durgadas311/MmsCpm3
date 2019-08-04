@@ -15,6 +15,10 @@ all:	ndos3-u.com ntpdt-u.com \
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLAPO'
 
+%.com: %.asm
+	vcpm mac "$?" '$$SZLAPO'
+	vcpm hexcom "$*"
+
 ndos3-u.com: ndos3.rel sniosusb.rel
 	vcpm link "ndos3-u.rsx=ndos3,sniosusb[op,nr]"
 	@rm -f ndos3-u.com
@@ -23,10 +27,11 @@ ndos3-u.com: ndos3.rel sniosusb.rel
 ntpdt-u.com: ntpdate.rel sniosusb.rel
 	vcpm link "ntpdt-u=ntpdate,sniosusb[oc,nr]"
 
-ndos3-w.com: ndos3.rel snioswiz.rel
+ndos3-w.com: ndos3.rel snioswiz.rel ndos3wiz.com
 	vcpm link "ndos3-w.rsx=ndos3,snioswiz[op,nr]"
 	@rm -f ndos3-w.com
-	vcpm gencom ndos3-w "[null]"
+	@cp ndos3wiz.com ndos3-w.com
+	vcpm gencom ndos3-w.com ndos3-w.rsx
 
 ntpdt-w.com: ntpdate.rel snioswiz.rel
 	vcpm link "ntpdt-w=ntpdate,snioswiz[oc,nr]"
