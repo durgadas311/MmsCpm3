@@ -1,14 +1,14 @@
 ; A config util for WizNET 550 devices, attached in parallel-SPI interface
+; Sets config into NVRAM, unless 'w' option prefix to set to WIZ850io directly.
 ;
 ; Commands:
-;	n <id>			Set node ID
-;	g <ip>			Set gateway IP addr
-;	s <ip>			Set sub-network mask
-;	i <ip>			Set node IP addr
-;	m <ma>			Set node h/w addr
-;	0 <id> <ip> <pt>	Set sock 0
-;	v			Save WIZNET config to NVRAM
-;	r			Restore WIZNET config from NVRAM
+;	[w] n <id>		Set node ID
+;	[w] g <ip>		Set gateway IP addr
+;	[w] s <ip>		Set sub-network mask
+;	[w] i <ip>		Set node IP addr
+;	[w] m <ma>		Set node h/w addr
+;	[w] 0 <id> <ip> <pt>	Set sock 0
+;	r			Restore WIZ850io config from NVRAM
 
 	maclib	z80
 
@@ -38,6 +38,7 @@ SHAR	equ	9
 SIPR	equ	15
 PMAGIC	equ	29	; used for node ID
 
+nsock	equ	8
 SOCK0	equ	000$01$000b
 SOCK1	equ	001$01$000b
 SOCK2	equ	010$01$000b
@@ -83,17 +84,22 @@ ntmsg:	db	'Subnet:   $'
 mcmsg:	db	'MAC:      $'
 ipmsg:	db	'IP Addr:  $'
 
-usage:	db	'Usage: WIZCFG {G|I|S ipadr}',CR,LF
-	db	'       WIZCFG {M macadr}',CR,LF
-	db	'       WIZCFG {N cid}',CR,LF
-	db	'       WIZCFG {0..7 sid ipadr port}',CR,LF
-	db	'       WIZCFG {V|R}',CR,LF,'$'
+usage:	db	'Usage: WIZCFG {G|I|S} ipadr',CR,LF
+	db	'       WIZCFG M macadr',CR,LF
+	db	'       WIZCFG N cid',CR,LF
+	db	'       WIZCFG {0..7} sid ipadr port',CR,LF
+	db	'       WIZCFG R',CR,LF
+	db	'Sets network config in NVRAM',CR,LF
+	db	'Prefix cmd with W to set WIZ850io directly',CR,LF
+	db	'R cmd sets WIZ850io from NVRAM',CR,LF
+	db	'$'
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
 ncfg:	db	'- Not Configured',CR,LF,'$'
 nocpn:	db	'CP/NET is running. Stop it first',CR,LF,'$'
 nverr:	db	'NVRAM block not initialized',CR,LF,'$'
+newbuf:	db	'Initializing new NVRAM block',CR,LF,'$'
 
 start:
 	sspd	usrstk
@@ -125,11 +131,28 @@ pars0:
 	jmp	show
 
 pars1:
+	cpi	'W'
+	jnz	notw
+	sta	direct
+	inx	h
+	djnz	pars0
+	jmp	show
+notw:
+	; All require pre-read of NVRAM, if not direct
+	push	h
+	push	b
+	lda	direct
+	ora	a
+	cz	nvgetb	; init buf if needed
+	pop	b
+	pop	h
+	mov	a,m	; restore cmd
 	; These have no params...
 	cpi 	'R'
 	jz	pars5
-	cpi 	'V'
+	cpi 	'V'	; undocumented - not always useful
 	jz	pars6
+	;
 	mov	c,a
 	call	skipb
 	jc	help
@@ -179,6 +202,9 @@ pars1:
 	mov	a,e
 	sta	nskdpt+1
 ; Now prepare to update socket config
+	lda	direct
+	ora	a
+	jz	nvsok
 	; set Sn_MR separate, to avoid writing CR and SR...
 	call	getsokn
 	mov	d,a
@@ -234,6 +260,29 @@ ntopn:	lxi	h,newsok
 	mvi	e,SnPORT
 	mvi	b,soklen-SnPORT
 	jmp	setit
+nvsok:
+	lda	sokn
+	sui	'0'	; 00000sss
+	rrc
+	rrc
+	rrc		; sss00000 or sokn * 32
+	mov	e,a
+	mvi	d,0
+	lxix	buf+32	; socket 0 buffer
+	dadx	d
+	lhld	nskpt	; big endian data, little endian load...
+	stx	l,SnPORT
+	stx	h,SnPORT+1
+	lhld	nskip	; little endian load...
+	stx	l,SnDIPR
+	stx	h,SnDIPR+1
+	lhld	nskip+2	; little endian load...
+	stx	l,SnDIPR+2
+	stx	h,SnDIPR+3
+	lhld	nskdpt	; big endian data, little endian load...
+	stx	l,SnDPORT
+	stx	h,SnDPORT+1
+	jmp	nvsetit
 
 pars4:
 	call	parshx
@@ -243,7 +292,7 @@ pars4:
 	lxi	h,wizmag
 	lxi	d,PMAGIC
 	mvi	b,1
-	jmp	setit
+	jmp	setit0
 
 pars3:
 	lxix	mac
@@ -253,7 +302,7 @@ pars3:
 	jc	help
 	lxi	d,SHAR
 	mvi	b,6
-	jmp	setit
+	jmp	setit0
 
 pars2:
 	pushix
@@ -264,6 +313,19 @@ pars2:
 	jc	help
 	mvi	b,4
 	; got it...
+setit0:
+	lda	direct
+	ora	a
+	jnz	setit
+	push	h
+	lxi	h,buf
+	dad	d
+	xchg
+	pop	h
+	mov	c,b
+	mvi	b,0
+	ldir
+	jmp	nvsetit
 setit:
 	call	wizset
 
@@ -271,6 +333,45 @@ setit:
 	;mvi	c,print
 	;call	bdos
 	jmp	exit
+
+nvshow:	; show config from NVRAM
+	lxi	h,0
+	lxi	d,512
+	call	nvget
+	call	vcksum
+	jnz	cserr
+	lda	buf+PMAGIC
+	call	shid
+	lxi	h,buf+SIPR
+	lxi	d,ipmsg
+	call	ship
+	lxi	h,buf+GAR
+	lxi	d,gwmsg
+	call	ship
+	lxi	h,buf+SUBR
+	lxi	d,ntmsg
+	call	ship
+	lxi	h,buf+SHAR
+	call	shmac
+	lxi	h,buf+32	; socket 0 buffer
+	mvi	b,nsock
+shnvsk0:
+	push	b
+	lxi	d,sokregs
+	lxi	b,soklen
+	ldir
+	lxi	d,32-soklen
+	dad	d	; next socket buf
+	pop	b
+	push	b
+	push	h
+	mvi	a,nsock
+	sub	b	; 0..7
+	mov	e,a
+	call	showsok
+	pop	h
+	pop	b
+	djnz	shnvsk0
 
 pars5:	; restore config from NVRAM
 	lda	cpnet
@@ -343,10 +444,14 @@ save0:	push	b
 	mov	d,a
 	djnz	save0
 	; got data off WIZNET chip, now save to NVRAM
+nvsetit:
 	call	scksum
 	lxi	h,0	; WIZNET uses 512 bytes at 0000 in NVRAM
 	lxi	d,512
 	call	nvset
+	;lxi	d,done
+	;mvi	c,print
+	;call	bdos
 	;jmp	exit
 exit:
 	jmp	cpm
@@ -484,6 +589,9 @@ settcp:
 	ret
 
 show:
+	lda	direct
+	ora	a
+	jz	nvshow
 	lxi	h,comregs
 	lxi	d,GAR
 	mvi	b,comlen
@@ -493,42 +601,23 @@ show:
 	mvi	b,1
 	call	wizget
 
-	lxi	d,idmsg
-	mvi	c,print
-	call	bdos
 	lda	wizmag
-	call	hexout
-	mvi	a,'H'
-	call	chrout
-	call	crlf
+	call	shid
 
-	lxi	d,ipmsg
-	mvi	c,print
-	call	bdos
 	lxi	h,ip
-	call	ipout
-	call	crlf
+	lxi	d,ipmsg
+	call	ship
 
-	lxi	d,gwmsg
-	mvi	c,print
-	call	bdos
 	lxi	h,gw
-	call	ipout
-	call	crlf
+	lxi	d,gwmsg
+	call	ship
 
-	lxi	d,ntmsg
-	mvi	c,print
-	call	bdos
 	lxi	h,msk
-	call	ipout
-	call	crlf
+	lxi	d,ntmsg
+	call	ship
 
-	lxi	d,mcmsg
-	mvi	c,print
-	call	bdos
 	lxi	h,mac
-	call	hwout
-	call	crlf
+	call	shmac
 
 	lxi	h,sokregs
 	lxi	d,SOCK0 shl 8
@@ -965,6 +1054,25 @@ scksum:
 	ret
 
 ; Get a block of data from NVRAM to 'buf'
+; Verify checksum, init block if needed.
+nvgetb:
+	lxi	h,0
+	lxi	d,512
+	call	nvget
+	call	vcksum
+	rz	; chksum OK, ready to update/use
+	lxi	d,newbuf
+	mvi	c,print
+	call	bdos
+	lxi	h,buf
+	mvi	m,0ffh
+	mov	d,h
+	mov	e,l
+	inx	h
+	lxi	b,511
+	ldir
+	ret
+
 ; HL = nvram address, DE = length
 nvget:
 	mvi	a,NVSCS
@@ -1063,10 +1171,39 @@ nvset0:
 	pop	h
 	ret
 
+; A = PMAGIC
+shid:	push	psw
+	lxi	d,idmsg
+	mvi	c,print
+	call	bdos
+	pop	psw
+	call	hexout
+	mvi	a,'H'
+	call	chrout
+	jmp	crlf
+
+; HL = IP addr, DE = prefix msg
+ship:	push	h
+	mvi	c,print
+	call	bdos
+	pop	h
+	call	ipout
+	jmp	crlf
+
+; HL = mac addr
+shmac:	push	h
+	lxi	d,mcmsg
+	mvi	c,print
+	call	bdos
+	pop	h
+	call	hwout
+	jmp	crlf
+
 	ds	40
 stack:	ds	0
 usrstk:	dw	0
 
+direct:	db	0
 cpnet:	db	0
 netcfg:	dw	0
 
