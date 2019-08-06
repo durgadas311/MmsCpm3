@@ -12,7 +12,7 @@ STSPORT equ	0b2h
 USBRXR	equ	00000010b	; Rx data available in FIFO
 USBTXR	equ	00000001b	; Tx space available in FIFO
 
-	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 	cseg
 
@@ -241,6 +241,8 @@ NTWKBT:
  
 ;	This procedure is called each time the CCP is
 ;	reloaded from disk.
+NTWKDN:
+	xra	a
 	ret
 
 	end

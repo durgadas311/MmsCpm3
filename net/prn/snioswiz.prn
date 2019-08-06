@@ -2,7 +2,7 @@
                 ;
                 	maclib	z80
                 
-                	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
                 
  0040 =         wiz	equ	40h	; base port
  0040 =         wiz$dat	equ	wiz+0
@@ -35,12 +35,14 @@
                 ; socket commands
  0001 =         OPEN	equ	01h
  0004 =         CONNECT	equ	04h
+ 0008 =         CLOSE	equ	08h	; DISCONNECT, actually
  0020 =         SEND	equ	20h
  0040 =         RECV	equ	40h
                 
                 ; socket status
+ 0000 =         CLOSED	equ	00h
  0013 =         INIT	equ	13h
- 0017 =         ESTABLISHED equ	17h
+ 0017 =         ESTAB	equ	17h
                 
                 	cseg
                 ;	Slave Configuration Table
@@ -52,9 +54,9 @@
  0006           	ds	2		; C:	"
  0008           	ds	2		; D:	"
  000A           	ds	2		; E:	"
- 000C           	ds	2		; F:	"
+ 000C           	ds	2		; F:	"
  000E           	ds	2		; G:	"
- 0010           	ds	2		; H:	"
+ 0010           	ds	2		; H:	"
  0012           	ds	2		; I:	"
  0014           	ds	2		; J:	"
  0016           	ds	2		; K:	"
@@ -108,9 +110,9 @@
                 	inp	a
  00CF+ED78      	DB	0EDH,A*8+40H
  00D1 F5        	push	psw
- 00D2 AF        	xra	a
+ 00D2 AF        	xra	a
  00D3 D341      	out	wiz$ctl	; clear SCS
- 00D5 F1        	pop	psw
+ 00D5 F1        	pop	psw
  00D6 C9        	ret
                 
                 putwiz1:
@@ -164,9 +166,9 @@
                 ; Put 16-bit value to chip
                 ; Prereq: IDM_AR0 already set, auto-incr on
                 ; Entry: A=value for IDM_AR1
-                ;        HL=register pair contents
+                ;        HL=register pair contents
                 putwiz2:
- 0106 3E01      	mvi	a,SCS
+ 0106 3E01      	mvi	a,SCS
  0108 D341      	out	wiz$ctl
  010A 0E40      	mvi	c,wiz$dat
  010C AF        	xra	a
@@ -220,9 +222,9 @@
                 ; returns A=Sn_IR - before any bits are reset
  013E 21007D    wizist:	lxi	h,32000
  0141 C5        wst0:	push	b
- 0142 E5        	push	h
+ 0142 E5        	push	h
  0143 69        	mov	l,c
- 0144 CDDE01    	call	wizsts
+ 0144 CDDE01    	call	wizsts
  0147 E1        	pop	h
  0148 C1        	pop	b
  0149 47        	mov	b,a
@@ -266,7 +268,7 @@
  0170 57        	mov	d,a
  0171 1E03      	mvi	e,sn$sr
  0173 CDBE00    	call	getwiz1
- 0176 FE17      	cpi	ESTABLISHED
+ 0176 FE17      	cpi	ESTAB
  0178 C8        	rz
  0179 FE13      	cpi	INIT
                 	jrz	gs3
@@ -276,9 +278,9 @@
  017F CD1C01    	call	wizcmd
  0182 FE13      	cpi	INIT
                 	jrnz	gs2
- 0184+200E      	DB	20H,GS2-$-1
+ 0184+200E      	DB	20H,GS2-$-1
  0186 3E04      gs3:	mvi	a,CONNECT
- 0188 CD1C01    	call	wizcmd
+ 0188 CD1C01    	call	wizcmd
  018B 0E0B      	mvi	c,00001011b	; CON, DISCON, or TIMEOUT
  018D CD3E01    	call	wizist	; returns when one is set
  0190 2F        	cma	; want "0" on success
@@ -332,9 +334,9 @@
                 ; Destroys IDM_AR0, IDM_AR1
                 cpyin:
  01C3 0618      	mvi	b,rxbuf0
- 01C5 CD9601    	call	cpsetup	;
+ 01C5 CD9601    	call	cpsetup	;
                 	inp	a	; prime MISO
- 01C8+ED78      	DB	0EDH,A*8+40H
+ 01C8+ED78      	DB	0EDH,A*8+40H
  01CA 43        	mov	b,e	; fraction of page
  01CB 7B        	mov	a,e
  01CC B7        	ora	a
@@ -388,9 +390,9 @@
  0203 AF        	xra	a
  0204 322B00    	sta	CFGTBL+36+7
  0207 C33603    	jmp	ntwkbt0	; load data
-                
+                
                 ;	Network Status
-                NTWKST:
+                NTWKST:
  020A 3A0000    	lda	CFGTBL+0
  020D 47        	mov	b,a
  020E E6FC      	ani	not (rcverr+senderr)
@@ -444,9 +446,9 @@
  0255 EB        	xchg
  0256 2AB600    	lhld	curptr
  0259 CDAA01    	call	cpyout
- 025C 3AB500    	lda	cursok
+ 025C 3AB500    	lda	cursok
  025F F608      	ori	sock0
- 0261 57        	mov	d,a
+ 0261 57        	mov	d,a
  0262 3E20      	mvi	a,SEND
  0264 CD1C01    	call	wizcmd
                 	; ignore Sn_SR?
@@ -463,12 +465,12 @@
                 
                 ; TODO: also check/OPEN sockets?
                 ; That would result in all sockets always being open...
-                ; At least check all, if none are ESTABLISHED then error immediately
+                ; At least check all, if none are ESTAB then error immediately
                 check:
  027B 110308    	lxi	d,(sock0 shl 8) + sn$sr
  027E 0608      	mvi	b,nsocks
  0280 CDBE00    chk2:	call	getwiz1
- 0283 FE17      	cpi	ESTABLISHED
+ 0283 FE17      	cpi	ESTAB
                 	jrz	chk3
  0285+2808      	DB	28H,CHK3-$-1
  0287 3E20      	mvi	a,001$00$000b
@@ -500,9 +502,9 @@
  02A9+20E7      	DB	20H,CHK0-$-1
  02AB 37        	stc
  02AC C9        	ret
- 02AD E1        chk4:	pop	h
+ 02AD E1        chk4:	pop	h
  02AE C9        	ret
-                
+                
                 ;	Receive Message from Network
                 RCVMSG:			; BC = message addr
                 	sbcd	msgptr
@@ -556,9 +558,9 @@
  0302 CD1C01    	call	wizcmd
                 	; ignore Sn_SR?
  0305 2ABC00    	lhld	totlen	; might be neg (first pass)
- 0308 7C        	mov	a,h
+ 0308 7C        	mov	a,h
  0309 B7        	ora	a
- 030A F21E03    	jp	rm1
+ 030A F21E03    	jp	rm1
                 	; can we guarantee at least msg hdr?
                 	ldx	a,+4	; msg siz (-1)
  030D+DD7E04    	DB	0DDH,A*8+46H,+4
@@ -611,5 +613,25 @@
  0353 AF        	xra	a
  0354 C9        	ret
                 
- 0355           	end
-
+                NTWKDN:	; close all sockets
+ 0355 0608      	mvi	b,nsocks
+ 0357 1608      	mvi	d,sock0
+ 0359 1E03      nd0:	mvi	e,sn$sr
+ 035B CDBE00    	call	getwiz1
+ 035E FE00      	cpi	CLOSED
+ 0360 CA6A03    	jz	nd1
+ 0363 3E08      	mvi	a,CLOSE
+ 0365 C5        	push	b
+ 0366 CD1C01    	call	wizcmd	; destroys B
+ 0369 C1        	pop	b
+                	; TODO: can these overlap?
+ 036A 3E20      nd1:	mvi	a,001$00$000b
+ 036C 82        	add	d	; next socket
+ 036D 57        	mov	d,a
+                	djnz	nd0
+ 036E+10E9      	DB	10H,ND0-$-1
+ 0370 AF        	xra	a
+ 0371 C9        	ret
+                
+ 0372           	end
+

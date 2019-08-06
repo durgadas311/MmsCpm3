@@ -32,7 +32,7 @@ FNC	equ	3
 SIZ	equ	4
 MSG	equ	5	;message starts at frame+5
 
-	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 	cseg
 
@@ -89,6 +89,7 @@ NTWKBT:
 	sta	RST5
 	lxi	h,INT5
 	shld	RST5+1
+NTWKDN:	xra	a
 	ret
 
 NTWKIN:

@@ -2,7 +2,7 @@
 ;
 	maclib	z80
 
-	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 	cseg
 ;	Slave Configuration Table
@@ -145,9 +145,10 @@ RCVMSG:			; BC = message addr
 	inp	a
 	ani	04h	; rsp overrun
 	rz
-rcvto:
-	mvi	a,0ffh
-NTWKER:
+rcvto:	mvi	a,0ffh
+NTWKER:	ret
+
+NTWKDN:	xra	a
 	ret
 
 NTWKBT:	; NETWORK WARM START

@@ -2,7 +2,7 @@
 ;
 	maclib	z80
 
-	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 wiz	equ	40h	; base port
 wiz$dat	equ	wiz+0
@@ -35,12 +35,14 @@ sn$rxrd	equ	40
 ; socket commands
 OPEN	equ	01h
 CONNECT	equ	04h
+CLOSE	equ	08h	; DISCONNECT, actually
 SEND	equ	20h
 RECV	equ	40h
 
 ; socket status
+CLOSED	equ	00h
 INIT	equ	13h
-ESTABLISHED equ	17h
+ESTAB	equ	17h
 
 	cseg
 ;	Slave Configuration Table
@@ -232,7 +234,7 @@ gs0:	; found...
 	mov	d,a
 	mvi	e,sn$sr
 	call	getwiz1
-	cpi	ESTABLISHED
+	cpi	ESTAB
 	rz
 	cpi	INIT
 	jrz	gs3
@@ -400,12 +402,12 @@ serr:	lda	CFGTBL
 
 ; TODO: also check/OPEN sockets?
 ; That would result in all sockets always being open...
-; At least check all, if none are ESTABLISHED then error immediately
+; At least check all, if none are ESTAB then error immediately
 check:
 	lxi	d,(sock0 shl 8) + sn$sr
 	mvi	b,nsocks
 chk2:	call	getwiz1
-	cpi	ESTABLISHED
+	cpi	ESTAB
 	jrz	chk3
 	mvi	a,001$00$000b
 	add	d	; next socket
@@ -523,6 +525,25 @@ nb0:	pop	h
 	add	d	; next socket
 	mov	d,a
 	djnz	nb1
+	xra	a
+	ret
+
+NTWKDN:	; close all sockets
+	mvi	b,nsocks
+	mvi	d,sock0
+nd0:	mvi	e,sn$sr
+	call	getwiz1
+	cpi	CLOSED
+	jz	nd1
+	mvi	a,CLOSE
+	push	b
+	call	wizcmd	; destroys B
+	pop	b
+	; TODO: can these overlap?
+nd1:	mvi	a,001$00$000b
+	add	d	; next socket
+	mov	d,a
+	djnz	nd0
 	xra	a
 	ret
 

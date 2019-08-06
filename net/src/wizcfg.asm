@@ -372,6 +372,7 @@ shnvsk0:
 	pop	h
 	pop	b
 	djnz	shnvsk0
+	jmp	exit
 
 pars5:	; restore config from NVRAM
 	lda	cpnet

@@ -10,7 +10,7 @@
 ;TITLE	NETWORK DISK OPERATING SYSTEM FOR CP/NET SLAVE
 	maclib	z80
 
-	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKBT, CFGTBL
+	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKBT, NTWKDN, CFGTBL
 ;
 ;
 ;	EQUATIONS OF DATA
@@ -1535,6 +1535,8 @@ rsxf0:			; Compare paramter to our name
 rsxf1:
 	pop	d
 	jnz	next
+	; shutdown NDOS3...
+	call	NTWKDN
 	lxi	d,CSTDN
 	mvi	c,CBUFPR
 	call	next

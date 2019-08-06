@@ -2,7 +2,7 @@
 ;
 	maclib	z80
 
-	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	public	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 wiz	equ	10h	; base port
 wiz$mr	equ	wiz+0
@@ -586,6 +586,10 @@ rx$setup:
 	inx	h
 	mov	a,m	; top page
 	sta	curtop
+	ret
+
+NTWKDN:	; TODO: close all sockets
+	xra	a
 	ret
 
 	end

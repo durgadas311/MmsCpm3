@@ -2,7 +2,7 @@
 
 	maclib z80
 
-	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT
+	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN
 
 	cseg
 ;	Jump vector for SNIOS entry points
@@ -13,5 +13,6 @@
 	jmp	RCVMSG	; receive message from network
 	jmp	NTWKER	; network error
 	jmp	NTWKBT	; network warm boot
+	jmp	NTWKDN	; network shutdown - extension
 
 	end

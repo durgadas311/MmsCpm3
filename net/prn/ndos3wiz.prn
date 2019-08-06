@@ -1,0 +1,405 @@
+                ; INITIALIZATION CODE FOR NDOS3 ON WIZ850IO
+                ; CHECKS FOR DUPLICATE NDOS3, THEN INITIALIZES WIZ850IO
+                ;
+                	MACLIB	Z80
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+                ; SYSTEM PAGE-0 CONSTANTS
+ 0000 =         CPM	EQU	0
+ 0005 =         BDOS	EQU	5
+                
+                ; BDOS FUNCTIONS
+ 0009 =         PRINT	EQU	9
+                
+                ; BASE PORT OF H8-WIZX50IO SPI INTERFACE
+ 0040 =         SPI	EQU	40H
+                
+ 0040 =         SPI$DAT	EQU	SPI+0
+ 0041 =         SPI$CTL	EQU	SPI+1
+ 0041 =         SPI$STS	EQU	SPI+1
+                
+ 0001 =         WZSCS	EQU	01B	; SCS FOR WIZNET
+ 0002 =         NVSCS	EQU	10B	; SCS FOR NVRAM
+                
+                ; NVRAM/SEEPROM COMMANDS
+ 0003 =         NVRD	EQU	00000011B
+                
+                ; WIZNET CTRL BIT FOR WRITING
+ 0004 =         WRITE	EQU	00000100B
+                
+ 0001 =         GAR	EQU	1	; OFFSET OF GAR, ETC.
+ 0005 =         SUBR	EQU	5
+ 0009 =         SHAR	EQU	9
+ 000F =         SIPR	EQU	15
+ 001D =         PMAGIC	EQU	29	; USED FOR NODE ID
+                
+ 0008 =         NSOCK	EQU	8
+ 0008 =         SOCK0	EQU	000$01$000B
+ 0028 =         SOCK1	EQU	001$01$000B
+ 0048 =         SOCK2	EQU	010$01$000B
+ 0068 =         SOCK3	EQU	011$01$000B
+ 0088 =         SOCK4	EQU	100$01$000B
+ 00A8 =         SOCK5	EQU	101$01$000B
+ 00C8 =         SOCK6	EQU	110$01$000B
+ 00E8 =         SOCK7	EQU	111$01$000B
+                
+ 0000 =         SNMR	EQU	0
+ 0001 =         SNCR	EQU	1
+ 0002 =         SNIR	EQU	2
+ 0003 =         SNSR	EQU	3
+ 0004 =         SNPORT	EQU	4
+ 000C =         SNDIPR	EQU	12
+ 0010 =         SNDPORT	EQU	16
+                
+                ; SOCKET SR VALUES
+ 0000 =         CLOSED	EQU	00H
+                
+                ; SOCKET CR COMMANDS
+ 0008 =         DISCON	EQU	08H
+                
+                ; RSX IS ALREADY LINKED-IN, BUT MIGHT BE A DUPLICATE
+                
+ 0100           	ORG	100H
+ 0100 313A03    	LXI	SP,STACK
+                
+                	LIXD	BDOS+1	; THIS SHOULD BE OUR NDOS3
+ 0103+DD2A      	DB	0DDH,2AH
+ 0105+0600      	DW	BDOS+1
+                	SIXD	US
+ 0107+DD22      	DB	0DDH,22H
+ 0109+C202      	DW	US
+ 010B C31F01    	JMP	DUP0
+                DUP1:
+                	LDX	A,+18	; LOADER3?
+ 010E+DD7E12    	DB	0DDH,A*8+46H,+18
+ 0111 FEFF      	CPI	0FFH
+ 0113 CA4701    	JZ	LDR3
+ 0116 CD5001    	CALL	CHKDUP
+ 0119 11C402    	LXI	D,DUPMSG
+ 011C CA2B01    	JZ	RM$US	; DUPLICATE NDOS3, REMOVE "US"
+                DUP0:
+                	LDX	L,+4	; NEXT RSX...
+ 011F+DD6E04    	DB	0DDH,L*8+46H,+4
+                	LDX	H,+5	;
+ 0122+DD6605    	DB	0DDH,H*8+46H,+5
+ 0125 E5        	PUSH	H
+                	POPIX
+ 0126+DDE1      	DB	0DDH,0E1H
+ 0128 C30E01    	JMP	DUP1
+                
+                ; DE = MESSAGE TO PRINT
+                RM$US:
+                	LIXD	US
+ 012B+DD2A      	DB	0DDH,2AH
+ 012D+C202      	DW	US
+                	MVIX	0FFH,+8	; SET REMOVE FLAG
+ 012F+DD3608FF  	DB	0DDH,36H,+8,0FFH
+                	; ALSO SHORT-CIRCUIT IT
+                	LDX	L,+4	; NEXT RSX...
+ 0133+DD6E04    	DB	0DDH,L*8+46H,+4
+                	LDX	H,+5	;
+ 0136+DD6605    	DB	0DDH,H*8+46H,+5
+                	STX	L,+1	; BY-PASS DUPLICATE
+ 0139+DD7501    	DB	0DDH,70H+L,+1
+                	STX	H,+2	;
+ 013C+DD7402    	DB	0DDH,70H+H,+2
+                	; REPORT WHAT HAPPENED
+ 013F 0E09      	MVI	C,PRINT
+ 0141 CD0500    	CALL	BDOS
+ 0144 C30000    	JMP	CPM
+                
+                ; HIT LOADER3 RSX, NO DUP FOUND...
+                LDR3:
+ 0147 CD6901    	CALL	WIZCFG
+ 014A C25102    	JNZ	NOCFG
+ 014D C30000    	JMP	CPM	; LET RSX INIT ITSELF
+                
+                CHKDUP:	PUSHIX
+ 0150+DDE5      	DB	0DDH,0E5H
+ 0152 E1        	POP	H
+ 0153 110A00    	LXI	D,10	; OFFSET OF NAME
+ 0156 19        	DAD	D
+ 0157 11DB02    	LXI	D,NDOS3
+ 015A 010800    	LXI	B,8
+ 015D 1A        CHK0:	LDAX	D
+ 015E BE        	CMP	M
+ 015F C0        	RNZ
+ 0160 23        	INX	H
+ 0161 13        	INX	D
+ 0162 0B        	DCX	B
+ 0163 78        	MOV	A,B
+ 0164 B1        	ORA	C
+ 0165 C25D01    	JNZ	CHK0
+ 0168 C9        	RET	; ZR = MATCH
+                
+                WIZCFG:	; RESTORE CONFIG FROM NVRAM
+ 0169 210000    	LXI	H,0
+ 016C 110002    	LXI	D,512
+ 016F CD9C02    	CALL	NVGET
+ 0172 CD7802    	CALL	VCKSUM
+ 0175 C0        	RNZ
+ 0176 213B03    	LXI	H,NVBUF+GAR
+ 0179 1600      	MVI	D,0
+ 017B 1E01      	MVI	E,GAR
+ 017D 0612      	MVI	B,18	; GAR, SUBR, SHAR, SIPR
+ 017F CD0B02    	CALL	WIZSET
+ 0182 215703    	LXI	H,NVBUF+PMAGIC
+ 0185 1600      	MVI	D,0
+ 0187 1E1D      	MVI	E,PMAGIC
+ 0189 0601      	MVI	B,1
+ 018B CD0B02    	CALL	WIZSET
+                	LXIX	NVBUF+32
+ 018E+DD21      	DB	0DDH,21H
+ 0190+5A03      	DW	NVBUF+32
+ 0192 1608      	MVI	D,SOCK0
+ 0194 0608      	MVI	B,8
+ 0196 C5        REST0:	PUSH	B
+                	LDX	A,SNPORT
+ 0197+DD7E04    	DB	0DDH,A*8+46H,SNPORT
+ 019A FE31      	CPI	31H
+ 019C C2B301    	JNZ	REST1	; SKIP UNCONFIGURED SOCKETS
+ 019F CD2202    	CALL	CLOSE
+ 01A2 CD4402    	CALL	SETTCP	; ENSURE MR IS SET TO TCP/IP
+ 01A5 1E04      	MVI	E,SNPORT
+ 01A7 0602      	MVI	B,2
+ 01A9 CD3802    	CALL	SETSOK
+ 01AC 1E0C      	MVI	E,SNDIPR
+ 01AE 0606      	MVI	B,6	; DIPR AND DPORT
+ 01B0 CD3802    	CALL	SETSOK
+ 01B3 012000    REST1:	LXI	B,32
+                	DADX	B
+ 01B6+DD09      	DB	0DDH,B*8+09H
+ 01B8 3E20      	MVI	A,001$00$000B	; SOCKET BSB INCR VALUE
+ 01BA 82        	ADD	D
+ 01BB 57        	MOV	D,A
+ 01BC C1        	POP	B
+                	DJNZ	REST0
+ 01BD+10D7      	DB	10H,REST0-$-1
+ 01BF AF        	XRA	A
+ 01C0 C9        	RET
+                
+                ; SEND SOCKET COMMAND TO WIZNET CHIP, WAIT FOR DONE.
+                ; A = COMMAND, D = SOCKET BSB
+                ; DESTROYS A
+                WIZCMD:
+ 01C1 F5        	PUSH	PSW
+ 01C2 3E01      	MVI	A,WZSCS
+ 01C4 D341      	OUT	SPI$CTL
+ 01C6 AF        	XRA	A
+ 01C7 D340      	OUT	SPI$DAT
+ 01C9 3E01      	MVI	A,SNCR
+ 01CB D340      	OUT	SPI$DAT
+ 01CD 7A        	MOV	A,D
+ 01CE F604      	ORI	WRITE
+ 01D0 D340      	OUT	SPI$DAT
+ 01D2 F1        	POP	PSW
+ 01D3 D340      	OUT	SPI$DAT	; START COMMAND
+ 01D5 AF        	XRA	A	;
+ 01D6 D341      	OUT	SPI$CTL
+                WC0:
+ 01D8 3E01      	MVI	A,WZSCS
+ 01DA D341      	OUT	SPI$CTL
+ 01DC AF        	XRA	A
+ 01DD D340      	OUT	SPI$DAT
+ 01DF 3E01      	MVI	A,SNCR
+ 01E1 D340      	OUT	SPI$DAT
+ 01E3 7A        	MOV	A,D
+ 01E4 D340      	OUT	SPI$DAT
+ 01E6 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 01E8 DB40      	IN	SPI$DAT
+ 01EA F5        	PUSH	PSW
+ 01EB AF        	XRA	A	;
+ 01EC D341      	OUT	SPI$CTL
+ 01EE F1        	POP	PSW
+ 01EF B7        	ORA	A
+ 01F0 C2D801    	JNZ	WC0
+ 01F3 C9        	RET
+                
+                ; E = BSB, D = CTL, HL = DATA, B = LENGTH
+                WIZGET:
+ 01F4 3E01      	MVI	A,WZSCS
+ 01F6 D341      	OUT	SPI$CTL
+ 01F8 AF        	XRA	A	; HI ADR ALWAYS 0
+ 01F9 D340      	OUT	SPI$DAT
+ 01FB 7B        	MOV	A,E
+ 01FC D340      	OUT	SPI$DAT
+ 01FE 7A        	MOV	A,D
+ 01FF D340      	OUT	SPI$DAT
+ 0201 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 0203 0E40      	MVI	C,SPI$DAT
+                	INIR
+ 0205+EDB2      	DB	0EDH,0B2H
+ 0207 AF        	XRA	A	; NOT SCS
+ 0208 D341      	OUT	SPI$CTL
+ 020A C9        	RET
+                
+                ; HL = DATA TO SEND, E = OFFSET, D = BSB, B = LENGTH
+                ; DESTROYS HL, B, C, A
+                WIZSET:
+ 020B 3E01      	MVI	A,WZSCS
+ 020D D341      	OUT	SPI$CTL
+ 020F AF        	XRA	A	; HI ADR ALWAYS 0
+ 0210 D340      	OUT	SPI$DAT
+ 0212 7B        	MOV	A,E
+ 0213 D340      	OUT	SPI$DAT
+ 0215 7A        	MOV	A,D
+ 0216 F604      	ORI	WRITE
+ 0218 D340      	OUT	SPI$DAT
+ 021A 0E40      	MVI	C,SPI$DAT
+                	OUTIR
+ 021C+EDB3      	DB	0EDH,0B3H
+ 021E AF        	XRA	A	; NOT SCS
+ 021F D341      	OUT	SPI$CTL
+ 0221 C9        	RET
+                
+                ; CLOSE SOCKET IF ACTIVE (SR <> CLOSED)
+                ; D = SOCKET BSB
+                ; DESTROYS HL, E, B, C, A
+                CLOSE:
+ 0222 21C102    	LXI	H,TMP
+ 0225 1E03      	MVI	E,SNSR
+ 0227 0601      	MVI	B,1
+ 0229 CDF401    	CALL	WIZGET
+ 022C 3AC102    	LDA	TMP
+ 022F FE00      	CPI	CLOSED
+ 0231 C8        	RZ
+ 0232 3E08      	MVI	A,DISCON
+ 0234 CDC101    	CALL	WIZCMD
+                	; DON'T CARE ABOUT RESULTS?
+ 0237 C9        	RET
+                
+                ; IX = BASE DATA BUFFER FOR SOCKET, D = SOCKET BSB, E = OFFSET, B = LENGTH
+                ; DESTROYS HL, B, C
+                SETSOK:
+                	PUSHIX
+ 0238+DDE5      	DB	0DDH,0E5H
+ 023A E1        	POP	H
+ 023B D5        	PUSH	D
+ 023C 1600      	MVI	D,0
+ 023E 19        	DAD	D	; HL POINTS TO DATA IN 'BUF'
+ 023F D1        	POP	D
+ 0240 CD0B02    	CALL	WIZSET
+ 0243 C9        	RET
+                
+                ; SET SOCKET MR TO TCP.
+                ; D = SOCKET BSB (RESULT OF "GETSOKN")
+                ; DESTROYS ALL REGISTERS EXCEPT D.
+                SETTCP:
+ 0244 21C102    	LXI	H,TMP
+ 0247 3601      	MVI	M,1	; TCP/IP MODE
+ 0249 1E00      	MVI	E,SNMR
+ 024B 0601      	MVI	B,1
+ 024D CD0B02    	CALL	WIZSET	; FORCE TCP/IP MODE
+ 0250 C9        	RET
+                
+ 0251 11E302    NOCFG:	LXI	D,NCFG
+ 0254 0E09      	MVI	C,PRINT
+ 0256 CD0500    	CALL	BDOS
+ 0259 C30000    	JMP	CPM
+                
+                ; IX = BUFFER, BC = LENGTH
+                ; RETURN: HL = CKSUM HI, DE = CKSUM LO
+                CKSUM32:
+ 025C 210000    	LXI	H,0
+ 025F 110000    	LXI	D,0
+                CKS0:	LDX	A,+0
+ 0262+DD7E00    	DB	0DDH,A*8+46H,+0
+                	INXIX
+ 0265+DD23      	DB	0DDH,23H
+ 0267 83        	ADD	E
+ 0268 5F        	MOV	E,A
+                	JRNC	CKS1
+ 0269+3007      	DB	30H,CKS1-$-1
+ 026B 14        	INR	D
+                	JRNZ	CKS1
+ 026C+2004      	DB	20H,CKS1-$-1
+ 026E 2C        	INR	L
+                	JRNZ	CKS1
+ 026F+2001      	DB	20H,CKS1-$-1
+ 0271 24        	INR	H
+ 0272 0B        CKS1:	DCX	B
+ 0273 78        	MOV	A,B
+ 0274 B1        	ORA	C
+                	JRNZ	CKS0
+ 0275+20EB      	DB	20H,CKS0-$-1
+ 0277 C9        	RET
+                
+                ; VALIDATES CHECKSUM IN 'BUF'
+                ; RETURN: NZ ON ERROR
+                ; A CHECKSUM OF 00 00 00 00 MEANS THE BUFFER WAS ALL 00,
+                ; WHICH IS INVALID.
+                VCKSUM:
+                	LXIX	NVBUF
+ 0278+DD21      	DB	0DDH,21H
+ 027A+3A03      	DW	NVBUF
+ 027C 01FC01    	LXI	B,508
+ 027F CD5C02    	CALL	CKSUM32
+                	LBCD	NVBUF+510
+ 0282+ED4B      	DB	0EDH,4BH
+ 0284+3805      	DW	NVBUF+510
+ 0286 78        	MOV	A,B	;
+ 0287 B1        	ORA	C	; CHECK FIRST HALF ZERO
+                	DSBC	B
+ 0288+ED42      	DB	0EDH,B*8+42H
+ 028A C0        	RNZ
+                	LBCD	NVBUF+508
+ 028B+ED4B      	DB	0EDH,4BH
+ 028D+3605      	DW	NVBUF+508
+ 028F B0        	ORA	B	;
+ 0290 B1        	ORA	C	; CHECK SECOND HALF ZERO
+ 0291 EB        	XCHG
+                	DSBC	B	; CY IS CLEAR
+ 0292+ED42      	DB	0EDH,B*8+42H
+ 0294 C0        	RNZ
+ 0295 B7        	ORA	A	; WAS CHECKSUM ALL ZERO?
+                	JRZ	VCKSM0
+ 0296+2802      	DB	28H,VCKSM0-$-1
+ 0298 AF        	XRA	A	; ZR
+ 0299 C9        	RET
+ 029A 3C        VCKSM0:	INR	A	; NZ
+ 029B C9        	RET
+                
+                ; HL = NVRAM ADDRESS, DE = LENGTH
+                NVGET:
+ 029C 3E02      	MVI	A,NVSCS
+ 029E D341      	OUT	SPI$CTL
+ 02A0 3E03      	MVI	A,NVRD
+ 02A2 D340      	OUT	SPI$DAT
+ 02A4 7C        	MOV	A,H
+ 02A5 D340      	OUT	SPI$DAT
+ 02A7 7D        	MOV	A,L
+ 02A8 D340      	OUT	SPI$DAT
+ 02AA DB40      	IN	SPI$DAT	; PRIME PUMP
+ 02AC 0E40      	MVI	C,SPI$DAT
+ 02AE 7B        	MOV	A,E
+ 02AF B7        	ORA	A
+ 02B0 CAB402    	JZ	NVGET1
+ 02B3 14        	INR	D	; TODO: HANDLE 64K... AND OVERFLOW OF 'BUF'...
+ 02B4 213A03    NVGET1:	LXI	H,NVBUF
+ 02B7 43        	MOV	B,E
+                NVGET0:	INIR	; B = 0 AFTER
+ 02B8+EDB2      	DB	0EDH,0B2H
+ 02BA 15        	DCR	D
+                	JRNZ	NVGET0
+ 02BB+20FB      	DB	20H,NVGET0-$-1
+ 02BD AF        	XRA	A	; NOT SCS
+ 02BE D341      	OUT	SPI$CTL
+ 02C0 C9        	RET
+                
+ 02C1 00        TMP:	DB	0
+                
+ 02C2 0000      US:	DW	0	; OUR COPY OF NDOS3 (REMOVE IF DUP)
+                
+ 02C4 4E444F5333DUPMSG:	DB	'NDOS3 already loaded',CR,LF,'$'
+ 02DB 4E444F5333NDOS3:	DB	'NDOS3   '
+ 02E3 4E5652414DNCFG:	DB	'NVRAM not configured',CR,LF,'$'
+                
+ 02FA           	DS	64
+ 033A           STACK:	DS	0
+                
+ 033A           NVBUF:	DS	512
+                
+ 053A           	END
+
