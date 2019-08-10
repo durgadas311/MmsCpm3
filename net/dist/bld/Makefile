@@ -14,3 +14,7 @@ all:
 # An example, really. For ROM at F000.
 cpnos.com: cpnos.rel cpndos.rel cpbdos.rel cpbios.rel cpnios.rel
 	vcpm link "cpnos,cpndos,cpnios,cpbdos,cpbios[LF000,DEC00]"
+
+cpnetldr.com: cpnetldr.asm
+	vcpm mac cpnetldr.asm '$SZLA'
+	vcpm hexcom cpnetldr
