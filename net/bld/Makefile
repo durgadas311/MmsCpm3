@@ -64,3 +64,37 @@ wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com snios-w.spr
 usb: ntpdt-u.com ndos3-u.com
 
 mms: ntpdt-m.com ndos3-m.com
+
+# These are run from git/MmsCpm3/net/bld
+
+CPNET_UTLS = cpnetsts.com dskreset.com endlist.com local.com \
+	login.com logoff.com mail.com network.com xsubnet.com
+
+WIZ_UTLS = wizcfg.com wizdbg.com
+
+NV_UTLS = nvram.com rsxrm.com tr.com
+
+CPNET_DOC = CPNET-WIZ850io.pdf dri-cpnet.pdf H8x-SPI-OP.pdf
+
+ship: cpnet3.tgz cpnet12.tgz cpnetdocs.tgz
+
+cpnet3.tgz: __FRC__
+	tar -czf cpnet3.tgz -C ../dist/bin $(CPNET_UTLS) \
+		-C ../../bin $(WIZ_UTLS) --xform='s/-w//' ndos3-w.com \
+		-C ../../util/bin $(NV_UTLS)
+
+# TODO: change cpnetldr.com to cpnldr-w.com with --xform='s/cpnldr-w/cpnetldr/'
+cpnet12.tgz: __FRC__
+	tar -czf cpnet12.tgz -C ../dist/bin $(CPNET_UTLS) ndos.spr \
+			cpnetldr.com \
+		-C ../../bin $(WIZ_UTLS) --xform='s/-w//' snios-w.spr \
+		-C ../../util/bin $(NV_UTLS)
+
+cpnetdocs.tgz: __FRC__
+	tar -czf cpnetdocs.tgz -C ../../doc $(CPNET_DOC)
+
+publish: ship
+	rsync -Wuv wiznet.htaccess durgadas.com:/http/durgadas.com/sebhc/mms89/wiz850io/.htaccess
+	rsync -Wuv *.tgz durgadas.com:/http/durgadas.com/sebhc/mms89/wiz850io
+
+__FRC__:
