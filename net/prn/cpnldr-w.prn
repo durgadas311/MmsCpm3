@@ -1,0 +1,1122 @@
+                ;  CP/NET LOADER  FOR CP/NET VER. 1.0
+                ;
+                ;  1982.8.6. BASE
+                ;
+                ;TITLE	CP/NET LOADER VER.1.0
+                ;
+ 0001 =         WIZNET	EQU	1
+                ;
+                ;  EQUATIONS OF DATA
+                ;
+ 000A =         LF	EQU	0AH		;LINE FEED
+ 000D =         CR	EQU	0DH		;CARRIAGE RETURN
+                ;
+ 0000 =         TOP	EQU	0		;MEMORY TOP
+ 0005 =         BDOS	EQU	5		;BDOS ENTRY
+ 005C =         RESFCB	EQU	5CH		;RESIDENT FCB
+ 0080 =         SCTLNG	EQU	128		;SECTOR LENGTH
+                ;
+                ;  EQUATIONS OF BDOS FUNCTION
+                ;
+ 0000 =         CRESET	EQU	0		;SYSTEM RESET
+ 0002 =         CCONOT	EQU	2		;CONSOLE OUT
+ 0009 =         CBUFPR	EQU	9		;BUFFERED STRING PRINT
+ 000C =         CGETVR	EQU	12		;GET VERSION NUMBER
+ 000F =         COPEN	EQU	15		;OPEN FILE
+ 0014 =         CREAD	EQU	20		;READ FILE
+ 001A =         CSTDMA	EQU	26		;SET DMA ADDRESS
+                ;
+ 0100           	ORG	100H
+                ;  START
+                ;
+ 0100 C30C02    	JMP	START
+                ;
+                ;  BREAK POINT RESTART NUMBER FOR DEBUG
+                ;
+ 0103 07        BPNUM:	DB	7
+                ;
+                ;  COMMENTS
+                ;
+ 0104 434F505952	DB	'COPYRIGHT (C) 1982,'
+                ;
+ 0117 2044494749PUSRID:	DB	' DIGITAL RESEARCH '	;USER ID IS SEARCHED BY THIS STRING
+                ;
+                ;  USER ID CODE
+                ;
+ 0129 0000000000	DB	0,0,0,0,0,0
+                ;
+ 012F 4469736B20CDSKER:	DB	'Disk read error$'
+                ;
+ 013F BE04      PDEBBP:	DW	DEBBP		;POINTER OF DEBUGGER BREAK POINT ROUTINE
+                ;
+ 0141 53796E6368CSYNC:	DB	'Synchronization$'
+ 0151 0D0A43502FCARLOD:	DB	CR,LF,'CP/Net is already loaded.$'
+ 016D 0D0A0A4350CSTUP:	DB	CR,LF,LF,'CP/NET 1.2 Loader'
+ 0181 0D0A3D3D3D	DB	CR,LF,'=================',CR,LF,LF,'$'
+                ;
+ 0198 42494F5320CBIOS:	DB	'BIOS       $'
+ 01A4 42444F5320CBDOS:	DB	'BDOS       $'
+ 01B0 534E494F53CSNIOS:	DB	'SNIOS   SPR$'
+ 01BC 4E444F5320CNDOS:	DB	'NDOS    SPR$'
+ 01C8 5450412020CTPA:	DB	'TPA        $'
+                ;
+ 01D4 43502F4E45CLEND:	DB	'CP/NET 1.2 loading complete.$'
+ 01F1 0D0A43502FCLERR:	DB	CR,LF,'CP/NET Loader error: $'
+                ;
+                ;  START OF MAIN
+                ;
+ 0209 311206    	LXI	SP,PFLNAM
+                START:
+ 020C 216306    	LXI	H,STACK
+ 020F F9        	SPHL			;SET STACK POINTER
+ 0210 110000    	LXI	D,0
+ 0213 0E0C      	MVI	C,CGETVR	;GET VERSION NUMBER
+ 0215 CD0500    	CALL	BDOS
+ 0218 110002    	LXI	D,200H
+ 021B CDD005    	CALL	ANHLDE		;GET CP/NET MODE
+ 021E 3E00      	MVI	A,0
+ 0220 CDE405    	CALL	SUBYHL		;CHECK ZERO
+ 0223 B5        	ORA	L
+ 0224 CA3502    	JZ	STARTS		;CP/NET IS NOT LOADED OK
+ 0227 015101    	LXI	B,CARLOD	;CP/NET ALREADY LOADED
+ 022A CD9703    	CALL	BUFPRN
+ 022D 110000    EXIT:	LXI	D,0
+ 0230 0E00      	MVI	C,CRESET
+ 0232 CD0500    	CALL	BDOS		;RETURN TO SYSTEM
+                ;
+                STARTS:
+                IF	WIZNET
+ 0235 CDB906    	CALL	WIZCFG
+                ENDIF
+ 0238 2A6306    	LHLD	BDOSPT		;GET POINT OF BDOS POINTER
+ 023B 1100FF    	LXI	D,0FF00H
+ 023E CDDB05    	CALL	ANHMDE		;OFF LOWER BYTE
+ 0241 226706    	SHLD	FREBOT		;SAVE AVAILABLE AREA TOP
+ 0244 3A5D00    	LDA	RESFCB+1	;GET DEBUG MODE
+ 0247 32B606    	STA	FDEBUG
+ 024A 016D01    	LXI	B,CSTUP
+ 024D CD9703    	CALL	BUFPRN		;START UP COMMENT
+                ;
+ 0250 019801    	LXI	B,CBIOS		;BIOS
+ 0253 CD9703    	CALL	BUFPRN
+ 0256 210100    	LXI	H,TOP+1
+ 0259 226306    	SHLD	BDOSPT		;SET POINTER OF BIOS ROUTINE POINTER
+ 025C 2A6306    	LHLD	BDOSPT
+ 025F 4E        	MOV	C,M
+ 0260 23        	INX	H
+ 0261 46        	MOV	B,M		;GET BIOS POINT
+ 0262 0B        	DCX	B
+ 0263 0B        	DCX	B
+ 0264 0B        	DCX	B
+ 0265 CD2204    	CALL	LOCPR		;PRINT BIOS TOP
+ 0268 2A6306    	LHLD	BDOSPT
+ 026B 11FFFF    	LXI	D,-1
+ 026E CD0906    	CALL	SUDEHM		;GET COMPLEMET OF BIOS POINT VALUE
+ 0271 110400    	LXI	D,4		;GET BIAS
+ 0274 19        	DAD	D
+ 0275 44        	MOV	B,H
+ 0276 4D        	MOV	C,L
+ 0277 CD2204    	CALL	LOCPR		;PRINT BIOS LENGTH
+ 027A CDD703    	CALL	CRLF
+                ;
+ 027D 01A401    	LXI	B,CBDOS		;BDOS
+ 0280 CD9703    	CALL	BUFPRN
+ 0283 2A6706    	LHLD	FREBOT		;GET BDOS TOP
+ 0286 44        	MOV	B,H
+ 0287 4D        	MOV	C,L
+ 0288 CD2204    	CALL	LOCPR		;PRINT BDOS TOP
+ 028B 2A6306    	LHLD	BDOSPT
+ 028E 4E        	MOV	C,M
+ 028F 23        	INX	H
+ 0290 46        	MOV	B,M
+ 0291 0B        	DCX	B
+ 0292 0B        	DCX	B
+ 0293 0B        	DCX	B		;BIOS TOP
+ 0294 50        	MOV	D,B
+ 0295 59        	MOV	E,C
+ 0296 2A6706    	LHLD	FREBOT
+ 0299 CDE705    	CALL	SUDEHL		;GET BDOS LENGTH
+ 029C 44        	MOV	B,H
+ 029D 4D        	MOV	C,L
+ 029E CD2204    	CALL	LOCPR		;PRINT BDOS LENGTH
+ 02A1 CDD703    	CALL	CRLF
+                ;
+ 02A4 21B001    	LXI	H,CSNIOS	;SNIOS.SPR
+ 02A7 221206    	SHLD	PFLNAM		;SET FILE NAME POINT FOR ERROR ROUTINE
+ 02AA 44        	MOV	B,H
+ 02AB 4D        	MOV	C,L
+ 02AC CD9703    	CALL	BUFPRN
+ 02AF 2A6706    	LHLD	FREBOT		;GET LOADING POINT
+ 02B2 44        	MOV	B,H
+ 02B3 4D        	MOV	C,L
+ 02B4 119506    	LXI	D,FSNIOS	;FCB POINT OF SNIOS.SPR
+ 02B7 CDDB04    	CALL	LOAD		;LOAD SNIOS.SPR
+ 02BA 226906    	SHLD	TOPPNT		;SAVE SNIOS TOP
+ 02BD 11FFFF    	LXI	D,-1
+ 02C0 CDE705    	CALL	SUDEHL		;CHECK ERROR
+ 02C3 B5        	ORA	L
+ 02C4 C2CA02    	JNZ	$+6		;NOT ERROR
+ 02C7 C36403    	JMP	ERROR		;SNIOS.SPR LOAD ERROR
+                ;
+ 02CA 2A6906    	LHLD	TOPPNT
+ 02CD 44        	MOV	B,H
+ 02CE 4D        	MOV	C,L
+ 02CF CD2204    	CALL	LOCPR		;PRINT SNIOS TOP
+ 02D2 016906    	LXI	B,TOPPNT
+ 02D5 116706    	LXI	D,FREBOT
+ 02D8 CDEE05    	CALL	SUDMBM		;GET SNIOS LENGTH
+ 02DB 44        	MOV	B,H
+ 02DC 4D        	MOV	C,L
+ 02DD CD2204    	CALL	LOCPR		;PRINT SNIOS LENGTH
+ 02E0 CDD703    	CALL	CRLF
+ 02E3 2A6906    	LHLD	TOPPNT		;SET SNIOS TOP AS THE BOTTOM OF NDOS
+ 02E6 226706    	SHLD	FREBOT
+                ;
+ 02E9 21BC01    	LXI	H,CNDOS		;NDOS.SPR
+ 02EC 221206    	SHLD	PFLNAM
+ 02EF 44        	MOV	B,H
+ 02F0 4D        	MOV	C,L
+ 02F1 CD9703    	CALL	BUFPRN
+ 02F4 2A6706    	LHLD	FREBOT		;GET LOADING POINT
+ 02F7 44        	MOV	B,H
+ 02F8 4D        	MOV	C,L
+ 02F9 117406    	LXI	D,FNDOS		;GET FCB POINT
+ 02FC CDDB04    	CALL	LOAD		;LOAD NDOS.SPR
+ 02FF 226906    	SHLD	TOPPNT
+ 0302 11FFFF    	LXI	D,-1
+ 0305 CDE705    	CALL	SUDEHL		;CHECK LOAD ERROR
+ 0308 B5        	ORA	L
+ 0309 C20F03    	JNZ	$+6		;NOT ERROR
+ 030C C36403    	JMP	ERROR		;NDOS.SPR LOADING ERROR
+                ;
+ 030F 2A6906    	LHLD	TOPPNT
+ 0312 44        	MOV	B,H
+ 0313 4D        	MOV	C,L
+ 0314 CD2204    	CALL	LOCPR		;PRINT NDOS TOP
+ 0317 016906    	LXI	B,TOPPNT
+ 031A 116706    	LXI	D,FREBOT
+ 031D CDEE05    	CALL	SUDMBM		;GET LENGTH
+ 0320 44        	MOV	B,H
+ 0321 4D        	MOV	C,L
+ 0322 CD2204    	CALL	LOCPR		;PRINT LENGTH
+ 0325 CDD703    	CALL	CRLF
+ 0328 2A6906    	LHLD	TOPPNT
+ 032B 23        	INX	H
+ 032C 23        	INX	H
+ 032D 23        	INX	H
+ 032E 22B706    	SHLD	PNDOSC		;SAVE NDOS COLD START ROUTINE POINTER
+                ;
+ 0331 01C801    	LXI	B,CTPA		;TPA
+ 0334 CD9703    	CALL	BUFPRN
+ 0337 010000    	LXI	B,TOP
+ 033A CD2204    	CALL	LOCPR		;TOP OF TPA
+ 033D 2A6906    	LHLD	TOPPNT
+ 0340 44        	MOV	B,H
+ 0341 4D        	MOV	C,L
+ 0342 CD2204    	CALL	LOCPR		;LENGTH IS NDOS TOP
+ 0345 CDD703    	CALL	CRLF
+ 0348 2AB706    	LHLD	PNDOSC
+ 034B 23        	INX	H
+ 034C 23        	INX	H
+ 034D 23        	INX	H
+ 034E EB        	XCHG
+ 034F 011701    	LXI	B,PUSRID
+ 0352 CD4804    	CALL	CHKUSC		;CHECK USER ID CODE
+ 0355 CDD703    	CALL	CRLF
+ 0358 01D401    	LXI	B,CLEND
+ 035B CD9703    	CALL	BUFPRN		;PRINT LOADING END COMMENT
+ 035E CDD703    	CALL	CRLF
+ 0361 CDC004    	CALL	GOTDOS		;TO NDOS OR BREAK
+                ;
+                ;  ERROR ROUTINE
+                ;
+                ERROR:
+ 0364 311206    	LXI	SP,PFLNAM
+ 0367 01F101    	LXI	B,CLERR
+ 036A CD9703    	CALL	BUFPRN		;LOADER ERROR
+ 036D 2A1206    	LHLD	PFLNAM		;GET ERROR DATA COMMENT POINT
+ 0370 44        	MOV	B,H
+ 0371 4D        	MOV	C,L
+ 0372 CD9703    	CALL	BUFPRN		;PRINT ERROR DATA
+                ERSTOP:
+ 0375 3EFF      	MVI	A,-1
+ 0377 1F        	RAR
+ 0378 D28503    	JNC	ERSTOS
+ 037B 210000    	LXI	H,TOP
+ 037E F9        	SPHL
+ 037F F3        	DI
+ 0380 FB        	EI
+ 0381 76        	HLT
+ 0382 C37503    	JMP	ERSTOP
+                ;
+                ERSTOS:
+ 0385 FB        	EI
+ 0386 76        	HLT
+                ;
+                ;  CONSOLE OUT
+                ;  INPUT
+                ;   C:DATA
+                ;
+                CONOT:
+ 0387 211406    	LXI	H,WCONOT
+ 038A 71        	MOV	M,C
+ 038B 2A1406    	LHLD	WCONOT
+ 038E 2600      	MVI	H,0
+ 0390 EB        	XCHG
+ 0391 0E02      	MVI	C,002H
+ 0393 CD0500    	CALL	BDOS
+ 0396 C9        	RET
+                ;
+                ;  BUFFER PRINT
+                ;  INPUT
+                ;  BC:STRING POINT
+                ;
+                BUFPRN:
+ 0397 211606    	LXI	H,WBUFPR+1
+ 039A 70        	MOV	M,B
+ 039B 2B        	DCX	H
+ 039C 71        	MOV	M,C		;SAVE PARAMETER
+ 039D 2A1506    	LHLD	WBUFPR
+ 03A0 EB        	XCHG
+ 03A1 0E09      	MVI	C,CBUFPR
+ 03A3 CD0500    	CALL	BDOS
+ 03A6 C9        	RET
+                ;
+                ;  OPEN FILE			NOT USED
+                ;  INPUT
+                ;  BC:FCB POINT
+                ;
+ 03A7 211806    	LXI	H,WOPEN+1
+ 03AA 70        	MOV	M,B
+ 03AB 2B        	DCX	H
+ 03AC 71        	MOV	M,C
+ 03AD 2A1706    	LHLD	WOPEN
+ 03B0 EB        	XCHG
+ 03B1 0E0F      	MVI	C,COPEN
+ 03B3 CD0500    	CALL	BDOS
+ 03B6 C9        	RET
+                ;
+                ;  READ SEQUENTIAL		NOT USED
+                ;  INPUT
+                ;  BC:FCB POINT
+                ;
+ 03B7 211A06    	LXI	H,WREAD+1
+ 03BA 70        	MOV	M,B
+ 03BB 2B        	DCX	H
+ 03BC 71        	MOV	M,C
+ 03BD 2A1906    	LHLD	WREAD
+ 03C0 EB        	XCHG
+ 03C1 0E14      	MVI	C,CREAD
+ 03C3 CD0500    	CALL	BDOS
+ 03C6 C9        	RET
+                ;
+                ;  SET DMA ADDRESS		NOT USED
+                ;  INPUT
+                ;  BC:DMA ADDRESS
+                ;
+ 03C7 211C06    	LXI	H,WSRDMA+1
+ 03CA 70        	MOV	M,B
+ 03CB 2B        	DCX	H
+ 03CC 71        	MOV	M,C
+ 03CD 2A1B06    	LHLD	WSRDMA
+ 03D0 EB        	XCHG
+ 03D1 0E1A      	MVI	C,CSTDMA
+ 03D3 CD0500    	CALL	BDOS
+ 03D6 C9        	RET
+                ;
+                ;  CARRIAGE RETURN & LINE FEED
+                ;
+                CRLF:
+ 03D7 0E0D      	MVI	C,CR
+ 03D9 CD8703    	CALL	CONOT
+ 03DC 0E0A      	MVI	C,LF
+ 03DE CD8703    	CALL	CONOT
+ 03E1 C9        	RET
+                ;
+                ;  PRINT NIBBLE BY HEXADECIMAL
+                ;  INPUT
+                ;   C:DATA
+                ;
+                NIBBLE:
+ 03E2 211D06    	LXI	H,WNIBLE
+ 03E5 71        	MOV	M,C
+ 03E6 3E09      	MVI	A,9
+ 03E8 211D06    	LXI	H,WNIBLE
+ 03EB BE        	CMP	M
+ 03EC D2FD03    	JNC	NIBBLS		;0 TO 9
+ 03EF 3A1D06    	LDA	WNIBLE		;A TO F
+ 03F2 C641      	ADI	'A'
+ 03F4 D60A      	SUI	10
+ 03F6 4F        	MOV	C,A
+ 03F7 CD8703    	CALL	CONOT
+ 03FA C30604    	JMP	NIBBEN
+                ;
+                NIBBLS:				;0 TO 9
+ 03FD 3A1D06    	LDA	WNIBLE
+ 0400 C630      	ADI	'0'
+ 0402 4F        	MOV	C,A
+ 0403 CD8703    	CALL	CONOT
+                NIBBEN:
+ 0406 C9        	RET
+                ;
+                ;  PRINT BYTE DATA BY HEXADECIMAL
+                ;  INPUT
+                ;   C:DATA
+                ;
+                HXPRN:
+ 0407 211E06    	LXI	H,WHXPRN
+ 040A 71        	MOV	M,C
+ 040B 3A1E06    	LDA	WHXPRN
+ 040E E6F8      	ANI	0F8H
+ 0410 1F        	RAR
+ 0411 1F        	RAR
+ 0412 1F        	RAR
+ 0413 1F        	RAR
+ 0414 4F        	MOV	C,A
+ 0415 CDE203    	CALL	NIBBLE		;PRINT HIGHER NIBBLE
+ 0418 3A1E06    	LDA	WHXPRN
+ 041B E60F      	ANI	00FH
+ 041D 4F        	MOV	C,A
+ 041E CDE203    	CALL	NIBBLE		;PRINT LOWER NIBBLE
+ 0421 C9        	RET
+                ;
+                ;  PRINT WORD DATA
+                ;  INPUT
+                ;  BC:DATA
+                ;
+                LOCPR:
+ 0422 212006    	LXI	H,WLOCPR+1
+ 0425 70        	MOV	M,B
+ 0426 2B        	DCX	H
+ 0427 71        	MOV	M,C		;SAVE DATA
+ 0428 0E20      	MVI	C,' '
+ 042A CD8703    	CALL	CONOT
+ 042D 0E20      	MVI	C,' '
+ 042F CD8703    	CALL	CONOT		;PRINT SPACE
+ 0432 2A1F06    	LHLD	WLOCPR
+ 0435 7C        	MOV	A,H
+ 0436 4F        	MOV	C,A
+ 0437 CD0704    	CALL	HXPRN		;HIGHER BYTE
+ 043A 2A1F06    	LHLD	WLOCPR
+ 043D 7D        	MOV	A,L
+ 043E 4F        	MOV	C,A
+ 043F CD0704    	CALL	HXPRN		;LOWER BYTE
+ 0442 0E48      	MVI	C,'H'
+ 0444 CD8703    	CALL	CONOT
+ 0447 C9        	RET
+                ;
+                ;  CHECK USER ID CODE
+                ;  INPUT
+                ;  DE:NDOS ENTRY
+                ;  BC:ID CODE AREA
+                ;
+                CHKUSC:
+ 0448 212406    	LXI	H,PNDOS+1
+ 044B 72        	MOV	M,D
+ 044C 2B        	DCX	H
+ 044D 73        	MOV	M,E		;SAVE NDOS ENTRY POINT
+ 044E 2B        	DCX	H
+ 044F 70        	MOV	M,B
+ 0450 2B        	DCX	H
+ 0451 71        	MOV	M,C		;SAVE ID CODE AREA
+                CHKUSN:				;ONE DATA POINT LOOP
+ 0452 3E00      	MVI	A,0
+ 0454 1F        	RAR
+ 0455 D2BD04    	JNC	CHKUSE		;END (NOT USED)
+ 0458 212506    	LXI	H,CNTLDR
+ 045B 36FF      	MVI	M,-1
+ 045D 23        	INX	H
+ 045E 36FF      	MVI	M,-1		;INITIALIZE SEARCH COUNT
+                CHKUSL:				;CHARACTER CHECK LOOP
+ 0460 3A2506    	LDA	CNTLDR
+ 0463 3C        	INR	A
+ 0464 322506    	STA	CNTLDR		;LOADER POINTER COUNT UP
+ 0467 4F        	MOV	C,A
+ 0468 0600      	MVI	B,0
+ 046A 2A2106    	LHLD	PIDCOD		;GET ID CODE AREA
+ 046D 09        	DAD	B		;GET DATA POINT
+ 046E 3A2606    	LDA	CNTNDS
+ 0471 3C        	INR	A
+ 0472 322606    	STA	CNTNDS		;NDOS POINTER COUNT UP
+ 0475 4F        	MOV	C,A
+ 0476 0600      	MVI	B,0
+ 0478 E5        	PUSH	H
+ 0479 2A2306    	LHLD	PNDOS
+ 047C 09        	DAD	B		;GET NDOS DATA POINT
+ 047D C1        	POP	B
+ 047E 0A        	LDAX	B
+ 047F BE        	CMP	M		;COMPARE CODE
+ 0480 C28604    	JNZ	$+6		;NOT MATCH
+ 0483 C36004    	JMP	CHKUSL		;TO NEXT CHARACTER
+                ;
+ 0486 3E17      	MVI	A,23		;CHECK LENGTH  NAME & USER ID TOTAL LENGTH
+ 0488 212506    	LXI	H,CNTLDR
+ 048B BE        	CMP	M
+ 048C D29004    	JNC	$+4		;NOT OK
+ 048F C9        	RET			;OK MATCH CODE
+                ;
+ 0490 3E00      	MVI	A,0		;CHECK END OF COMPARE
+ 0492 112306    	LXI	D,PNDOS
+ 0495 CDFB05    	CALL	SUDMBY
+ 0498 B5        	ORA	L
+ 0499 D601      	SUI	001H
+ 049B 9F        	SBB	A		;CHECK END OF MEMORY
+ 049C EB        	XCHG
+ 049D F5        	PUSH	PSW
+ 049E 3E11      	MVI	A,17		;NAME LENGTH -1
+ 04A0 23        	INX	H
+ 04A1 96        	SUB	M
+ 04A2 9F        	SBB	A		;CHECK NAME MATCH
+ 04A3 C1        	POP	B
+ 04A4 48        	MOV	C,B
+ 04A5 B1        	ORA	C
+ 04A6 1F        	RAR
+ 04A7 D2B304    	JNC	CHKNXT		;NOT END TO NEXT
+ 04AA 214101    	LXI	H,CSYNC		;COMPARE FAIL
+ 04AD 221206    	SHLD	PFLNAM		;SYNCHRONIZATION ERROR
+ 04B0 C36403    	JMP	ERROR
+                ;
+                CHKNXT:				;CHECK NEXT ADDRESS
+ 04B3 2A2306    	LHLD	PNDOS
+ 04B6 23        	INX	H		;UP START ADDRESS
+ 04B7 222306    	SHLD	PNDOS
+ 04BA C35204    	JMP	CHKUSN		;CHECK AGAIN
+                ;
+                CHKUSE:				;END DUMMY
+ 04BD C9        	RET
+                ;
+                ;  BREAK POINT FOR DEBUGGER
+                ;
+                DEBBP:
+ 04BE F3        	DI			;RESTART INSTRUCTION IS SET HERE
+ 04BF C9        	RET
+                ;
+                ;  GOTO COLD BOOT OF NDOS
+                ;
+                GOTDOS:
+ 04C0 21B706    	LXI	H,PNDOSC
+ 04C3 F9        	SPHL			;SET STACK TO ENTRY POINT SAVE AREA
+ 04C4 2B        	DCX	H
+ 04C5 7E        	MOV	A,M
+ 04C6 FE42      	CPI	'B'
+ 04C8 C2DA04    	JNZ	GOTDOE		;NOT BREAK
+ 04CB 3A0301    	LDA	BPNUM		;BREAK, SO GET RESTART NUMBER
+ 04CE 87        	ADD	A
+ 04CF 87        	ADD	A
+ 04D0 87        	ADD	A
+ 04D1 F6C7      	ORI	0C7H		;MAKE RESTART CODE
+ 04D3 2A3F01    	LHLD	PDEBBP
+ 04D6 77        	MOV	M,A		;SAVE RESTART CODE
+ 04D7 CDBE04    	CALL	DEBBP		;TO BREAK ROUTINE
+                GOTDOE:				;TO NDOS COLD START ROUTINE
+ 04DA C9        	RET
+                ;
+                ;  LOAD ONE FILE
+                ;  INPUT
+                ;  BC:BOTTOM OF FREE AREA
+                ;  DE:FCB
+                ;  OUTPUT
+                ;  HL:TOP OF PROGRAM  -1 ERROR
+                ;
+                LOAD:
+ 04DB 60        	MOV	H,B
+ 04DC 69        	MOV	L,C
+ 04DD 22C605    	SHLD	LDBOTM		;SAVE BOTTOM
+ 04E0 EB        	XCHG
+ 04E1 22C405    	SHLD	LDFCB		;SAVE FCB POINT
+ 04E4 0E1A      	MVI	C,CSTDMA
+ 04E6 2180FF    	LXI	H,-SCTLNG	;SUBTRUCT ONE SECTOR LENGTH
+ 04E9 19        	DAD	D
+ 04EA 22C005    	SHLD	LDDMA		;SAVE DMA POINT FOR PARAMETER READ
+ 04ED EB        	XCHG
+ 04EE CD0500    	CALL	BDOS		;SET DMA ADDRESS TO SCRATCH AREA
+ 04F1 2AC405    	LHLD	LDFCB
+ 04F4 EB        	XCHG
+ 04F5 0E0F      	MVI	C,COPEN
+ 04F7 CD0500    	CALL	BDOS		;OPEN FILE
+ 04FA FEFF      	CPI	-1
+ 04FC 67        	MOV	H,A
+ 04FD 6F        	MOV	L,A
+ 04FE C8        	RZ			;OPEN ERROR (NOT FOUND)
+ 04FF CDB005    	CALL	OSREAD		;GET PARAMETER SECTOR
+ 0502 2AC005    	LHLD	LDDMA
+ 0505 23        	INX	H
+ 0506 5E        	MOV	E,M
+ 0507 23        	INX	H
+ 0508 56        	MOV	D,M		;GET CODE AREA LENGTH
+ 0509 23        	INX	H
+ 050A 23        	INX	H
+ 050B 4E        	MOV	C,M
+ 050C 23        	INX	H
+ 050D 46        	MOV	B,M		;GET DATA AREA LENGTH
+ 050E EB        	XCHG
+ 050F 22C205    	SHLD	LDLNGT		;SAVE CODE AREA LENGTH
+ 0512 09        	DAD	B		;GET TOTAL LENGTH
+ 0513 EB        	XCHG
+ 0514 2AC605    	LHLD	LDBOTM		;GET BOTTOM
+ 0517 EB        	XCHG
+ 0518 AF        	XRA	A
+ 0519 95        	SUB	L
+ 051A 6F        	MOV	L,A
+ 051B 3E00      	MVI	A,0
+ 051D 9C        	SBB	H
+ 051E 67        	MOV	H,A
+ 051F 19        	DAD	D		;SUBTRUCT LENGTH FROM BOTTOM POINT
+ 0520 2E00      	MVI	L,0		;GET LOADING TOP
+ 0522 22C805    	SHLD	LDTOP		;SAVE LOADING TOP (PROGRAM TOP)
+ 0525 EB        	XCHG
+ 0526 2180FF    	LXI	H,-SCTLNG
+ 0529 19        	DAD	D		;SUBTRUCT ONE SECTOR LENGTH
+ 052A 22C005    	SHLD	LDDMA		;SET RELOCATION DATA BUFFER TOP
+ 052D CDB005    	CALL	OSREAD		;GET DATA & IGNORE
+ 0530 2AC205    	LHLD	LDLNGT
+ 0533 117F00    	LXI	D,SCTLNG-1
+ 0536 19        	DAD	D		;ADJUST BOUNDARY
+ 0537 7D        	MOV	A,L
+ 0538 17        	RAL
+ 0539 7C        	MOV	A,H
+ 053A 17        	RAL			;GET SECTOR COUNT OF CODE AREA
+ 053B 2AC805    	LHLD	LDTOP		;GET LOADING TOP
+                LOADLP:				;ONE SECTOR LOADING LOOP
+ 053E 32CA05    	STA	LDCNT		;SAVE COUNT
+ 0541 22CB05    	SHLD	LDPNT		;SAVE LOADING POINT
+ 0544 EB        	XCHG
+ 0545 0E1A      	MVI	C,CSTDMA
+ 0547 CD0500    	CALL	BDOS		;SET DMA ADDRESS
+ 054A CDB005    	CALL	OSREAD		;READ ONE SECTOR DATA
+ 054D 2ACB05    	LHLD	LDPNT
+ 0550 118000    	LXI	D,SCTLNG	;ONE SECTOR LENGTH
+ 0553 19        	DAD	D		;GET NEXT DMA ADDRESS
+ 0554 3ACA05    	LDA	LDCNT
+ 0557 3D        	DCR	A		;SECTOR COUNT DOWN
+ 0558 C23E05    	JNZ	LOADLP		;TO NEXT SECTOR
+ 055B 2AC005    	LHLD	LDDMA		;GET BUFFER POINT FOR RELOCATION DATA
+ 055E EB        	XCHG
+ 055F 0E1A      	MVI	C,CSTDMA
+ 0561 CD0500    	CALL	BDOS		;SET TO RELOCATION BUFFER POINT
+ 0564 2AC205    	LHLD	LDLNGT		;GET LENGTH TO GET RELOCATION DATA TOP
+ 0567 44        	MOV	B,H
+ 0568 4D        	MOV	C,L
+ 0569 EB        	XCHG
+ 056A 2AC805    	LHLD	LDTOP		;CODE TOP
+ 056D EB        	XCHG
+ 056E 19        	DAD	D		;GET TOP OF RELOCATION DATA
+ 056F E5        	PUSH	H		;SAVE RELOCATION DATA POINT
+ 0570 62        	MOV	H,D		;SET RELOCATION BIAS
+                LOADRL:				;RELOCATION LOOP
+ 0571 78        	MOV	A,B
+ 0572 B1        	ORA	C
+ 0573 C27B05    	JNZ	$+8		;NOT TO END
+ 0576 E1        	POP	H		;END OF RELOCATION
+ 0577 2AC805    	LHLD	LDTOP		;TOP OF PROGRAM
+ 057A C9        	RET			;END OF LOADING
+                ;
+ 057B 0B        	DCX	B
+ 057C 7B        	MOV	A,E
+ 057D E607      	ANI	07H
+ 057F C2A305    	JNZ	LOADRB		;NOT BYTE BOUNDARY
+ 0582 E3        	XTHL			;BYTE BOUNDARY,  GET DATA POINT
+ 0583 7D        	MOV	A,L
+ 0584 E67F      	ANI	07FH
+ 0586 C29F05    	JNZ	LOADRS		;NOT SECTOR BOUNDARY
+ 0589 C5        	PUSH	B
+ 058A D5        	PUSH	D
+ 058B E5        	PUSH	H
+ 058C 2AC405    	LHLD	LDFCB		;GET FCB POINT
+ 058F EB        	XCHG
+ 0590 0E14      	MVI	C,CREAD
+ 0592 CD0500    	CALL	BDOS		;GET ONE SECTOR DATA
+ 0595 E1        	POP	H
+ 0596 D1        	POP	D
+ 0597 C1        	POP	B
+ 0598 2AC005    	LHLD	LDDMA		;GET DATA TOP POINT
+ 059B B7        	ORA	A
+ 059C C2BB05    	JNZ	OSRDER		;NO DATA, SO ERROR
+                LOADRS:
+ 059F 7E        	MOV	A,M		;GET NEXT RELOCATION DATA
+ 05A0 23        	INX	H
+ 05A1 E3        	XTHL
+ 05A2 6F        	MOV	L,A
+                LOADRB:
+ 05A3 7D        	MOV	A,L
+ 05A4 17        	RAL			;GET ONE BIT DATA
+ 05A5 6F        	MOV	L,A
+ 05A6 D2AC05    	JNC	$+6		;NOT RELOCATE
+ 05A9 1A        	LDAX	D		;RELOCATE
+ 05AA 84        	ADD	H
+ 05AB 12        	STAX	D
+ 05AC 13        	INX	D
+ 05AD C37105    	JMP	LOADRL		;TO NEXT DATA
+                ;
+                ;  READ ONE SECTOR DATA
+                ;
+                OSREAD:
+ 05B0 2AC405    	LHLD	LDFCB		;GET FCB
+ 05B3 EB        	XCHG
+ 05B4 0E14      	MVI	C,CREAD
+ 05B6 CD0500    	CALL	BDOS		;READ ONE SECTOR
+ 05B9 B7        	ORA	A
+ 05BA C8        	RZ			;NOT ERROR
+                OSRDER:				;NO DATA, SO ERROR
+ 05BB E1        	POP	H		;OVERRIDING RETURN
+ 05BC 21FFFF    	LXI	H,-1
+ 05BF C9        	RET
+                ;
+                ;  LOADING ROUTINE WORKING
+                ;
+ 05C0           LDDMA:	DS	2		;DMA ADDRESS
+ 05C2           LDLNGT:	DS	2		;CODE AREA LENGTH
+ 05C4           LDFCB:	DS	2		;FCB POINTER
+ 05C6           LDBOTM:	DS	2		;BOTTOM POINT OF FREE AREA
+ 05C8           LDTOP:	DS	2		;TOP POINT OF PROGRAM
+ 05CA           LDCNT:	DS	1		;LOAD SECTOR COUNT
+ 05CB           LDPNT:	DS	2		;LOADING POINTER
+                ;
+                ;  AND ROUTINES
+                ;  HL=HL AND A
+                ;  HL=HL AND DE
+                ;
+ 05CD 5F        	MOV	E,A
+ 05CE 1600      	MVI	D,0
+                ANHLDE:
+ 05D0 7B        	MOV	A,E
+ 05D1 A5        	ANA	L
+ 05D2 6F        	MOV	L,A
+ 05D3 7A        	MOV	A,D
+ 05D4 A4        	ANA	H
+ 05D5 67        	MOV	H,A
+ 05D6 C9        	RET
+                ;
+                ;  HL=(DE) AND A
+                ;  HL=(HL) AND DE
+                ;
+ 05D7 EB        	XCHG
+ 05D8 5F        	MOV	E,A
+ 05D9 1600      	MVI	D,0
+                ANHMDE:
+ 05DB EB        	XCHG
+ 05DC 1A        	LDAX	D
+ 05DD A5        	ANA	L
+ 05DE 6F        	MOV	L,A
+ 05DF 13        	INX	D
+ 05E0 1A        	LDAX	D
+ 05E1 A4        	ANA	H
+ 05E2 67        	MOV	H,A
+ 05E3 C9        	RET
+                ;
+                ;  SUBTRUCT ROUTINES
+                ;  HL=A - HL
+                ;  HL=DE - HL
+                ;
+                SUBYHL:
+ 05E4 5F        	MOV	E,A
+ 05E5 1600      	MVI	D,0
+                SUDEHL:
+ 05E7 7B        	MOV	A,E
+ 05E8 95        	SUB	L
+ 05E9 6F        	MOV	L,A
+ 05EA 7A        	MOV	A,D
+ 05EB 9C        	SBB	H
+ 05EC 67        	MOV	H,A
+ 05ED C9        	RET
+                ;
+                ;  HL=(DE) - (BC)
+                ;
+                SUDMBM:
+ 05EE 69        	MOV	L,C
+ 05EF 60        	MOV	H,B
+ 05F0 4E        	MOV	C,M
+ 05F1 23        	INX	H
+ 05F2 46        	MOV	B,M
+ 05F3 1A        	LDAX	D
+ 05F4 91        	SUB	C
+ 05F5 6F        	MOV	L,A
+ 05F6 13        	INX	D
+ 05F7 1A        	LDAX	D
+ 05F8 98        	SBB	B
+ 05F9 67        	MOV	H,A
+ 05FA C9        	RET
+                ;
+                ;  HL=(DE) - A
+                ;
+                SUDMBY:
+ 05FB 6F        	MOV	L,A
+ 05FC 2600      	MVI	H,000H
+ 05FE 1A        	LDAX	D
+ 05FF 95        	SUB	L
+ 0600 6F        	MOV	L,A
+ 0601 13        	INX	D
+ 0602 1A        	LDAX	D
+ 0603 9C        	SBB	H
+ 0604 67        	MOV	H,A
+ 0605 C9        	RET
+                ;
+                ;  HL=A - (HL)
+                ;  HL=DE - (HL)
+                ;
+ 0606 5F        	MOV	E,A
+ 0607 1600      	MVI	D,000H
+                SUDEHM:
+ 0609 7B        	MOV	A,E
+ 060A 96        	SUB	M
+ 060B 5F        	MOV	E,A
+ 060C 7A        	MOV	A,D
+ 060D 23        	INX	H
+ 060E 9E        	SBB	M
+ 060F 57        	MOV	D,A
+ 0610 EB        	XCHG
+ 0611 C9        	RET
+                ;
+                ;  WORKING
+                ;
+ 0612 2F01      PFLNAM:	DW	CDSKER		;LOAD ERROR COMMENT POINTER
+ 0614 00        WCONOT:	DB	0		;WORK FOR CONSOLE OUT
+ 0615 0000      WBUFPR:	DW	0		;WORK FOR BUFFER PRINT
+ 0617 0000      WOPEN:	DW	0		;WORK FOR OPEN FILE
+ 0619 0000      WREAD:	DW	0		;WORK FOR READ SEQUENTIAL
+ 061B 0000      WSRDMA:	DW	0		;WORK FOR SET DMA
+ 061D 00        WNIBLE:	DB	0		;NIBBLE OUT WORKING
+ 061E 00        WHXPRN:	DB	0		;HEXA PRINT WORKING
+ 061F 0000      WLOCPR:	DW	0		;WORK FOR WORD PRINT
+                ;
+                ;  FOR ID CODE CHECK
+                ;
+ 0621 0000      PIDCOD:	DW	0
+ 0623 0000      PNDOS:	DW	0
+ 0625 00        CNTLDR:	DB	0
+ 0626 00        CNTNDS:	DB	0
+                ;
+                ;
+ 0627           	DS	60		;STACK AREA
+                STACK:
+                ;
+ 0663 0600      BDOSPT:	DW	BDOS+1		;POINTER DATA FOR DOS
+ 0665 0000      	DW	0
+ 0667 0000      FREBOT:	DW	0
+ 0669 0000      TOPPNT:	DW	0
+                ;
+ 066B           	DS	9
+                ;
+                ;  LOADING FILE FCB
+                ;
+                FNDOS:				;FOR NDOS.SPR
+ 0674 004E444F53	DB	0,'NDOS    SPR'
+ 0680 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                FSNIOS:				;FOR SNIOS.SPR
+ 0695 00534E494F	DB	0,'SNIOS   SPR'
+ 06A1 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                ;
+ 06B6           FDEBUG:	DS	1
+ 06B7           PNDOSC:	DS	2
+                ;
+                ; WIZNET CONFIGURATION
+                	MACLIB	Z80
+                
+                ; BASE PORT OF H8-WIZX50IO SPI INTERFACE
+ 0040 =         SPI	EQU	40H
+                
+ 0040 =         SPI$DAT	EQU	SPI+0
+ 0041 =         SPI$CTL	EQU	SPI+1
+ 0041 =         SPI$STS	EQU	SPI+1
+                
+ 0001 =         WZSCS	EQU	01B	; SCS FOR WIZNET
+ 0002 =         NVSCS	EQU	10B	; SCS FOR NVRAM
+                
+                ; NVRAM/SEEPROM COMMANDS
+ 0003 =         NVRD	EQU	00000011B
+                
+                ; WIZNET CTRL BIT FOR WRITING
+ 0004 =         WRITE	EQU	00000100B
+                
+ 0001 =         GAR	EQU	1	; OFFSET OF GAR, ETC.
+ 0005 =         SUBR	EQU	5
+ 0009 =         SHAR	EQU	9
+ 000F =         SIPR	EQU	15
+ 001D =         PMAGIC	EQU	29	; USED FOR NODE ID
+                
+ 0008 =         NSOCK	EQU	8
+ 0008 =         SOCK0	EQU	000$01$000B
+ 0028 =         SOCK1	EQU	001$01$000B
+ 0048 =         SOCK2	EQU	010$01$000B
+ 0068 =         SOCK3	EQU	011$01$000B
+ 0088 =         SOCK4	EQU	100$01$000B
+ 00A8 =         SOCK5	EQU	101$01$000B
+ 00C8 =         SOCK6	EQU	110$01$000B
+ 00E8 =         SOCK7	EQU	111$01$000B
+                
+ 0000 =         SNMR	EQU	0
+ 0001 =         SNCR	EQU	1
+ 0002 =         SNIR	EQU	2
+ 0003 =         SNSR	EQU	3
+ 0004 =         SNPORT	EQU	4
+ 000C =         SNDIPR	EQU	12
+ 0010 =         SNDPORT	EQU	16
+                
+                ; SOCKET SR VALUES
+ 0000 =         CLOSED	EQU	00H
+                
+                ; SOCKET CR COMMANDS
+ 0008 =         DISCON	EQU	08H
+                
+                WIZCFG:	; RESTORE CONFIG FROM NVRAM
+ 06B9 210000    	LXI	H,0
+ 06BC 110002    	LXI	D,512
+ 06BF CDEC07    	CALL	NVGET
+ 06C2 CDC807    	CALL	VCKSUM
+ 06C5 C0        	RNZ
+ 06C6 212A08    	LXI	H,NVBUF+GAR
+ 06C9 1600      	MVI	D,0
+ 06CB 1E01      	MVI	E,GAR
+ 06CD 0612      	MVI	B,18	; GAR, SUBR, SHAR, SIPR
+ 06CF CD5B07    	CALL	WIZSET
+ 06D2 214608    	LXI	H,NVBUF+PMAGIC
+ 06D5 1600      	MVI	D,0
+ 06D7 1E1D      	MVI	E,PMAGIC
+ 06D9 0601      	MVI	B,1
+ 06DB CD5B07    	CALL	WIZSET
+                	LXIX	NVBUF+32
+ 06DE+DD21      	DB	0DDH,21H
+ 06E0+4908      	DW	NVBUF+32
+ 06E2 1608      	MVI	D,SOCK0
+ 06E4 0608      	MVI	B,8
+ 06E6 C5        REST0:	PUSH	B
+                	LDX	A,SNPORT
+ 06E7+DD7E04    	DB	0DDH,A*8+46H,SNPORT
+ 06EA FE31      	CPI	31H
+ 06EC C20307    	JNZ	REST1	; SKIP UNCONFIGURED SOCKETS
+ 06EF CD7207    	CALL	CLOSE
+ 06F2 CD9407    	CALL	SETTCP	; ENSURE MR IS SET TO TCP/IP
+ 06F5 1E04      	MVI	E,SNPORT
+ 06F7 0602      	MVI	B,2
+ 06F9 CD8807    	CALL	SETSOK
+ 06FC 1E0C      	MVI	E,SNDIPR
+ 06FE 0606      	MVI	B,6	; DIPR AND DPORT
+ 0700 CD8807    	CALL	SETSOK
+ 0703 012000    REST1:	LXI	B,32
+                	DADX	B
+ 0706+DD09      	DB	0DDH,B*8+09H
+ 0708 3E20      	MVI	A,001$00$000B	; SOCKET BSB INCR VALUE
+ 070A 82        	ADD	D
+ 070B 57        	MOV	D,A
+ 070C C1        	POP	B
+                	DJNZ	REST0
+ 070D+10D7      	DB	10H,REST0-$-1
+ 070F AF        	XRA	A
+ 0710 C9        	RET
+                
+                ; SEND SOCKET COMMAND TO WIZNET CHIP, WAIT FOR DONE.
+                ; A = COMMAND, D = SOCKET BSB
+                ; DESTROYS A
+                WIZCMD:
+ 0711 F5        	PUSH	PSW
+ 0712 3E01      	MVI	A,WZSCS
+ 0714 D341      	OUT	SPI$CTL
+ 0716 AF        	XRA	A
+ 0717 D340      	OUT	SPI$DAT
+ 0719 3E01      	MVI	A,SNCR
+ 071B D340      	OUT	SPI$DAT
+ 071D 7A        	MOV	A,D
+ 071E F604      	ORI	WRITE
+ 0720 D340      	OUT	SPI$DAT
+ 0722 F1        	POP	PSW
+ 0723 D340      	OUT	SPI$DAT	; START COMMAND
+ 0725 AF        	XRA	A	;
+ 0726 D341      	OUT	SPI$CTL
+                WC0:
+ 0728 3E01      	MVI	A,WZSCS
+ 072A D341      	OUT	SPI$CTL
+ 072C AF        	XRA	A
+ 072D D340      	OUT	SPI$DAT
+ 072F 3E01      	MVI	A,SNCR
+ 0731 D340      	OUT	SPI$DAT
+ 0733 7A        	MOV	A,D
+ 0734 D340      	OUT	SPI$DAT
+ 0736 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 0738 DB40      	IN	SPI$DAT
+ 073A F5        	PUSH	PSW
+ 073B AF        	XRA	A	;
+ 073C D341      	OUT	SPI$CTL
+ 073E F1        	POP	PSW
+ 073F B7        	ORA	A
+ 0740 C22807    	JNZ	WC0
+ 0743 C9        	RET
+                
+                ; E = BSB, D = CTL, HL = DATA, B = LENGTH
+                WIZGET:
+ 0744 3E01      	MVI	A,WZSCS
+ 0746 D341      	OUT	SPI$CTL
+ 0748 AF        	XRA	A	; HI ADR ALWAYS 0
+ 0749 D340      	OUT	SPI$DAT
+ 074B 7B        	MOV	A,E
+ 074C D340      	OUT	SPI$DAT
+ 074E 7A        	MOV	A,D
+ 074F D340      	OUT	SPI$DAT
+ 0751 DB40      	IN	SPI$DAT	; PRIME PUMP
+ 0753 0E40      	MVI	C,SPI$DAT
+                	INIR
+ 0755+EDB2      	DB	0EDH,0B2H
+ 0757 AF        	XRA	A	; NOT SCS
+ 0758 D341      	OUT	SPI$CTL
+ 075A C9        	RET
+                
+                ; HL = DATA TO SEND, E = OFFSET, D = BSB, B = LENGTH
+                ; DESTROYS HL, B, C, A
+                WIZSET:
+ 075B 3E01      	MVI	A,WZSCS
+ 075D D341      	OUT	SPI$CTL
+ 075F AF        	XRA	A	; HI ADR ALWAYS 0
+ 0760 D340      	OUT	SPI$DAT
+ 0762 7B        	MOV	A,E
+ 0763 D340      	OUT	SPI$DAT
+ 0765 7A        	MOV	A,D
+ 0766 F604      	ORI	WRITE
+ 0768 D340      	OUT	SPI$DAT
+ 076A 0E40      	MVI	C,SPI$DAT
+                	OUTIR
+ 076C+EDB3      	DB	0EDH,0B3H
+ 076E AF        	XRA	A	; NOT SCS
+ 076F D341      	OUT	SPI$CTL
+ 0771 C9        	RET
+                
+                ; CLOSE SOCKET IF ACTIVE (SR <> CLOSED)
+                ; D = SOCKET BSB
+                ; DESTROYS HL, E, B, C, A
+                CLOSE:
+ 0772 212808    	LXI	H,TMP
+ 0775 1E03      	MVI	E,SNSR
+ 0777 0601      	MVI	B,1
+ 0779 CD4407    	CALL	WIZGET
+ 077C 3A2808    	LDA	TMP
+ 077F FE00      	CPI	CLOSED
+ 0781 C8        	RZ
+ 0782 3E08      	MVI	A,DISCON
+ 0784 CD1107    	CALL	WIZCMD
+                	; DON'T CARE ABOUT RESULTS?
+ 0787 C9        	RET
+                
+                ; IX = BASE DATA BUFFER FOR SOCKET, D = SOCKET BSB, E = OFFSET, B = LENGTH
+                ; DESTROYS HL, B, C
+                SETSOK:
+                	PUSHIX
+ 0788+DDE5      	DB	0DDH,0E5H
+ 078A E1        	POP	H
+ 078B D5        	PUSH	D
+ 078C 1600      	MVI	D,0
+ 078E 19        	DAD	D	; HL POINTS TO DATA IN 'BUF'
+ 078F D1        	POP	D
+ 0790 CD5B07    	CALL	WIZSET
+ 0793 C9        	RET
+                
+                ; SET SOCKET MR TO TCP.
+                ; D = SOCKET BSB (RESULT OF "GETSOKN")
+                ; DESTROYS ALL REGISTERS EXCEPT D.
+                SETTCP:
+ 0794 212808    	LXI	H,TMP
+ 0797 3601      	MVI	M,1	; TCP/IP MODE
+ 0799 1E00      	MVI	E,SNMR
+ 079B 0601      	MVI	B,1
+ 079D CD5B07    	CALL	WIZSET	; FORCE TCP/IP MODE
+ 07A0 C9        	RET
+                
+ 07A1 111108    NOCFG:	LXI	D,NCFG
+ 07A4 0E09      	MVI	C,CBUFPR
+ 07A6 CD0500    	CALL	BDOS
+ 07A9 C32D02    	JMP	EXIT
+                
+                ; IX = BUFFER, BC = LENGTH
+                ; RETURN: HL = CKSUM HI, DE = CKSUM LO
+                CKSUM32:
+ 07AC 210000    	LXI	H,0
+ 07AF 110000    	LXI	D,0
+                CKS0:	LDX	A,+0
+ 07B2+DD7E00    	DB	0DDH,A*8+46H,+0
+                	INXIX
+ 07B5+DD23      	DB	0DDH,23H
+ 07B7 83        	ADD	E
+ 07B8 5F        	MOV	E,A
+                	JRNC	CKS1
+ 07B9+3007      	DB	30H,CKS1-$-1
+ 07BB 14        	INR	D
+                	JRNZ	CKS1
+ 07BC+2004      	DB	20H,CKS1-$-1
+ 07BE 2C        	INR	L
+                	JRNZ	CKS1
+ 07BF+2001      	DB	20H,CKS1-$-1
+ 07C1 24        	INR	H
+ 07C2 0B        CKS1:	DCX	B
+ 07C3 78        	MOV	A,B
+ 07C4 B1        	ORA	C
+                	JRNZ	CKS0
+ 07C5+20EB      	DB	20H,CKS0-$-1
+ 07C7 C9        	RET
+                
+                ; VALIDATES CHECKSUM IN 'BUF'
+                ; RETURN: NZ ON ERROR
+                ; A CHECKSUM OF 00 00 00 00 MEANS THE BUFFER WAS ALL 00,
+                ; WHICH IS INVALID.
+                VCKSUM:
+                	LXIX	NVBUF
+ 07C8+DD21      	DB	0DDH,21H
+ 07CA+2908      	DW	NVBUF
+ 07CC 01FC01    	LXI	B,508
+ 07CF CDAC07    	CALL	CKSUM32
+                	LBCD	NVBUF+510
+ 07D2+ED4B      	DB	0EDH,4BH
+ 07D4+270A      	DW	NVBUF+510
+ 07D6 78        	MOV	A,B	;
+ 07D7 B1        	ORA	C	; CHECK FIRST HALF ZERO
+                	DSBC	B
+ 07D8+ED42      	DB	0EDH,B*8+42H
+ 07DA C0        	RNZ
+                	LBCD	NVBUF+508
+ 07DB+ED4B      	DB	0EDH,4BH
+ 07DD+250A      	DW	NVBUF+508
+ 07DF B0        	ORA	B	;
+ 07E0 B1        	ORA	C	; CHECK SECOND HALF ZERO
+ 07E1 EB        	XCHG
+                	DSBC	B	; CY IS CLEAR
+ 07E2+ED42      	DB	0EDH,B*8+42H
+ 07E4 C0        	RNZ
+ 07E5 B7        	ORA	A	; WAS CHECKSUM ALL ZERO?
+                	JRZ	VCKSM0
+ 07E6+2802      	DB	28H,VCKSM0-$-1
+ 07E8 AF        	XRA	A	; ZR
+ 07E9 C9        	RET
+ 07EA 3C        VCKSM0:	INR	A	; NZ
+ 07EB C9        	RET
+                
+                ; HL = NVRAM ADDRESS, DE = LENGTH
+                NVGET:
+ 07EC 3E02      	MVI	A,NVSCS
+ 07EE D341      	OUT	SPI$CTL
+ 07F0 3E03      	MVI	A,NVRD
+ 07F2 D340      	OUT	SPI$DAT
+ 07F4 7C        	MOV	A,H
+ 07F5 D340      	OUT	SPI$DAT
+ 07F7 7D        	MOV	A,L
+ 07F8 D340      	OUT	SPI$DAT
+ 07FA DB40      	IN	SPI$DAT	; PRIME PUMP
+ 07FC 0E40      	MVI	C,SPI$DAT
+ 07FE 7B        	MOV	A,E
+ 07FF B7        	ORA	A
+ 0800 CA0408    	JZ	NVGET1
+ 0803 14        	INR	D	; TODO: HANDLE 64K... AND OVERFLOW OF 'BUF'...
+ 0804 212908    NVGET1:	LXI	H,NVBUF
+ 0807 43        	MOV	B,E
+                NVGET0:	INIR	; B = 0 AFTER
+ 0808+EDB2      	DB	0EDH,0B2H
+ 080A 15        	DCR	D
+                	JRNZ	NVGET0
+ 080B+20FB      	DB	20H,NVGET0-$-1
+ 080D AF        	XRA	A	; NOT SCS
+ 080E D341      	OUT	SPI$CTL
+ 0810 C9        	RET
+                
+ 0811 4E5652414DNCFG:	DB	'NVRAM not configured',CR,LF,'$'
+ 0828 00        TMP:	DB	0
+                
+ 0829           NVBUF:	DS	512
+                
+                ;
+ 0A29           	END
+

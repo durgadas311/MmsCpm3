@@ -70,7 +70,7 @@ mms: ntpdt-m.com ndos3-m.com
 CPNET_UTLS = cpnetsts.com dskreset.com endlist.com local.com \
 	login.com logoff.com mail.com network.com xsubnet.com
 
-WIZ_UTLS = wizcfg.com wizdbg.com
+WIZ_UTLS = wizcfg.com wizdbg.com netstat.com
 
 NV_UTLS = nvram.com rsxrm.com tr.com
 
@@ -86,8 +86,8 @@ cpnet3.tgz: __FRC__
 # TODO: change cpnetldr.com to cpnldr-w.com with --xform='s/cpnldr-w/cpnetldr/'
 cpnet12.tgz: __FRC__
 	tar -czf cpnet12.tgz -C ../dist/bin $(CPNET_UTLS) ndos.spr \
-			cpnetldr.com \
-		-C ../../bin $(WIZ_UTLS) --xform='s/-w//' snios-w.spr \
+		-C ../../bin $(WIZ_UTLS) --xform='s/cpnldr-w/cpnetldr/' --xform='s/-w//' \
+			snios-w.spr cpnldr-w.com \
 		-C ../../util/bin $(NV_UTLS)
 
 cpnetdocs.tgz: __FRC__
