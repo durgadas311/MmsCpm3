@@ -1,0 +1,98 @@
+'vcpm' (VirtualCpm.jar) is am emulation of the CCP, BDOS, and BIOS
+of a generic CP/M system. It is intended to provide a sufficient,
+fast-starting, environment for building CP/M executable and system
+components. It may also be used interactively.  Many of the Makefiles
+in this repository use it, and provide good examples.
+
+'vcpm' maps local (host) files into the CP/M environment. Only files that
+conform to the CP/M 8+3 convention, and are lowercase, will be accessible.
+Directories are assigned to each drive, A: through P:. Or a top-level
+directory may be assigned which contains subdirectories named 'a' through
+'p'.  Any drives not assigned to a specific directory will be assumed
+to exist under the top-level (root) directory, in a subdirectory named
+from the drive letter.
+
+The CP/M "console" is stdin/stdout of the java app. The CP/M "list"
+device may be assigned using properties, and otherwise is the bitbucket.
+
+A typical setup would be to define a top-level set of directories,
+and populate (at least) 'a' with all the COM files and associated
+components needed to build programs. Then, for each build (Makefile),
+define a directory where source code exists and set that directory
+as the default drive when running vcpm. See example below.
+
+Normally, an alias or wrapper shell script is setup to avoid typing the
+full java invocation each time. In examples here, a command named 'vcpm'
+was created which effectively does (Linux/OSX shell syntax):
+
+	exec /usr/bin/java -jar /path/to/jar/VirtualCpm.jar "${@}"
+
+A property file can drive the mappings. The default property file is
+either "vcpm.rc" in the current directory, or "~/.vcpmrc".  Applicable
+environment variables are also imported as (converted to) properties.
+
+Environment variables:
+
+CPMDrives
+	Comma-separated list of directories. This list is treated as
+	an array of (max) 16 entries. Empty entries are permitted.
+	Each entry, if not empty, is converted to the associated property
+	"vcpm_drive_a" ... "vcpm_drive_p".
+
+CPMDrive_A
+...
+CPMDrive_P
+	Converted to property "vcpm_drive_a" ... "vcpm_drive_p".
+
+CPMDefault
+	The default drive/usernum to begin the CP/M emulation with.
+	Use the same syntax as used for the CCP, e.g. "0A:" sets the
+	default to user number '0' and drive 'A', or "D:" sets the default
+	drive to 'D'.  If nothing is specified, "0A:" will be assumed.
+
+Properties:
+
+vcpm_dso
+	CP/M 3 "drive search order". A comma-separated list of (up to) 4
+	items.	Each item is either a drive designation ("A:" ... "P:") or
+	the word "def", meaning the default drive. This will be poked into
+	the SCB, and used by the virtual CCP in searching for commands.
+
+vcpm_lstX
+	Where 'X' is a hexadecimal digit (0-F). Setup a LST: device.
+	CP/M "list" output is sent to LST0, so only "vcpm_lst0" will
+	have meaning.
+
+vcpm_drive_a
+...
+vcpm_drive_p
+	Setup a specific drive mapping to local/host directory.
+	See "vcpm_root_dir", not all drives need to be specified.
+
+vcpm_root_dir
+	Top-level directory to use for any drives not covered by
+	"vcpm_drive_a" ... "vcpm_drive_p". There are assumed to be
+	subdirectories here that are named 'a' through 'p'.
+	Default will be "~/HostFileBdos".
+
+silent
+	The presence of this property (no value required) will stifle
+	informative messages.
+
+Sample ~/.vcpmrc file:
+
+	vcpm_root_dir = /home/drmiller/VCPM
+	vcpm_dso = def,a:,b:,c:
+	silent
+
+Referring to the above sample .vcpmrc file, a build of a COM file
+from a single ASM file in the current directory would be (Linix/OSX):
+
+	export CPMDrive_D=${PWD}
+	export CPMDefault=D:
+	vcpm mac foo.asm '$SZ'
+	vcpm hexcom foo
+
+Note that CP/M programs don't typically have any return/exit code,
+so detecting errors is generally not possible.
+
