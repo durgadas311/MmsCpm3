@@ -68,27 +68,36 @@ mms: ntpdt-m.com ndos3-m.com
 # These are run from git/MmsCpm3/net/bld
 
 CPNET_UTLS = cpnetsts.com dskreset.com endlist.com local.com \
-	login.com logoff.com mail.com network.com xsubnet.com
+	login.com logoff.com mail.com network.com
 
-WIZ_UTLS = wizcfg.com wizdbg.com netstat.com
+CPN12_UTLS = $(CPNET_UTLS) ndos.spr ccp.spr xsubnet.com
 
-NV_UTLS = nvram.com rsxrm.com tr.com
+NET_UTLS = wizcfg.com wizdbg.com netstat.com
+
+NET3_UTLS = $(NET_UTLS) ndos3-w.com
+NET12_UTLS = $(NET_UTLS) snios-w.spr cpnldr-w.com
+
+CP3_UTLS = nvram.com rsxrm.com tr.com
+CP2_UTLS = nvram.com tr.com
 
 CPNET_DOC = CPNET-WIZ850io.pdf dri-cpnet.pdf H8x-SPI-OP.pdf
 
 ship: cpnet3.tgz cpnet12.tgz cpnetdocs.tgz
 
+# Warning: --xform might have unintended consequences
+
 cpnet3.tgz: __FRC__
-	tar -czf cpnet3.tgz -C ../dist/bin $(CPNET_UTLS) \
-		-C ../../bin $(WIZ_UTLS) --xform='s/-w//' ndos3-w.com \
-		-C ../../util/bin $(NV_UTLS)
+	tar -czf cpnet3.tgz --xform='s/-w//' \
+		-C ../dist/bin $(CPNET_UTLS) \
+		-C ../../bin $(NET3_UTLS) \
+		-C ../../util/bin $(CP3_UTLS)
 
 # TODO: change cpnetldr.com to cpnldr-w.com with --xform='s/cpnldr-w/cpnetldr/'
 cpnet12.tgz: __FRC__
-	tar -czf cpnet12.tgz -C ../dist/bin $(CPNET_UTLS) ndos.spr \
-		-C ../../bin $(WIZ_UTLS) --xform='s/cpnldr-w/cpnetldr/' --xform='s/-w//' \
-			snios-w.spr cpnldr-w.com \
-		-C ../../util/bin $(NV_UTLS)
+	tar -czf cpnet12.tgz --xform='s/cpnldr-w/cpnetldr/' --xform='s/-w//' \
+		-C ../dist/bin $(CPN12_UTLS) \
+		-C ../../bin $(NET12_UTLS) \
+		-C ../../util/bin $(CP2_UTLS)
 
 cpnetdocs.tgz: __FRC__
 	tar -czf cpnetdocs.tgz -C ../../doc $(CPNET_DOC)
