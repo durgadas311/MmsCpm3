@@ -6,6 +6,8 @@
  1. Node IDs 0x01 upward will be registered for servers that are accessible on the internet. These servers will use (listen on) TCP/IP port 0x31nn, where ‘nn’ is the node ID.
  1. Node IDs 0xEF downward will be registered for clients that will access servers on the internet.
 
+**Registered Node IDs**
+
 ```
 00    (private network) Your primary server
 01    Douglas Miller<durgadas311@gmail.com>  Serving software updates
