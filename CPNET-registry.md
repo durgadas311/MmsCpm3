@@ -1,6 +1,6 @@
 **CP/NET Node ID conventions**
 
- 1. Node ID 0xFF is cdesignated by CP/NET as the broadcast destination. It is also used internally for and invalid/unconfigured value. It cannot be used as an active node ID.
+ 1. Node ID 0xFF is designated by CP/NET as the broadcast destination. It is also used internally for an invalid/unconfigured value. It cannot be used as an active node ID.
  1. Node ID 0x00 is reserved for a local CP/NET server. Since this is the default server for CP/NET commands, this provides the maximum convenience for accessing the “primary” local server. This server must not be accessible on the internet (e.g. it’s port must not be exposed, and should not be in the range 0x3100-0x31FF).
  1. Node IDs 0xF0-0xFE are reserved for private networks and should not be used for nodes that interact (are visible) on the internet. They may be used as servers or clients.
  1. Publicly accessible nodes should use TCP/IP port 0x31nn, where ‘nn’ is the hexadecimal node ID. This equates to decimal port numbers 12544-12799. WIZCFG on clients will use this convention for the source port numbers of sockets to servers.
