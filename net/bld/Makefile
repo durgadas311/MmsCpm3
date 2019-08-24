@@ -1,7 +1,6 @@
 # Assumes PWD = CPMDrive_D
 
 export CPMDrive_D = $(HOME)/CpmDev/net	# a.k.a. $(PWD)
-export CPMDrive_O = $(HOME)/CpmDev/netprn
 export CPMDefault = d:
 
 SRCS = $(wildcard *.asm)
@@ -13,10 +12,10 @@ all:	ndos3-u.com ntpdt-u.com \
 	netstat.com wizcfg.com
 
 %.rel: %.asm
-	vcpm rmac "$?" '$$SZLAPO'
+	vcpm rmac "$?" '$$SZLA'
 
 %.com: %.asm
-	vcpm mac "$?" '$$SZLAPO'
+	vcpm mac "$?" '$$SZLA'
 	vcpm hexcom "$*"
 
 ndos3-u.com: ndos3.rel sniosusb.rel
@@ -45,15 +44,15 @@ ntpdt-m.com: ntpdate.rel snios422.rel
 	vcpm link "ntpdt-m=ntpdate,snios422[oc,nr]"
 
 netstat.com: netstat.asm
-	vcpm mac netstat.asm '$$SZLAPO'
+	vcpm mac netstat.asm '$$SZLA'
 	vcpm hexcom netstat
 
 wizcfg.com: wizcfg.asm
-	vcpm mac wizcfg.asm '$$SZLAPO'
+	vcpm mac wizcfg.asm '$$SZLA'
 	vcpm hexcom wizcfg
 
 wizdbg.com: wizdbg.asm
-	vcpm mac wizdbg.asm '$$SZLAPO'
+	vcpm mac wizdbg.asm '$$SZLA'
 	vcpm hexcom wizdbg
 
 snios-w.spr: snioswiz.rel snios12.rel
@@ -64,6 +63,16 @@ wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com snios-w.spr
 usb: ntpdt-u.com ndos3-u.com
 
 mms: ntpdt-m.com ndos3-m.com
+
+# There are run from dev dir, e.g. ~/CpmDev/net
+# push built files back into repo... new files must be manually copied
+syncup:
+	rsync -Wurv --existing . ~/git/MmsCpm3/net/bin/.
+	rsync -Wurv --existing . ~/git/MmsCpm3/net/prn/.
+
+# pull source files down from repo...
+syncdown:
+	unix2cpm -s ~/git/MmsCpm3/net/src/*.asm .
 
 # These are run from git/MmsCpm3/net/bld
 

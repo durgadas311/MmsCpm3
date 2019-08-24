@@ -97,7 +97,7 @@ done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
 ncfg:	db	'- Not Configured',CR,LF,'$'
-nocpn:	db	'CP/NET is running. Stop it first',CR,LF,'$'
+nocpn:	db	'CP/NET is running! Restoring config anyway...',CR,LF,'$'
 nverr:	db	'NVRAM block not initialized',CR,LF,'$'
 newbuf:	db	'Initializing new NVRAM block',CR,LF,'$'
 
@@ -377,7 +377,11 @@ shnvsk0:
 pars5:	; restore config from NVRAM
 	lda	cpnet
 	ora	a
-	jnz	xocpnt
+	jz	xocpnt
+	lxi	d,nocpn
+	mvi	c,print
+	call	bdos
+xocpnt:
 	lxi	h,0
 	lxi	d,512
 	call	nvget
@@ -458,8 +462,6 @@ exit:
 	jmp	cpm
 
 cserr:	lxi	d,nverr
-	jr	xtmsg
-xocpnt:	lxi	d,nocpn
 	jr	xtmsg
 help:
 	lxi	d,usage

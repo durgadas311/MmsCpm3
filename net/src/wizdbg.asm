@@ -48,6 +48,15 @@ start:
 	mov	a,h
 	ani	02h
 	sta	cpnet
+	lhld	bdos+1	; compute max buf space
+	mvi	l,0	;
+	dcr	h	; safety margin
+	lxi	d,buf
+	ora	a
+	dsbc	d
+	mvi	l,0	; more safety margins
+	shld	max
+; start parsing commandline
 	lda	cmd
 	ora	a
 	jz	help
@@ -127,11 +136,12 @@ set1:
 get:
 	call	parsnm
 	jc	help
-	mov	a,d
+	; done parsing command, can destroy HL/B
+	lhld	max
 	ora	a
-	jnz	help
-	mov	a,e
-	sta	num
+	dsbc	d
+	jc	help	; or "overflow"? "too large"?
+	sded	num
 	call	wizget
 	lxi	h,buf
 	push	h
@@ -160,9 +170,11 @@ get1:
 	lhld	off
 	inx	h
 	shld	off
-	lda	num
-	dcr	a
-	sta	num
+	lhld	num
+	dcx	h
+	shld	num
+	mov	a,h
+	ora	l
 	jz	get2
 	djnz	get1
 	call	crlf
@@ -199,10 +211,19 @@ wizget:
 	in	wiz$dat	; prime pump
 	mvi	c,wiz$dat
 	lxi	h,buf
-	lda	num
-	mov	b,a
-	inir
-	xra	a	; not SCS
+	lded	num
+	mov	b,e
+	mov	a,e
+	ora	a
+	jrz	wg0
+	inir	; do partial page
+	mov	a,d
+	ora	a
+	jrz	wg1
+wg0:	inir
+	dcr	d
+	jrnz	wg0
+wg1:	xra	a	; not SCS
 	out	wiz$ctl
 	ret
 
@@ -371,7 +392,8 @@ usrstk:	dw	0
 com:	db	0
 bsb:	db	0
 off:	dw	0
-num:	db	0
+num:	dw	0	; SET: one byte, GET: two bytes
+max:	dw	0	; maximum <num> allowed (for GET)
 
 buf:	ds	0
 
