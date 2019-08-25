@@ -113,6 +113,6 @@ cpnetdocs.tgz: __FRC__
 
 publish: ship
 	rsync -Wuv wiznet.htaccess durgadas.com:/http/durgadas.com/sebhc/mms89/wiz850io/.htaccess
-	rsync -Wuv *.tgz durgadas.com:/http/durgadas.com/sebhc/mms89/wiz850io
+	rsync -Wuv *.tgz ../../doc/CPNET-WIZ850io.pdf durgadas.com:/http/durgadas.com/sebhc/mms89/wiz850io
 
 __FRC__:
