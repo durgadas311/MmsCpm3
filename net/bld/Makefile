@@ -83,7 +83,7 @@ CPN12_UTLS = $(CPNET_UTLS) ndos.spr ccp.spr xsubnet.com
 
 NET_UTLS = wizcfg.com wizdbg.com netstat.com
 
-NET3_UTLS = $(NET_UTLS) ndos3-w.com
+NET3_UTLS = $(NET_UTLS) ndos3-w.com ntpdt-w.com
 NET12_UTLS = $(NET_UTLS) snios-w.spr cpnldr-w.com
 
 CP3_UTLS = nvram.com rsxrm.com tr.com
@@ -96,7 +96,7 @@ ship: cpnet3.tgz cpnet12.tgz cpnetdocs.tgz
 # Warning: --xform might have unintended consequences
 
 cpnet3.tgz: __FRC__
-	tar -czf cpnet3.tgz --xform='s/-w//' \
+	tar -czf cpnet3.tgz --xform='s/ntpdt-w/ntpdate/' --xform='s/-w//' \
 		-C ../dist/bin $(CPNET_UTLS) \
 		-C ../../bin $(NET3_UTLS) \
 		-C ../../util/bin $(CP3_UTLS)

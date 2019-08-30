@@ -1,6 +1,6 @@
 	maclib z80
 
-	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
 
 BDOS	equ	0005h
 CMDLN	equ	0080h
@@ -289,6 +289,7 @@ nocpnet:
 	call	RCVMSG
 	ora	a
 	jnz	error
+	call	NTWKDN	; needed? desirable?
 settime:
 	; BDOS function 104 forces seconds to zero...
 	; but we need to inform the BIOS that time changed...

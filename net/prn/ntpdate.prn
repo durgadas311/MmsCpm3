@@ -1,6 +1,6 @@
                 	maclib z80
                 
-                	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, CFGTBL
+                	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKER, NTWKBT, NTWKDN, CFGTBL
                 
  0005 =         BDOS	equ	0005h
  0080 =         CMDLN	equ	0080h
@@ -106,7 +106,7 @@
  018A E5        	push	h
  018B D5        	push	d
  018C EB        	xchg
- 018D CD1C03    	call	weekdy
+ 018D CD1F03    	call	weekdy
  0190 87        	add	a
  0191 87        	add	a	; *4
  0192 4F        	mov	c,a
@@ -114,7 +114,7 @@
  0195 216A01    	lxi	h,wdays
  0198 09        	dad	b
  0199 EB        	xchg
- 019A CD5203    	call	xitmsg
+ 019A CD5503    	call	xitmsg
  019D 3E20      	mvi	a,' '
  019F CD5B01    	call	prout
  01A2 D1        	pop	d
@@ -228,7 +228,7 @@
  026D 220401    	shld	vers
  0270 7D        	mov	a,l
  0271 FE1E      	cpi	30
- 0273 DA4F03    	jc	badvers
+ 0273 DA5203    	jc	badvers
  0276 218000    	lxi	h,CMDLN
  0279 4E        	mov	c,m
  027A 23        	inx	h
@@ -271,114 +271,115 @@
  02B4 0E42      	mvi	c,NSEND
  02B6 CD0500    	call	BDOS
  02B9 B7        	ora	a
- 02BA C24303    	jnz	error
+ 02BA C24603    	jnz	error
  02BD 110E01    	lxi	d,gottime
  02C0 0E43      	mvi	c,NRECV
  02C2 CD0500    	call	BDOS
  02C5 B7        	ora	a
- 02C6 C24303    	jnz	error
- 02C9 C3EB02    	jmp	settime
+ 02C6 C24603    	jnz	error
+ 02C9 C3EE02    	jmp	settime
                 
                 nocpnet:
  02CC 3A0000    	lda	NTWKIN
  02CF FEC9      	cpi	0c9h	; RET
- 02D1 CA4903    	jz	error2
+ 02D1 CA4C03    	jz	error2
  02D4 CD0000    	call	NTWKIN
  02D7 010801    	lxi	b, gettime
  02DA CD0000    	call	SNDMSG
  02DD B7        	ora	a
- 02DE C24303    	jnz	error
+ 02DE C24603    	jnz	error
                 
  02E1 010E01    	lxi	b, gottime
  02E4 CD0000    	call	RCVMSG
  02E7 B7        	ora	a
- 02E8 C24303    	jnz	error
+ 02E8 C24603    	jnz	error
+ 02EB CD0000    	call	NTWKDN	; needed? desirable?
                 settime:
                 	; BDOS function 104 forces seconds to zero...
                 	; but we need to inform the BIOS that time changed...
                 	; So we set SCB fields then call BIOS function 
- 02EB 2A0601    	lhld	scbadr
- 02EE 115800    	lxi	d,058h	; date/time
- 02F1 19        	dad	d
- 02F2 EB        	xchg
- 02F3 211301    	lxi	h,gottime+5
- 02F6 010500    	lxi	b,5	; length of date/time
- 02F9 F3        	di
+ 02EE 2A0601    	lhld	scbadr
+ 02F1 115800    	lxi	d,058h	; date/time
+ 02F4 19        	dad	d
+ 02F5 EB        	xchg
+ 02F6 211301    	lxi	h,gottime+5
+ 02F9 010500    	lxi	b,5	; length of date/time
+ 02FC F3        	di
                 	ldir
- 02FA+EDB0      	DB	0EDH,0B0H
- 02FC FB        	ei
- 02FD 111403    	lxi	d,biospb
- 0300 0E32      	mvi	c,50
- 0302 CD0500    	call	bdos
- 0305 115803    	lxi	d,done
- 0308 0E09      	mvi	c,PRINT
- 030A CD0500    	call	BDOS
- 030D 211301    	lxi	h,gottime+5
- 0310 CD8601    	call	prdate
- 0313 C9        	ret
+ 02FD+EDB0      	DB	0EDH,0B0H
+ 02FF FB        	ei
+ 0300 111703    	lxi	d,biospb
+ 0303 0E32      	mvi	c,50
+ 0305 CD0500    	call	bdos
+ 0308 115B03    	lxi	d,done
+ 030B 0E09      	mvi	c,PRINT
+ 030D CD0500    	call	BDOS
+ 0310 211301    	lxi	h,gottime+5
+ 0313 CD8601    	call	prdate
+ 0316 C9        	ret
                 
- 0314 1A        biospb:	db	26	; BIOS TIME function
- 0315 00        	db	0	; A
- 0316 FF00      	dw	00ffh	; BC - C=FF: SET TIME
- 0318 0000      	dw	0	; DE
- 031A 0000      	dw	0	; HL
+ 0317 1A        biospb:	db	26	; BIOS TIME function
+ 0318 00        	db	0	; A
+ 0319 FF00      	dw	00ffh	; BC - C=FF: SET TIME
+ 031B 0000      	dw	0	; DE
+ 031D 0000      	dw	0	; HL
                 
                 ; HL=CP/M date value (days since epoch)
                 ; From DATE.PLM: week$day = (word$value + base$day - 1) mod 7;
                 ;                base$day  lit '0',
- 031C 2B        weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
- 031D 11581B    	lxi	d,7000
- 0320 B7        	ora	a
+ 031F 2B        weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
+ 0320 11581B    	lxi	d,7000
+ 0323 B7        	ora	a
                 wd0:	dsbc	d
- 0321+ED52      	DB	0EDH,D*8+42H
+ 0324+ED52      	DB	0EDH,D*8+42H
                 	jrnc	wd0
- 0323+30FC      	DB	30H,WD0-$-1
- 0325 19        	dad	d
- 0326 11BC02    	lxi	d,700
- 0329 B7        	ora	a
+ 0326+30FC      	DB	30H,WD0-$-1
+ 0328 19        	dad	d
+ 0329 11BC02    	lxi	d,700
+ 032C B7        	ora	a
                 wd1:	dsbc	d
- 032A+ED52      	DB	0EDH,D*8+42H
+ 032D+ED52      	DB	0EDH,D*8+42H
                 	jrnc	wd1
- 032C+30FC      	DB	30H,WD1-$-1
- 032E 19        	dad	d
- 032F 114600    	lxi	d,70
- 0332 B7        	ora	a
+ 032F+30FC      	DB	30H,WD1-$-1
+ 0331 19        	dad	d
+ 0332 114600    	lxi	d,70
+ 0335 B7        	ora	a
                 wd2:	dsbc	d
- 0333+ED52      	DB	0EDH,D*8+42H
+ 0336+ED52      	DB	0EDH,D*8+42H
                 	jrnc	wd2
- 0335+30FC      	DB	30H,WD2-$-1
- 0337 19        	dad	d
- 0338 110700    	lxi	d,7
- 033B B7        	ora	a
+ 0338+30FC      	DB	30H,WD2-$-1
+ 033A 19        	dad	d
+ 033B 110700    	lxi	d,7
+ 033E B7        	ora	a
                 wd3:	dsbc	d
- 033C+ED52      	DB	0EDH,D*8+42H
+ 033F+ED52      	DB	0EDH,D*8+42H
                 	jrnc	wd3
- 033E+30FC      	DB	30H,WD3-$-1
- 0340 19        	dad	d
- 0341 7D        	mov	a,l
- 0342 C9        	ret
+ 0341+30FC      	DB	30H,WD3-$-1
+ 0343 19        	dad	d
+ 0344 7D        	mov	a,l
+ 0345 C9        	ret
                 
                 error:
- 0343 116A03    	lxi	d,errmsg
- 0346 C35203    	jmp	xitmsg
+ 0346 116D03    	lxi	d,errmsg
+ 0349 C35503    	jmp	xitmsg
                 
                 error2:
- 0349 118A03    	lxi	d,errcpn
- 034C C35203    	jmp	xitmsg
+ 034C 118D03    	lxi	d,errcpn
+ 034F C35503    	jmp	xitmsg
                 
                 badvers:
- 034F 11A903    	lxi	d,vermsg
+ 0352 11AC03    	lxi	d,vermsg
                 xitmsg:
- 0352 0E09      	mvi	c,PRINT
- 0354 CD0500    	call	BDOS
- 0357 C9        	ret
+ 0355 0E09      	mvi	c,PRINT
+ 0357 CD0500    	call	BDOS
+ 035A C9        	ret
                 
- 0358 54696D6520done:	db	'Time was set to: $'
- 036A 074572726Ferrmsg: db	7,'Error retrieving network time.$'
- 038A 0754686973errcpn: db	7,'This program requires CP/NET.$'
- 03A9 0754686973vermsg: db	7,'This program requires BDOS >= 3.0.$'
+ 035B 54696D6520done:	db	'Time was set to: $'
+ 036D 074572726Ferrmsg: db	7,'Error retrieving network time.$'
+ 038D 0754686973errcpn: db	7,'This program requires CP/NET.$'
+ 03AC 0754686973vermsg: db	7,'This program requires BDOS >= 3.0.$'
                 
                 ; Must be linked with an SNIOS, at least SNIOS000
                 
- 03CD           	end
-
+ 03D0           	end
+
