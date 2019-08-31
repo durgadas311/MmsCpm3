@@ -53,12 +53,13 @@ CLOSED	equ	00h
 INIT	equ	13h
 ESTAB	equ	17h
 
-; Socket CR commands
-OPEN	equ	01h
-CONN	equ	04h
-DISC	equ	08h
-CLOSE	equ	10h
-KEEP	equ	22h
+; Socket IR bits
+TXOK	equ	10h
+TIMO	equ	08h
+RXRD	equ	04h
+DCON	equ	02h
+YCON	equ	01h
+IMSK	equ	(TXOK+TIMO+RXRD+DCON+YCON)
 
 CR	equ	13
 LF	equ	10
@@ -135,7 +136,43 @@ gs0:	lxi	d,midmsg
 	mvi	c,print
 	call	bdos
 	lda	buf+1
-	call	hexout
+;	call	hexout
+	ani	TXOK
+	jrz	gs1
+	lxi	d,sokmsg
+	mvi	c,print
+	call	bdos
+gs1:	lda	buf+1
+	ani	TIMO
+	jrz	gs2
+	lxi	d,tmomsg
+	mvi	c,print
+	call	bdos
+gs2:	lda	buf+1
+	ani	RXRD
+	jrz	gs3
+	lxi	d,rxrmsg
+	mvi	c,print
+	call	bdos
+gs3:	lda	buf+1
+	ani	DCON
+	jrz	gs4
+	lxi	d,dcomsg
+	mvi	c,print
+	call	bdos
+gs4:	lda	buf+1
+	ani	YCON
+	jrz	gs5
+	lxi	d,conmsg
+	mvi	c,print
+	call	bdos
+gs5:	lda	buf+1
+	ani	IMSK
+	jrnz	gs6
+	lxi	d,none
+	mvi	c,print
+	call	bdos
+gs6:
 	call	crlf
 ;	jmp	exit
 
@@ -202,12 +239,19 @@ usrstk:	dw	0
 sokn:	db	SOCK0
 
 premsg:	db	'Socket 0 is $'
-midmsg:	db	' intr is $'
+midmsg:	db	' intr is$'
 clsmsg:	db	'CLOSED$'
 intmsg:	db	'INIT$'
 estmsg:	db	'ESTABLISHED$'
 synmsg:	db	'SYNSENT$'
 watmsg:	db	'CLOSE_WAIT$'
+
+sokmsg:	db	' SEND_OK$'
+tmomsg:	db	' TIMEOUT$'
+rxrmsg:	db	' RECV$'
+dcomsg:	db	' DISCON$'
+conmsg:	db	' CON$'
+none:	db	' (none)$'
 
 buf:	ds	512
 
