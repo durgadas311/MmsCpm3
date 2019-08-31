@@ -3,18 +3,18 @@
 export CPMDrive_D = $(HOME)/CpmDev/net	# a.k.a. $(PWD)
 export CPMDefault = d:
 
-all:	wizdate.com \
+all:	wizdate.com sokstat.com \
 	sokopen.com sokconn.com sokdisc.com sokclose.com sokkeep.com
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZ'
 
-wizdate.com: wizdate.asm
-	vcpm mac wizdate.asm '$$SZ'
-	vcpm hexcom wizdate
+%.com: %.asm
+	vcpm mac "$?" '$$SZ'
+	vcpm hexcom "$*"
 
-sok%.com: sokcmd.asm
-	echo 'comnd equ $*\r' >sokcmd.lib
+sokopen.com sokconn.com sokdisc.com sokclose.com sokkeep.com : sokcmd.asm
+	echo 'comnd equ $(subst sok,,$(basename $@))\r' >sokcmd.lib
 	vcpm mac sokcmd.asm '$$SZ'
 	vcpm hexcom "sokcmd"
 	mv sokcmd.com $@
