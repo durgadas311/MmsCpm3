@@ -47,7 +47,7 @@ dmapt2:	dw	0
 dmaptr:	dw	0
 hint:	db	0
 
-signon:	db	cr,lf,'+MMS COPY version 4.1$'
+signon:	db	cr,lf,'+MMS COPY version 4.2$'
 
 srcmsg:	db	cr,lf,lf,'+Insert SOURCE disk in '
 srcdrv:	db		'X:'
@@ -113,6 +113,16 @@ l035bh:
 	lxi d,signon
 	mvi c,print
 	call bdos
+	; compute copy buffer length.
+	; ensure a multiple of 1K, the largest phy sector size.
+	lhld	bdos+1
+	mov	a,h
+	sui	4	; -1K
+	ani	11111100b
+	adi	(buffer/256 and 03h)
+	mov	h,a
+	mvi	l,(buffer and 0ffh)
+	shld	memtop
 	; init BIOS jump vectors
 	lhld cpm+1
 	lxi d,8*3 ; start at +8 vectors
@@ -273,9 +283,7 @@ l04b2h:
 chkmem:
 	push d
 	push h
-	lded bdos+1
-	mvi e,0
-	dcr d
+	lded memtop
 	ora a
 	dsbc d
 	pop h
@@ -373,6 +381,7 @@ l054ch:
 	liyd sectbl
 	ret
 
+memtop:	dw	0
 numsec:	dw	0
 numtrk:	dw	0
 sectbl:	dw	0
