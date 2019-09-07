@@ -26,7 +26,8 @@ ndos3-u.com: ndos3.rel sniosusb.rel
 ntpdt-u.com: ntpdate.rel sniosusb.rel
 	vcpm link "ntpdt-u=ntpdate,sniosusb[oc,nr]"
 
-ndos3-w.com: ndos3.rel snioswiz.rel ndos3wiz.com
+ndos3-w.com: ndos3.rel snioswiz.rel ndos3wiz.rel libwiznt.rel libnvram.rel
+	vcpm link ndos3wiz,libwiznt,libnvram'[oc,nr]'
 	vcpm link "ndos3-w.rsx=ndos3,snioswiz[op,nr]"
 	@rm -f ndos3-w.com
 	@cp ndos3wiz.com ndos3-w.com
@@ -51,9 +52,8 @@ srvstat.com: srvstat.asm
 	vcpm mac srvstat.asm '$$SZLA'
 	vcpm hexcom srvstat
 
-wizcfg.com: wizcfg.asm
-	vcpm mac wizcfg.asm '$$SZLA'
-	vcpm hexcom wizcfg
+wizcfg.com: wizcfg.rel libwiznt.rel libnvram.rel
+	vcpm link wizcfg,libwiznt,libnvram'[oc,nr]'
 
 wizdbg.com: wizdbg.asm
 	vcpm mac wizdbg.asm '$$SZLA'
@@ -61,6 +61,9 @@ wizdbg.com: wizdbg.asm
 
 snios-w.spr: snioswiz.rel snios12.rel
 	vcpm link "snios-w=snios12.rel,snioswiz.rel[os,nr]"
+
+cpnldr-w.com: cpnldr-w.rel libwiznt.rel libnvram.rel
+	vcpm link cpnldr-w,libwiznt,libnvram'[oc,nr]'
 
 wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com snios-w.spr
 

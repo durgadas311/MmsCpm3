@@ -1,1340 +1,1119 @@
-                ; A CONFIG UTIL FOR WIZNET 550 DEVICES, ATTACHED IN PARALLEL-SPI INTERFACE
-                ; SETS CONFIG INTO NVRAM, UNLESS 'W' OPTION PREFIX TO SET TO WIZ850IO DIRECTLY.
+                ; A config util for WizNET 550 devices, attached in parallel-SPI interface
+                ; Sets config into NVRAM, unless 'w' option prefix to set to WIZ850io directly.
                 ;
-                ; COMMANDS:
-                ;	[W] N <ID>		SET NODE ID
-                ;	[W] G <IP>		SET GATEWAY IP ADDR
-                ;	[W] S <IP>		SET SUB-NETWORK MASK
-                ;	[W] I <IP>		SET NODE IP ADDR
-                ;	[W] M <MA>		SET NODE H/W ADDR
-                ;	[W] 0 <ID> <IP> <PT>	SET SOCK 0
-                ;	R			RESTORE WIZ850IO CONFIG FROM NVRAM
+                ; Commands:
+                ;	[w] n <id>		Set node ID
+                ;	[w] g <ip>		Set gateway IP addr
+                ;	[w] s <ip>		Set sub-network mask
+                ;	[w] i <ip>		Set node IP addr
+                ;	[w] m <ma>		Set node h/w addr
+                ;	[w] 0 <id> <ip> <pt>	Set sock 0
+                ;	r			Restore WIZ850io config from NVRAM
                 
-                	MACLIB	Z80
+                	extrn	wizcfg, wizcmd, wizget, wizset, wizclose, setsok, settcp
+                	extrn	gkeep,skeep
+                	extrn	cksum32, vcksum, scksum, nvget
                 
- 0040 =         WIZ	EQU	40H	; BASE PORT OF H8-WIZX50IO SPI INTERFACE
+                	public	nvbuf	; for wizcfg routine
                 
- 0040 =         WIZ$DAT	EQU	WIZ+0
- 0041 =         WIZ$CTL	EQU	WIZ+1
- 0041 =         WIZ$STS	EQU	WIZ+1
+                	maclib	z80
                 
- 0001 =         SCS	EQU	01B	; SCS FOR WIZNET
- 0002 =         NVSCS	EQU	10B	; SCS FOR NVRAM
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
                 
-                ; NVRAM/SEEPROM COMMANDS
- 0003 =         NVRD	EQU	00000011B
- 0002 =         NVWR	EQU	00000010B
- 0005 =         RDSR	EQU	00000101B
- 0006 =         WREN	EQU	00000110B
-                ; NVRAM/SEEPROM STATUS BITS
- 0001 =         WIP	EQU	00000001B
+ 0000 =         cpm	equ	0
+ 0005 =         bdos	equ	5
+ 0080 =         cmd	equ	0080h
                 
-                ; WIZNET CTRL BIT FOR WRITING
- 0004 =         WRITE	EQU	00000100B
+ 0009 =         print	equ	9
+ 000C =         getver	equ	12
+ 0045 =         cfgtbl	equ	69
                 
- 0001 =         GAR	EQU	1	; OFFSET OF GAR, ETC.
- 0005 =         SUBR	EQU	5
- 0009 =         SHAR	EQU	9
- 000F =         SIPR	EQU	15
- 001D =         PMAGIC	EQU	29	; USED FOR NODE ID
+                	cseg
                 
- 0008 =         NSOCK	EQU	8
- 0008 =         SOCK0	EQU	000$01$000B
- 0028 =         SOCK1	EQU	001$01$000B
- 0048 =         SOCK2	EQU	010$01$000B
- 0068 =         SOCK3	EQU	011$01$000B
- 0088 =         SOCK4	EQU	100$01$000B
- 00A8 =         SOCK5	EQU	101$01$000B
- 00C8 =         SOCK6	EQU	110$01$000B
- 00E8 =         SOCK7	EQU	111$01$000B
+ 0000 C30300    	jmp	start
                 
- 0000 =         SNMR	EQU	0
- 0001 =         SNCR	EQU	1
- 0002 =         SNIR	EQU	2
- 0003 =         SNSR	EQU	3
- 0004 =         SNPORT	EQU	4
- 000C =         SNDIPR	EQU	12
- 0010 =         SNDPORT	EQU	16
- 001F =         SNTXBUF	EQU	31	; TXBUF_SIZE
+                	dseg
+ 0000 4E6F646520idmsg:	db	'Node ID:  $'
+ 000B 4761746577gwmsg:	db	'Gateway:  $'
+ 0016 5375626E65ntmsg:	db	'Subnet:   $'
+ 0021 4D41433A20mcmsg:	db	'MAC:      $'
+ 002C 4950204164ipmsg:	db	'IP Addr:  $'
                 
-                ; SOCKET SR VALUES
- 0000 =         CLOSED	EQU	00H
+ 0037 57495A4346usage:	db	'WIZCFG version 1.2',CR,LF
+ 004B 5573616765	db	'Usage: WIZCFG {G|I|S} ipadr',CR,LF
+ 0068 2020202020	db	'       WIZCFG M macadr',CR,LF
+ 0080 2020202020	db	'       WIZCFG N cid',CR,LF
+ 0095 2020202020	db	'       WIZCFG {0..7} sid ipadr port [keep]',CR,LF
+ 00C1 2020202020	db	'       WIZCFG R',CR,LF
+ 00D2 5365747320	db	'Sets network config in NVRAM',CR,LF
+ 00F0 5072656669	db	'Prefix cmd with W to set WIZ850io directly',CR,LF
+ 011C 5220636D64	db	'R cmd sets WIZ850io from NVRAM',CR,LF
+ 013C 24        	db	'$'
+ 013D 5365740D0Adone:	db	'Set',CR,LF,'$'
+ 0143 536F636B65sock:	db	'Socket '
+ 014A 4E3A2024  sokn:	db	'N: $'
+ 014E 2D204E6F74ncfg:	db	'- Not Configured',CR,LF,'$'
+ 0161 43502F4E45nocpn:	db	'CP/NET is running! Restoring config anyway...',CR,LF,'$'
+ 0191 4E5652414Dnverr:	db	'NVRAM block not initialized',CR,LF,'$'
+ 01AF 496E697469newbuf:	db	'Initializing new NVRAM block',CR,LF,'$'
                 
-                ; SOCKET CR COMMANDS
- 0008 =         DISCON	EQU	08H
+                	cseg
+                start:
+                	sspd	usrstk
+ 0003+ED73      	DB	0EDH,73H
+ 0005+F601      	DW	USRSTK
+ 0007 31F601    	lxi	sp,stack
+ 000A 0E0C      	mvi	c,getver
+ 000C CD0500    	call	bdos
+ 000F 7C        	mov	a,h
+ 0010 E602      	ani	02h
+ 0012 CA2200    	jz	nocpnt
+ 0015 F6FF      	ori	0ffh
+ 0017 32F901    	sta	cpnet
+ 001A 0E45      	mvi	c,cfgtbl
+ 001C CD0500    	call	bdos
+ 001F 22FA01    	shld	netcfg
+                nocpnt:
+ 0022 3A8000    	lda	cmd
+ 0025 B7        	ora	a
+ 0026 CA9E02    	jz	show
                 
- 000D =         CR	EQU	13
- 000A =         LF	EQU	10
+ 0029 218000    	lxi	h,cmd
+ 002C 46        	mov	b,m
+ 002D 23        	inx	h
+                pars0:
+ 002E 7E        	mov	a,m
+ 002F FE20      	cpi	' '
+ 0031 C23A00    	jnz	pars1
+ 0034 23        	inx	h
+                	djnz	pars0
+ 0035+10F7      	DB	10H,PARS0-$-1
+ 0037 C39E02    	jmp	show
                 
- 0000 =         CPM	EQU	0
- 0005 =         BDOS	EQU	5
- 0080 =         CMD	EQU	0080H
-                
- 0009 =         PRINT	EQU	9
- 000C =         GETVER	EQU	12
- 0045 =         CFGTBL	EQU	69
-                
- 0100           	ORG	00100H
-                
- 0100 C3B602    	JMP	START
-                
- 0103 4E6F646520IDMSG:	DB	'Node ID:  $'
- 010E 4761746577GWMSG:	DB	'Gateway:  $'
- 0119 5375626E65NTMSG:	DB	'Subnet:   $'
- 0124 4D41433A20MCMSG:	DB	'MAC:      $'
- 012F 4950204164IPMSG:	DB	'IP Addr:  $'
-                
- 013A 5573616765USAGE:	DB	'Usage: WIZCFG {G|I|S} ipadr',CR,LF
- 0157 2020202020	DB	'       WIZCFG M macadr',CR,LF
- 016F 2020202020	DB	'       WIZCFG N cid',CR,LF
- 0184 2020202020	DB	'       WIZCFG {0..7} sid ipadr port',CR,LF
- 01A9 2020202020	DB	'       WIZCFG R',CR,LF
- 01BA 5365747320	DB	'Sets network config in NVRAM',CR,LF
- 01D8 5072656669	DB	'Prefix cmd with W to set WIZ850io directly',CR,LF
- 0204 5220636D64	DB	'R cmd sets WIZ850io from NVRAM',CR,LF
- 0224 24        	DB	'$'
- 0225 5365740D0ADONE:	DB	'Set',CR,LF,'$'
- 022B 536F636B65SOCK:	DB	'Socket '
- 0232 4E3A2024  SOKN:	DB	'N: $'
- 0236 2D204E6F74NCFG:	DB	'- Not Configured',CR,LF,'$'
- 0249 43502F4E45NOCPN:	DB	'CP/NET is running! Restoring config anyway...',CR,LF,'$'
- 0279 4E5652414DNVERR:	DB	'NVRAM block not initialized',CR,LF,'$'
- 0297 496E697469NEWBUF:	DB	'Initializing new NVRAM block',CR,LF,'$'
-                
-                START:
-                	SSPD	USRSTK
- 02B6+ED73      	DB	0EDH,73H
- 02B8+0E0A      	DW	USRSTK
- 02BA 310E0A    	LXI	SP,STACK
- 02BD 0E0C      	MVI	C,GETVER
- 02BF CD0500    	CALL	BDOS
- 02C2 7C        	MOV	A,H
- 02C3 E602      	ANI	02H
- 02C5 CAD502    	JZ	NOCPNT
- 02C8 F6FF      	ORI	0FFH
- 02CA 32110A    	STA	CPNET
- 02CD 0E45      	MVI	C,CFGTBL
- 02CF CD0500    	CALL	BDOS
- 02D2 22120A    	SHLD	NETCFG
-                NOCPNT:
- 02D5 3A8000    	LDA	CMD
- 02D8 B7        	ORA	A
- 02D9 CA2E06    	JZ	SHOW
-                
- 02DC 218000    	LXI	H,CMD
- 02DF 46        	MOV	B,M
- 02E0 23        	INX	H
-                PARS0:
- 02E1 7E        	MOV	A,M
- 02E2 FE20      	CPI	' '
- 02E4 C2ED02    	JNZ	PARS1
- 02E7 23        	INX	H
-                	DJNZ	PARS0
- 02E8+10F7      	DB	10H,PARS0-$-1
- 02EA C32E06    	JMP	SHOW
-                
-                PARS1:
- 02ED FE57      	CPI	'W'
- 02EF C2FB02    	JNZ	NOTW
- 02F2 32100A    	STA	DIRECT
- 02F5 23        	INX	H
-                	DJNZ	PARS0
- 02F6+10E9      	DB	10H,PARS0-$-1
- 02F8 C32E06    	JMP	SHOW
-                NOTW:
-                	; ALL REQUIRE PRE-READ OF NVRAM, IF NOT DIRECT
- 02FB E5        	PUSH	H
- 02FC C5        	PUSH	B
- 02FD 3A100A    	LDA	DIRECT
- 0300 B7        	ORA	A
- 0301 CC0D09    	CZ	NVGETB	; INIT BUF IF NEEDED
- 0304 C1        	POP	B
- 0305 E1        	POP	H
- 0306 7E        	MOV	A,M	; RESTORE CMD
-                	; THESE HAVE NO PARAMS...
- 0307 FE52      	CPI 	'R'
- 0309 CAD804    	JZ	PARS5
- 030C FE56      	CPI 	'V'	; UNDOCUMENTED - NOT ALWAYS USEFUL
- 030E CA4205    	JZ	PARS6
+                pars1:
+ 003A FE57      	cpi	'W'
+ 003C C24800    	jnz	notw
+ 003F 32F801    	sta	direct
+ 0042 23        	inx	h
+                	djnz	pars0
+ 0043+10E9      	DB	10H,PARS0-$-1
+ 0045 C39E02    	jmp	show
+                notw:
+                	; All require pre-read of NVRAM, if not direct
+ 0048 E5        	push	h
+ 0049 C5        	push	b
+ 004A 3AF801    	lda	direct
+ 004D B7        	ora	a
+ 004E CC0405    	cz	nvgetb	; init buf if needed
+ 0051 C1        	pop	b
+ 0052 E1        	pop	h
+ 0053 7E        	mov	a,m	; restore cmd
+                	; These have no params...
+ 0054 FE52      	cpi 	'R'
+ 0056 CA5802    	jz	pars5
                 	;
- 0311 4F        	MOV	C,A
- 0312 CD0408    	CALL	SKIPB
- 0315 DA8505    	JC	HELP
- 0318 79        	MOV	A,C
- 0319 FE47      	CPI 	'G'
-                	LXIX	GW
- 031B+DD21      	DB	0DDH,21H
- 031D+150A      	DW	GW
- 031F 110100    	LXI	D,GAR
- 0322 CA5604    	JZ	PARS2
- 0325 FE49      	CPI 	'I'
-                	LXIX	IP
- 0327+DD21      	DB	0DDH,21H
- 0329+230A      	DW	IP
- 032B 110F00    	LXI	D,SIPR
- 032E CA5604    	JZ	PARS2
- 0331 FE53      	CPI 	'S'
-                	LXIX	MSK
- 0333+DD21      	DB	0DDH,21H
- 0335+190A      	DW	MSK
- 0337 110500    	LXI	D,SUBR
- 033A CA5604    	JZ	PARS2
- 033D FE4D      	CPI 	'M'
- 033F CA4104    	JZ	PARS3
- 0342 FE4E      	CPI 	'N'
- 0344 CA2C04    	JZ	PARS4
- 0347 FE30      	CPI	'0'
- 0349 DA8505    	JC	HELP
- 034C FE38      	CPI	'7'+1
- 034E D28505    	JNC	HELP
+ 0059 4F        	mov	c,a
+ 005A CD4B04    	call	skipb1
+ 005D DA8802    	jc	help
+ 0060 79        	mov	a,c
+ 0061 FE47      	cpi 	'G'
+                	lxix	gw
+ 0063+DD21      	DB	0DDH,21H
+ 0065+FD01      	DW	GW
+ 0067 110100    	lxi	d,GAR
+ 006A CACA01    	jz	pars2
+ 006D FE49      	cpi 	'I'
+                	lxix	ip
+ 006F+DD21      	DB	0DDH,21H
+ 0071+0B02      	DW	IP
+ 0073 110F00    	lxi	d,SIPR
+ 0076 CACA01    	jz	pars2
+ 0079 FE53      	cpi 	'S'
+                	lxix	msk
+ 007B+DD21      	DB	0DDH,21H
+ 007D+0102      	DW	MSK
+ 007F 110500    	lxi	d,SUBR
+ 0082 CACA01    	jz	pars2
+ 0085 FE4D      	cpi 	'M'
+ 0087 CAB501    	jz	pars3
+ 008A FE4E      	cpi 	'N'
+ 008C CAA001    	jz	pars4
+ 008F FE30      	cpi	'0'
+ 0091 DA8802    	jc	help
+ 0094 FE38      	cpi	'7'+1
+ 0096 D28802    	jnc	help
                 
-                ; PARSE NEW SOCKET CONFIG
- 0351 323202    	STA	SOKN
-                	; PARSE <SRVID> <IPADR> <PORT>
- 0354 0E00      	MVI	C,0	; NUL WON'T EVER BE SEEN
- 0356 CD2908    	CALL	PARSHX
- 0359 DA8505    	JC	HELP
- 035C 3E31      	MVI	A,31H
- 035E 32390A    	STA	NSKPT
- 0361 7A        	MOV	A,D	; SERVER ID
- 0362 323A0A    	STA	NSKPT+1
- 0365 CD0408    	CALL	SKIPB
- 0368 DA8505    	JC	HELP
-                	LXIX	NSKIP
- 036B+DD21      	DB	0DDH,21H
- 036D+410A      	DW	NSKIP
- 036F CD5808    	CALL	PARSADR
- 0372 DA8505    	JC	HELP
- 0375 CD0408    	CALL	SKIPB
- 0378 DA8505    	JC	HELP
- 037B CD8A08    	CALL	PARSNM
- 037E DA8505    	JC	HELP
- 0381 7A        	MOV	A,D
- 0382 32450A    	STA	NSKDPT
- 0385 7B        	MOV	A,E
- 0386 32460A    	STA	NSKDPT+1
-                ; NOW PREPARE TO UPDATE SOCKET CONFIG
- 0389 3A100A    	LDA	DIRECT
- 038C B7        	ORA	A
- 038D CAF403    	JZ	NVSOK
-                	; SET SN_MR SEPARATE, TO AVOID WRITING CR AND SR...
- 0390 CD0706    	CALL	GETSOKN
- 0393 57        	MOV	D,A
- 0394 D5        	PUSH	D
- 0395 CD1E06    	CALL	SETTCP	; FORCE TCP MODE
-                	; GET CURRENT VALUES, CLEANUP AS NEEDED
- 0398 21270A    	LXI	H,SOKREGS
- 039B 1E00      	MVI	E,SNMR
- 039D 0612      	MVI	B,SOKLEN
- 039F CDC305    	CALL	WIZGET
- 03A2 212D0A    	LXI	H,SOKMAC
- 03A5 113B0A    	LXI	D,NSKMAC
- 03A8 010600    	LXI	B,6
-                	LDIR
- 03AB+EDB0      	DB	0EDH,0B0H
- 03AD 3A2B0A    	LDA	SOKPT
- 03B0 FE31      	CPI	31H
- 03B2 C2DA03    	JNZ	NTCPNET	; DON'T CARE ABOUT SOCKETS NOT CONFIGURED
- 03B5 3A110A    	LDA	CPNET
- 03B8 B7        	ORA	A
- 03B9 CADA03    	JZ	NTCPNET	; SKIP CFGTBL CLEANUP IF NOT CP/NET
-                	; REMOVE ALL REFS TO THIS SERVER...
- 03BC 3A2C0A    	LDA	SOKPT+1	; SERVER NODE ID
- 03BF 4F        	MOV	C,A
- 03C0 2A120A    	LHLD	NETCFG
- 03C3 0612      	MVI	B,18	; 16 DRIVES, CON:, LST:
- 03C5 23        	INX	H
- 03C6 23        	INX	H
- 03C7 7E        CLN0:	MOV	A,M
- 03C8 B7        	ORA	A
- 03C9 F2D603    	JP	NTNET	; DEVICE NOT NETWORKED
- 03CC 23        	INX	H
- 03CD 7E        	MOV	A,M
- 03CE B9        	CMP	C	; SAME SERVER?
- 03CF C2D703    	JNZ	NTNET1
- 03D2 AF        	XRA	A
- 03D3 77        	MOV	M,A
- 03D4 2B        	DCX	H
- 03D5 77        	MOV	M,A
- 03D6 23        NTNET:	INX	H
- 03D7 23        NTNET1:	INX	H
-                	DJNZ	CLN0
- 03D8+10ED      	DB	10H,CLN0-$-1
-                NTCPNET:
- 03DA 3A2A0A    	LDA	SOKMR+SNSR
- 03DD FE00      	CPI	CLOSED
- 03DF CAE903    	JZ	NTOPN
- 03E2 D1        	POP	D
- 03E3 D5        	PUSH	D
- 03E4 3E08      	MVI	A,DISCON
- 03E6 CD9005    	CALL	WIZCMD
-                	; DON'T CARE ABOUT RESULTS?
- 03E9 21390A    NTOPN:	LXI	H,NEWSOK
- 03EC D1        	POP	D
- 03ED 1E04      	MVI	E,SNPORT
- 03EF 060E      	MVI	B,SOKLEN-SNPORT
- 03F1 C37904    	JMP	SETIT
-                NVSOK:
- 03F4 3A3202    	LDA	SOKN
- 03F7 D630      	SUI	'0'	; 00000SSS
- 03F9 0F        	RRC
- 03FA 0F        	RRC
- 03FB 0F        	RRC		; SSS00000 OR SOKN * 32
- 03FC 5F        	MOV	E,A
- 03FD 1600      	MVI	D,0
-                	LXIX	BUF+32	; SOCKET 0 BUFFER
- 03FF+DD21      	DB	0DDH,21H
- 0401+670A      	DW	BUF+32
-                	DADX	D
- 0403+DD19      	DB	0DDH,D*8+09H
- 0405 2A390A    	LHLD	NSKPT	; BIG ENDIAN DATA, LITTLE ENDIAN LOAD...
-                	STX	L,SNPORT
- 0408+DD7504    	DB	0DDH,70H+L,SNPORT
-                	STX	H,SNPORT+1
- 040B+DD7405    	DB	0DDH,70H+H,SNPORT+1
- 040E 2A410A    	LHLD	NSKIP	; LITTLE ENDIAN LOAD...
-                	STX	L,SNDIPR
- 0411+DD750C    	DB	0DDH,70H+L,SNDIPR
-                	STX	H,SNDIPR+1
- 0414+DD740D    	DB	0DDH,70H+H,SNDIPR+1
- 0417 2A430A    	LHLD	NSKIP+2	; LITTLE ENDIAN LOAD...
-                	STX	L,SNDIPR+2
- 041A+DD750E    	DB	0DDH,70H+L,SNDIPR+2
-                	STX	H,SNDIPR+3
- 041D+DD740F    	DB	0DDH,70H+H,SNDIPR+3
- 0420 2A450A    	LHLD	NSKDPT	; BIG ENDIAN DATA, LITTLE ENDIAN LOAD...
-                	STX	L,SNDPORT
- 0423+DD7510    	DB	0DDH,70H+L,SNDPORT
-                	STX	H,SNDPORT+1
- 0426+DD7411    	DB	0DDH,70H+H,SNDPORT+1
- 0429 C37105    	JMP	NVSETIT
+                ; Parse new Socket config
+ 0099 324A01    	sta	sokn
+                	; parse <srvid> <ipadr> <port>
+ 009C 0E00      	mvi	c,0	; NUL won't ever be seen
+ 009E CD7204    	call	parshx
+ 00A1 DA8802    	jc	help
+ 00A4 3E31      	mvi	a,31h
+ 00A6 322202    	sta	nskpt
+ 00A9 7A        	mov	a,d	; server ID
+ 00AA 322302    	sta	nskpt+1
+ 00AD CD4D04    	call	skipb
+ 00B0 DA8802    	jc	help
+                	lxix	nskip
+ 00B3+DD21      	DB	0DDH,21H
+ 00B5+2A02      	DW	NSKIP
+ 00B7 CDA104    	call	parsadr
+ 00BA DA8802    	jc	help
+ 00BD CD4D04    	call	skipb
+ 00C0 DA8802    	jc	help
+ 00C3 CDD304    	call	parsnm
+ 00C6 DA8802    	jc	help
+ 00C9 7A        	mov	a,d
+ 00CA 322E02    	sta	nskdpt
+ 00CD 7B        	mov	a,e
+ 00CE 322F02    	sta	nskdpt+1
+                	; optional keep-alive timeout
+ 00D1 AF        	xra	a
+ 00D2 323002    	sta	nskkp
+ 00D5 CD4D04    	call	skipb
+ 00D8 DAF100    	jc	nokp
+ 00DB 78        	mov	a,b
+ 00DC B7        	ora	a
+ 00DD C4D304    	cnz	parsnm
+ 00E0 DA8802    	jc	help
+ 00E3 CD1304    	call	div5
+ 00E6 7A        	mov	a,d
+ 00E7 B7        	ora	a
+ 00E8 CAED00    	jz	nokp0
+ 00EB 1EFF      	mvi	e,0ffh	; max keepalive
+ 00ED 7B        nokp0:	mov	a,e
+ 00EE 323002    	sta	nskkp
+                nokp:
+                ; Now prepare to update socket config
+ 00F1 3AF801    	lda	direct
+ 00F4 B7        	ora	a
+ 00F5 CA6201    	jz	nvsok
+                	; set Sn_MR separate, to avoid writing CR and SR...
+ 00F8 CD9302    	call	getsokn
+ 00FB 57        	mov	d,a
+ 00FC D5        	push	d
+ 00FD CD0000    	call	settcp	; force TCP mode
+ 0100 3A3002    	lda	nskkp
+ 0103 CD0000    	call	skeep	; set keep-alive
+                	; Get current values, cleanup as needed
+ 0106 210F02    	lxi	h,sokregs
+ 0109 1E00      	mvi	e,SnMR
+ 010B 0612      	mvi	b,soklen
+ 010D CD0000    	call	wizget
+ 0110 211502    	lxi	h,sokmac
+ 0113 112402    	lxi	d,nskmac
+ 0116 010600    	lxi	b,6
+                	ldir
+ 0119+EDB0      	DB	0EDH,0B0H
+ 011B 3A1302    	lda	sokpt
+ 011E FE31      	cpi	31h
+ 0120 C24801    	jnz	ntcpnet	; don't care about sockets not configured
+ 0123 3AF901    	lda	cpnet
+ 0126 B7        	ora	a
+ 0127 CA4801    	jz	ntcpnet	; skip CFGTBL cleanup if not CP/NET
+                	; remove all refs to this server...
+ 012A 3A1402    	lda	sokpt+1	; server node ID
+ 012D 4F        	mov	c,a
+ 012E 2AFA01    	lhld	netcfg
+ 0131 0612      	mvi	b,18	; 16 drives, CON:, LST:
+ 0133 23        	inx	h
+ 0134 23        	inx	h
+ 0135 7E        cln0:	mov	a,m
+ 0136 B7        	ora	a
+ 0137 F24401    	jp	ntnet	; device not networked
+ 013A 23        	inx	h
+ 013B 7E        	mov	a,m
+ 013C B9        	cmp	c	; same server?
+ 013D C24501    	jnz	ntnet1
+ 0140 AF        	xra	a
+ 0141 77        	mov	m,a
+ 0142 2B        	dcx	h
+ 0143 77        	mov	m,a
+ 0144 23        ntnet:	inx	h
+ 0145 23        ntnet1:	inx	h
+                	djnz	cln0
+ 0146+10ED      	DB	10H,CLN0-$-1
+                ntcpnet:
+ 0148 3A1202    	lda	sokmr+SnSR
+ 014B FE00      	cpi	CLOSED
+ 014D CA5701    	jz	ntopn
+ 0150 D1        	pop	d
+ 0151 D5        	push	d
+ 0152 3E08      	mvi	a,DISCON
+ 0154 CD0000    	call	wizcmd
+                	; don't care about results?
+ 0157 212202    ntopn:	lxi	h,newsok
+ 015A D1        	pop	d
+ 015B 1E04      	mvi	e,SnPORT
+ 015D 060E      	mvi	b,soklen-SnPORT
+ 015F C3ED01    	jmp	setit
+                nvsok:
+ 0162 3A4A01    	lda	sokn
+ 0165 D630      	sui	'0'	; 00000sss
+ 0167 0F        	rrc
+ 0168 0F        	rrc
+ 0169 0F        	rrc		; sss00000 or sokn * 32
+ 016A 5F        	mov	e,a
+ 016B 1600      	mvi	d,0
+                	lxix	nvbuf+32	; socket 0 buffer
+ 016D+DD21      	DB	0DDH,21H
+ 016F+5102      	DW	NVBUF+32
+                	dadx	d
+ 0171+DD19      	DB	0DDH,D*8+09H
+ 0173 2A2202    	lhld	nskpt	; big endian data, little endian load...
+                	stx	l,SnPORT
+ 0176+DD7504    	DB	0DDH,70H+L,SNPORT
+                	stx	h,SnPORT+1
+ 0179+DD7405    	DB	0DDH,70H+H,SNPORT+1
+ 017C 2A2A02    	lhld	nskip	; little endian load...
+                	stx	l,SnDIPR
+ 017F+DD750C    	DB	0DDH,70H+L,SNDIPR
+                	stx	h,SnDIPR+1
+ 0182+DD740D    	DB	0DDH,70H+H,SNDIPR+1
+ 0185 2A2C02    	lhld	nskip+2	; little endian load...
+                	stx	l,SnDIPR+2
+ 0188+DD750E    	DB	0DDH,70H+L,SNDIPR+2
+                	stx	h,SnDIPR+3
+ 018B+DD740F    	DB	0DDH,70H+H,SNDIPR+3
+ 018E 2A2E02    	lhld	nskdpt	; big endian data, little endian load...
+                	stx	l,SnDPORT
+ 0191+DD7510    	DB	0DDH,70H+L,SNDPORT
+                	stx	h,SnDPORT+1
+ 0194+DD7411    	DB	0DDH,70H+H,SNDPORT+1
+ 0197 3A3002    	lda	nskkp
+                	stx	a,NvKPALVTR	; force to 00 if not set
+ 019A+DD771D    	DB	0DDH,70H+A,NVKPALVTR
+ 019D C37002    	jmp	nvsetit
                 
-                PARS4:
- 042C CD2908    	CALL	PARSHX
- 042F DA8505    	JC	HELP
- 0432 7A        	MOV	A,D
- 0433 32140A    	STA	WIZMAG
- 0436 21140A    	LXI	H,WIZMAG
- 0439 111D00    	LXI	D,PMAGIC
- 043C 0601      	MVI	B,1
- 043E C36304    	JMP	SETIT0
+                pars4:
+ 01A0 CD7204    	call	parshx
+ 01A3 DA8802    	jc	help
+ 01A6 7A        	mov	a,d
+ 01A7 32FC01    	sta	wizmag
+ 01AA 21FC01    	lxi	h,wizmag
+ 01AD 111D00    	lxi	d,PMAGIC
+ 01B0 0601      	mvi	b,1
+ 01B2 C3D701    	jmp	setit0
                 
-                PARS3:
-                	LXIX	MAC
- 0441+DD21      	DB	0DDH,21H
- 0443+1D0A      	DW	MAC
-                	PUSHIX
- 0445+DDE5      	DB	0DDH,0E5H
- 0447 CD1108    	CALL	PARSMAC
- 044A E1        	POP	H
- 044B DA8505    	JC	HELP
- 044E 110900    	LXI	D,SHAR
- 0451 0606      	MVI	B,6
- 0453 C36304    	JMP	SETIT0
+                pars3:
+                	lxix	mac
+ 01B5+DD21      	DB	0DDH,21H
+ 01B7+0502      	DW	MAC
+                	pushix
+ 01B9+DDE5      	DB	0DDH,0E5H
+ 01BB CD5A04    	call	parsmac
+ 01BE E1        	pop	h
+ 01BF DA8802    	jc	help
+ 01C2 110900    	lxi	d,SHAR
+ 01C5 0606      	mvi	b,6
+ 01C7 C3D701    	jmp	setit0
                 
-                PARS2:
-                	PUSHIX
- 0456+DDE5      	DB	0DDH,0E5H
- 0458 D5        	PUSH	D
- 0459 CD5808    	CALL	PARSADR
- 045C D1        	POP	D
- 045D E1        	POP	H
- 045E DA8505    	JC	HELP
- 0461 0604      	MVI	B,4
-                	; GOT IT...
-                SETIT0:
- 0463 3A100A    	LDA	DIRECT
- 0466 B7        	ORA	A
- 0467 C27904    	JNZ	SETIT
- 046A E5        	PUSH	H
- 046B 21470A    	LXI	H,BUF
- 046E 19        	DAD	D
- 046F EB        	XCHG
- 0470 E1        	POP	H
- 0471 48        	MOV	C,B
- 0472 0600      	MVI	B,0
-                	LDIR
- 0474+EDB0      	DB	0EDH,0B0H
- 0476 C37105    	JMP	NVSETIT
-                SETIT:
- 0479 CDDA05    	CALL	WIZSET
+                pars2:
+                	pushix
+ 01CA+DDE5      	DB	0DDH,0E5H
+ 01CC D5        	push	d
+ 01CD CDA104    	call	parsadr
+ 01D0 D1        	pop	d
+ 01D1 E1        	pop	h
+ 01D2 DA8802    	jc	help
+ 01D5 0604      	mvi	b,4
+                	; got it...
+                setit0:
+ 01D7 3AF801    	lda	direct
+ 01DA B7        	ora	a
+ 01DB C2ED01    	jnz	setit
+ 01DE E5        	push	h
+ 01DF 213102    	lxi	h,nvbuf
+ 01E2 19        	dad	d
+ 01E3 EB        	xchg
+ 01E4 E1        	pop	h
+ 01E5 48        	mov	c,b
+ 01E6 0600      	mvi	b,0
+                	ldir
+ 01E8+EDB0      	DB	0EDH,0B0H
+ 01EA C37002    	jmp	nvsetit
+                setit:
+ 01ED CD0000    	call	wizset
                 
-                	;LXI	D,DONE
-                	;MVI	C,PRINT
-                	;CALL	BDOS
- 047C C37D05    	JMP	EXIT
+                	;lxi	d,done
+                	;mvi	c,print
+                	;call	bdos
+ 01F0 C38002    	jmp	exit
                 
-                NVSHOW:	; SHOW CONFIG FROM NVRAM
- 047F 210000    	LXI	H,0
- 0482 110002    	LXI	D,512
- 0485 CD3009    	CALL	NVGET
- 0488 CDD708    	CALL	VCKSUM
- 048B C28005    	JNZ	CSERR
- 048E 3A640A    	LDA	BUF+PMAGIC
- 0491 CDB409    	CALL	SHID
- 0494 21560A    	LXI	H,BUF+SIPR
- 0497 112F01    	LXI	D,IPMSG
- 049A CDC909    	CALL	SHIP
- 049D 21480A    	LXI	H,BUF+GAR
- 04A0 110E01    	LXI	D,GWMSG
- 04A3 CDC909    	CALL	SHIP
- 04A6 214C0A    	LXI	H,BUF+SUBR
- 04A9 111901    	LXI	D,NTMSG
- 04AC CDC909    	CALL	SHIP
- 04AF 21500A    	LXI	H,BUF+SHAR
- 04B2 CDD609    	CALL	SHMAC
- 04B5 21670A    	LXI	H,BUF+32	; SOCKET 0 BUFFER
- 04B8 0608      	MVI	B,NSOCK
-                SHNVSK0:
- 04BA C5        	PUSH	B
- 04BB 11270A    	LXI	D,SOKREGS
- 04BE 011200    	LXI	B,SOKLEN
-                	LDIR
- 04C1+EDB0      	DB	0EDH,0B0H
- 04C3 110E00    	LXI	D,32-SOKLEN
- 04C6 19        	DAD	D	; NEXT SOCKET BUF
- 04C7 C1        	POP	B
- 04C8 C5        	PUSH	B
- 04C9 E5        	PUSH	H
- 04CA 3E08      	MVI	A,NSOCK
- 04CC 90        	SUB	B	; 0..7
- 04CD 5F        	MOV	E,A
- 04CE CDF506    	CALL	SHOWSOK
- 04D1 E1        	POP	H
- 04D2 C1        	POP	B
-                	DJNZ	SHNVSK0
- 04D3+10E5      	DB	10H,SHNVSK0-$-1
- 04D5 C37D05    	JMP	EXIT
-                
-                PARS5:	; RESTORE CONFIG FROM NVRAM
- 04D8 3A110A    	LDA	CPNET
- 04DB B7        	ORA	A
- 04DC CAE704    	JZ	XOCPNT
- 04DF 114902    	LXI	D,NOCPN
- 04E2 0E09      	MVI	C,PRINT
- 04E4 CD0500    	CALL	BDOS
-                XOCPNT:
- 04E7 210000    	LXI	H,0
- 04EA 110002    	LXI	D,512
- 04ED CD3009    	CALL	NVGET
- 04F0 CDD708    	CALL	VCKSUM
- 04F3 C28005    	JNZ	CSERR
- 04F6 21480A    	LXI	H,BUF+GAR
- 04F9 1600      	MVI	D,0
- 04FB 1E01      	MVI	E,GAR
- 04FD 0612      	MVI	B,18	; GAR, SUBR, SHAR, SIPR
- 04FF CDDA05    	CALL	WIZSET
- 0502 21640A    	LXI	H,BUF+PMAGIC
- 0505 1600      	MVI	D,0
- 0507 1E1D      	MVI	E,PMAGIC
- 0509 0601      	MVI	B,1
- 050B CDDA05    	CALL	WIZSET
-                	LXIX	BUF+32
- 050E+DD21      	DB	0DDH,21H
- 0510+670A      	DW	BUF+32
- 0512 1608      	MVI	D,SOCK0
- 0514 0608      	MVI	B,8
-                REST0:
- 0516 C5        	PUSH	B
-                	LDX	A,SNPORT
- 0517+DD7E04    	DB	0DDH,A*8+46H,SNPORT
- 051A FE31      	CPI	31H
- 051C C23305    	JNZ	REST1	; SKIP UNCONFIGURED SOCKETS
- 051F CDF105    	CALL	CLOSE	; CP/NET NOT ACTIVE - ALREADY CHECKED
- 0522 CD1E06    	CALL	SETTCP	; ENSURE MR IS SET TO TCP/IP
- 0525 1E04      	MVI	E,SNPORT
- 0527 0602      	MVI	B,2
- 0529 CD1206    	CALL	SETSOK
- 052C 1E0C      	MVI	E,SNDIPR
- 052E 0606      	MVI	B,6	; DIPR AND DPORT
- 0530 CD1206    	CALL	SETSOK
-                REST1:
- 0533 012000    	LXI	B,32
-                	DADX	B
- 0536+DD09      	DB	0DDH,B*8+09H
- 0538 3E20      	MVI	A,001$00$000B	; SOCKET BSB INCR VALUE
- 053A 82        	ADD	D
- 053B 57        	MOV	D,A
- 053C C1        	POP	B
-                	DJNZ	REST0
- 053D+10D7      	DB	10H,REST0-$-1
-                
- 053F C37D05    	JMP	EXIT
+                nvshow:	; show config from NVRAM
+                	lxix	nvbuf
+ 01F3+DD21      	DB	0DDH,21H
+ 01F5+3102      	DW	NVBUF
+ 01F7 210000    	lxi	h,0
+ 01FA 110002    	lxi	d,512
+ 01FD CD0000    	call	nvget
+ 0200 CD0000    	call	vcksum
+ 0203 C28302    	jnz	cserr
+ 0206 3A4E02    	lda	nvbuf+PMAGIC
+ 0209 CD8A05    	call	shid
+ 020C 214002    	lxi	h,nvbuf+SIPR
+ 020F 112C00    	lxi	d,ipmsg
+ 0212 CD9F05    	call	ship
+ 0215 213202    	lxi	h,nvbuf+GAR
+ 0218 110B00    	lxi	d,gwmsg
+ 021B CD9F05    	call	ship
+ 021E 213602    	lxi	h,nvbuf+SUBR
+ 0221 111600    	lxi	d,ntmsg
+ 0224 CD9F05    	call	ship
+ 0227 213A02    	lxi	h,nvbuf+SHAR
+ 022A CDAC05    	call	shmac
+ 022D 215102    	lxi	h,nvbuf+32	; socket 0 buffer
+ 0230 0608      	mvi	b,nsock
+                shnvsk0:
+ 0232 C5        	push	b
+ 0233 110F02    	lxi	d,sokregs
+ 0236 011200    	lxi	b,soklen
+                	ldir
+ 0239+EDB0      	DB	0EDH,0B0H
+ 023B 110B00    	lxi	d,NvKPALVTR-soklen
+ 023E 19        	dad	d
+ 023F 7E        	mov	a,m
+ 0240 322102    	sta	sokkp
+ 0243 110300    	lxi	d,32-NvKPALVTR
+ 0246 19        	dad	d	; next socket buf
+ 0247 C1        	pop	b
+ 0248 C5        	push	b
+ 0249 E5        	push	h
+ 024A 3E08      	mvi	a,nsock
+ 024C 90        	sub	b	; 0..7
+ 024D 5F        	mov	e,a
+ 024E CD0A03    	call	showsok
+ 0251 E1        	pop	h
+ 0252 C1        	pop	b
+                	djnz	shnvsk0
+ 0253+10DD      	DB	10H,SHNVSK0-$-1
+ 0255 C38002    	jmp	exit
+                
+                pars5:	; restore config from NVRAM
+ 0258 3AF901    	lda	cpnet
+ 025B B7        	ora	a
+ 025C CA6702    	jz	xocpnt
+ 025F 116101    	lxi	d,nocpn
+ 0262 0E09      	mvi	c,print
+ 0264 CD0500    	call	bdos
+                xocpnt:
+ 0267 CD0000    	call	wizcfg
+ 026A DA8302    	jc	cserr
+ 026D C38002    	jmp	exit
                 	;...
                 
-                PARS6:	; SAVE CONFIG TO NVRAM
- 0542 21470A    	LXI	H,BUF
- 0545 36FF      	MVI	M,0FFH	; EEPROM "UNPROGRAMMED"
- 0547 11480A    	LXI	D,BUF+1
- 054A 01FF01    	LXI	B,511
-                	LDIR
- 054D+EDB0      	DB	0EDH,0B0H
- 054F 21470A    	LXI	H,BUF
- 0552 0620      	MVI	B,32	; SAVE ALL BETWEEN, RESTORE SKIPS
- 0554 1E00      	MVI	E,0	; OFFSET +0
- 0556 1600      	MVI	D,0	; BSB 0 = COMMON REGISTER BLOCK
- 0558 CDC305    	CALL	WIZGET
- 055B 21670A    	LXI	H,BUF+32
- 055E 1608      	MVI	D,SOCK0	; BSB 08H = SOCKET 0 REGISTER BLOCK
- 0560 1E00      	MVI	E,0	; OFFSET +0
- 0562 0608      	MVI	B,8	; NUM SOCKETS
- 0564 C5        SAVE0:	PUSH	B
- 0565 0620      	MVI	B,32	; SAVE ALL BETWEEN, RESTORE SKIPS
- 0567 CDC305    	CALL	WIZGET	; HL = NEXT BLOCK
- 056A C1        	POP	B
- 056B 3E20      	MVI	A,001$00$000B	; SOCKET BSB INCR VALUE
- 056D 82        	ADD	D
- 056E 57        	MOV	D,A
-                	DJNZ	SAVE0
- 056F+10F3      	DB	10H,SAVE0-$-1
-                	; GOT DATA OFF WIZNET CHIP, NOW SAVE TO NVRAM
-                NVSETIT:
- 0571 CDFB08    	CALL	SCKSUM
- 0574 210000    	LXI	H,0	; WIZNET USES 512 BYTES AT 0000 IN NVRAM
- 0577 110002    	LXI	D,512
- 057A CD6509    	CALL	NVSET
-                	;LXI	D,DONE
-                	;MVI	C,PRINT
-                	;CALL	BDOS
-                	;JMP	EXIT
-                EXIT:
- 057D C30000    	JMP	CPM
+                nvsetit:
+                	lxix	nvbuf
+ 0270+DD21      	DB	0DDH,21H
+ 0272+3102      	DW	NVBUF
+ 0274 CD0000    	call	scksum
+ 0277 210000    	lxi	h,0	; WIZNET uses 512 bytes at 0000 in NVRAM
+ 027A 110002    	lxi	d,512
+ 027D CD3B05    	call	nvset
+                	;lxi	d,done
+                	;mvi	c,print
+                	;call	bdos
+                	;jmp	exit
+                exit:
+ 0280 C30000    	jmp	cpm
                 
- 0580 117902    CSERR:	LXI	D,NVERR
-                	JR	XTMSG
- 0583+1803      	DB	18H,XTMSG-$-1
-                HELP:
- 0585 113A01    	LXI	D,USAGE
- 0588 0E09      XTMSG:	MVI	C,PRINT
- 058A CD0500    	CALL	BDOS
- 058D C37D05    	JMP	EXIT
+ 0283 119101    cserr:	lxi	d,nverr
+                	jr	xtmsg
+ 0286+1803      	DB	18H,XTMSG-$-1
                 
-                ; SEND SOCKET COMMAND TO WIZNET CHIP, WAIT FOR DONE.
-                ; A = COMMAND, D = SOCKET BSB
-                ; DESTROYS A
-                WIZCMD:
- 0590 F5        	PUSH	PSW
- 0591 3E01      	MVI	A,SCS
- 0593 D341      	OUT	WIZ$CTL
- 0595 AF        	XRA	A
- 0596 D340      	OUT	WIZ$DAT
- 0598 3E01      	MVI	A,SNCR
- 059A D340      	OUT	WIZ$DAT
- 059C 7A        	MOV	A,D
- 059D F604      	ORI	WRITE
- 059F D340      	OUT	WIZ$DAT
- 05A1 F1        	POP	PSW
- 05A2 D340      	OUT	WIZ$DAT	; START COMMAND
- 05A4 AF        	XRA	A	;
- 05A5 D341      	OUT	WIZ$CTL
-                WC0:
- 05A7 3E01      	MVI	A,SCS
- 05A9 D341      	OUT	WIZ$CTL
- 05AB AF        	XRA	A
- 05AC D340      	OUT	WIZ$DAT
- 05AE 3E01      	MVI	A,SNCR
- 05B0 D340      	OUT	WIZ$DAT
- 05B2 7A        	MOV	A,D
- 05B3 D340      	OUT	WIZ$DAT
- 05B5 DB40      	IN	WIZ$DAT	; PRIME PUMP
- 05B7 DB40      	IN	WIZ$DAT
- 05B9 F5        	PUSH	PSW
- 05BA AF        	XRA	A	;
- 05BB D341      	OUT	WIZ$CTL
- 05BD F1        	POP	PSW
- 05BE B7        	ORA	A
- 05BF C2A705    	JNZ	WC0
- 05C2 C9        	RET
+                help:
+ 0288 113700    	lxi	d,usage
+ 028B 0E09      xtmsg:	mvi	c,print
+ 028D CD0500    	call	bdos
+ 0290 C38002    	jmp	exit
                 
-                ; E = BSB, D = CTL, HL = DATA, B = LENGTH
-                WIZGET:
- 05C3 3E01      	MVI	A,SCS
- 05C5 D341      	OUT	WIZ$CTL
- 05C7 AF        	XRA	A	; HI ADR ALWAYS 0
- 05C8 D340      	OUT	WIZ$DAT
- 05CA 7B        	MOV	A,E
- 05CB D340      	OUT	WIZ$DAT
- 05CD 7A        	MOV	A,D
- 05CE D340      	OUT	WIZ$DAT
- 05D0 DB40      	IN	WIZ$DAT	; PRIME PUMP
- 05D2 0E40      	MVI	C,WIZ$DAT
-                	INIR
- 05D4+EDB2      	DB	0EDH,0B2H
- 05D6 AF        	XRA	A	; NOT SCS
- 05D7 D341      	OUT	WIZ$CTL
- 05D9 C9        	RET
+                ; Convert 'sokn' (ASCII digit) to socket BSB
+                getsokn:
+ 0293 3A4A01    	lda	sokn
+ 0296 D630      	sui	'0'
+ 0298 0F        	rrc
+ 0299 0F        	rrc
+ 029A 0F        	rrc		; xxx00000
+ 029B F608      	ori	SOCK0	; xxx01000
+ 029D C9        	ret
                 
-                ; HL = DATA TO SEND, E = OFFSET, D = BSB, B = LENGTH
-                ; DESTROYS HL, B, C, A
-                WIZSET:
- 05DA 3E01      	MVI	A,SCS
- 05DC D341      	OUT	WIZ$CTL
- 05DE AF        	XRA	A	; HI ADR ALWAYS 0
- 05DF D340      	OUT	WIZ$DAT
- 05E1 7B        	MOV	A,E
- 05E2 D340      	OUT	WIZ$DAT
- 05E4 7A        	MOV	A,D
- 05E5 F604      	ORI	WRITE
- 05E7 D340      	OUT	WIZ$DAT
- 05E9 0E40      	MVI	C,WIZ$DAT
-                	OUTIR
- 05EB+EDB3      	DB	0EDH,0B3H
- 05ED AF        	XRA	A	; NOT SCS
- 05EE D341      	OUT	WIZ$CTL
- 05F0 C9        	RET
+                show:
+ 029E 3AF801    	lda	direct
+ 02A1 B7        	ora	a
+ 02A2 CAF301    	jz	nvshow
+ 02A5 21FD01    	lxi	h,comregs
+ 02A8 110100    	lxi	d,GAR
+ 02AB 0612      	mvi	b,comlen
+ 02AD CD0000    	call	wizget
+ 02B0 21FC01    	lxi	h,wizmag
+ 02B3 111D00    	lxi	d,PMAGIC
+ 02B6 0601      	mvi	b,1
+ 02B8 CD0000    	call	wizget
                 
-                ; CLOSE SOCKET IF ACTIVE (SR <> CLOSED)
-                ; D = SOCKET BSB
-                ; DESTROYS HL, E, B, C, A
-                CLOSE:
- 05F1 212A0A    	LXI	H,SOKMR+SNSR
- 05F4 1E03      	MVI	E,SNSR
- 05F6 0601      	MVI	B,1
- 05F8 CDC305    	CALL	WIZGET
- 05FB 3A2A0A    	LDA	SOKMR+SNSR
- 05FE FE00      	CPI	CLOSED
- 0600 C8        	RZ
- 0601 3E08      	MVI	A,DISCON
- 0603 CD9005    	CALL	WIZCMD
-                	; DON'T CARE ABOUT RESULTS?
- 0606 C9        	RET
+ 02BB 3AFC01    	lda	wizmag
+ 02BE CD8A05    	call	shid
                 
-                ; CONVERT 'SOKN' (ASCII DIGIT) TO SOCKET BSB
-                GETSOKN:
- 0607 3A3202    	LDA	SOKN
- 060A D630      	SUI	'0'
- 060C 0F        	RRC
- 060D 0F        	RRC
- 060E 0F        	RRC		; XXX00000
- 060F F608      	ORI	SOCK0	; XXX01000
- 0611 C9        	RET
+ 02C1 210B02    	lxi	h,ip
+ 02C4 112C00    	lxi	d,ipmsg
+ 02C7 CD9F05    	call	ship
                 
-                ; IX = BASE DATA BUFFER FOR SOCKET, D = SOCKET BSB, E = OFFSET, B = LENGTH
-                ; DESTROYS HL, B, C
-                SETSOK:
-                	PUSHIX
- 0612+DDE5      	DB	0DDH,0E5H
- 0614 E1        	POP	H
- 0615 D5        	PUSH	D
- 0616 1600      	MVI	D,0
- 0618 19        	DAD	D	; HL POINTS TO DATA IN 'BUF'
- 0619 D1        	POP	D
- 061A CDDA05    	CALL	WIZSET
- 061D C9        	RET
+ 02CA 21FD01    	lxi	h,gw
+ 02CD 110B00    	lxi	d,gwmsg
+ 02D0 CD9F05    	call	ship
                 
-                ; SET SOCKET MR TO TCP.
-                ; D = SOCKET BSB (RESULT OF "GETSOKN")
-                ; DESTROYS ALL REGISTERS EXCEPT D.
-                SETTCP:
- 061E 3E01      	MVI	A,1	; TCP
- 0620 32270A    	STA	SOKMR
- 0623 1E00      	MVI	E,SNMR
- 0625 21270A    	LXI	H,SOKMR
- 0628 0601      	MVI	B,1
- 062A CDDA05    	CALL	WIZSET	; FORCE TCP/IP MODE
- 062D C9        	RET
+ 02D3 210102    	lxi	h,msk
+ 02D6 111600    	lxi	d,ntmsg
+ 02D9 CD9F05    	call	ship
                 
-                SHOW:
- 062E 3A100A    	LDA	DIRECT
- 0631 B7        	ORA	A
- 0632 CA7F04    	JZ	NVSHOW
- 0635 21150A    	LXI	H,COMREGS
- 0638 110100    	LXI	D,GAR
- 063B 0612      	MVI	B,COMLEN
- 063D CDC305    	CALL	WIZGET
- 0640 21140A    	LXI	H,WIZMAG
- 0643 111D00    	LXI	D,PMAGIC
- 0646 0601      	MVI	B,1
- 0648 CDC305    	CALL	WIZGET
+ 02DC 210502    	lxi	h,mac
+ 02DF CDAC05    	call	shmac
                 
- 064B 3A140A    	LDA	WIZMAG
- 064E CDB409    	CALL	SHID
+ 02E2 110008    	lxi	d,SOCK0 shl 8	; E=0
+ 02E5 0608      	mvi	b,nsock
+ 02E7 C5        show0:	push	b
+ 02E8 D5        	push	d
+ 02E9 1E00      	mvi	e,0
+ 02EB 210F02    	lxi	h,sokregs
+ 02EE 0612      	mvi	b,soklen
+ 02F0 CD0000    	call	wizget
+ 02F3 CD0000    	call	gkeep
+ 02F6 322102    	sta	sokkp
+ 02F9 D1        	pop	d
+ 02FA D5        	push	d
+ 02FB CD0A03    	call	showsok
+ 02FE D1        	pop	d
+ 02FF C1        	pop	b
+ 0300 1C        	inr	e
+ 0301 3E20      	mvi	a,001$00$000b	; socket BSB incr value
+ 0303 82        	add	d
+ 0304 57        	mov	d,a
+                	djnz	show0
+ 0305+10E0      	DB	10H,SHOW0-$-1
                 
- 0651 21230A    	LXI	H,IP
- 0654 112F01    	LXI	D,IPMSG
- 0657 CDC909    	CALL	SHIP
+ 0307 C38002    	jmp	exit
                 
- 065A 21150A    	LXI	H,GW
- 065D 110E01    	LXI	D,GWMSG
- 0660 CDC909    	CALL	SHIP
+                showsok:
+ 030A 7B        	mov	a,e
+ 030B C630      	adi	'0'
+ 030D 324A01    	sta	sokn
+ 0310 114301    	lxi	d,sock
+ 0313 0E09      	mvi	c,print
+ 0315 CD0500    	call	bdos
+ 0318 3A1302    	lda	sokpt
+ 031B FE31      	cpi	31h
+ 031D C25803    	jnz	nocfg
+ 0320 3A1402    	lda	sokpt+1
+ 0323 CD3704    	call	hexout
+ 0326 3E48      	mvi	a,'H'
+ 0328 CD8503    	call	chrout
+ 032B 3E20      	mvi	a,' '
+ 032D CD8503    	call	chrout
+ 0330 211B02    	lxi	h,sokip
+ 0333 CD7303    	call	ipout
+ 0336 3E20      	mvi	a,' '
+ 0338 CD8503    	call	chrout
+ 033B 3A1F02    	lda	sokdpt
+ 033E 57        	mov	d,a
+ 033F 3A2002    	lda	sokdpt+1
+ 0342 5F        	mov	e,a
+ 0343 CDA903    	call	dec16
+ 0346 3E20      	mvi	a,' '
+ 0348 CD8503    	call	chrout
+ 034B 3A2102    	lda	sokkp
+ 034E CD2904    	call	mult5
+ 0351 CDA903    	call	dec16
+ 0354 CD9E03    	call	crlf
+ 0357 C9        	ret
                 
- 0663 21190A    	LXI	H,MSK
- 0666 111901    	LXI	D,NTMSG
- 0669 CDC909    	CALL	SHIP
+ 0358 114E01    nocfg:	lxi	d,ncfg
+ 035B 0E09      	mvi	c,print
+ 035D CD0500    	call	bdos
+ 0360 C9        	ret
                 
- 066C 211D0A    	LXI	H,MAC
- 066F CDD609    	CALL	SHMAC
+                hwout:
+ 0361 0606      	mvi	b,6
+ 0363 0E3A      	mvi	c,':'
+ 0365 7E        hw0:	mov	a,m
+ 0366 CD3704    	call	hexout
+ 0369 05        	dcr	b
+ 036A C8        	rz
+ 036B 79        	mov	a,c
+ 036C CD8503    	call	chrout
+ 036F 23        	inx	h
+ 0370 C36503    	jmp	hw0
                 
- 0672 21270A    	LXI	H,SOKREGS
- 0675 110008    	LXI	D,SOCK0 SHL 8
- 0678 0612      	MVI	B,SOKLEN
- 067A CDC305    	CALL	WIZGET
- 067D 1E00      	MVI	E,0
- 067F CDF506    	CALL	SHOWSOK
+                ipout:
+ 0373 0604      	mvi	b,4
+ 0375 0E2E      	mvi	c,'.'
+ 0377 7E        ip0:	mov	a,m
+ 0378 CDE503    	call	decout
+ 037B 05        	dcr	b
+ 037C C8        	rz
+ 037D 79        	mov	a,c
+ 037E CD8503    	call	chrout
+ 0381 23        	inx	h
+ 0382 C37703    	jmp	ip0
                 
- 0682 21270A    	LXI	H,SOKREGS
- 0685 110028    	LXI	D,SOCK1 SHL 8
- 0688 0612      	MVI	B,SOKLEN
- 068A CDC305    	CALL	WIZGET
- 068D 1E01      	MVI	E,1
- 068F CDF506    	CALL	SHOWSOK
+                chrout:
+ 0385 E5        	push	h
+ 0386 D5        	push	d
+ 0387 C5        	push	b
+ 0388 5F        	mov	e,a
+ 0389 0E02      	mvi	c,002h
+ 038B CD0500    	call	bdos
+ 038E C1        	pop	b
+ 038F D1        	pop	d
+ 0390 E1        	pop	h
+ 0391 C9        	ret
                 
- 0692 21270A    	LXI	H,SOKREGS
- 0695 110048    	LXI	D,SOCK2 SHL 8
- 0698 0612      	MVI	B,SOKLEN
- 069A CDC305    	CALL	WIZGET
- 069D 1E02      	MVI	E,2
- 069F CDF506    	CALL	SHOWSOK
+                getsts:
+ 0392 0E44      	mvi	c,044h
+ 0394 CD0500    	call	bdos
+ 0397 C9        	ret
                 
- 06A2 21270A    	LXI	H,SOKREGS
- 06A5 110068    	LXI	D,SOCK3 SHL 8
- 06A8 0612      	MVI	B,SOKLEN
- 06AA CDC305    	CALL	WIZGET
- 06AD 1E03      	MVI	E,3
- 06AF CDF506    	CALL	SHOWSOK
+                getcfg:
+ 0398 0E45      	mvi	c,045h
+ 039A CD0500    	call	bdos
+ 039D C9        	ret
                 
- 06B2 21270A    	LXI	H,SOKREGS
- 06B5 110088    	LXI	D,SOCK4 SHL 8
- 06B8 0612      	MVI	B,SOKLEN
- 06BA CDC305    	CALL	WIZGET
- 06BD 1E04      	MVI	E,4
- 06BF CDF506    	CALL	SHOWSOK
+                crlf:
+ 039E 3E0D      	mvi	a,CR
+ 03A0 CD8503    	call	chrout
+ 03A3 3E0A      	mvi	a,LF
+ 03A5 CD8503    	call	chrout
+ 03A8 C9        	ret
                 
- 06C2 21270A    	LXI	H,SOKREGS
- 06C5 1100A8    	LXI	D,SOCK5 SHL 8
- 06C8 0612      	MVI	B,SOKLEN
- 06CA CDC305    	CALL	WIZGET
- 06CD 1E05      	MVI	E,5
- 06CF CDF506    	CALL	SHOWSOK
+                dec16:
+ 03A9 EB        	xchg	; remainder in HL
+ 03AA 0E00      	mvi	c,0
+ 03AC 111027    	lxi	d,10000
+ 03AF CDCB03    	call	div16
+ 03B2 11E803    	lxi	d,1000
+ 03B5 CDCB03    	call	div16
+ 03B8 116400    	lxi	d,100
+ 03BB CDCB03    	call	div16
+ 03BE 110A00    	lxi	d,10
+ 03C1 CDCB03    	call	div16
+ 03C4 7D        	mov	a,l
+ 03C5 C630      	adi	'0'
+ 03C7 CD8503    	call	chrout
+ 03CA C9        	ret
                 
- 06D2 21270A    	LXI	H,SOKREGS
- 06D5 1100C8    	LXI	D,SOCK6 SHL 8
- 06D8 0612      	MVI	B,SOKLEN
- 06DA CDC305    	CALL	WIZGET
- 06DD 1E06      	MVI	E,6
- 06DF CDF506    	CALL	SHOWSOK
+ 03CB 0600      div16:	mvi	b,0
+ 03CD B7        dv0:	ora	a
+                	dsbc	d
+ 03CE+ED52      	DB	0EDH,D*8+42H
+ 03D0 04        	inr	b
+                	jrnc	dv0
+ 03D1+30FA      	DB	30H,DV0-$-1
+ 03D3 19        	dad	d
+ 03D4 05        	dcr	b
+                	jrnz	dv1
+ 03D5+2005      	DB	20H,DV1-$-1
+                	bit	0,c
+ 03D7+CB41      	DB	0CBH,0*8+C+40H
+                	jrnz	dv1
+ 03D9+2001      	DB	20H,DV1-$-1
+ 03DB C9        	ret
+                dv1:	setb	0,c
+ 03DC+CBC1      	DB	0CBH,0*8+C+0C0H
+ 03DE 3E30      	mvi	a,'0'
+ 03E0 80        	add	b
+ 03E1 CD8503    	call	chrout
+ 03E4 C9        	ret
                 
- 06E2 21270A    	LXI	H,SOKREGS
- 06E5 1100E8    	LXI	D,SOCK7 SHL 8
- 06E8 0612      	MVI	B,SOKLEN
- 06EA CDC305    	CALL	WIZGET
- 06ED 1E07      	MVI	E,7
- 06EF CDF506    	CALL	SHOWSOK
+                ; A=number to print
+                ; leading zeroes blanked - must preserve B
+                decout:
+ 03E5 C5        	push	b
+ 03E6 0E00      	mvi	c,0
+ 03E8 1664      	mvi	d,100
+ 03EA CDF903    	call	divide
+ 03ED 160A      	mvi	d,10
+ 03EF CDF903    	call	divide
+ 03F2 C630      	adi	'0'
+ 03F4 CD8503    	call	chrout
+ 03F7 C1        	pop	b
+ 03F8 C9        	ret
                 
- 06F2 C37D05    	JMP	EXIT
+ 03F9 1E00      divide:	mvi	e,0
+ 03FB 92        div0:	sub	d
+ 03FC 1C        	inr	e
+                	jrnc	div0
+ 03FD+30FC      	DB	30H,DIV0-$-1
+ 03FF 82        	add	d
+ 0400 1D        	dcr	e
+                	jrnz	div1
+ 0401+2005      	DB	20H,DIV1-$-1
+                	bit	0,c
+ 0403+CB41      	DB	0CBH,0*8+C+40H
+                	jrnz	div1
+ 0405+2001      	DB	20H,DIV1-$-1
+ 0407 C9        	ret
+                div1:	setb	0,c
+ 0408+CBC1      	DB	0CBH,0*8+C+0C0H
+ 040A F5        	push	psw	; remainder
+ 040B 3E30      	mvi	a,'0'
+ 040D 83        	add	e
+ 040E CD8503    	call	chrout
+ 0411 F1        	pop	psw	; remainder
+ 0412 C9        	ret
                 
-                SHOWSOK:
- 06F5 7B        	MOV	A,E
- 06F6 C630      	ADI	'0'
- 06F8 323202    	STA	SOKN
- 06FB 112B02    	LXI	D,SOCK
- 06FE 0E09      	MVI	C,PRINT
- 0700 CD0500    	CALL	BDOS
- 0703 3A2B0A    	LDA	SOKPT
- 0706 FE31      	CPI	31H
- 0708 C23507    	JNZ	NOCFG
- 070B 3A2C0A    	LDA	SOKPT+1
- 070E CDF007    	CALL	HEXOUT
- 0711 3E48      	MVI	A,'H'
- 0713 CD6207    	CALL	CHROUT
- 0716 3E20      	MVI	A,' '
- 0718 CD6207    	CALL	CHROUT
- 071B 21330A    	LXI	H,SOKIP
- 071E CD5007    	CALL	IPOUT
- 0721 3E20      	MVI	A,' '
- 0723 CD6207    	CALL	CHROUT
- 0726 3A370A    	LDA	SOKDPT
- 0729 57        	MOV	D,A
- 072A 3A380A    	LDA	SOKDPT+1
- 072D 5F        	MOV	E,A
- 072E CD8607    	CALL	DEC16
- 0731 CD7B07    	CALL	CRLF
- 0734 C9        	RET
+                ; brute-force divide DE by 5
+                ; Return: DE=quotient (remainder lost)
+ 0413 E5        div5:	push	h
+ 0414 C5        	push	b
+ 0415 EB        	xchg
+ 0416 010500    	lxi	b,5
+ 0419 110000    	lxi	d,0
+ 041C B7        	ora	a
+                div50:	dsbc	b
+ 041D+ED42      	DB	0EDH,B*8+42H
+ 041F DA2604    	jc	div51
+ 0422 13        	inx	d
+ 0423 C31D04    	jmp	div50
+ 0426 C1        div51:	pop	b
+ 0427 E1        	pop	h
+ 0428 C9        	ret
                 
- 0735 113602    NOCFG:	LXI	D,NCFG
- 0738 0E09      	MVI	C,PRINT
- 073A CD0500    	CALL	BDOS
- 073D C9        	RET
+                ; Multiply A by 5, result in DE
+ 0429 EB        mult5:	xchg	; save HL
+ 042A 6F        	mov	l,a
+ 042B 2600      	mvi	h,0
+ 042D 29        	dad	h	; *2
+ 042E 29        	dad	h	; *4
+ 042F 85        	add	l	; *5
+ 0430 6F        	mov	l,a
+ 0431 3E00      	mvi	a,0
+ 0433 8C        	adc	h
+ 0434 67        	mov	h,a
+ 0435 EB        	xchg	; result to DE, restore HL
+ 0436 C9        	ret
                 
-                HWOUT:
- 073E 0606      	MVI	B,6
- 0740 0E3A      	MVI	C,':'
- 0742 7E        HW0:	MOV	A,M
- 0743 CDF007    	CALL	HEXOUT
- 0746 05        	DCR	B
- 0747 C8        	RZ
- 0748 79        	MOV	A,C
- 0749 CD6207    	CALL	CHROUT
- 074C 23        	INX	H
- 074D C34207    	JMP	HW0
+                hexout:
+ 0437 F5        	push	psw
+ 0438 0F        	rrc
+ 0439 0F        	rrc
+ 043A 0F        	rrc
+ 043B 0F        	rrc
+ 043C CD4004    	call	hexdig
+ 043F F1        	pop	psw
+                	;jmp	hexdig
+                hexdig:
+ 0440 E60F      	ani	0fh
+ 0442 C690      	adi	90h
+ 0444 27        	daa
+ 0445 CE40      	aci	40h
+ 0447 27        	daa
+ 0448 C38503    	jmp	chrout
                 
-                IPOUT:
- 0750 0604      	MVI	B,4
- 0752 0E2E      	MVI	C,'.'
- 0754 7E        IP0:	MOV	A,M
- 0755 CDC207    	CALL	DECOUT
- 0758 05        	DCR	B
- 0759 C8        	RZ
- 075A 79        	MOV	A,C
- 075B CD6207    	CALL	CHROUT
- 075E 23        	INX	H
- 075F C35407    	JMP	IP0
+                skipb1:	; skip character, then skip blanks
+ 044B 23        	inx	h
+ 044C 05        	dcr	b
+                skipb:	; skip blanks
+ 044D 78        	mov	a,b
+ 044E B7        	ora	a
+ 044F 37        	stc
+ 0450 C8        	rz
+ 0451 7E        skip0:	mov	a,m
+ 0452 FE20      	cpi	' '
+ 0454 C0        	rnz	; no carry?
+ 0455 23        	inx	h
+                	djnz	skip0
+ 0456+10F9      	DB	10H,SKIP0-$-1
+ 0458 37        	stc
+ 0459 C9        	ret
                 
-                CHROUT:
- 0762 E5        	PUSH	H
- 0763 D5        	PUSH	D
- 0764 C5        	PUSH	B
- 0765 5F        	MOV	E,A
- 0766 0E02      	MVI	C,002H
- 0768 CD0500    	CALL	BDOS
- 076B C1        	POP	B
- 076C D1        	POP	D
- 076D E1        	POP	H
- 076E C9        	RET
-                
-                GETSTS:
- 076F 0E44      	MVI	C,044H
- 0771 CD0500    	CALL	BDOS
- 0774 C9        	RET
-                
-                GETCFG:
- 0775 0E45      	MVI	C,045H
- 0777 CD0500    	CALL	BDOS
- 077A C9        	RET
-                
-                CRLF:
- 077B 3E0D      	MVI	A,CR
- 077D CD6207    	CALL	CHROUT
- 0780 3E0A      	MVI	A,LF
- 0782 CD6207    	CALL	CHROUT
- 0785 C9        	RET
-                
-                DEC16:
- 0786 EB        	XCHG	; REMAINDER IN HL
- 0787 0E00      	MVI	C,0
- 0789 111027    	LXI	D,10000
- 078C CDA807    	CALL	DIV16
- 078F 11E803    	LXI	D,1000
- 0792 CDA807    	CALL	DIV16
- 0795 116400    	LXI	D,100
- 0798 CDA807    	CALL	DIV16
- 079B 110A00    	LXI	D,10
- 079E CDA807    	CALL	DIV16
- 07A1 7D        	MOV	A,L
- 07A2 C630      	ADI	'0'
- 07A4 CD6207    	CALL	CHROUT
- 07A7 C9        	RET
-                
- 07A8 0600      DIV16:	MVI	B,0
- 07AA B7        DV0:	ORA	A
-                	DSBC	D
- 07AB+ED52      	DB	0EDH,D*8+42H
- 07AD 04        	INR	B
-                	JRNC	DV0
- 07AE+30FA      	DB	30H,DV0-$-1
- 07B0 19        	DAD	D
- 07B1 05        	DCR	B
-                	JRNZ	DV1
- 07B2+2005      	DB	20H,DV1-$-1
-                	BIT	0,C
- 07B4+CB41      	DB	0CBH,0*8+C+40H
-                	JRNZ	DV1
- 07B6+2001      	DB	20H,DV1-$-1
- 07B8 C9        	RET
-                DV1:	SETB	0,C
- 07B9+CBC1      	DB	0CBH,0*8+C+0C0H
- 07BB 3E30      	MVI	A,'0'
- 07BD 80        	ADD	B
- 07BE CD6207    	CALL	CHROUT
- 07C1 C9        	RET
-                
-                ; LEADING ZEROES BLANKED - MUST PRESERVE B
-                DECOUT:
- 07C2 C5        	PUSH	B
- 07C3 0E00      	MVI	C,0
- 07C5 1664      	MVI	D,100
- 07C7 CDD607    	CALL	DIVIDE
- 07CA 160A      	MVI	D,10
- 07CC CDD607    	CALL	DIVIDE
- 07CF C630      	ADI	'0'
- 07D1 CD6207    	CALL	CHROUT
- 07D4 C1        	POP	B
- 07D5 C9        	RET
-                
- 07D6 1E00      DIVIDE:	MVI	E,0
- 07D8 92        DIV0:	SUB	D
- 07D9 1C        	INR	E
-                	JRNC	DIV0
- 07DA+30FC      	DB	30H,DIV0-$-1
- 07DC 82        	ADD	D
- 07DD 1D        	DCR	E
-                	JRNZ	DIV1
- 07DE+2005      	DB	20H,DIV1-$-1
-                	BIT	0,C
- 07E0+CB41      	DB	0CBH,0*8+C+40H
-                	JRNZ	DIV1
- 07E2+2001      	DB	20H,DIV1-$-1
- 07E4 C9        	RET
-                DIV1:	SETB	0,C
- 07E5+CBC1      	DB	0CBH,0*8+C+0C0H
- 07E7 F5        	PUSH	PSW	; REMAINDER
- 07E8 3E30      	MVI	A,'0'
- 07EA 83        	ADD	E
- 07EB CD6207    	CALL	CHROUT
- 07EE F1        	POP	PSW	; REMAINDER
- 07EF C9        	RET
-                
-                HEXOUT:
- 07F0 F5        	PUSH	PSW
- 07F1 0F        	RRC
- 07F2 0F        	RRC
- 07F3 0F        	RRC
- 07F4 0F        	RRC
- 07F5 CDF907    	CALL	HEXDIG
- 07F8 F1        	POP	PSW
-                	;JMP	HEXDIG
-                HEXDIG:
- 07F9 E60F      	ANI	0FH
- 07FB C690      	ADI	90H
- 07FD 27        	DAA
- 07FE CE40      	ACI	40H
- 0800 27        	DAA
- 0801 C36207    	JMP	CHROUT
-                
-                SKIPB:
- 0804 23        	INX	H	; SKIP OPTION LETTER
- 0805 05        	DCR	B
- 0806 37        	STC
- 0807 C8        	RZ
- 0808 7E        SKIP0:	MOV	A,M
- 0809 FE20      	CPI	' '
- 080B C0        	RNZ	; NO CARRY?
- 080C 23        	INX	H
-                	DJNZ	SKIP0
- 080D+10F9      	DB	10H,SKIP0-$-1
- 080F 37        	STC
- 0810 C9        	RET
-                
-                ; IX=DESTINATION
-                PARSMAC:
- 0811 0E3A      	MVI	C,':'
-                PM00:
- 0813 CD2908    	CALL	PARSHX
- 0816 D8        	RC
- 0817 CA1F08    	JZ	PM1	; HIT TERM CHAR
-                	; TODO: CHECK FOR 6 BYTES...
-                	STX	D,+0
- 081A+DD7200    	DB	0DDH,70H+D,+0
- 081D B7        	ORA	A	; NC
- 081E C9        	RET
-                PM1:
-                	STX	D,+0
- 081F+DD7200    	DB	0DDH,70H+D,+0
-                	INXIX
- 0822+DD23      	DB	0DDH,23H
- 0824 23        	INX	H
-                	DJNZ	PM00
- 0825+10EC      	DB	10H,PM00-$-1
-                	; ERROR IF ENDS HERE...
- 0827 37        	STC
- 0828 C9        	RET
+                ; IX=destination
+                parsmac:
+ 045A 0E3A      	mvi	c,':'
+                pm00:
+ 045C CD7204    	call	parshx
+ 045F D8        	rc
+ 0460 CA6804    	jz	pm1	; hit term char
+                	; TODO: check for 6 bytes...
+                	stx	d,+0
+ 0463+DD7200    	DB	0DDH,70H+D,+0
+ 0466 B7        	ora	a	; NC
+ 0467 C9        	ret
+                pm1:
+                	stx	d,+0
+ 0468+DD7200    	DB	0DDH,70H+D,+0
+                	inxix
+ 046B+DD23      	DB	0DDH,23H
+ 046D 23        	inx	h
+                	djnz	pm00
+ 046E+10EC      	DB	10H,PM00-$-1
+                	; error if ends here...
+ 0470 37        	stc
+ 0471 C9        	ret
                 
                 
-                ; C=TERM CHAR
-                ; RETURNS CY IF ERROR, Z IF TERM CHAR, NZ END OF TEXT
-                PARSHX:
- 0829 1600      	MVI	D,0
- 082B 7E        PM0:	MOV	A,M
- 082C B9        	CMP	C
- 082D C8        	RZ
- 082E FE20      	CPI	' '
- 0830 CA5508    	JZ	NZRET
- 0833 D630      	SUI	'0'
- 0835 D8        	RC
- 0836 FE0A      	CPI	'9'-'0'+1
- 0838 DA4408    	JC	PM3
- 083B D611      	SUI	'A'-'0'
- 083D D8        	RC
- 083E FE06      	CPI	'F'-'A'+1
- 0840 3F        	CMC
- 0841 D8        	RC
- 0842 C60A      	ADI	10
-                PM3:
- 0844 E60F      	ANI	0FH
- 0846 5F        	MOV	E,A
- 0847 7A        	MOV	A,D
- 0848 87        	ADD	A
- 0849 D8        	RC
- 084A 87        	ADD	A
- 084B D8        	RC
- 084C 87        	ADD	A
- 084D D8        	RC
- 084E 87        	ADD	A
- 084F D8        	RC
- 0850 83        	ADD	E	; CARRY NOT POSSIBLE
- 0851 57        	MOV	D,A
- 0852 23        	INX	H
-                	DJNZ	PM0
- 0853+10D6      	DB	10H,PM0-$-1
-                NZRET:
- 0855 AF        	XRA	A
- 0856 3C        	INR	A	; NZ
- 0857 C9        	RET
+                ; C=term char
+                ; returns CY if error, Z if term char, NZ end of text
+                parshx:
+ 0472 1600      	mvi	d,0
+ 0474 7E        pm0:	mov	a,m
+ 0475 B9        	cmp	c
+ 0476 C8        	rz
+ 0477 FE20      	cpi	' '
+ 0479 CA9E04    	jz	nzret
+ 047C D630      	sui	'0'
+ 047E D8        	rc
+ 047F FE0A      	cpi	'9'-'0'+1
+ 0481 DA8D04    	jc	pm3
+ 0484 D611      	sui	'A'-'0'
+ 0486 D8        	rc
+ 0487 FE06      	cpi	'F'-'A'+1
+ 0489 3F        	cmc
+ 048A D8        	rc
+ 048B C60A      	adi	10
+                pm3:
+ 048D E60F      	ani	0fh
+ 048F 5F        	mov	e,a
+ 0490 7A        	mov	a,d
+ 0491 87        	add	a
+ 0492 D8        	rc
+ 0493 87        	add	a
+ 0494 D8        	rc
+ 0495 87        	add	a
+ 0496 D8        	rc
+ 0497 87        	add	a
+ 0498 D8        	rc
+ 0499 83        	add	e	; carry not possible
+ 049A 57        	mov	d,a
+ 049B 23        	inx	h
+                	djnz	pm0
+ 049C+10D6      	DB	10H,PM0-$-1
+                nzret:
+ 049E AF        	xra	a
+ 049F 3C        	inr	a	; NZ
+ 04A0 C9        	ret
                 
-                ; IX=DESTINATION
-                PARSADR:
- 0858 0E2E      	MVI	C,'.'
-                PA00:
- 085A 1600      	MVI	D,0
- 085C 7E        PA0:	MOV	A,M
- 085D B9        	CMP	C
- 085E CA8008    	JZ	PA1
- 0861 FE20      	CPI	' '
- 0863 CA7B08    	JZ	PA2
- 0866 FE30      	CPI	'0'
- 0868 D8        	RC
- 0869 FE3A      	CPI	'9'+1
- 086B 3F        	CMC
- 086C D8        	RC
- 086D E60F      	ANI	0FH
- 086F 5F        	MOV	E,A
- 0870 7A        	MOV	A,D
- 0871 87        	ADD	A	; *2
- 0872 87        	ADD	A	; *4
- 0873 82        	ADD	D	; *5
- 0874 87        	ADD	A	; *10
- 0875 83        	ADD	E
- 0876 D8        	RC
- 0877 57        	MOV	D,A
- 0878 23        	INX	H
-                	DJNZ	PA0
- 0879+10E1      	DB	10H,PA0-$-1
-                PA2:
-                	; TODO: CHECK FOR 4 BYTES...
-                	STX	D,+0
- 087B+DD7200    	DB	0DDH,70H+D,+0
- 087E B7        	ORA	A
- 087F C9        	RET
+                ; IX=destination
+                parsadr:
+ 04A1 0E2E      	mvi	c,'.'
+                pa00:
+ 04A3 1600      	mvi	d,0
+ 04A5 7E        pa0:	mov	a,m
+ 04A6 B9        	cmp	c
+ 04A7 CAC904    	jz	pa1
+ 04AA FE20      	cpi	' '
+ 04AC CAC404    	jz	pa2
+ 04AF FE30      	cpi	'0'
+ 04B1 D8        	rc
+ 04B2 FE3A      	cpi	'9'+1
+ 04B4 3F        	cmc
+ 04B5 D8        	rc
+ 04B6 E60F      	ani	0fh
+ 04B8 5F        	mov	e,a
+ 04B9 7A        	mov	a,d
+ 04BA 87        	add	a	; *2
+ 04BB 87        	add	a	; *4
+ 04BC 82        	add	d	; *5
+ 04BD 87        	add	a	; *10
+ 04BE 83        	add	e
+ 04BF D8        	rc
+ 04C0 57        	mov	d,a
+ 04C1 23        	inx	h
+                	djnz	pa0
+ 04C2+10E1      	DB	10H,PA0-$-1
+                pa2:
+                	; TODO: check for 4 bytes...
+                	stx	d,+0
+ 04C4+DD7200    	DB	0DDH,70H+D,+0
+ 04C7 B7        	ora	a
+ 04C8 C9        	ret
                 
-                PA1:
-                	STX	D,+0
- 0880+DD7200    	DB	0DDH,70H+D,+0
-                	INXIX
- 0883+DD23      	DB	0DDH,23H
- 0885 23        	INX	H
-                	DJNZ	PA00
- 0886+10D2      	DB	10H,PA00-$-1
-                	; ERROR IF ENDS HERE...
- 0888 37        	STC
- 0889 C9        	RET
-                
-                ; PARSE A 16-BIT (MAX) DECIMAL NUMBER
-                PARSNM:
- 088A 110000    	LXI	D,0
- 088D 7E        PD0:	MOV	A,M
- 088E FE20      	CPI	' '
- 0890 C8        	RZ
- 0891 FE30      	CPI	'0'
- 0893 D8        	RC
- 0894 FE3A      	CPI	'9'+1
- 0896 3F        	CMC
- 0897 D8        	RC
- 0898 E60F      	ANI	0FH
- 089A E5        	PUSH	H
- 089B 62        	MOV	H,D
- 089C 6B        	MOV	L,E
- 089D 29        	DAD	H	; *2
- 089E DAB908    	JC	PD1
- 08A1 29        	DAD	H	; *4
- 08A2 DAB908    	JC	PD1
- 08A5 19        	DAD	D	; *5
- 08A6 DAB908    	JC	PD1
- 08A9 29        	DAD	H	; *10
- 08AA DAB908    	JC	PD1
- 08AD 5F        	MOV	E,A
- 08AE 1600      	MVI	D,0
- 08B0 19        	DAD	D
- 08B1 EB        	XCHG
- 08B2 E1        	POP	H
- 08B3 D8        	RC
- 08B4 23        	INX	H
-                	DJNZ	PD0
- 08B5+10D6      	DB	10H,PD0-$-1
- 08B7 B7        	ORA	A	; NC
- 08B8 C9        	RET
+                pa1:
+                	stx	d,+0
+ 04C9+DD7200    	DB	0DDH,70H+D,+0
+                	inxix
+ 04CC+DD23      	DB	0DDH,23H
+ 04CE 23        	inx	h
+                	djnz	pa00
+ 04CF+10D2      	DB	10H,PA00-$-1
+                	; error if ends here...
+ 04D1 37        	stc
+ 04D2 C9        	ret
                 
- 08B9 E1        PD1:	POP	H
- 08BA C9        	RET	; CY STILL SET
+                ; Parse a 16-bit (max) decimal number
+                parsnm:
+ 04D3 110000    	lxi	d,0
+ 04D6 7E        pd0:	mov	a,m
+ 04D7 FE20      	cpi	' '
+ 04D9 C8        	rz
+ 04DA FE30      	cpi	'0'
+ 04DC D8        	rc
+ 04DD FE3A      	cpi	'9'+1
+ 04DF 3F        	cmc
+ 04E0 D8        	rc
+ 04E1 E60F      	ani	0fh
+ 04E3 E5        	push	h
+ 04E4 62        	mov	h,d
+ 04E5 6B        	mov	l,e
+ 04E6 29        	dad	h	; *2
+ 04E7 DA0205    	jc	pd1
+ 04EA 29        	dad	h	; *4
+ 04EB DA0205    	jc	pd1
+ 04EE 19        	dad	d	; *5
+ 04EF DA0205    	jc	pd1
+ 04F2 29        	dad	h	; *10
+ 04F3 DA0205    	jc	pd1
+ 04F6 5F        	mov	e,a
+ 04F7 1600      	mvi	d,0
+ 04F9 19        	dad	d
+ 04FA EB        	xchg
+ 04FB E1        	pop	h
+ 04FC D8        	rc
+ 04FD 23        	inx	h
+                	djnz	pd0
+ 04FE+10D6      	DB	10H,PD0-$-1
+ 0500 B7        	ora	a	; NC
+ 0501 C9        	ret
                 
-                ; IX = BUFFER, BC = LENGTH
-                ; RETURN: HL = CKSUM HI, DE = CKSUM LO
-                CKSUM32:
- 08BB 210000    	LXI	H,0
- 08BE 110000    	LXI	D,0
-                CKS0:	LDX	A,+0
- 08C1+DD7E00    	DB	0DDH,A*8+46H,+0
-                	INXIX
- 08C4+DD23      	DB	0DDH,23H
- 08C6 83        	ADD	E
- 08C7 5F        	MOV	E,A
-                	JRNC	CKS1
- 08C8+3007      	DB	30H,CKS1-$-1
- 08CA 14        	INR	D
-                	JRNZ	CKS1
- 08CB+2004      	DB	20H,CKS1-$-1
- 08CD 2C        	INR	L
-                	JRNZ	CKS1
- 08CE+2001      	DB	20H,CKS1-$-1
- 08D0 24        	INR	H
- 08D1 0B        CKS1:	DCX	B
- 08D2 78        	MOV	A,B
- 08D3 B1        	ORA	C
-                	JRNZ	CKS0
- 08D4+20EB      	DB	20H,CKS0-$-1
- 08D6 C9        	RET
+ 0502 E1        pd1:	pop	h
+ 0503 C9        	ret	; CY still set
                 
-                ; VALIDATES CHECKSUM IN 'BUF'
-                ; RETURN: NZ ON ERROR
-                ; A CHECKSUM OF 00 00 00 00 MEANS THE BUFFER WAS ALL 00,
-                ; WHICH IS INVALID.
-                VCKSUM:
-                	LXIX	BUF
- 08D7+DD21      	DB	0DDH,21H
- 08D9+470A      	DW	BUF
- 08DB 01FC01    	LXI	B,508
- 08DE CDBB08    	CALL	CKSUM32
-                	LBCD	BUF+510
- 08E1+ED4B      	DB	0EDH,4BH
- 08E3+450C      	DW	BUF+510
- 08E5 78        	MOV	A,B	;
- 08E6 B1        	ORA	C	; CHECK FIRST HALF ZERO
-                	DSBC	B
- 08E7+ED42      	DB	0EDH,B*8+42H
- 08E9 C0        	RNZ
-                	LBCD	BUF+508
- 08EA+ED4B      	DB	0EDH,4BH
- 08EC+430C      	DW	BUF+508
- 08EE B0        	ORA	B	;
- 08EF B1        	ORA	C	; CHECK SECOND HALF ZERO
- 08F0 EB        	XCHG
-                	DSBC	B	; CY IS CLEAR
- 08F1+ED42      	DB	0EDH,B*8+42H
- 08F3 C0        	RNZ
- 08F4 B7        	ORA	A	; WAS CHECKSUM ALL ZERO?
-                	JRZ	VCKSM0
- 08F5+2802      	DB	28H,VCKSM0-$-1
- 08F7 AF        	XRA	A	; ZR
- 08F8 C9        	RET
- 08F9 3C        VCKSM0:	INR	A	; NZ
- 08FA C9        	RET
                 
-                ; SETS CHECKSUM IN 'BUF'
-                SCKSUM:
-                	LXIX	BUF
- 08FB+DD21      	DB	0DDH,21H
- 08FD+470A      	DW	BUF
- 08FF 01FC01    	LXI	B,508
- 0902 CDBB08    	CALL	CKSUM32
- 0905 22450C    	SHLD	BUF+510
-                	SDED	BUF+508
- 0908+ED53      	DB	0EDH,53H
- 090A+430C      	DW	BUF+508
- 090C C9        	RET
+                ; Get a block of data from NVRAM to 'buf'
+                ; Verify checksum, init block if needed.
+                nvgetb:
+                	lxix	nvbuf
+ 0504+DD21      	DB	0DDH,21H
+ 0506+3102      	DW	NVBUF
+ 0508 210000    	lxi	h,0
+ 050B 110002    	lxi	d,512
+ 050E CD0000    	call	nvget
+ 0511 CD0000    	call	vcksum
+ 0514 C8        	rz	; chksum OK, ready to update/use
+ 0515 11AF01    	lxi	d,newbuf
+ 0518 0E09      	mvi	c,print
+ 051A CD0500    	call	bdos
+ 051D 213102    	lxi	h,nvbuf
+ 0520 36FF      	mvi	m,0ffh
+ 0522 54        	mov	d,h
+ 0523 5D        	mov	e,l
+ 0524 23        	inx	h
+ 0525 01FF01    	lxi	b,511
+                	ldir
+ 0528+EDB0      	DB	0EDH,0B0H
+ 052A C9        	ret
                 
-                ; GET A BLOCK OF DATA FROM NVRAM TO 'BUF'
-                ; VERIFY CHECKSUM, INIT BLOCK IF NEEDED.
-                NVGETB:
- 090D 210000    	LXI	H,0
- 0910 110002    	LXI	D,512
- 0913 CD3009    	CALL	NVGET
- 0916 CDD708    	CALL	VCKSUM
- 0919 C8        	RZ	; CHKSUM OK, READY TO UPDATE/USE
- 091A 119702    	LXI	D,NEWBUF
- 091D 0E09      	MVI	C,PRINT
- 091F CD0500    	CALL	BDOS
- 0922 21470A    	LXI	H,BUF
- 0925 36FF      	MVI	M,0FFH
- 0927 54        	MOV	D,H
- 0928 5D        	MOV	E,L
- 0929 23        	INX	H
- 092A 01FF01    	LXI	B,511
-                	LDIR
- 092D+EDB0      	DB	0EDH,0B0H
- 092F C9        	RET
+                ; NOTE: this delay varies with CPU clock speed.
+                msleep:
+ 052B E5        	push	h
+ 052C F5        mslp0:	push	psw
+ 052D 214F00    	lxi	h,79	; ~1mS at 2.048MHz (200uS at 10.24MHz)
+ 0530 2B        mslp1:	dcx	h
+ 0531 7C        	mov	a,h
+ 0532 B5        	ora	l
+                	jrnz	mslp1
+ 0533+20FB      	DB	20H,MSLP1-$-1
+ 0535 F1        	pop	psw
+ 0536 3D        	dcr	a
+                	jrnz	mslp0
+ 0537+20F3      	DB	20H,MSLP0-$-1
+ 0539 E1        	pop	h
+ 053A C9        	ret
+                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                ; These defines should be in a common file...
+ 0040 =         spi	equ	40h
                 
-                ; HL = NVRAM ADDRESS, DE = LENGTH
-                NVGET:
- 0930 3E02      	MVI	A,NVSCS
- 0932 D341      	OUT	WIZ$CTL
- 0934 3E03      	MVI	A,NVRD
- 0936 D340      	OUT	WIZ$DAT
- 0938 7C        	MOV	A,H
- 0939 D340      	OUT	WIZ$DAT
- 093B 7D        	MOV	A,L
- 093C D340      	OUT	WIZ$DAT
- 093E DB40      	IN	WIZ$DAT	; PRIME PUMP
- 0940 0E40      	MVI	C,WIZ$DAT
- 0942 7B        	MOV	A,E
- 0943 B7        	ORA	A
- 0944 CA4809    	JZ	NVGET1
- 0947 14        	INR	D	; TODO: HANDLE 64K... AND OVERFLOW OF 'BUF'...
- 0948 21470A    NVGET1:	LXI	H,BUF
- 094B 43        	MOV	B,E
-                NVGET0:	INIR	; B = 0 AFTER
- 094C+EDB2      	DB	0EDH,0B2H
- 094E 15        	DCR	D
-                	JRNZ	NVGET0
- 094F+20FB      	DB	20H,NVGET0-$-1
- 0951 AF        	XRA	A	; NOT SCS
- 0952 D341      	OUT	WIZ$CTL
- 0954 C9        	RET
+ 0040 =         spi?dat	equ	spi+0
+ 0041 =         spi?ctl	equ	spi+1
+ 0041 =         spi?sts	equ	spi+1
                 
-                ; NOTE: THIS DELAY VARIES WITH CPU CLOCK SPEED.
-                MSLEEP:
- 0955 E5        	PUSH	H
- 0956 F5        MSLP0:	PUSH	PSW
- 0957 214F00    	LXI	H,79	; ~1MS AT 2.048MHZ (200US AT 10.24MHZ)
- 095A 2B        MSLP1:	DCX	H
- 095B 7C        	MOV	A,H
- 095C B5        	ORA	L
-                	JRNZ	MSLP1
- 095D+20FB      	DB	20H,MSLP1-$-1
- 095F F1        	POP	PSW
- 0960 3D        	DCR	A
-                	JRNZ	MSLP0
- 0961+20F3      	DB	20H,MSLP0-$-1
- 0963 E1        	POP	H
- 0964 C9        	RET
+ 0002 =         NVSCS	equ	10b	; H8xSPI SCS for NVRAM
                 
-                ; PUT BLOCK OF DATA TO NVRAM FROM 'BUF'
-                ; HL = NVRAM ADDRESS, DE = LENGTH
-                ; MUST WRITE IN 128-BYTE BLOCKS (PAGES).
-                ; HL MUST BE 128-BYTE ALIGNED, DE MUST BE MULTIPLE OF 128
-                NVSET:
- 0965 E5        	PUSH	H
- 0966 21470A    	LXI	H,BUF	; HL = BUF, TOS = NVADR
- 0969 0E41      	MVI	C,WIZ$CTL
-                NVSET0:
-                	; WAIT FOR WIP=0...
- 096B 3E02      	MVI	A,NVSCS
-                	OUTP	A
- 096D+ED79      	DB	0EDH,A*8+41H
- 096F 3E05      	MVI	A,RDSR
- 0971 D340      	OUT	WIZ$DAT
- 0973 DB40      	IN	WIZ$DAT	; PRIME PUMP
- 0975 DB40      	IN	WIZ$DAT	; STATUS REGISTER
- 0977 F5        	PUSH	PSW
- 0978 AF        	XRA	A
-                	OUTP	A	; NOT SCS
- 0979+ED79      	DB	0EDH,A*8+41H
- 097B F1        	POP	PSW
- 097C E601      	ANI	WIP
-                	JRNZ	NVSET0
- 097E+20EB      	DB	20H,NVSET0-$-1
- 0980 3E02      	MVI	A,NVSCS
-                	OUTP	A
- 0982+ED79      	DB	0EDH,A*8+41H
- 0984 3E06      	MVI	A,WREN
- 0986 D340      	OUT	WIZ$DAT
- 0988 AF        	XRA	A
-                	OUTP	A	; NOT SCS
- 0989+ED79      	DB	0EDH,A*8+41H
- 098B 3E02      	MVI	A,NVSCS
-                	OUTP	A
- 098D+ED79      	DB	0EDH,A*8+41H
- 098F 3E02      	MVI	A,NVWR
- 0991 D340      	OUT	WIZ$DAT
- 0993 E3        	XTHL	; GET NVADR
- 0994 7C        	MOV	A,H
- 0995 D340      	OUT	WIZ$DAT
- 0997 7D        	MOV	A,L
- 0998 D340      	OUT	WIZ$DAT
- 099A 018000    	LXI	B,128
- 099D 09        	DAD	B	; UPDATE NVADR
- 099E EB        	XCHG
- 099F B7        	ORA	A
-                	DSBC	B	; UPDATE LENGTH
- 09A0+ED42      	DB	0EDH,B*8+42H
- 09A2 EB        	XCHG
- 09A3 E3        	XTHL	; GET BUF ADR
- 09A4 41        	MOV	B,C	; B = 128
- 09A5 0E40      	MVI	C,WIZ$DAT
-                	OUTIR		; HL = NEXT PAGE IN 'buf'
- 09A7+EDB3      	DB	0EDH,0B3H
- 09A9 0E41      	MVI	C,WIZ$CTL
- 09AB AF        	XRA	A
-                	OUTP	A	; NOT SCS
- 09AC+ED79      	DB	0EDH,A*8+41H
-                ;	MVI	A,50
-                ;	CALL	MSLEEP	; WAIT FOR WIP TO GO "1"?
- 09AE 7B        	MOV	A,E
- 09AF B2        	ORA	D
-                	JRNZ	NVSET0
- 09B0+20B9      	DB	20H,NVSET0-$-1
- 09B2 E1        	POP	H
- 09B3 C9        	RET
+                ; Standard W5500 register offsets
+ 0001 =         GAR	equ	1	; offset of GAR, etc.
+ 0005 =         SUBR	equ	5
+ 0009 =         SHAR	equ	9
+ 000F =         SIPR	equ	15
+ 001D =         PMAGIC	equ	29	; used for node ID
+                
+ 0008 =         nsock	equ	8
+ 0008 =         SOCK0	equ	000$01$000b
+ 0028 =         SOCK1	equ	001$01$000b
+ 0048 =         SOCK2	equ	010$01$000b
+ 0068 =         SOCK3	equ	011$01$000b
+ 0088 =         SOCK4	equ	100$01$000b
+ 00A8 =         SOCK5	equ	101$01$000b
+ 00C8 =         SOCK6	equ	110$01$000b
+ 00E8 =         SOCK7	equ	111$01$000b
+                
+ 0000 =         SnMR	equ	0
+ 0001 =         SnCR	equ	1
+ 0002 =         SnIR	equ	2
+ 0003 =         SnSR	equ	3
+ 0004 =         SnPORT	equ	4
+ 000C =         SnDIPR	equ	12
+ 0010 =         SnDPORT	equ	16
+ 0014 =         SnRESV1 equ     20      ; 0x14 reserved
+ 0017 =         SnRESV2 equ     23      ; 0x17 reserved
+ 0018 =         SnRESV3 equ     24      ; 0x18 reserved
+ 0019 =         SnRESV4 equ     25      ; 0x19 reserved
+ 001A =         SnRESV5 equ     26      ; 0x1a reserved
+ 001B =         SnRESV6 equ     27      ; 0x1b reserved
+ 001C =         SnRESV7 equ     28      ; 0x1c reserved
+ 001D =         SnRESV8 equ     29      ; 0x1d reserved
+ 001F =         SnTXBUF	equ	31	; TXBUF_SIZE
+                
+ 001D =         NvKPALVTR equ	SnRESV8	; where to stash keepalive in NVRAM
+ 002F =         SnKPALVTR equ	47	; Keep alive timeout, 5s units
+                
+                ; Socket SR values
+ 0000 =         CLOSED	equ	00h
+                
+                ; Socket CR commands
+ 0008 =         DISCON	equ	08h
+                
+                ; Standard NVRAM defines
+                
+                ; NVRAM/SEEPROM commands
+ 0003 =         NVRD	equ	00000011b
+ 0002 =         NVWR	equ	00000010b
+ 0005 =         RDSR	equ	00000101b
+ 0006 =         WREN	equ	00000110b
+                ; NVRAM/SEEPROM status bits
+ 0001 =         WIP	equ	00000001b
+                
+                ; Put block of data to NVRAM from 'buf'
+                ; HL = nvram address, DE = length
+                ; Must write in 128-byte blocks (pages).
+                ; HL must be 128-byte aligned, DE must be multiple of 128
+                nvset:
+ 053B E5        	push	h
+ 053C 213102    	lxi	h,nvbuf	; HL = buf, TOS = nvadr
+ 053F 0E41      	mvi	c,spi?ctl
+                nvset0:
+                	; wait for WIP=0...
+ 0541 3E02      	mvi	a,NVSCS
+                	outp	a
+ 0543+ED79      	DB	0EDH,A*8+41H
+ 0545 3E05      	mvi	a,RDSR
+ 0547 D340      	out	spi?dat
+ 0549 DB40      	in	spi?dat	; prime pump
+ 054B DB40      	in	spi?dat	; status register
+ 054D F5        	push	psw
+ 054E AF        	xra	a
+                	outp	a	; not SCS
+ 054F+ED79      	DB	0EDH,A*8+41H
+ 0551 F1        	pop	psw
+ 0552 E601      	ani	WIP
+                	jrnz	nvset0
+ 0554+20EB      	DB	20H,NVSET0-$-1
+ 0556 3E02      	mvi	a,NVSCS
+                	outp	a
+ 0558+ED79      	DB	0EDH,A*8+41H
+ 055A 3E06      	mvi	a,WREN
+ 055C D340      	out	spi?dat
+ 055E AF        	xra	a
+                	outp	a	; not SCS
+ 055F+ED79      	DB	0EDH,A*8+41H
+ 0561 3E02      	mvi	a,NVSCS
+                	outp	a
+ 0563+ED79      	DB	0EDH,A*8+41H
+ 0565 3E02      	mvi	a,NVWR
+ 0567 D340      	out	spi?dat
+ 0569 E3        	xthl	; get nvadr
+ 056A 7C        	mov	a,h
+ 056B D340      	out	spi?dat
+ 056D 7D        	mov	a,l
+ 056E D340      	out	spi?dat
+ 0570 018000    	lxi	b,128
+ 0573 09        	dad	b	; update nvadr
+ 0574 EB        	xchg
+ 0575 B7        	ora	a
+                	dsbc	b	; update length
+ 0576+ED42      	DB	0EDH,B*8+42H
+ 0578 EB        	xchg
+ 0579 E3        	xthl	; get buf adr
+ 057A 41        	mov	b,c	; B = 128
+ 057B 0E40      	mvi	c,spi?dat
+                	outir		; HL = next page in 'buf'
+ 057D+EDB3      	DB	0EDH,0B3H
+ 057F 0E41      	mvi	c,spi?ctl
+ 0581 AF        	xra	a
+                	outp	a	; not SCS
+ 0582+ED79      	DB	0EDH,A*8+41H
+                ;	mvi	a,50
+                ;	call	msleep	; wait for WIP to go "1"?
+ 0584 7B        	mov	a,e
+ 0585 B2        	ora	d
+                	jrnz	nvset0
+ 0586+20B9      	DB	20H,NVSET0-$-1
+ 0588 E1        	pop	h
+ 0589 C9        	ret
+                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
                 
                 ; A = PMAGIC
- 09B4 F5        SHID:	PUSH	PSW
- 09B5 110301    	LXI	D,IDMSG
- 09B8 0E09      	MVI	C,PRINT
- 09BA CD0500    	CALL	BDOS
- 09BD F1        	POP	PSW
- 09BE CDF007    	CALL	HEXOUT
- 09C1 3E48      	MVI	A,'H'
- 09C3 CD6207    	CALL	CHROUT
- 09C6 C37B07    	JMP	CRLF
+ 058A F5        shid:	push	psw
+ 058B 110000    	lxi	d,idmsg
+ 058E 0E09      	mvi	c,print
+ 0590 CD0500    	call	bdos
+ 0593 F1        	pop	psw
+ 0594 CD3704    	call	hexout
+ 0597 3E48      	mvi	a,'H'
+ 0599 CD8503    	call	chrout
+ 059C C39E03    	jmp	crlf
                 
-                ; HL = IP ADDR, DE = PREFIX MSG
- 09C9 E5        SHIP:	PUSH	H
- 09CA 0E09      	MVI	C,PRINT
- 09CC CD0500    	CALL	BDOS
- 09CF E1        	POP	H
- 09D0 CD5007    	CALL	IPOUT
- 09D3 C37B07    	JMP	CRLF
+                ; HL = IP addr, DE = prefix msg
+ 059F E5        ship:	push	h
+ 05A0 0E09      	mvi	c,print
+ 05A2 CD0500    	call	bdos
+ 05A5 E1        	pop	h
+ 05A6 CD7303    	call	ipout
+ 05A9 C39E03    	jmp	crlf
                 
-                ; HL = MAC ADDR
- 09D6 E5        SHMAC:	PUSH	H
- 09D7 112401    	LXI	D,MCMSG
- 09DA 0E09      	MVI	C,PRINT
- 09DC CD0500    	CALL	BDOS
- 09DF E1        	POP	H
- 09E0 CD3E07    	CALL	HWOUT
- 09E3 C37B07    	JMP	CRLF
+                ; HL = mac addr
+ 05AC E5        shmac:	push	h
+ 05AD 112100    	lxi	d,mcmsg
+ 05B0 0E09      	mvi	c,print
+ 05B2 CD0500    	call	bdos
+ 05B5 E1        	pop	h
+ 05B6 CD6103    	call	hwout
+ 05B9 C39E03    	jmp	crlf
                 
- 09E6           	DS	40
- 0A0E           STACK:	DS	0
- 0A0E 0000      USRSTK:	DW	0
+                	dseg
+ 01CE           	ds	40
+ 01F6           stack:	ds	0
+ 01F6 0000      usrstk:	dw	0
                 
- 0A10 00        DIRECT:	DB	0
- 0A11 00        CPNET:	DB	0
- 0A12 0000      NETCFG:	DW	0
+ 01F8 00        direct:	db	0
+ 01F9 00        cpnet:	db	0
+ 01FA 0000      netcfg:	dw	0
                 
- 0A14 00        WIZMAG:	DB	0	; USED AS CLIENT (NODE) ID
+ 01FC 00        wizmag:	db	0	; used as client (node) ID
                 
-                COMREGS:
- 0A15           GW:	DS	4
- 0A19           MSK:	DS	4
- 0A1D           MAC:	DS	6
- 0A23           IP:	DS	4
- 0012 =         COMLEN	EQU	$-COMREGS
+                comregs:
+ 01FD           gw:	ds	4
+ 0201           msk:	ds	4
+ 0205           mac:	ds	6
+ 020B           ip:	ds	4
+ 0012 =         comlen	equ	$-comregs
                 
-                SOKREGS:
- 0A27           SOKMR:	DS	4	; MR, CR, IR, SR
- 0A2B           SOKPT:	DS	2	; PORT
- 0A2D           SOKMAC:	DS	6	; DHAR
- 0A33           SOKIP:	DS	4	; DIPR
- 0A37           SOKDPT:	DS	2	; DPORT
- 0012 =         SOKLEN	EQU	$-SOKREGS
+                sokregs:
+ 020F           sokmr:	ds	4	; MR, CR, IR, SR
+ 0213           sokpt:	ds	2	; PORT
+ 0215           sokmac:	ds	6	; DHAR
+ 021B           sokip:	ds	4	; DIPR
+ 021F           sokdpt:	ds	2	; DPORT
+ 0012 =         soklen	equ	$-sokregs
+ 0221           sokkp:	ds	1
                 
-                NEWSOK:
- 0A39           NSKPT:	DS	2	; PORT
- 0A3B           NSKMAC:	DS	6	; DHAR
- 0A41           NSKIP:	DS	4	; DIPR
- 0A45           NSKDPT:	DS	2	; DPORT
- 0020 =         NSKLEN	EQU	$-SOKREGS
+                newsok:
+ 0222           nskpt:	ds	2	; PORT
+ 0224           nskmac:	ds	6	; DHAR
+ 022A           nskip:	ds	4	; DIPR
+ 022E           nskdpt:	ds	2	; DPORT
+ 0021 =         nsklen	equ	$-sokregs
+ 0230           nskkp:	ds	1	; KPALVTR
                 
- 0A47           BUF:	DS	512
+ 0231           nvbuf:	ds	512
                 
- 0C47           	END
-
+ 0431           	end
+
