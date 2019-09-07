@@ -111,8 +111,6 @@ nonbank:
 rsxnam:	db	'NDOS3   '
 loader:	db	0,0,0
 
-ioport:	db	018h	; could be patched here
-
 	db	'COPYRIGHT (C) 1980-82, DIGITAL RESEARCH '
 	db	0,0,0,0,0,0
 
@@ -362,7 +360,7 @@ FUNTB3:
 	dw	SDMSGU	; 56	038h	0b8h
 	dw	RVMSGU	; 58	03ah	0bah
 	dw	LOGIN	; 60	03ch	0bch
-	dw	LOGOFF	; 62	03eh	0beh
+	dw	LOGOFF	; 62	03eh	0beh - generic send to server 'E'
 	dw	STSF	; 64	040h	0c0h
 	dw	STSN	; 66	042h	0c2h
 	dw	0	; 68	044h	0c4h - to be removed
@@ -430,7 +428,7 @@ fstcp	equ	$-FUNTB2	; ***** DUPLICATE of fstpw *****
 fsvcf	equ	$-FUNTB2
 	db	03eh, 018h, 0a4h	;
 fgtdl	equ	$-FUNTB2
-	db	046h, 098h		;
+	db	046h, 002h, 098h	;
 fdkms	equ	$-FUNTB2
 	db	046h, 002h, 018h, 0a4h	;
 flst1	equ	$-FUNTB2
@@ -753,8 +751,7 @@ STDSK0:
 	call	TBDOSP
 	jmp	NDEND
 
-STDSK1:
-	sta	MSGID
+STDSK1:	; server already set in MSGID
 	lhld	MCRPNT
 	dcr	c
 	mov	m,c

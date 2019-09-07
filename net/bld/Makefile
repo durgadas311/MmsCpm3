@@ -9,7 +9,7 @@ RELS = $(subst .asm,.rel,$(SRCS))
 all:	ndos3-u.com ntpdt-u.com \
 	ndos3-w.com ntpdt-w.com \
 	ndos3-m.com ntpdt-m.com \
-	netstat.com wizcfg.com
+	netstat.com srvstat.com wizcfg.com
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
@@ -47,6 +47,10 @@ netstat.com: netstat.asm
 	vcpm mac netstat.asm '$$SZLA'
 	vcpm hexcom netstat
 
+srvstat.com: srvstat.asm
+	vcpm mac srvstat.asm '$$SZLA'
+	vcpm hexcom srvstat
+
 wizcfg.com: wizcfg.asm
 	vcpm mac wizcfg.asm '$$SZLA'
 	vcpm hexcom wizcfg
@@ -81,7 +85,7 @@ CPNET_UTLS = cpnetsts.com dskreset.com endlist.com local.com \
 
 CPN12_UTLS = $(CPNET_UTLS) ndos.spr ccp.spr xsubnet.com
 
-NET_UTLS = wizcfg.com wizdbg.com netstat.com
+NET_UTLS = wizcfg.com wizdbg.com netstat.com srvstat.com
 
 NET3_UTLS = $(NET_UTLS) ndos3-w.com ntpdt-w.com
 NET12_UTLS = $(NET_UTLS) snios-w.spr cpnldr-w.com
