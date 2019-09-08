@@ -77,13 +77,18 @@ sn$sr	equ	3
 sn$prt	equ	4
 sn$dipr	equ	12
 sn$dprt	equ	16
+sn$resv8 equ	29	; reserved
 sn$txwr	equ	36
 sn$rxrsr equ	38
 sn$rxrd	equ	40
+sn$kpalvtr equ	47
+
+NvKPALVTR equ	sn$resv8 ; place to stash keep-alive in nvram
 
 ; socket commands
 OPEN	equ	01h
 CONNECT	equ	04h
+DISC	equ	08h
 SEND	equ	20h
 RECV	equ	40h
 
@@ -2707,29 +2712,35 @@ getwiz1:
 	mvi	a,WZSCS
 	out	spi$ctl
 	mvi	c,spi$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	res	2,d
 	outp	d
-	inz	; prime MISO
+	inp	a	; prime MISO
 	inp	a
+	push	psw
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
+	pop	psw
 	ret
 
 putwiz1:
 	push	psw
 	mvi	a,WZSCS
 	out	spi$ctl
-	pop	psw
 	mvi	c,spi$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	setb	2,d
 	outp	d
+	pop	psw
 	outp	a	; data
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; Get 16-bit value from chip
@@ -2740,15 +2751,17 @@ getwiz2:
 	mvi	a,WZSCS
 	out	spi$ctl
 	mvi	c,spi$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	res	2,d
 	outp	d
-	inz	; prime MISO
+	inp	a	; prime MISO
 	inp	h	; data
 	inp	l	; data
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; HL = output data, E = off, D = BSB, B = len
@@ -2756,13 +2769,15 @@ wizset:
 	mvi	a,WZSCS
 	out	spi$ctl
 	mvi	c,spi$dat
-	outz		; hi adr always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	setb	2,d
 	outp	d
 	outir
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; Put 16-bit value to chip
@@ -2773,14 +2788,16 @@ putwiz2:
 	mvi	a,WZSCS
 	out	spi$ctl
 	mvi	c,spi$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	setb	2,d
 	outp	d
 	outp	h	; data to write
 	outp	l
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; Issue command, wait for complete
@@ -2792,12 +2809,14 @@ wizcmd:	mov	b,a
 	mvi	a,WZSCS
 	out	spi$ctl
 	mvi	c,spi$dat
-	outz	; hi adr byte always 0
+	xra	a
+	outp	a	; hi adr always 0
 	outp	e
 	outp	d
 	outp	b	; command
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 wc0:	call	getwiz1
 	ora	a
 	jrnz	wc0
@@ -2828,7 +2847,8 @@ cpyout:
 	outir		; send data
 	shld	msgptr
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; HL=socket relative pointer (RX_RD)
@@ -2838,12 +2858,13 @@ cpyout:
 cpyin:
 	mvi	b,rxbuf0
 	call	cpsetup	;
-	inz	; prime MISO
+	inp	a	; prime MISO
 	mov	b,e	; fraction of page
 	inir		; recv data
 	shld	msgptr
 	inr	c	; ctl port
-	outz		; clear SCS
+	xra	a
+	outp	a	; clear SCS
 	ret
 
 ; L=bits to reset
@@ -2859,21 +2880,46 @@ wizsts:
 ws0:	pop	psw
 	ret
 
+; D=socket BSB, C=bits to check
+; Return: A=status reg
+wizist:	lxi	h,32000
+wst0:	push	b	; C has status bits to check
+	push	h
+	mov	l,c
+	call	wizsts
+	pop	h
+	pop	b
+	mov	b,a
+	ana	c
+	jrnz	wst1
+	dcx	h
+	mov	a,h
+	ora	l
+	jrnz	wst0
+	stc
+	ret
+wst1:	mov	a,b
+	ret
+
 ;	WIZNET boot routine
 ;
 bwiznet:
 	push	d
 	; extract optional string. must do it now, before we
 	; overwrite bootbf.
+	lxi	d,msg$dat	; target for string
 	lxi	h,bootbf
+	xra	a
+	sta	msg$siz
 	mov	a,m
+	cpi	0c3h	; no string
+	jrz	nb5
 	mov	c,a
 	; we send N+1 bytes, NUL term
 	sta	msg$siz
 	mvi	b,0
-	lxi	d,msg$dat
 	ldir
-	xra	a
+nb5:	xra	a
 	stax	d	; NUL term
 	pop	d
 	mov	a,e	; server id, 0..9
@@ -2920,19 +2966,22 @@ nb2:	; D = server socket BSB
 	rnz	; failed to open (init)
 nb4:	mvi	a,CONNECT
 	call	wizcmd
-	cpi	ESTABLISHED
-	rnz	; failed to open (connect)
+	mvi	c,00001011b	; CON, DISCON, or TIMEOUT
+	call	wizist	; returns when one is set, or CY
+	rc
+	ani	00000001b	; need CON
+	rz
 nb3:
 	mvi	a,1	; FNC for "boot me"
 	sta	msg$fnc
 	; string already setup
 loop:
-	mvi	a,020h	; FMT for client boot messages
+	mvi	a,0b0h	; FMT for client boot messages
 	sta	msg$fmt
 	call	sndrcv
 	rc	; network failure
 	lda	msg$fmt
-	cpi	021h	; FMT for server boot responses
+	cpi	0b1h	; FMT for server boot responses
 	rnz
 	; TODO: verify SID?
 	lda	msg$fnc
@@ -2947,7 +2996,11 @@ loop:
 	dcr	a
 	rnz	; unsupported FNC
 	; done: execute boot code
-	; TODO: enable ORG0 (MMS77318?)
+	lda	cursok
+	ori	sock0
+	mov	d,a
+	mvi	a,DISC
+	call	wizcmd
 	lhld	msg$dat
 	pchl
 load:	lhld	dma
@@ -2955,38 +3008,23 @@ load:	lhld	dma
 	lxi	h,msg$dat
 	lxi	b,128
 	ldir
+	xchg
+	shld	dma
 ack:	xra	a	; FNC 0 = ACK
 	sta	msg$fnc
+	sta	msg$siz
 	jr	loop
 stdma:	lhld	msg$dat
 	shld	dma
 	jr	ack
-ldmsg:	lxi	h,msg$dat
+ldmsg:	call	crlf
+	lxi	h,msg$dat
 ldm0:	mov	a,m
 	inx	h
 	cpi	'$'
 	jrz	ack
 	call	conout
 	jr	ldm0
-
-; Wait for message response, with timeout.
-; D = socket BSB (preserved).
-check:
-	lxi	h,32000	; do check for sane receive time...
-chk0:	push	h
-	mvi	l,00000100b	; RECV data available bit
-	call	wizsts
-	ana	l	; RECV data available
-	jrnz	chk4	; D=socket
-	pop	h
-	dcx	h
-	mov	a,h
-	ora	l
-	jrnz	chk0
-	stc	; CY = error
-	ret
-chk4:	pop	h
-	ret
 
 ;	Send Message on Network, receive response
 ;	msgbuf setup with FMT, FNC, LEN, data
@@ -3028,12 +3066,12 @@ sndrcv:			; BC = message addr
 	mvi	a,SEND
 	call	wizcmd
 	; ignore Sn_SR?
-	mvi	l,00010000b	; SEND_OK bit
-	call	wizsts
-	cma	; want "0" on success
-	ana	l	; SEND_OK
+	mvi	c,00011010b	; SEND_OK bit, TIMEOUT, DISConnect
+	call	wizist
+	rc
+	ani	00010000b	; SEND_OK
 	stc
-	rnz	; CY = failure (here: send failed)
+	rz
 ; begin recv phase - loop
 	lda	cursok	; is D still socket BSB?
 	ori	sock0
@@ -3041,8 +3079,11 @@ sndrcv:			; BC = message addr
 ;	Receive Message from Network
 	lxi	h,msgbuf
 	shld	msgptr
-	call	check	; check for recv within timeout
+	mvi	c,00000110b	; RECV, DISC
+	call	wizist	; check for recv within timeout
 	jrc	rerr
+	ani	00000100b	; RECV
+	jrz	rerr
 	lxi	h,0
 	shld	totlen
 rm0:	; D must be socket base...
@@ -3113,11 +3154,9 @@ wizcfg:	; restore config from NVRAM
 	mvi	e,gar
 	mvi	b,18	; GAR+SUBR+SHAR+SIPR
 	call	wizset
-	lxi	h,nvbuf+pmagic
-	mvi	d,0
+	lda	nvbuf+pmagic
 	mvi	e,pmagic
-	mvi	b,1
-	call	wizset
+	call	putwiz1
 	lxix	nvbuf+32	; start of socket0 data
 	mvi	d,SOCK0
 	mvi	b,8
@@ -3126,7 +3165,13 @@ rest0:
 	ldx	a,sn$prt
 	cpi	31h
 	jrnz	rest1	; skip unconfigured sockets
-	call	settcp
+	mvi	a,1	; TCP mode
+	mvi	e,sn$mr
+	call	putwiz1	; force TCP/IP mode
+	ldx	a,NvKPALVTR
+	mvi	e,sn$kpalvtr
+	ora	a
+	cnz	putwiz1
 	mvi	e,sn$prt
 	mvi	b,2
 	call	setsok
@@ -3156,14 +3201,6 @@ setsok:
 	pop	d
 	call	wizset
 	ret
-
-; Set socket MR to TCP.
-; D = socket BSB (result of "getsokn")
-; Destroys all registers except D.
-settcp:
-	mvi	a,1	; TCP mode
-	mvi	e,sn$mr
-	jmp	putwiz1	; force TCP/IP mode
 
 cksum32:
 	lxi	h,0
@@ -3401,7 +3438,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	05f60h	; checksum...
+	dw	04415h	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
