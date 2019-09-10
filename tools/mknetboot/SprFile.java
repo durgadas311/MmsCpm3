@@ -1,5 +1,7 @@
 // Copyright (c) 2019 Douglas Miller <durgadas311@gmail.com>
 
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Vector;
 import java.io.*;
 
@@ -16,7 +18,29 @@ public class SprFile {
 	int bnkReloc = 0;
 	static byte[] zero = new byte[128];
 
-	public SprFile(File f, boolean k) {
+	static final int R_BIOS = 0xff;
+	static final int R_SCB = 0xfe;
+	static final int R_BDOS = 0xfd;
+	static final int R_BNKBDOS = 0xfc;
+	static final int R_SCBABS = 0xfb;
+	static final int R_SNIOS = 0xfa;
+	static final int R_NDOS = 0xf9;
+
+	static Map<Integer,SprFile> spcl = new HashMap<Integer,SprFile>();
+
+	static Map<String,Integer> rels;
+	static {
+		rels = new HashMap<String,Integer>();
+		rels.put("bios", R_BIOS);
+		rels.put("bdos", R_BDOS);
+		rels.put("bnkbdos", R_BNKBDOS);
+		rels.put("snios", R_SNIOS);
+		rels.put("ndos", R_NDOS);
+	}
+	static boolean isReloc(String k) { return rels.containsKey(k); }
+	static int getReloc(String k) { return rels.get(k); }
+
+	public SprFile(File f, boolean k, int t) {
 		try {
 			FileInputStream fi = new FileInputStream(f);
 			img = new byte[fi.available()];
@@ -59,6 +83,9 @@ public class SprFile {
 			bnkReloc = o;
 			o += ((b + 7) / 8);
 		}
+		if (rels.containsValue(t)) {
+			spcl.put(t, this);
+		}
 	}
 
 	public int resPages() { return (resLen + 0xff) >> 8; }
@@ -77,11 +104,16 @@ public class SprFile {
 		return str;
 	}
 
-	public void relocRes(int pg) {
+	public int getRes() { return (resBase >> 8) & 0xff; }
+	public int getBnk() { return (bnkBase >> 8) & 0xff; }
+	public void setRes(int pg) { resBase = pg << 8; }
+	public void setBnk(int pg) { bnkBase = pg << 8; }
+
+	public void relocRes() {
 		if (resStart == 0) {
 			return;
 		}
-		resBase = pg << 8;
+		int pg = getRes();
 		for (int x = 0; x < resLen; ++x) {
 			int bit = (x & 7);
 			int byt = (x >> 3);
@@ -92,15 +124,21 @@ public class SprFile {
 			if (((img[resReloc + byt] << bit) & 0x80) == 0) {
 				continue;
 			}
-			img[resStart + x] = (byte)(img[resStart + x] + pg);
+			int hi = img[resStart + x] & 0xff;
+			if (spcl.containsKey(hi)) {
+				hi = spcl.get(hi).getRes();
+			} else {
+				hi += pg;
+			}
+			img[resStart + x] = (byte)hi;
 		}
 	}
 
-	public void relocBnk(int pg) {
+	public void relocBnk() {
 		if (bnkStart == 0) {
 			return;
 		}
-		bnkBase = pg << 8;
+		int pg = getBnk();
 		for (int x = 0; x < bnkLen; ++x) {
 			int bit = (x & 7);
 			int byt = (x >> 3);
@@ -111,7 +149,13 @@ public class SprFile {
 			if (((img[bnkReloc + byt] << bit) & 0x80) == 0) {
 				continue;
 			}
-			img[bnkStart + x] = (byte)(img[bnkStart + x] + pg);
+			int hi = img[bnkStart + x] & 0xff;
+			if (spcl.containsKey(hi)) {
+				hi = spcl.get(hi).getBnk();
+			} else {
+				hi += pg;
+			}
+			img[bnkStart + x] = (byte)hi;
 		}
 	}
 

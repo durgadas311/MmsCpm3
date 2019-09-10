@@ -24,11 +24,13 @@ public class SysFile {
 			SprFile spr = sprs.get(x);
 			resLen += spr.resPages();
 			bnkLen += spr.bnkPages();
+			spr.setRes((memTop - resLen) & 0xff);
+			spr.setBnk((bnkTop - bnkLen) & 0xff);
 			if (ent == x) {
 				if (resLen > 0) {
-					entry = ((memTop - resLen) & 0xff) << 8;
+					entry = spr.getRes() << 8;
 				} else {
-					entry = ((bnkTop - bnkLen) & 0xff) << 8;
+					entry = spr.getBnk() << 8;
 				}
 			}
 		}
@@ -37,14 +39,10 @@ public class SysFile {
 	}
 
 	public void combine() {
-		int res = resBase;
-		int bnk = bnkBase;
 		for (int x = 0; x < sprs.size(); ++x) {
 			SprFile spr = sprs.get(x);
-			spr.relocRes(res);
-			spr.relocBnk(bnk);
-			res += spr.resPages();
-			bnk += spr.bnkPages();
+			spr.relocRes();
+			spr.relocBnk();
 		}
 	}
 

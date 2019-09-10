@@ -10,4 +10,4 @@ jar: mknetboot.jar
 
 mknetboot.jar: all
 	echo "Main-Class: mknetboot" >Manifest.txt
-	jar -cfm $@ $(CLASSES)
+	jar -cmf Manifest.txt $@ $(CLASSES)
