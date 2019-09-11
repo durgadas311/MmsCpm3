@@ -9,7 +9,7 @@ public class mknetboot {
 			"Usage: mknetboot [options] <spr-file>...\n"+
 			"Options:\n" +
 			"    -b       = next spr-file is BNK instead of RES\n" +
-			"    <type>   = next spr-file is <type>\n" +
+			"    -<type>  = next spr-file is <type>\n" +
 			"               { \"bios\", \"bdos\", \"snios\", \"ndos\" }\n" +
 			"    -o file  = output file name, else first spr-file.sys\n"
 			);
@@ -29,12 +29,17 @@ public class mknetboot {
 		for (; x < args.length; ++x) {
 			if (args[x].equals("-b")) {
 				banked = true;
-			} else if (SprFile.isReloc(args[x])) {
-				type = SprFile.getReloc(args[x]);
 			} else if (args[x].equals("-o")) {
 				++x;
 				if (x < args.length) {
 					outfile = args[x];
+				}
+			} else if (args[x].startsWith("-")) {
+				if (SprFile.isReloc(args[x].substring(1))) {
+					type = SprFile.getReloc(args[x].substring(1));
+				} else {
+					System.err.format("Unrecognized option: %s\n",
+						args[x]);
 				}
 			} else {
 				File f = new File(args[x]);

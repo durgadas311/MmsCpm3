@@ -28,9 +28,8 @@ public class SprFile {
 
 	static Map<Integer,SprFile> spcl = new HashMap<Integer,SprFile>();
 
-	static Map<String,Integer> rels;
+	static Map<String,Integer> rels = new HashMap<String,Integer>();
 	static {
-		rels = new HashMap<String,Integer>();
 		rels.put("bios", R_BIOS);
 		rels.put("bdos", R_BDOS);
 		rels.put("bnkbdos", R_BNKBDOS);
@@ -39,6 +38,12 @@ public class SprFile {
 	}
 	static boolean isReloc(String k) { return rels.containsKey(k); }
 	static int getReloc(String k) { return rels.get(k); }
+	static SprFile getSpcl(String k) {
+		if (!rels.containsKey(k)) {
+			return null;
+		}
+		return spcl.get(rels.get(k));
+	}
 
 	public SprFile(File f, boolean k, int t) {
 		try {
@@ -91,16 +96,35 @@ public class SprFile {
 	public int resPages() { return (resLen + 0xff) >> 8; }
 	public int bnkPages() { return (bnkLen + 0xff) >> 8; }
 
+	// Must only be called after relocation
+	public int getByte(int adr) {
+		if (adr >= resBase && adr < resBase + resLen) {
+			return img[(adr - resBase) + resStart] & 0xff;
+		}
+		if (adr >= bnkBase && adr < bnkBase + bnkLen) {
+			return img[(adr - bnkBase) + bnkStart] & 0xff;
+		}
+		return 0;
+	}
+
 	public String loadMsg() {
 		String str = "";
-		if (resBase > 0) {
-			str += String.format("  %12s  %04X  %04X\n",
-				spr.getName().toUpperCase(), resBase << 8, resLen << 8);
+		int a = 0;
+		int n = 0;
+		String[] fn = spr.getName().toUpperCase().split("\\.");
+		if (resLen > 0) {
+			a = getRes() << 8;
+			n = resPages() << 8;
 		}
-		if (bnkBase > 0) {
-			str += String.format("  %12s  %04X  %04X\n",
-				spr.getName().toUpperCase(), bnkBase << 8, bnkLen << 8);
+		if (bnkLen > 0) {
+			a = getBnk() << 8;
+			n = bnkPages() << 8;
 		}
+		if (n == 0) {
+			return str;
+		}
+		str += String.format("  %-8s %-3s  %04X  %04X\n",
+			fn[0], fn[1], a, n);
 		return str;
 	}
 
@@ -168,7 +192,7 @@ public class SprFile {
 		int off = resLen & 0x7f;
 		int rec = resStart + (resLen - 128);
 		try {
-			if (part > off) {
+			if (part != 0 && part == off) {
 				fo.write(zero);
 			}
 			if (off > 0) {
