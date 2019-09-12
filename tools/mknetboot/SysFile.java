@@ -84,8 +84,7 @@ public class SysFile {
 			str += spr.loadMsg();
 		}
 		int tpa = resBase > 0 ? resBase << 8 : bnkBase << 8;
-		str += '\n';
-		str += String.format("%3dK TPA\n", tpa / 1024);
+		str += String.format("\n%3dK TPA", tpa / 1024);
 		System.err.format("\n%s\n", str);
 		str += '$';
 		byte[] stb = str.replace("\n", "\r\n").getBytes();

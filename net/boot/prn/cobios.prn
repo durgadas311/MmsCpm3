@@ -1,0 +1,166 @@
+                ;	title	'BIOS for CP/NOS 1.2'
+                ;	Character-only functions
+                ;	Modified for H89/H8, Douglas Miller <durgadas311@gmail.com>
+                ;
+                ;	Version 1.1 October, 1981
+                ;	Version 1.2 Beta Test, 08-23-82
+                ;
+ 000C =         vers	equ	12	;version 1.2
+                ;
+                ;	Copyright (c) 1980, 1981, 1982
+                ;	Digital Research
+                ;	Box 579, Pacific Grove
+                ;	California, 93950
+                ;
+                ;	perform following functions
+                ;	boot	cold start
+                ;	wboot	(not used under CP/NOS)
+                ;	const	console status
+                ;		reg-a = 00 if no character ready
+                ;		reg-a = ff if character ready
+                ;	conin	console character in (result in reg-a)
+                ;	conout	console character out (char in reg-c)
+                ;	list	list out (char in reg-c)
+                ;
+                
+                ; Note new cold-boot sequence.
+                ;	1. Arrive first here at 'cboote'.
+                ;	2. Initialize BIOS and page 0 (for NDOS)
+                ;	3. Jump to NDOS cold-boot entry.
+                ;	4. NDOS initializes:
+                ;		4.1. Calls SNIOS init
+                ;		4.2. Calls BDOS init
+                ;		4.3. Intercepts WBOOT
+                ;		4.4. Loads CCP.SPR and jumps to it (every WBOOT)
+                
+ 0000           	org	0
+ 0000 =         base	equ	$
+ F900 =         ndos$pg	equ	base+0f900h
+ FD00 =         bdos$pg	equ	base+0fd00h
+                
+ F903 =         ndoscb	equ	ndos$pg+3	; NDOS cold-boot
+ F906 =         ndose	equ	ndos$pg+6
+ FD06 =         bdose	equ	bdos$pg+6
+                
+                ;	jump vector for indiviual routines
+                ; Cold boot arrives here first...
+ 0000 C34A00    cboote:	jmp	boot
+ 0003 C3A500    wboote:	jmp	error
+ 0006 C36E00    	jmp	const
+ 0009 C37600    	jmp	conin
+ 000C C38100    	jmp	conout
+ 000F C39300    	jmp	list
+ 0012 C3A500    	jmp	error
+ 0015 C3A500    	jmp	error
+ 0018 C3A500    	jmp	error
+ 001B C3A500    	jmp	error
+ 001E C3A500    	jmp	error
+ 0021 C3A500    	jmp	error
+ 0024 C3A500    	jmp	error
+ 0027 C3A500    	jmp	error
+ 002A C3A500    	jmp	error
+ 002D C39D00    	jmp	listst	;list status
+ 0030 C3A500    	jmp	error
+                ;
+ 000D =         cr	equ	0dh	;carriage return
+ 000A =         lf	equ	0ah	;line feed
+                ;
+ 0080 =         buff	equ	0080h	;default buffer
+                ;
+                signon:	;signon message: xxk cp/m vers y.y
+ 0033 0D0A0A    	db	cr,lf,lf
+ 0036 3634      	db	'64'	;memory size
+ 0038 6B2043502F	db	'k CP/NOS vers '
+ 0046 312E32    	db	vers/10+'0','.',vers mod 10+'0'
+ 0049 00        	db	0
+                ;
+                boot:	;print signon message and go to NDOS
+                ;
+                ;	device initialization  -  as required
+                ;
+ 004A 310001    	lxi	sp,buff+0080h
+ 004D 213300    	lxi	h,signon
+ 0050 CDAA00    	call	prmsg	;print message
+ 0053 3EC3      	mvi	a,jmp
+ 0055 320000    	sta	0000h
+ 0058 320500    	sta	0005h
+ 005B 2106F9    	lxi	h,ndose
+ 005E 220600    	shld	0006h
+ 0061 AF        	xra	a
+ 0062 320400    	sta	0004h
+ 0065 210300    	lxi	h,wboote	; for NDOS init
+ 0068 220100    	shld	0001h
+ 006B C303F9    	jmp	ndoscb ;go to NDOS initialization
+                ;
+                ;
+                ; TODO: support device redirection?
+                ; TODO: use MMS console driver?
+                ; Console port is assumed already initialized
+                ; TODO: customize printer port?
+                ;
+ 00E8 =         console	equ	0e8h
+ 00E0 =         printer	equ	0e0h
+                
+                const:	;console status to reg-a
+ 006E DBED      	in	console+5
+ 0070 E601      	ani	1
+ 0072 C8        	rz
+ 0073 3EFF      	mvi	a,0ffh
+ 0075 C9        	ret
+                ;
+                conin:	;console character to reg-a
+ 0076 CD6E00    	call	const
+ 0079 CA7600    	jz	conin
+ 007C DBE8      	in	console
+ 007E E67F      	ani	7fh	;remove parity bit
+ 0080 C9        	ret
+                ;
+                conout:	;console character from c to console out
+ 0081 CD8B00    	call	conost
+ 0084 CA8100    	jz	conout
+ 0087 79        	mov	a,c
+ 0088 D3E8      	out	console
+ 008A C9        	ret
+                ;
+                conost:
+ 008B DBED      	in	console+5
+ 008D E620      	ani	00100000b	; TxHE
+ 008F C8        	rz
+ 0090 3EFF      	mvi	a,0ffh
+ 0092 C9        	ret
+                ;
+                list:	;list device out
+ 0093 CD9D00    	call	listst
+ 0096 CA9300    	jz	list
+ 0099 79        	mov	a,c
+ 009A D3E0      	out	printer
+ 009C C9        	ret
+                ;
+                listst:
+ 009D DBE5      	in	printer+5
+ 009F E620      	ani	00100000b	; TxHE
+ 00A1 C8        	rz
+ 00A2 3EFF      	mvi	a,0ffh
+ 00A4 C9        	ret
+                ;
+                ;	utility subroutines
+                error:
+ 00A5 21FFFF    	lxi	h,0ffffh
+ 00A8 7C        	mov	a,h
+ 00A9 C9        	ret
+                
+                prmsg:	;print message at h,l to 0
+ 00AA 7E        	mov	a,m
+ 00AB B7        	ora	a	;zero?
+ 00AC C8        	rz
+                ;	more to print
+ 00AD E5        	push	h
+ 00AE 4F        	mov	c,a
+ 00AF CD8100    	call	conout
+ 00B2 E1        	pop	h
+ 00B3 23        	inx	h
+ 00B4 C3AA00    	jmp	prmsg
+                ;
+                
+ 00B7           	end
+

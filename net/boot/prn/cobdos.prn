@@ -1,0 +1,406 @@
+                ; diskless (character-only) BDOS for CP/NOS - functions 0-12 only.
+                
+ 0000 =         reboot	equ	0000h
+ 0003 =         ioloc	equ	0003h
+ 0006 =         bdosa	equ	0006h
+                
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+ 0009 =         tab	equ	9
+ 0008 =         bs	equ	8
+ 0013 =         xoff	equ	13h
+ 0003 =         ctlc	equ	3
+ 0005 =         ctle	equ	5
+ 0010 =         ctlp	equ	10h
+ 0012 =         ctlr	equ	12h
+ 0015 =         ctlu	equ	15h
+ 0018 =         ctlx	equ	18h
+ 007F =         rubout	equ	7fh
+                
+                
+ 0000           	org	0
+ 0000 =         base	equ	$
+ FF00 =         bios	equ	base+0ff00h
+                
+ FF03 =         wbootf	equ	bios+3
+ FF06 =         constf	equ	bios+6
+ FF09 =         coninf	equ	bios+9
+ FF0C =         conoutf equ	bios+12
+ FF0F =         listf	equ	bios+15
+                
+ 0000 0000000000	db	0,0,0,0,0,0	; serial number
+ 0006 C31A00    bdos:	jmp	bdose
+                
+ 0009 434F50522E	db	'COPR. ''78-''82 DRI'
+                
+ 001A EB        bdose:	xchg
+ 001B 22A702    	shld	info
+ 001E EB        	xchg
+ 001F 210000    	lxi	h,0
+ 0022 22A902    	shld	aret
+ 0025 39        	dad	sp
+ 0026 227302    	shld	entsp
+ 0029 31A502    	lxi	sp,lstack
+ 002C 21B002    	lxi	h,goback
+ 002F E5        	push	h
+ 0030 79        	mov	a,c
+ 0031 FE0D      	cpi	nfuncs
+ 0033 D0        	rnc
+ 0034 4B        	mov	c,e
+ 0035 214500    	lxi	h,functab
+ 0038 5F        	mov	e,a
+ 0039 1600      	mvi	d,0
+ 003B 19        	dad	d
+ 003C 19        	dad	d
+ 003D 5E        	mov	e,m
+ 003E 23        	inx	h
+ 003F 56        	mov	d,m
+ 0040 2AA702    	lhld	info
+ 0043 EB        	xchg
+ 0044 E9        	pchl
+                
+                functab:
+ 0045 03FF      	dw	wbootf
+ 0047 2C02      	dw	func1
+ 0049 F400      	dw	tabout
+ 004B 3202      	dw	func3
+ 004D 0CFF      	dw	conoutf
+ 004F 0FFF      	dw	listf
+ 0051 3802      	dw	func6
+ 0053 5102      	dw	func7
+ 0055 5702      	dw	func8
+ 0057 5C02      	dw	func9
+ 0059 4501      	dw	read
+ 005B 6202      	dw	func11
+ 005D AB02      	dw	func12
+ 000D =         nfuncs	equ	($-functab)/2
+                
+ 005F 217202    conin:	lxi	h,kbchar
+ 0062 7E        	mov	a,m
+ 0063 3600      	mvi	m,0
+ 0065 B7        	ora	a
+ 0066 C0        	rnz
+ 0067 C309FF    	jmp	coninf
+                
+ 006A CD5F00    conech:	call	conin
+ 006D CD7800    	call	echoc
+ 0070 D8        	rc
+ 0071 F5        	push	psw
+ 0072 4F        	mov	c,a
+ 0073 CDF400    	call	tabout
+ 0076 F1        	pop	psw
+ 0077 C9        	ret
+                
+ 0078 FE0D      echoc:	cpi	cr
+ 007A C8        	rz
+ 007B FE0A      	cpi	lf
+ 007D C8        	rz
+ 007E FE09      	cpi	tab
+ 0080 C8        	rz
+ 0081 FE08      	cpi	bs
+ 0083 C8        	rz
+ 0084 FE20      	cpi	' '
+ 0086 C9        	ret
+                
+ 0087 3A7202    conbrk:	lda	kbchar
+ 008A B7        	ora	a
+ 008B C2A900    	jnz	conb1
+ 008E CD06FF    	call	constf
+ 0091 E601      	ani	1
+ 0093 C8        	rz
+ 0094 CD09FF    	call	coninf
+ 0097 FE13      	cpi	xoff
+ 0099 C2A600    	jnz	conb0
+ 009C CD09FF    	call	coninf
+ 009F FE03      	cpi	ctlc
+ 00A1 CA0000    	jz	reboot
+ 00A4 AF        	xra	a
+ 00A5 C9        	ret
+                
+ 00A6 327202    conb0:	sta	kbchar
+ 00A9 3E01      conb1:	mvi	a,1
+ 00AB C9        	ret
+                
+ 00AC 3A6E02    conout:	lda	compcol
+ 00AF B7        	ora	a
+ 00B0 C2C600    	jnz	compout
+ 00B3 C5        	push	b
+ 00B4 CD8700    	call	conbrk
+ 00B7 C1        	pop	b
+ 00B8 C5        	push	b
+ 00B9 CD0CFF    	call	conoutf
+ 00BC C1        	pop	b
+ 00BD C5        	push	b
+ 00BE 3A7102    	lda	listcp
+ 00C1 B7        	ora	a
+ 00C2 C40FFF    	cnz	listf
+ 00C5 C1        	pop	b
+                compout:
+ 00C6 79        	mov	a,c
+ 00C7 217002    	lxi	h,column
+ 00CA FE7F      	cpi	rubout
+ 00CC C8        	rz
+ 00CD 34        	inr	m
+ 00CE FE20      	cpi	' '
+ 00D0 D0        	rnc
+ 00D1 35        	dcr	m
+ 00D2 7E        	mov	a,m
+ 00D3 B7        	ora	a
+ 00D4 C8        	rz
+ 00D5 79        	mov	a,c
+ 00D6 FE08      	cpi	bs
+ 00D8 C2DD00    	jnz	notbacksp
+ 00DB 35        	dcr	m
+ 00DC C9        	ret
+                notbacksp:
+ 00DD FE0A      	cpi	lf
+ 00DF C0        	rnz
+ 00E0 3600      	mvi	m,0
+ 00E2 C9        	ret
+                
+                ctlout:
+ 00E3 79        	mov	a,c
+ 00E4 CD7800    	call	echoc
+ 00E7 D2F400    	jnc	tabout
+ 00EA F5        	push	psw
+ 00EB 0E5E      	mvi	c,'^'
+ 00ED CDAC00    	call	conout
+ 00F0 F1        	pop	psw
+ 00F1 F640      	ori	'@'
+ 00F3 4F        	mov	c,a
+                tabout:
+ 00F4 79        	mov	a,c
+ 00F5 FE09      	cpi	tab
+ 00F7 C2AC00    	jnz	conout
+ 00FA 0E20      tab0:	mvi	c,' '
+ 00FC CDAC00    	call	conout
+ 00FF 3A7002    	lda	column
+ 0102 E607      	ani	111b
+ 0104 C2FA00    	jnz	tab0
+ 0107 C9        	ret
+                
+ 0108 CD1001    backup:	call	pctlh
+ 010B 0E20      	mvi	c,' '
+ 010D CD0CFF    	call	conoutf
+ 0110 0E08      pctlh:	mvi	c,bs
+ 0112 C30CFF    	jmp	conoutf
+                
+ 0115 0E23      crlfp:	mvi	c,'#'
+ 0117 CDAC00    	call	conout
+ 011A CD2D01    	call	crlf
+ 011D 3A7002    crlfp0:	lda	column
+ 0120 216F02    	lxi	h,strtcol
+ 0123 BE        	cmp	m
+ 0124 D0        	rnc
+ 0125 0E20      	mvi	c,' '
+ 0127 CDAC00    	call	conout
+ 012A C31D01    	jmp	crlfp0
+                
+ 012D 0E0D      crlf:	mvi	c,cr
+ 012F CDAC00    	call	conout
+ 0132 0E0A      	mvi	c,lf
+ 0134 C3AC00    	jmp	conout
+                
+ 0137 0A        print:	ldax	b
+ 0138 FE24      	cpi	'$'
+ 013A C8        	rz
+ 013B 03        	inx	b
+ 013C C5        	push	b
+ 013D 4F        	mov	c,a
+ 013E CDF400    	call	tabout
+ 0141 C1        	pop	b
+ 0142 C33701    	jmp	print
+                
+ 0145 3A7002    read:	lda	column
+ 0148 326F02    	sta	strtcol
+ 014B 2AA702    	lhld	info
+ 014E 4E        	mov	c,m
+ 014F 23        	inx	h
+ 0150 E5        	push	h
+ 0151 0600      	mvi	b,0
+ 0153 C5        readnx:	push	b
+ 0154 E5        	push	h
+ 0155 CD5F00    readn0:	call	conin
+ 0158 E67F      	ani	7fh
+ 015A E1        	pop	h
+ 015B C1        	pop	b
+ 015C FE0D      	cpi	cr
+ 015E CA2502    	jz	readen
+ 0161 FE0A      	cpi	lf
+ 0163 CA2502    	jz	readen
+ 0166 FE08      	cpi	bs
+ 0168 C27A01    	jnz	noth
+ 016B 78        	mov	a,b
+ 016C B7        	ora	a
+ 016D CA5301    	jz	readnx
+ 0170 05        	dcr	b
+ 0171 3A7002    	lda	column
+ 0174 326E02    	sta	compcol
+ 0177 C3D401    	jmp	linelen
+                
+ 017A FE7F      noth:	cpi	rubout
+ 017C C28A01    	jnz	notrub
+ 017F 78        	mov	a,b
+ 0180 B7        	ora	a
+ 0181 CA5301    	jz	readnx
+ 0184 7E        	mov	a,m
+ 0185 05        	dcr	b
+ 0186 2B        	dcx	h
+ 0187 C30D02    	jmp	rdech1
+                
+ 018A FE05      notrub:	cpi	ctle
+ 018C C29B01    	jnz	note
+ 018F C5        	push	b
+ 0190 E5        	push	h
+ 0191 CD2D01    	call	crlf
+ 0194 AF        	xra	a
+ 0195 326F02    	sta	strtcol
+ 0198 C35501    	jmp	readn0
+ 019B FE10      note:	cpi	ctlp
+ 019D C2AC01    	jnz	notp
+ 01A0 E5        	push	h
+ 01A1 217102    	lxi	h,listcp
+ 01A4 3E01      	mvi	a,1
+ 01A6 96        	sub	m
+ 01A7 77        	mov	m,a
+ 01A8 E1        	pop	h
+ 01A9 C35301    	jmp	readnx
+                
+ 01AC FE18      notp:	cpi	ctlx
+ 01AE C2C301    	jnz	notx
+ 01B1 E1        	pop	h
+ 01B2 3A6F02    backx:	lda	strtcol
+ 01B5 217002    	lxi	h,column
+ 01B8 BE        	cmp	m
+ 01B9 D24501    	jnc	read
+ 01BC 35        	dcr	m
+ 01BD CD0801    	call	backup
+ 01C0 C3B201    	jmp	backx
+ 01C3 FE15      notx:	cpi	ctlu
+ 01C5 C2CF01    	jnz	notu
+ 01C8 CD1501    	call	crlfp
+ 01CB E1        	pop	h
+ 01CC C34501    	jmp	read
+ 01CF FE12      notu:	cpi	ctlr
+ 01D1 C20A02    	jnz	notr
+                linelen:
+ 01D4 C5        	push	b
+ 01D5 CD1501    	call	crlfp
+ 01D8 C1        	pop	b
+ 01D9 E1        	pop	h
+ 01DA E5        	push	h
+ 01DB C5        	push	b
+ 01DC 78        rep0:	mov	a,b
+ 01DD B7        	ora	a
+ 01DE CAEE01    	jz	rep1
+ 01E1 23        	inx	h
+ 01E2 4E        	mov	c,m
+ 01E3 05        	dcr	b
+ 01E4 C5        	push	b
+ 01E5 E5        	push	h
+ 01E6 CDE300    	call	ctlout
+ 01E9 E1        	pop	h
+ 01EA C1        	pop	b
+ 01EB C3DC01    	jmp	rep0
+                
+ 01EE E5        rep1:	push	h
+ 01EF 3A6E02    	lda	compcol
+ 01F2 B7        	ora	a
+ 01F3 CA5501    	jz	readn0
+ 01F6 217002    	lxi	h,column
+ 01F9 96        	sub	m
+ 01FA 326E02    	sta	compcol
+ 01FD CD0801    backsp:	call	backup
+ 0200 216E02    	lxi	h,compcol
+ 0203 35        	dcr	m
+ 0204 C2FD01    	jnz	backsp
+ 0207 C35501    	jmp	readn0
+                
+                notr:
+                	;not a ctlr, place into buffer
+                rdecho:
+ 020A 23        	inx	h
+ 020B 77        	mov	m,a
+ 020C 04        	inr	b
+ 020D C5        rdech1:	push	b
+ 020E E5        	push	h
+ 020F 4F        	mov	c,a
+ 0210 CDE300    	call	ctlout
+ 0213 E1        	pop	h
+ 0214 C1        	pop	b
+ 0215 7E        	mov	a,m
+ 0216 FE03      	cpi	ctlc
+ 0218 78        	mov	a,b
+ 0219 C22102    	jnz	notc
+ 021C FE01      	cpi	1
+ 021E CA0000    	jz	reboot
+ 0221 B9        notc:	cmp	c
+ 0222 DA5301    	jc	readnx
+ 0225 E1        readen:	pop	h
+ 0226 70        	mov	m,b
+ 0227 0E0D      	mvi	c,cr
+ 0229 C3AC00    	jmp	conout
+                
+ 022C CD6A00    func1:	call	conech
+ 022F C36502    	jmp	sta$ret
+                
+ 0232 CD09FF    func3:	call	coninf
+ 0235 C36502    	jmp	sta$ret
+                
+ 0238 79        func6:	mov	a,c
+ 0239 3C        	inr	a
+ 023A CA4402    	jz	dirinp
+ 023D 3C        	inr	a
+ 023E CA06FF    	jz	constf
+ 0241 C30CFF    	jmp	conoutf
+                
+ 0244 CD06FF    dirinp:	call	constf
+ 0247 B7        	ora	a
+ 0248 CAB002    	jz	goback
+ 024B CD09FF    	call	coninf
+ 024E C36502    	jmp	sta$ret
+                
+ 0251 3A0300    func7:	lda	ioloc
+ 0254 C36502    	jmp	sta$ret
+                
+ 0257 210300    func8:	lxi	h,ioloc
+ 025A 71        	mov	m,c
+ 025B C9        	ret
+                
+ 025C EB        func9:	xchg
+ 025D 4D        	mov	c,l
+ 025E 44        	mov	b,h
+ 025F C33701    	jmp	print
+                
+ 0262 CD8700    func11:	call	conbrk
+                sta$ret:
+ 0265 32A902    	sta	aret
+ 0268 C9        	ret
+                
+                setlret1:
+ 0269 3E01      	mvi	a,1
+ 026B C36502    	jmp	sta$ret
+                
+ 026E 00        compcol:	db	0
+ 026F 00        strtcol:	db	0
+ 0270 00        column:	db	0
+ 0271 00        listcp:	db	0
+ 0272 00        kbchar:	db	0
+ 0273           entsp:	ds	2
+ 0275           	ds	48
+ 02A5 0000      lstack:	dw	0
+ 02A7           info:	ds	2
+ 02A9           aret:	ds	2
+                
+ 02AB 3E22      func12:	mvi	a,22h	; CP/M v2.2
+ 02AD C36502    	jmp	sta$ret
+                
+ 02B0 2A7302    goback:	lhld	entsp
+ 02B3 F9        	sphl
+ 02B4 2AA902    	lhld	aret
+ 02B7 7D        	mov	a,l
+ 02B8 44        	mov	b,h
+ 02B9 C9        	ret
+                
+ 02BA           	end
+
