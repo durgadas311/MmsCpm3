@@ -1,12 +1,15 @@
 // Copyright (c) 2019 Douglas Miller <durgadas311@gmail.com>
 
 import java.util.Arrays;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Vector;
 import java.io.*;
 
 public class SysFile {
 	File sys;
 	Vector<SprFile> sprs;
+	Map<Integer,Integer> drvs;
 	int memTop = 0;	// page
 	int resLen = 0;	// RES length, pages
 	int resBase = 0; // page
@@ -14,11 +17,17 @@ public class SysFile {
 	int bnkLen = 0;	// pages
 	int bnkBase = 0; // page
 	int entry = 0;
+
+	SprFile snios;
+	SprFile bios;
 	int cfgtbl = 0;
+	int mixer = 0;
 	byte[] buf;
 
-	public SysFile(Vector<SprFile> sprs, int top, int com, int ent) {
+	public SysFile(Vector<SprFile> sprs, Map<Integer,Integer> drvs,
+				int top, int com, int ent) {
 		this.sprs = sprs;
+		this.drvs = drvs;
 		buf = new byte[128];
 		memTop = (top & 0xff);
 		bnkTop = (com & 0xff);
@@ -40,16 +49,7 @@ public class SysFile {
 		bnkBase = (bnkTop - bnkLen) & 0xff;
 	}
 
-	public void combine() {
-		for (int x = 0; x < sprs.size(); ++x) {
-			SprFile spr = sprs.get(x);
-			spr.relocRes();
-			spr.relocBnk();
-		}
-		SprFile snios = SprFile.getSpcl("snios");
-		if (snios == null) {
-			return;
-		}
+	private void setCfgtbl() {
 		int adr = (snios.getRes() << 8) + 6; // CNFTBL entry
 		if (snios.getByte(adr) != 0xc3) { // 'JMP'?
 			return;
@@ -59,6 +59,45 @@ public class SysFile {
 			return;
 		}
 		cfgtbl = snios.getByte(adr + 1) | (snios.getByte(adr + 2) << 8);
+	}
+
+	private void setMixer() {
+		int adr = (bios.getRes() << 8) + 0x3c; // MIXER location
+		// TODO: validate we have a mixer table?
+		// TODO: initialize based on modules? can't...
+		mixer = adr;
+	}
+
+	private void netDrive(int ld, int rd, int rs) {
+		snios.putByte(cfgtbl + (ld * 2) + 2, 0x80 + rd);
+		snios.putByte(cfgtbl + (ld * 2) + 3, rs);
+	}
+
+	private void phyDrive(int ld, int pd) {
+		bios.putByte(mixer + ld, pd);
+	}
+
+	private void setDrives() {
+		for (int d : drvs.keySet()) {
+			int x = drvs.get(d);
+			int rd = x >> 8;
+			int rs = x & 0xff;
+			if (rd == 0x80) {
+				if (mixer == 0) {
+					System.err.format("%c:=%d not compatible with image\n",
+						(char)(d + 'A'), rs);
+					continue;
+				}
+				phyDrive(d, rs);
+			} else {
+				if (cfgtbl == 0) {
+					System.err.format("%c:=%c:%02X not compatible with image\n",
+						(char)(d + 'A'), (char)(rd + 'A'), rs);
+					continue;
+				}
+				netDrive(d, rd, rs);
+			}
+		}
 	}
 
 	private void setHeader() {
@@ -95,6 +134,25 @@ public class SysFile {
 			Arrays.fill(buf, (byte)0);
 		}
 		System.arraycopy(stb, 0, buf, 0, n);
+	}
+
+	public void combine() {
+		for (int x = 0; x < sprs.size(); ++x) {
+			SprFile spr = sprs.get(x);
+			spr.relocRes();
+			spr.relocBnk();
+		}
+		snios = SprFile.getSpcl("snios");
+		bios = SprFile.getSpcl("bios");
+		if (snios != null) {
+			setCfgtbl();
+		}
+		if (bios != null) {
+			setMixer();
+		}
+		if (drvs.size() > 0) {
+			setDrives();
+		}
 	}
 
 	public boolean writeSys(File sys) {

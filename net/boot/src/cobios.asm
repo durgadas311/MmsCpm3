@@ -22,6 +22,11 @@ vers	equ	12	;version 1.2
 ;	conout	console character out (char in reg-c)
 ;	list	list out (char in reg-c)
 ;
+;
+cr	equ	0dh	;carriage return
+lf	equ	0ah	;line feed
+;
+buff	equ	0080h	;default buffer
 
 ; Note new cold-boot sequence.
 ;	1. Arrive first here at 'cboote'.
@@ -61,11 +66,21 @@ wboote:	jmp	error
 	jmp	error
 	jmp	listst	;list status
 	jmp	error
-;
-cr	equ	0dh	;carriage return
-lf	equ	0ah	;line feed
-;
-buff	equ	0080h	;default buffer
+; 0033:	mimic MMS CP/M 2.24 locations...
+	db	0
+	db	0
+	db	0,0,0
+	db	0,0,0,0
+; 003C: drive table not used for CPBIOS
+mixer:	db	255,255,255,255,255,255,255,255
+	db	255,255,255,255,255,255,255,255
+; 004C: no modules...
+	db	0,0,0,0,0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+; 0065: MMS CP/M 3 data
+	dw	mixer
+	dw	0	; no modules linked in
+	dw	0	; no ?serdp routine
 ;
 signon:	;signon message: xxk cp/m vers y.y
 	db	cr,lf,lf

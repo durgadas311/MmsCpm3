@@ -107,6 +107,14 @@ public class SprFile {
 		return 0;
 	}
 
+	public void putByte(int adr, int val) {
+		if (adr >= resBase && adr < resBase + resLen) {
+			img[(adr - resBase) + resStart] = (byte)val;
+		} else if (adr >= bnkBase && adr < bnkBase + bnkLen) {
+			img[(adr - bnkBase) + bnkStart] = (byte)val;
+		}
+	}
+
 	public String loadMsg() {
 		String str = "";
 		int a = 0;

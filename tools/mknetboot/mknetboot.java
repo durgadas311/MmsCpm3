@@ -1,10 +1,21 @@
 // Copyright (c) 2019 Douglas Miller <durgadas311@gmail.com>
 
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Vector;
 import java.io.*;
 
 public class mknetboot {
-	private static void help() {
+	Vector<SprFile> files;
+	Map<Integer,Integer> drvs;
+	boolean banked = false;
+	int type = 0;
+	int ent = 0;
+	int top = 0x00; // TODO: configurable...
+	int com = 0xc0; // TODO: configurable...
+	String outfile = "out.sys";
+
+	private void help() {
 		System.err.format(
 			"Usage: mknetboot [options] <spr-file>...\n"+
 			"Options:\n" +
@@ -17,14 +28,36 @@ public class mknetboot {
 	}
 
 	public static void main(String[] args) {
-		Vector<SprFile> files;
-		boolean banked = false;
-		int type = 0;
-		int ent = 0;
-		int com = 0xc0; // TODO: configurable...
-		String outfile = "out.sys";
+		new mknetboot(args);
+	}
 
+	private void parseDrive(String arg) {
+		if (arg.equals("X:=X:")) {
+			// Special case for CP/NOS... map all remote
+			for (int x = 0; x < 16; ++x) {
+				drvs.put(x, (x << 8) | 0xff);
+			}
+		} else if (arg.matches("[A-P]:=[A-P]:[0-9A-F]*")) {
+			int d = arg.charAt(0) - 'A';
+			int rd = arg.charAt(3) - 'A';
+			int rs = 0xff;
+			if (arg.length() > 5) {
+				rs = Integer.valueOf(arg.substring(5), 16);
+			}
+			drvs.put(d, (rd << 8) | rs);
+		} else if (arg.matches("[A-P]:=[0-9]+")) {
+			int d = arg.charAt(0) - 'A';
+			int rs = Integer.valueOf(arg.substring(3));
+			drvs.put(d, 0x80 | rs);
+		} else {
+			System.err.format("Invalid drive specifier \"%s\"\n", arg);
+		}
+	}
+
+	private mknetboot(String[] args) {
 		files = new Vector<SprFile>();
+		drvs = new HashMap<Integer,Integer>();	// value is drive:server
+							// or 0x80:phydisk
 		int x = 0;
 		for (; x < args.length; ++x) {
 			if (args[x].equals("-b")) {
@@ -41,6 +74,8 @@ public class mknetboot {
 					System.err.format("Unrecognized option: %s\n",
 						args[x]);
 				}
+			} else if (args[x].indexOf('=') > 0) {
+				parseDrive(args[x].toUpperCase());
 			} else {
 				File f = new File(args[x]);
 				if (!f.exists() || f.isDirectory()) {
@@ -56,9 +91,9 @@ public class mknetboot {
 		if (files.size() == 0) {
 			help(); // does not return
 		}
-		// TODO: choose 'entry'...
+		// TODO: choose 'entry'... and 'top'...
 		ent = files.size() - 1;
-		SysFile sys = new SysFile(files, 0x00, com, ent);
+		SysFile sys = new SysFile(files, drvs, top, com, ent);
 		// TODO: check failure...
 		sys.combine();
 		if (sys.writeSys(new File(outfile))) {
