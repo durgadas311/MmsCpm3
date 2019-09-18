@@ -1,6 +1,6 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
 ; Z89/Z90/H8-Z80 Monitor EPROM 444-84D, June 29, 2019, drm
-VERN	equ	13h	; version 1.3
+VERN	equ	14h	; ROM version
 
 false	equ	0
 true	equ	not false
@@ -203,7 +203,12 @@ goms:	db	'o ',TRM
 
 rst4:	jmp	vrst4
 
+if wiznet
+	jmp	sndrcv	; 'msgbuf' setup...
+	db	0,0
+else
 	db	0,0,0,0,0
+endif
 
 rst5:	jmp	vrst5
 delayx:
@@ -213,7 +218,12 @@ qmsg:	db	'?',TRM
 
 rst6:	jmp	vrst6
 
+if wiznet
+	jmp	wizopen	; 'server' set, D=socket BSB
+	db	0,0
+else
 	db	0,0,0,0,0
+endif
 
 rst7:	jmp	vrst7
 
@@ -1212,11 +1222,11 @@ msgout:
 
 cserr:
 	lxi	h,cserms
-	jmp	msgout
+	jr	msgout
 
-cserms:	db	BEL,'Checksum error',TRM
+cserms:	db	BEL,'Cksum error',TRM
 
-topms:	db	'Top of Memory: ',TRM
+topms:	db	'Top of Mem: ',TRM
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Memory Test command
@@ -1264,7 +1274,7 @@ cmdmt1:
 	inx	h
 	inx	d
 	dcr	c
-	jnz	cmdmt1
+	jrnz	cmdmt1
 	mov	c,a
 	exaf
 	cmp	c
@@ -1559,7 +1569,7 @@ gtdvtb0:
 	cpi	0ffh
 	rz	; no device
 	cpi	0feh
-	jz	gtdvtb1	; extended dipsw
+	jrz	gtdvtb1	; extended dipsw
 	mov	d,a
 	ret	; NZ
 
@@ -1807,7 +1817,7 @@ cvs$rd0:
 	mvi	a,8
 cvs$rd1:
 	dcr	a
-	jnz	cvs$rd1
+	jrnz	cvs$rd1
 	call	cvs$dat
 	rlc	; error bit
 	rc
@@ -1887,7 +1897,7 @@ bm316$3:
 	ani	0bfh
 	mov	a,d
 	out	038h
-	jz	bm316$4
+	jrz	bm316$4
 	xri	040h
 	mov	d,a
 	dcr	e
@@ -2102,7 +2112,7 @@ l0b05h:
 l0b14h:
 	in	04ch
 	rrc
-	jnc	l0b14h
+	jr	l0b14h
 	nop
 	in	04ch
 	mov	b,a
@@ -2137,7 +2147,7 @@ l0b36h:
 	mvi	a,003h
 	out	048h
 	call	s0b50h
-	jmp	l0b36h
+	jr	l0b36h
 
 s0b50h:
 	in	048h
@@ -2275,7 +2285,7 @@ bm320:
 	mov	d,e ; D = relative drive num
 	mov	e,a ; E = controller num
 	mov	a,d
-	jmp	bsasi
+	jr	bsasi
 
 bz67:
 	cpi	2
@@ -2953,25 +2963,8 @@ nb2:	; D = server socket BSB
 	mov	a,d
 	ani	11100000b
 	sta	cursok
-	mvi	e,sn$sr
-	call	getwiz1
-	cpi	ESTABLISHED
-	jrz	nb3	; ready to rock-n-roll...
-	; try to open...
-	cpi	SOKINIT
-	jrz	nb4
-	mvi	a,OPEN
-	call	wizcmd
-	cpi	SOKINIT
-	rnz	; failed to open (init)
-nb4:	mvi	a,CONNECT
-	call	wizcmd
-	mvi	c,00001011b	; CON, DISCON, or TIMEOUT
-	call	wizist	; returns when one is set, or CY
-	rc
-	ani	00000001b	; need CON
-	rz
-nb3:
+	call	wizopen
+	rc	; any error
 	mvi	a,1	; FNC for "boot me"
 	sta	msg$fnc
 	; string already setup
@@ -3025,6 +3018,32 @@ ldm0:	mov	a,m
 	jrz	ack
 	call	conout
 	jr	ldm0
+
+; D = server socket BSB
+wizopen:
+	mvi	e,sn$sr
+	call	getwiz1
+	cpi	ESTABLISHED
+	rz	; ready to rock-n-roll...
+	; try to open...
+	cpi	SOKINIT
+	jrz	nb4
+	mvi	a,OPEN
+	call	wizcmd
+	cpi	SOKINIT
+	stc
+	rnz	; failed to open (init)
+nb4:	mvi	e,sn$ir	; ensure no lingering bits...
+	mvi	a,00011111b
+	call	putwiz1
+	mvi	a,CONNECT
+	call	wizcmd
+	mvi	c,00001011b	; CON, DISCON, or TIMEOUT
+	call	wizist	; returns when one is set, or CY
+	rc
+	ani	00000001b	; need CON
+	sui	00000001b	; CY if bit is 0
+	ret
 
 ;	Send Message on Network, receive response
 ;	msgbuf setup with FMT, FNC, LEN, data
@@ -3132,7 +3151,7 @@ rm0:	; D must be socket base...
 	shld	totlen
 	mov	a,h
 rm1:	ora	l
-	jnz	rm0
+	jrnz	rm0
 	ret	; success (A=0)
 
 rerr:
@@ -3281,7 +3300,7 @@ termfl:
 	in	0edh
 	ani	01100000b
 	cpi	01100000b
-	jnz	termfl	; wait for output to flush
+	jrnz	termfl	; wait for output to flush
 	in	0ebh
 	ori	10000000b
 	out	0ebh
@@ -3302,16 +3321,16 @@ termfl:
 termlp:
 	in	0ddh
 	ani	00000001b
-	jz	terml0
+	jrz	terml0
 	in	0d8h
 	out	0e8h
 terml0:
 	in	0edh
 	ani	00000001b
-	jz	termlp
+	jrz	termlp
 	in	0e8h
 	out	0d8h
-	jmp	termlp
+	jr	termlp
 
 terms:	db	'Terminal Mode',TRM
 endif
@@ -3333,7 +3352,7 @@ setbr:
 	call	conout
 	sui	'A'
 	cpi	'O'-'A'
-	jnc	setber
+	jrnc	setber
 	mov	e,a
 	mvi	d,0
 	lxi	h,brtab
@@ -3363,13 +3382,13 @@ setbrf:
 	in	0edh
 	ani	01100000b
 	cpi	01100000b
-	jnz	setbrf	; flush output
+	jrnz	setbrf	; flush output
 	lxi	b,4000	; delay value ~43mS
 setbr0:
 	dcx	b
 	mov	a,b
 	ora	c
-	jnz	setbr0
+	jrnz	setbr0
 	in	0ebh
 	ori	10000000b	; divsor latch enable
 	out	0ebh
@@ -3438,7 +3457,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	04415h	; checksum...
+	dw	04590h	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
