@@ -6,16 +6,20 @@ export CPMDefault = d:
 all:
 
 %.spr: %.asm
-	vcpm rmac $? '[$$szla]'
+	vcpm rmac $? '$$szla'
 	vcpm link $@=$*'[os,nr]'
 
 cpnos.sys: cobdos.spr ndos.spr cobios.spr # snios.spr...
-	mknetboot -o $@ \
+	mknetboot -g -o $@ \
 		x:=x: \
 		-ndos ndos.spr \
 		-snios snios-w.spr \
 		-bdos cobdos.spr \
 		-bios cobios.spr
+
+dump.sys: dump.spr
+	mknetboot -x -o $@ -b 0x2400 \
+		dump.spr
 
 cpnet.sys: bdos22.spr ndos.spr bios22.spr # snios.spr...
 #	mknetboot ...

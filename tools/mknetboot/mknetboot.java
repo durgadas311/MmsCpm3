@@ -9,6 +9,8 @@ public class mknetboot {
 	Vector<SprFile> files;
 	Map<Integer,Integer> drvs;
 	boolean banked = false;
+	boolean org0 = false;
+	boolean lmsg = true;
 	int type = 0;
 	int ent = 0;
 	int top = 0x00; // TODO: configurable...
@@ -19,10 +21,14 @@ public class mknetboot {
 		System.err.format(
 			"Usage: mknetboot [options] <spr-file>...\n"+
 			"Options:\n" +
-			"    -b       = next spr-file is BNK instead of RES\n" +
+			"    -t <adr> = Use <adr> as memtop\n" +
+			"    -b <adr> = Use <adr> as base\n" +
+			"    -k       = next spr-file is BNK instead of RES\n" +
 			"    -<type>  = next spr-file is <type>\n" +
 			"               { \"bios\", \"bdos\", \"snios\", \"ndos\" }\n" +
-			"    -o file  = output file name, else first spr-file.sys\n"
+			"    -o file  = output file name, else first spr-file.sys\n" +
+			"    -g       = output needs ORG0\n" +
+			"    -x       = suppress load message\n"
 			);
 		System.exit(1);
 	}
@@ -60,8 +66,22 @@ public class mknetboot {
 							// or 0x80:phydisk
 		int x = 0;
 		for (; x < args.length; ++x) {
-			if (args[x].equals("-b")) {
+			if (args[x].equals("-k")) {
 				banked = true;
+			} else if (args[x].equals("-g")) {
+				org0 = true;
+			} else if (args[x].equals("-x")) {
+				lmsg = false;
+			} else if (args[x].equals("-t")) {
+				++x;
+				if (x < args.length) {
+					top = Integer.decode(args[x]) >> 8;
+				}
+			} else if (args[x].equals("-b")) {
+				++x;
+				if (x < args.length) {
+					top = -(Integer.decode(args[x]) >> 8);
+				}
 			} else if (args[x].equals("-o")) {
 				++x;
 				if (x < args.length) {
@@ -91,9 +111,9 @@ public class mknetboot {
 		if (files.size() == 0) {
 			help(); // does not return
 		}
-		// TODO: choose 'entry'... and 'top'...
+		// TODO: choose 'entry' module...
 		ent = files.size() - 1;
-		SysFile sys = new SysFile(files, drvs, top, com, ent);
+		SysFile sys = new SysFile(files, drvs, top, com, ent, org0, lmsg);
 		// TODO: check failure...
 		sys.combine();
 		if (sys.writeSys(new File(outfile))) {

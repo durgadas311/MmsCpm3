@@ -1,0 +1,216 @@
+                ; Standalone utility to dump core for 64K standard (ORG0)
+                	maclib	z80
+                	aseg
+                
+                ; ROM constants
+ 2036 =         ctl$F2	equ	2036h
+                
+                ; WIZNET constants
+ 0008 =         sock0	equ	000$01$000b	; base pattern for Sn_ regs
+                
+ 2280           	org	2280h
+ 2280           server:	ds	1	; SID, dest of send
+ 2281           nodeid:	ds	1	; our node id
+ 2282           cursok:	ds	1	; current socket select patn
+ 2283           curptr:	ds	2	; into chip mem
+ 2285           msgptr:	ds	2
+ 2287           msglen:	ds	2
+ 2289           totlen:	ds	2
+ 228B           dma:	ds	2
+                ; extensions:
+ 228D           phase:	ds	1
+                
+ 2300           	org	2300h
+ 2300           msgbuf:	ds	0
+ 2300           msg$fmt: ds	1
+ 2301           msg$did: ds	1
+ 2302           msg$sid: ds	1
+ 2303           msg$fnc: ds	1
+ 2304           msg$siz: ds	1
+ 2305           msg$dat: ds	128
+                
+                ; ROM hooks
+ 0033 =         wizopen	equ	0033h
+ 0023 =         sndrcv	equ	0023h
+                
+                ; e.g. org 2400h...
+                	cseg
+ 0000           	org	0
+ 0000 F3        begin:	di
+                	; all should be setup from boot, except socket is closed.
+ 0001 3A8222    	lda	cursok
+ 0004 F608      	ori	sock0
+ 0006 57        	mov	d,a
+ 0007 CD3300    	call	wizopen
+ 000A D8        	rc	; still OK to return on error?
+ 000B AF        	xra	a
+ 000C 328D22    	sta	phase
+                	; phase 0: dump from our end to top of memory...
+ 000F 210001    	lxi	h,endadr	; must be 128 boundary
+ 0012 228B22    loop0:	shld	dma
+ 0015 CDA700    	call	setdma
+ 0018 D8        	rc
+ 0019 2A8B22    	lhld	dma
+                loop1:
+ 001C 110523    	lxi	d,msg$dat
+ 001F 018000    	lxi	b,128
+                	ldir
+ 0022+EDB0      	DB	0EDH,0B0H
+ 0024 3E7F      	mvi	a,128-1
+ 0026 320423    	sta	msg$siz
+ 0029 3E03      	mvi	a,03h	; put data to dmadr...
+ 002B 320323    	sta	msg$fnc
+ 002E CDB400    	call	sendit
+ 0031 D8        	rc
+ 0032 2A8B22    	lhld	dma
+ 0035 018000    	lxi	b,128
+ 0038 09        	dad	b
+ 0039 7C        	mov	a,h
+ 003A B5        	ora	l
+ 003B CA4400    	jz	got64k
+ 003E 228B22    	shld	dma
+ 0041 C31C00    	jmp	loop1
+                got64k:
+ 0044 3A8D22    	lda	phase
+ 0047 3C        	inr	a
+ 0048 328D22    	sta	phase
+ 004B FE02      	cpi	2
+ 004D D27400    	jnc	ph2
+                	; phase 1: dump low 8K into higher memory...
+ 0050 3A3620    	lda	ctl$F2
+ 0053 F620      	ori	20h	; ORG0 on
+ 0055 D3F2      	out	0f2h
+ 0057 210000    	lxi	h,0
+ 005A 1100E0    	lxi	d,-8192
+ 005D 010020    	lxi	b,8192
+                	ldir
+ 0060+EDB0      	DB	0EDH,0B0H
+ 0062 3A3620    	lda	ctl$F2
+ 0065 D3F2      	out	0f2h	; ORG0 off
+ 0067 210000    	lxi	h,0
+ 006A CDA700    	call	setdma
+ 006D D8        	rc
+ 006E 2100E0    	lxi	h,-8192
+ 0071 C31200    	jmp	loop0
+                ph2:
+ 0074 FE03      	cpi	3
+ 0076 D29700    	jnc	done
+                	; phase 2: dump bogus data for trashed memory
+ 0079 210001    	lxi	h,endadr
+ 007C 110020    	lxi	d,2000h
+ 007F B7        	ora	a
+                	dsbc	d	; length of chunk
+ 0080+ED52      	DB	0EDH,D*8+42H
+ 0082 44        	mov	b,h
+ 0083 4D        	mov	c,l
+ 0084 210000    	lxi	h,0
+ 0087 B7        	ora	a
+                	dsbc	b	; high memory start
+ 0088+ED42      	DB	0EDH,B*8+42H
+ 008A E5        	push	h
+ 008B 36FF      	mvi	m,0ffh
+ 008D 54        	mov	d,h
+ 008E 5D        	mov	e,l
+ 008F 13        	inx	d
+ 0090 0B        	dcx	b
+                	ldir	; fill with 0ffh
+ 0091+EDB0      	DB	0EDH,0B0H
+ 0093 E1        	pop	h	; address to dump from
+ 0094 C31200    	jmp	loop0
+                
+                done:
+ 0097 3E04      	mvi	a,04h	; end dump
+ 0099 320323    	sta	msg$fnc
+ 009C AF        	xra	a
+ 009D 320423    	sta	msg$siz
+ 00A0 CDB400    	call	sendit
+ 00A3 D8        	rc
+                	; TODO: how to close...
+ 00A4 C30000    	jmp	0	; or...?
+                
+                setdma:	; HL=remote dma adr
+ 00A7 220523    	shld	msg$dat
+ 00AA 3E00      	mvi	a,1-1
+ 00AC 320423    	sta	msg$siz
+ 00AF 3E02      	mvi	a,02h	; set dma
+ 00B1 320323    	sta	msg$fnc
+                	;jmp	sendit
+                
+                sendit:
+ 00B4 3ED0      	mvi	a,0d0h
+ 00B6 320023    	sta	msg$fmt
+ 00B9 CD2300    	call	sndrcv
+ 00BC D8        	rc
+ 00BD 3A0023    	lda	msg$fmt
+ 00C0 FED1      	cpi	0d1h
+ 00C2 37        	stc
+ 00C3 C0        	rnz	; protocol error
+ 00C4 AF        	xra	a
+ 00C5 C9        	ret
+                
+ 00C6           endpre:	ds	0
+                	rept	128-((endpre-begin) and 07fh)
+                	db	0
+                	endm
+ 00C6+00        	DB	0
+ 00C7+00        	DB	0
+ 00C8+00        	DB	0
+ 00C9+00        	DB	0
+ 00CA+00        	DB	0
+ 00CB+00        	DB	0
+ 00CC+00        	DB	0
+ 00CD+00        	DB	0
+ 00CE+00        	DB	0
+ 00CF+00        	DB	0
+ 00D0+00        	DB	0
+ 00D1+00        	DB	0
+ 00D2+00        	DB	0
+ 00D3+00        	DB	0
+ 00D4+00        	DB	0
+ 00D5+00        	DB	0
+ 00D6+00        	DB	0
+ 00D7+00        	DB	0
+ 00D8+00        	DB	0
+ 00D9+00        	DB	0
+ 00DA+00        	DB	0
+ 00DB+00        	DB	0
+ 00DC+00        	DB	0
+ 00DD+00        	DB	0
+ 00DE+00        	DB	0
+ 00DF+00        	DB	0
+ 00E0+00        	DB	0
+ 00E1+00        	DB	0
+ 00E2+00        	DB	0
+ 00E3+00        	DB	0
+ 00E4+00        	DB	0
+ 00E5+00        	DB	0
+ 00E6+00        	DB	0
+ 00E7+00        	DB	0
+ 00E8+00        	DB	0
+ 00E9+00        	DB	0
+ 00EA+00        	DB	0
+ 00EB+00        	DB	0
+ 00EC+00        	DB	0
+ 00ED+00        	DB	0
+ 00EE+00        	DB	0
+ 00EF+00        	DB	0
+ 00F0+00        	DB	0
+ 00F1+00        	DB	0
+ 00F2+00        	DB	0
+ 00F3+00        	DB	0
+ 00F4+00        	DB	0
+ 00F5+00        	DB	0
+ 00F6+00        	DB	0
+ 00F7+00        	DB	0
+ 00F8+00        	DB	0
+ 00F9+00        	DB	0
+ 00FA+00        	DB	0
+ 00FB+00        	DB	0
+ 00FC+00        	DB	0
+ 00FD+00        	DB	0
+ 00FE+00        	DB	0
+ 00FF+00        	DB	0
+ 0100           endadr:	ds	0
+                
+ 0100           	end
+

@@ -17,6 +17,8 @@ public class SysFile {
 	int bnkLen = 0;	// pages
 	int bnkBase = 0; // page
 	int entry = 0;
+	boolean org0 = false;
+	boolean lmsg = false;
 
 	SprFile snios;
 	SprFile bios;
@@ -25,18 +27,32 @@ public class SysFile {
 	byte[] buf;
 
 	public SysFile(Vector<SprFile> sprs, Map<Integer,Integer> drvs,
-				int top, int com, int ent) {
+			int top, int com, int ent, boolean org0, boolean lmsg) {
 		this.sprs = sprs;
 		this.drvs = drvs;
+		this.org0 = org0;
+		this.lmsg = lmsg;
 		buf = new byte[128];
-		memTop = (top & 0xff);
-		bnkTop = (com & 0xff);
+		// if 'top' is negative, use as base address...
+		if (top < 0) {
+			resBase = (-top) & 0xff;
+			bnkBase = (-com) & 0xff;	// TODO: what here...
+		} else {
+			memTop = (top & 0xff);
+			bnkTop = (com & 0xff);
+		}
 		for (int x = sprs.size() - 1; x >= 0; --x) {
 			SprFile spr = sprs.get(x);
+			if (top < 0) {
+				spr.setRes((resBase + resLen) & 0xff);
+				spr.setBnk((bnkBase + bnkLen) & 0xff);
+			}
 			resLen += spr.resPages();
 			bnkLen += spr.bnkPages();
-			spr.setRes((memTop - resLen) & 0xff);
-			spr.setBnk((bnkTop - bnkLen) & 0xff);
+			if (top >= 0) {
+				spr.setRes((memTop - resLen) & 0xff);
+				spr.setBnk((bnkTop - bnkLen) & 0xff);
+			}
 			if (ent == x) {
 				if (resLen > 0) {
 					entry = spr.getRes() << 8;
@@ -45,8 +61,13 @@ public class SysFile {
 				}
 			}
 		}
-		resBase = (memTop - resLen) & 0xff;
-		bnkBase = (bnkTop - bnkLen) & 0xff;
+		if (top < 0) {
+			memTop = (resBase + resLen) & 0xff;
+			bnkTop = (bnkBase + bnkLen) & 0xff;
+		} else {
+			resBase = (memTop - resLen) & 0xff;
+			bnkBase = (bnkTop - bnkLen) & 0xff;
+		}
 	}
 
 	private void setCfgtbl() {
@@ -111,11 +132,19 @@ public class SysFile {
 			buf[6] = (byte)cfgtbl;
 			buf[7] = (byte)(cfgtbl >> 8);
 		}
-		// TODO: make ORG0 optional...
-		buf[16] = (byte)'C'; // mark for ORG0
+		if (org0) {
+			buf[16] = (byte)'C'; // mark for ORG0
+		} else {
+			buf[16] = (byte)'U';
+		}
 	}
 
 	private void setLoader() {
+		Arrays.fill(buf, (byte)0);
+		if (!lmsg) {
+			buf[0] = '$';
+			return;
+		}
 		String str = "";
 		// print load map from top down...
 		for (int x = sprs.size() - 1; x >= 0; --x) {
@@ -131,7 +160,6 @@ public class SysFile {
 		if (n > 128) {
 			stb[127] = '$';
 			n = 128;
-			Arrays.fill(buf, (byte)0);
 		}
 		System.arraycopy(stb, 0, buf, 0, n);
 	}
