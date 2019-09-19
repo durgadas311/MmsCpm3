@@ -1,9 +1,24 @@
-; Standalone utility to dump core for 64K standard (ORG0)
+; Standalone utility to dump core for CP/M 3 on H8x512K
 	maclib	z80
 	aseg
 
-; ROM constants
-ctl$F2	equ	2036h
+; H8x512K MMU constants
+mmu	equ	0	; base port
+rd	equ	0
+wr	equ	4
+pg0k	equ	0
+pg16k	equ	1
+pg32k	equ	2
+pg48k	equ	3
+ena	equ	80h
+rd00k	equ	mmu+rd+pg0k
+rd16k	equ	mmu+rd+pg16k
+rd32k	equ	mmu+rd+pg32k
+rd48k	equ	mmu+rd+pg48k
+wr00k	equ	mmu+wr+pg0k
+wr16k	equ	mmu+wr+pg16k
+wr32k	equ	mmu+wr+pg32k
+wr48k	equ	mmu+wr+pg48k
 
 ; WIZNET constants
 sock0	equ	000$01$000b	; base pattern for Sn_ regs
@@ -18,7 +33,7 @@ msglen:	ds	2
 totlen:	ds	2
 dma:	ds	2
 ; extensions:
-phase:	ds	1
+pagex:	ds	1	; dma extension for 512K
 
 	org	2300h
 msgbuf:	ds	0
@@ -45,14 +60,24 @@ begin:	di
 	mov	d,a
 	call	wizopen
 	rc	; still OK to return on error?
+
+	; setup/activate MMU
+	call	mmu$init
+	; from here on, must exit via mmu$deinit
+
+	; just map each page into pg48k and dump from there
+	lxi	h,0
+	shld	dma
 	xra	a
-	sta	phase
-	; phase 0: dump from our end to top of memory...
-	lxi	h,2000h	; must be 128 boundary
-	shld	dma	; both local and remote DMA
-loop0:	call	setdma
-	rc
-	lhld	dma
+	sta	pagex
+	call	setdma
+	jc	mmu$deinit
+	; no need to setdma again, everything is sent in order
+
+loop0:
+	call	map$page
+	lxi	h,0c000h	; page 48K
+	shld	dma
 loop1:
 	lxi	d,msg$dat
 	lxi	b,128
@@ -63,13 +88,13 @@ loop1:
 	mvi	a,03h	; put data to dmadr...
 	sta	msg$fnc
 	call	sendit
-	rc
+	jc	mmu$deinit
 	lhld	dma
 	mov	a,h
 	ora	l
-	jz	got64k
+	jz	gotpg
 	mov	a,h
-	ani	03	; 1K boundary?
+	ani	07h	; 2K boundary?
 	ora	l
 	jnz	loop1
 	push	h
@@ -77,27 +102,15 @@ loop1:
 	call	conout
 	pop	h
 	jmp	loop1
-got64k:
-	lda	phase
+gotpg:
+	lda	pagex
 	inr	a
-	sta	phase
-	cpi	2
+	sta	pagex
+	cpi	7	; done after 7 pages
 	jnc	done
-	; phase 1: dump low 8K into higher memory...
-	lda	ctl$F2
-	ori	20h	; ORG0 on
-	out	0f2h
-	lxi	h,0
-	lxi	d,-8192
-	lxi	b,8192
-	ldir
-	lda	ctl$F2
-	out	0f2h	; ORG0 off
-	lxi	h,-8192
-	shld	dma
-	lxi	h,0
 	jmp	loop0
 done:
+	call	mmu$deinit	; now safe to return directly
 	mvi	a,04h	; end dump
 	sta	msg$fnc
 	xra	a
@@ -114,7 +127,6 @@ setdma:	; HL=remote dma adr
 	mvi	a,02h	; set dma
 	sta	msg$fnc
 	;jmp	sendit
-
 sendit:
 	mvi	a,0d0h
 	sta	msg$fmt
@@ -137,6 +149,34 @@ wizclose:
 conout:
 	lhld	conop
 	pchl
+
+; Create "unity" page mapping, enable MMU
+mmu$init:
+	mvi	a,0	; page 0
+	out	rd00k
+	out	wr00k
+	inr	a
+	out	rd16k
+	out	wr16k
+	inr	a
+	out	rd32k
+	out	wr32k
+	inr	a
+	ori	ena
+	out	rd48k
+	out	wr48k
+	ret
+
+mmu$deinit:
+	mvi	a,0
+	out	rd00k	; disables MMU, forces 64K
+	ret
+
+map$page:
+	lda	pagex	; page we're on
+	ori	ena
+	out	rd48k
+	ret
 
 endpre:	ds	0
 	rept	128-((endpre-begin) and 07fh)

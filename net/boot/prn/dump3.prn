@@ -1,0 +1,235 @@
+                ; Standalone utility to dump core for CP/M 3 on H8x512K
+                	maclib	z80
+                	aseg
+                
+                ; H8x512K MMU constants
+ 0000 =         mmu	equ	0	; base port
+ 0000 =         rd	equ	0
+ 0004 =         wr	equ	4
+ 0000 =         pg0k	equ	0
+ 0001 =         pg16k	equ	1
+ 0002 =         pg32k	equ	2
+ 0003 =         pg48k	equ	3
+ 0080 =         ena	equ	80h
+ 0000 =         rd00k	equ	mmu+rd+pg0k
+ 0001 =         rd16k	equ	mmu+rd+pg16k
+ 0002 =         rd32k	equ	mmu+rd+pg32k
+ 0003 =         rd48k	equ	mmu+rd+pg48k
+ 0004 =         wr00k	equ	mmu+wr+pg0k
+ 0005 =         wr16k	equ	mmu+wr+pg16k
+ 0006 =         wr32k	equ	mmu+wr+pg32k
+ 0007 =         wr48k	equ	mmu+wr+pg48k
+                
+                ; WIZNET constants
+ 0008 =         sock0	equ	000$01$000b	; base pattern for Sn_ regs
+                
+ 2280           	org	2280h
+ 2280           server:	ds	1	; SID, dest of send
+ 2281           nodeid:	ds	1	; our node id
+ 2282           cursok:	ds	1	; current socket select patn
+ 2283           curptr:	ds	2	; into chip mem
+ 2285           msgptr:	ds	2
+ 2287           msglen:	ds	2
+ 2289           totlen:	ds	2
+ 228B           dma:	ds	2
+                ; extensions:
+ 228D           pagex:	ds	1	; dma extension for 512K
+                
+ 2300           	org	2300h
+ 2300           msgbuf:	ds	0
+ 2300           msg$fmt: ds	1
+ 2301           msg$did: ds	1
+ 2302           msg$sid: ds	1
+ 2303           msg$fnc: ds	1
+ 2304           msg$siz: ds	1
+ 2305           msg$dat: ds	128
+                
+                ; ROM hooks
+ 0033 =         wizopen	equ	0033h
+ 0036 =         wizclsp	equ	0036h	; pointer, not vector
+ 0023 =         sndrcv	equ	0023h
+ 0026 =         conop	equ	0026h	; pointer, not vector
+                
+                ; e.g. org 2400h...
+                	cseg
+ 0000           	org	0
+ 0000 F3        begin:	di
+                	; all should be setup from boot, except socket is closed.
+ 0001 3A8222    	lda	cursok
+ 0004 F608      	ori	sock0
+ 0006 57        	mov	d,a
+ 0007 CD3300    	call	wizopen
+ 000A D8        	rc	; still OK to return on error?
+                
+                	; setup/activate MMU
+ 000B CDAD00    	call	mmu$init
+                	; from here on, must exit via mmu$deinit
+                
+                	; just map each page into pg48k and dump from there
+ 000E 210000    	lxi	h,0
+ 0011 228B22    	shld	dma
+ 0014 AF        	xra	a
+ 0015 328D22    	sta	pagex
+ 0018 CD8000    	call	setdma
+ 001B DAC500    	jc	mmu$deinit
+                	; no need to setdma again, everything is sent in order
+                
+                loop0:
+ 001E CDCA00    	call	map$page
+ 0021 2100C0    	lxi	h,0c000h	; page 48K
+ 0024 228B22    	shld	dma
+                loop1:
+ 0027 110523    	lxi	d,msg$dat
+ 002A 018000    	lxi	b,128
+                	ldir
+ 002D+EDB0      	DB	0EDH,0B0H
+ 002F 228B22    	shld	dma
+ 0032 3E7F      	mvi	a,128-1
+ 0034 320423    	sta	msg$siz
+ 0037 3E03      	mvi	a,03h	; put data to dmadr...
+ 0039 320323    	sta	msg$fnc
+ 003C CD8D00    	call	sendit
+ 003F DAC500    	jc	mmu$deinit
+ 0042 2A8B22    	lhld	dma
+ 0045 7C        	mov	a,h
+ 0046 B5        	ora	l
+ 0047 CA5B00    	jz	gotpg
+ 004A 7C        	mov	a,h
+ 004B E607      	ani	07h	; 2K boundary?
+ 004D B5        	ora	l
+ 004E C22700    	jnz	loop1
+ 0051 E5        	push	h
+ 0052 3E2E      	mvi	a,'.'
+ 0054 CDA900    	call	conout
+ 0057 E1        	pop	h
+ 0058 C32700    	jmp	loop1
+                gotpg:
+ 005B 3A8D22    	lda	pagex
+ 005E 3C        	inr	a
+ 005F 328D22    	sta	pagex
+ 0062 FE07      	cpi	7	; done after 7 pages
+ 0064 D26A00    	jnc	done
+ 0067 C31E00    	jmp	loop0
+                done:
+ 006A CDC500    	call	mmu$deinit	; now safe to return directly
+ 006D 3E04      	mvi	a,04h	; end dump
+ 006F 320323    	sta	msg$fnc
+ 0072 AF        	xra	a
+ 0073 320423    	sta	msg$siz
+ 0076 CD8D00    	call	sendit
+ 0079 D8        	rc
+ 007A CDA500    	call	wizclose
+ 007D C30000    	jmp	0	; restart ROM, or...?
+                
+                setdma:	; HL=remote dma adr
+ 0080 220523    	shld	msg$dat
+ 0083 3E01      	mvi	a,2-1
+ 0085 320423    	sta	msg$siz
+ 0088 3E02      	mvi	a,02h	; set dma
+ 008A 320323    	sta	msg$fnc
+                	;jmp	sendit
+                sendit:
+ 008D 3ED0      	mvi	a,0d0h
+ 008F 320023    	sta	msg$fmt
+ 0092 CD2300    	call	sndrcv
+ 0095 D8        	rc
+ 0096 3A0023    	lda	msg$fmt
+ 0099 FED1      	cpi	0d1h
+ 009B 37        	stc
+ 009C C0        	rnz	; protocol error
+ 009D 3A0323    	lda	msg$fnc
+ 00A0 FE01      	cpi	01h	; ACK
+ 00A2 C8        	rz
+ 00A3 37        	stc	; NAK - no more dumping
+ 00A4 C9        	ret
+                
+                wizclose:
+ 00A5 2A3600    	lhld	wizclsp
+ 00A8 E9        	pchl
+                
+                conout:
+ 00A9 2A2600    	lhld	conop
+ 00AC E9        	pchl
+                
+                ; Create "unity" page mapping, enable MMU
+                mmu$init:
+ 00AD 3E00      	mvi	a,0	; page 0
+ 00AF D300      	out	rd00k
+ 00B1 D304      	out	wr00k
+ 00B3 3C        	inr	a
+ 00B4 D301      	out	rd16k
+ 00B6 D305      	out	wr16k
+ 00B8 3C        	inr	a
+ 00B9 D302      	out	rd32k
+ 00BB D306      	out	wr32k
+ 00BD 3C        	inr	a
+ 00BE F680      	ori	ena
+ 00C0 D303      	out	rd48k
+ 00C2 D307      	out	wr48k
+ 00C4 C9        	ret
+                
+                mmu$deinit:
+ 00C5 3E00      	mvi	a,0
+ 00C7 D300      	out	rd00k	; disables MMU, forces 64K
+ 00C9 C9        	ret
+                
+                map$page:
+ 00CA 3A8D22    	lda	pagex	; page we're on
+ 00CD F680      	ori	ena
+ 00CF D303      	out	rd48k
+ 00D1 C9        	ret
+                
+ 00D2           endpre:	ds	0
+                	rept	128-((endpre-begin) and 07fh)
+                	db	0
+                	endm
+ 00D2+00        	DB	0
+ 00D3+00        	DB	0
+ 00D4+00        	DB	0
+ 00D5+00        	DB	0
+ 00D6+00        	DB	0
+ 00D7+00        	DB	0
+ 00D8+00        	DB	0
+ 00D9+00        	DB	0
+ 00DA+00        	DB	0
+ 00DB+00        	DB	0
+ 00DC+00        	DB	0
+ 00DD+00        	DB	0
+ 00DE+00        	DB	0
+ 00DF+00        	DB	0
+ 00E0+00        	DB	0
+ 00E1+00        	DB	0
+ 00E2+00        	DB	0
+ 00E3+00        	DB	0
+ 00E4+00        	DB	0
+ 00E5+00        	DB	0
+ 00E6+00        	DB	0
+ 00E7+00        	DB	0
+ 00E8+00        	DB	0
+ 00E9+00        	DB	0
+ 00EA+00        	DB	0
+ 00EB+00        	DB	0
+ 00EC+00        	DB	0
+ 00ED+00        	DB	0
+ 00EE+00        	DB	0
+ 00EF+00        	DB	0
+ 00F0+00        	DB	0
+ 00F1+00        	DB	0
+ 00F2+00        	DB	0
+ 00F3+00        	DB	0
+ 00F4+00        	DB	0
+ 00F5+00        	DB	0
+ 00F6+00        	DB	0
+ 00F7+00        	DB	0
+ 00F8+00        	DB	0
+ 00F9+00        	DB	0
+ 00FA+00        	DB	0
+ 00FB+00        	DB	0
+ 00FC+00        	DB	0
+ 00FD+00        	DB	0
+ 00FE+00        	DB	0
+ 00FF+00        	DB	0
+ 0100           endadr:	ds	0
+                
+ 0100           	end
+

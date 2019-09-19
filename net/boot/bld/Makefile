@@ -3,7 +3,9 @@
 export CPMDrive_D = $(HOME)/CpmDev/netboot	# a.k.a. $(PWD)
 export CPMDefault = d:
 
-all:
+SYSS = cpnos.sys dump.sys dump3.sys # cpnet.sys
+
+all: $(SYSS)
 
 %.spr: %.asm
 	vcpm rmac $? '$$szla'
@@ -21,6 +23,10 @@ dump.sys: dump.spr
 	mknetboot -x -o $@ -b 0x2400 \
 		dump.spr
 
+dump3.sys: dump3.spr
+	mknetboot -x -o $@ -b 0x2400 \
+		dump3.spr
+
 cpnet.sys: bdos22.spr ndos.spr bios22.spr # snios.spr...
 #	mknetboot ...
 
@@ -33,3 +39,9 @@ syncup:
 # pull source files down from repo...
 syncdown:
 	unix2cpm -s ~/git/MmsCpm3/net/boot/src/*.asm .
+
+# The following run from ~/git/MmsCpm3/net/boot/bld...
+ship: netboots.tgz
+
+netboots.tgz: # $(SYSS) org0boot.bin
+	tar -czf netboots.tgz -C ../bin $(SYSS) -C ../../../rom/bin org0boot.bin
