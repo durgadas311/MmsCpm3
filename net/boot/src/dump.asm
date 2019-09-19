@@ -31,7 +31,9 @@ msg$dat: ds	128
 
 ; ROM hooks
 wizopen	equ	0033h
+wizclsp	equ	0036h	; pointer, not vector
 sndrcv	equ	0023h
+conop	equ	0026h	; pointer, not vector
 
 ; e.g. org 2400h...
 	cseg
@@ -46,15 +48,16 @@ begin:	di
 	xra	a
 	sta	phase
 	; phase 0: dump from our end to top of memory...
-	lxi	h,endadr	; must be 128 boundary
-loop0:	shld	dma
-	call	setdma
+	lxi	h,2000h	; must be 128 boundary
+	shld	dma	; both local and remote DMA
+loop0:	call	setdma
 	rc
 	lhld	dma
 loop1:
 	lxi	d,msg$dat
 	lxi	b,128
 	ldir
+	shld	dma
 	mvi	a,128-1
 	sta	msg$siz
 	mvi	a,03h	; put data to dmadr...
@@ -62,19 +65,24 @@ loop1:
 	call	sendit
 	rc
 	lhld	dma
-	lxi	b,128
-	dad	b
 	mov	a,h
 	ora	l
 	jz	got64k
-	shld	dma
+	mov	a,h
+	ani	03	; 1K boundary?
+	ora	l
+	jnz	loop1
+	push	h
+	mvi	a,'.'
+	call	conout
+	pop	h
 	jmp	loop1
 got64k:
 	lda	phase
 	inr	a
 	sta	phase
 	cpi	2
-	jnc	ph2
+	jnc	done
 	; phase 1: dump low 8K into higher memory...
 	lda	ctl$F2
 	ori	20h	; ORG0 on
@@ -85,34 +93,10 @@ got64k:
 	ldir
 	lda	ctl$F2
 	out	0f2h	; ORG0 off
-	lxi	h,0
-	call	setdma
-	rc
 	lxi	h,-8192
-	jmp	loop0
-ph2:
-	cpi	3
-	jnc	done
-	; phase 2: dump bogus data for trashed memory
-	lxi	h,endadr
-	lxi	d,2000h
-	ora	a
-	dsbc	d	; length of chunk
-	mov	b,h
-	mov	c,l
+	shld	dma
 	lxi	h,0
-	ora	a
-	dsbc	b	; high memory start
-	push	h
-	mvi	m,0ffh
-	mov	d,h
-	mov	e,l
-	inx	d
-	dcx	b
-	ldir	; fill with 0ffh
-	pop	h	; address to dump from
 	jmp	loop0
-
 done:
 	mvi	a,04h	; end dump
 	sta	msg$fnc
@@ -120,12 +104,12 @@ done:
 	sta	msg$siz
 	call	sendit
 	rc
-	; TODO: how to close...
-	jmp	0	; or...?
+	call	wizclose
+	jmp	0	; restart ROM, or...?
 
 setdma:	; HL=remote dma adr
 	shld	msg$dat
-	mvi	a,1-1
+	mvi	a,2-1
 	sta	msg$siz
 	mvi	a,02h	; set dma
 	sta	msg$fnc
@@ -142,6 +126,14 @@ sendit:
 	rnz	; protocol error
 	xra	a
 	ret
+
+wizclose:
+	lhld	wizclsp
+	pchl
+
+conout:
+	lhld	conop
+	pchl
 
 endpre:	ds	0
 	rept	128-((endpre-begin) and 07fh)

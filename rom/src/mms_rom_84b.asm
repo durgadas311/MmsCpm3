@@ -205,7 +205,7 @@ rst4:	jmp	vrst4
 
 if wiznet
 	jmp	sndrcv	; 'msgbuf' setup...
-	db	0,0
+	dw	conout	; pointer, not vector; A=char
 else
 	db	0,0,0,0,0
 endif
@@ -220,7 +220,7 @@ rst6:	jmp	vrst6
 
 if wiznet
 	jmp	wizopen	; 'server' set, D=socket BSB
-	db	0,0
+	dw	wizclose ; 'cursok' set
 else
 	db	0,0,0,0,0
 endif
@@ -228,8 +228,9 @@ endif
 rst7:	jmp	vrst7
 
 subms:	db	'ubstitute ',TRM
-pcms:	db	'rogram Counter ',TRM
-mtms:	db	'emory test',TRM
+pcms:	db	'rog Counter ',TRM
+mtms:	db	'em test',TRM
+autbms:	db	'Auto Boot',TRM
 
 	rept	0066h-$
 	db	0
@@ -497,8 +498,6 @@ chkauto:
 	call	msgout
 	lxi	sp,bootbf
 	jmp	goboot0
-
-autbms:	db	'Auto Boot',TRM
 
 ; determine device for port 078H
 ; return phy drv number in D.
@@ -1183,6 +1182,8 @@ hexdig:
 	daa
 	jr	conout
 
+cserms:	db	BEL,'Cksum error',TRM
+
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 	rept	0613h-$
 	db	0
@@ -1223,8 +1224,6 @@ msgout:
 cserr:
 	lxi	h,cserms
 	jr	msgout
-
-cserms:	db	BEL,'Cksum error',TRM
 
 topms:	db	'Top of Mem: ',TRM
 
@@ -2989,11 +2988,7 @@ loop:
 	dcr	a
 	rnz	; unsupported FNC
 	; done: execute boot code
-	lda	cursok
-	ori	sock0
-	mov	d,a
-	mvi	a,DISC
-	call	wizcmd
+	call	wizclose
 	lhld	msg$dat
 	pchl
 load:	lhld	dma
@@ -3044,6 +3039,16 @@ nb4:	mvi	e,sn$ir	; ensure no lingering bits...
 	ani	00000001b	; need CON
 	sui	00000001b	; CY if bit is 0
 	ret
+
+wizclose:
+	lda	cursok
+	ori	sock0
+	mov	d,a
+	mvi	a,DISC
+	call	wizcmd
+	mvi	c,00001010b	; DISCON, or TIMEOUT
+	call	wizist	; returns when one is set, or CY
+	ret	; don't care which result?
 
 ;	Send Message on Network, receive response
 ;	msgbuf setup with FMT, FNC, LEN, data
@@ -3457,7 +3462,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	04590h	; checksum...
+	dw	04bb9h	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"

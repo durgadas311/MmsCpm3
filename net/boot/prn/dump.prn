@@ -31,7 +31,9 @@
                 
                 ; ROM hooks
  0033 =         wizopen	equ	0033h
+ 0036 =         wizclsp	equ	0036h	; pointer, not vector
  0023 =         sndrcv	equ	0023h
+ 0026 =         conop	equ	0026h	; pointer, not vector
                 
                 ; e.g. org 2400h...
                 	cseg
@@ -46,112 +48,114 @@
  000B AF        	xra	a
  000C 328D22    	sta	phase
                 	; phase 0: dump from our end to top of memory...
- 000F 210001    	lxi	h,endadr	; must be 128 boundary
- 0012 228B22    loop0:	shld	dma
- 0015 CDA700    	call	setdma
+ 000F 210020    	lxi	h,2000h	; must be 128 boundary
+ 0012 228B22    	shld	dma	; both local and remote DMA
+ 0015 CD9000    loop0:	call	setdma
  0018 D8        	rc
  0019 2A8B22    	lhld	dma
                 loop1:
- 001C 110523    	lxi	d,msg$dat
+ 001C 110523    	lxi	d,msg$dat
  001F 018000    	lxi	b,128
-                	ldir
- 0022+EDB0      	DB	0EDH,0B0H
- 0024 3E7F      	mvi	a,128-1
- 0026 320423    	sta	msg$siz
- 0029 3E03      	mvi	a,03h	; put data to dmadr...
- 002B 320323    	sta	msg$fnc
- 002E CDB400    	call	sendit
- 0031 D8        	rc
- 0032 2A8B22    	lhld	dma
- 0035 018000    	lxi	b,128
- 0038 09        	dad	b
- 0039 7C        	mov	a,h
- 003A B5        	ora	l
- 003B CA4400    	jz	got64k
- 003E 228B22    	shld	dma
- 0041 C31C00    	jmp	loop1
-                got64k:
- 0044 3A8D22    	lda	phase
- 0047 3C        	inr	a
- 0048 328D22    	sta	phase
- 004B FE02      	cpi	2
- 004D D27400    	jnc	ph2
-                	; phase 1: dump low 8K into higher memory...
- 0050 3A3620    	lda	ctl$F2
- 0053 F620      	ori	20h	; ORG0 on
- 0055 D3F2      	out	0f2h
- 0057 210000    	lxi	h,0
- 005A 1100E0    	lxi	d,-8192
- 005D 010020    	lxi	b,8192
                 	ldir
- 0060+EDB0      	DB	0EDH,0B0H
- 0062 3A3620    	lda	ctl$F2
- 0065 D3F2      	out	0f2h	; ORG0 off
- 0067 210000    	lxi	h,0
- 006A CDA700    	call	setdma
- 006D D8        	rc
- 006E 2100E0    	lxi	h,-8192
- 0071 C31200    	jmp	loop0
-                ph2:
- 0074 FE03      	cpi	3
- 0076 D29700    	jnc	done
-                	; phase 2: dump bogus data for trashed memory
- 0079 210001    	lxi	h,endadr
- 007C 110020    	lxi	d,2000h
- 007F B7        	ora	a
-                	dsbc	d	; length of chunk
- 0080+ED52      	DB	0EDH,D*8+42H
- 0082 44        	mov	b,h
- 0083 4D        	mov	c,l
- 0084 210000    	lxi	h,0
- 0087 B7        	ora	a
-                	dsbc	b	; high memory start
- 0088+ED42      	DB	0EDH,B*8+42H
- 008A E5        	push	h
- 008B 36FF      	mvi	m,0ffh
- 008D 54        	mov	d,h
- 008E 5D        	mov	e,l
- 008F 13        	inx	d
- 0090 0B        	dcx	b
-                	ldir	; fill with 0ffh
- 0091+EDB0      	DB	0EDH,0B0H
- 0093 E1        	pop	h	; address to dump from
- 0094 C31200    	jmp	loop0
-                
+ 0022+EDB0      	DB	0EDH,0B0H
+ 0024 228B22    	shld	dma
+ 0027 3E7F      	mvi	a,128-1
+ 0029 320423    	sta	msg$siz
+ 002C 3E03      	mvi	a,03h	; put data to dmadr...
+ 002E 320323    	sta	msg$fnc
+ 0031 CD9D00    	call	sendit
+ 0034 D8        	rc
+ 0035 2A8B22    	lhld	dma
+ 0038 7C        	mov	a,h
+ 0039 B5        	ora	l
+ 003A CA4E00    	jz	got64k
+ 003D 7C        	mov	a,h
+ 003E E603      	ani	03	; 1K boundary?
+ 0040 B5        	ora	l
+ 0041 C21C00    	jnz	loop1
+ 0044 E5        	push	h
+ 0045 3E2E      	mvi	a,'.'
+ 0047 CDB300    	call	conout
+ 004A E1        	pop	h
+ 004B C31C00    	jmp	loop1
+                got64k:
+ 004E 3A8D22    	lda	phase
+ 0051 3C        	inr	a
+ 0052 328D22    	sta	phase
+ 0055 FE02      	cpi	2
+ 0057 D27D00    	jnc	done
+                	; phase 1: dump low 8K into higher memory...
+ 005A 3A3620    	lda	ctl$F2
+ 005D F620      	ori	20h	; ORG0 on
+ 005F D3F2      	out	0f2h
+ 0061 210000    	lxi	h,0
+ 0064 1100E0    	lxi	d,-8192
+ 0067 010020    	lxi	b,8192
+                	ldir
+ 006A+EDB0      	DB	0EDH,0B0H
+ 006C 3A3620    	lda	ctl$F2
+ 006F D3F2      	out	0f2h	; ORG0 off
+ 0071 2100E0    	lxi	h,-8192
+ 0074 228B22    	shld	dma
+ 0077 210000    	lxi	h,0
+ 007A C31500    	jmp	loop0
                 done:
- 0097 3E04      	mvi	a,04h	; end dump
- 0099 320323    	sta	msg$fnc
- 009C AF        	xra	a
- 009D 320423    	sta	msg$siz
- 00A0 CDB400    	call	sendit
- 00A3 D8        	rc
-                	; TODO: how to close...
- 00A4 C30000    	jmp	0	; or...?
+ 007D 3E04      	mvi	a,04h	; end dump
+ 007F 320323    	sta	msg$fnc
+ 0082 AF        	xra	a
+ 0083 320423    	sta	msg$siz
+ 0086 CD9D00    	call	sendit
+ 0089 D8        	rc
+ 008A CDAF00    	call	wizclose
+ 008D C30000    	jmp	0	; restart ROM, or...?
                 
                 setdma:	; HL=remote dma adr
- 00A7 220523    	shld	msg$dat
- 00AA 3E00      	mvi	a,1-1
- 00AC 320423    	sta	msg$siz
- 00AF 3E02      	mvi	a,02h	; set dma
- 00B1 320323    	sta	msg$fnc
+ 0090 220523    	shld	msg$dat
+ 0093 3E01      	mvi	a,2-1
+ 0095 320423    	sta	msg$siz
+ 0098 3E02      	mvi	a,02h	; set dma
+ 009A 320323    	sta	msg$fnc
                 	;jmp	sendit
                 
                 sendit:
- 00B4 3ED0      	mvi	a,0d0h
- 00B6 320023    	sta	msg$fmt
- 00B9 CD2300    	call	sndrcv
- 00BC D8        	rc
- 00BD 3A0023    	lda	msg$fmt
- 00C0 FED1      	cpi	0d1h
- 00C2 37        	stc
- 00C3 C0        	rnz	; protocol error
- 00C4 AF        	xra	a
- 00C5 C9        	ret
+ 009D 3ED0      	mvi	a,0d0h
+ 009F 320023    	sta	msg$fmt
+ 00A2 CD2300    	call	sndrcv
+ 00A5 D8        	rc
+ 00A6 3A0023    	lda	msg$fmt
+ 00A9 FED1      	cpi	0d1h
+ 00AB 37        	stc
+ 00AC C0        	rnz	; protocol error
+ 00AD AF        	xra	a
+ 00AE C9        	ret
                 
- 00C6           endpre:	ds	0
+                wizclose:
+ 00AF 2A3600    	lhld	wizclsp
+ 00B2 E9        	pchl
+                
+                conout:
+ 00B3 2A2600    	lhld	conop
+ 00B6 E9        	pchl
+                
+ 00B7           endpre:	ds	0
                 	rept	128-((endpre-begin) and 07fh)
                 	db	0
                 	endm
+ 00B7+00        	DB	0
+ 00B8+00        	DB	0
+ 00B9+00        	DB	0
+ 00BA+00        	DB	0
+ 00BB+00        	DB	0
+ 00BC+00        	DB	0
+ 00BD+00        	DB	0
+ 00BE+00        	DB	0
+ 00BF+00        	DB	0
+ 00C0+00        	DB	0
+ 00C1+00        	DB	0
+ 00C2+00        	DB	0
+ 00C3+00        	DB	0
+ 00C4+00        	DB	0
+ 00C5+00        	DB	0
  00C6+00        	DB	0
  00C7+00        	DB	0
  00C8+00        	DB	0
@@ -162,11 +166,11 @@
  00CD+00        	DB	0
  00CE+00        	DB	0
  00CF+00        	DB	0
- 00D0+00        	DB	0
+ 00D0+00        	DB	0
  00D1+00        	DB	0
  00D2+00        	DB	0
  00D3+00        	DB	0
- 00D4+00        	DB	0
+ 00D4+00        	DB	0
  00D5+00        	DB	0
  00D6+00        	DB	0
  00D7+00        	DB	0
@@ -213,4 +217,4 @@
  0100           endadr:	ds	0
                 
  0100           	end
-
+
