@@ -1,6 +1,6 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
 ; Z89/Z90/H8-Z80 Monitor EPROM 444-84D, June 29, 2019, drm
-VERN	equ	14h	; ROM version
+VERN	equ	15h	; ROM version
 
 false	equ	0
 true	equ	not false
@@ -25,14 +25,15 @@ TRM	equ	0
 DEL	equ	127
 
 if gide
-GIDE$DA	equ	060h	; GIDE data port
-GIDE$ER	equ	061h	; GIDE error register
-GIDE$SC	equ	062h	; GIDE sector count
-GIDE$SE	equ	063h	; GIDE sector number
-GIDE$CL	equ	064h	; GIDE cylinder low
-GIDE$CH	equ	065h	; GIDE cylinder high
-GIDE$DH	equ	066h	; GIDE drive/head
-GIDE$CS	equ	067h	; GIDE command/status
+GIDE$BA	equ	60h		; GIDE base port
+GIDE$DA	equ	GIDE$BA+8	; GIDE data port
+GIDE$ER	equ	GIDE$BA+9	; GIDE error register
+GIDE$SC	equ	GIDE$BA+10	; GIDE sector count
+GIDE$SE	equ	GIDE$BA+11	; GIDE sector number
+GIDE$CL	equ	GIDE$BA+12	; GIDE cylinder low
+GIDE$CH	equ	GIDE$BA+13	; GIDE cylinder high
+GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
+GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
 endif
 
 if wiznet
@@ -3462,7 +3463,7 @@ erprom:	db	CR,LF,BEL,'EPROM err',TRM
 romend:
 	dw	0
 chksum:
-	dw	04bb9h	; checksum...
+	dw	04bfah	; checksum...
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"

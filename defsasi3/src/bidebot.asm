@@ -29,14 +29,15 @@ SYSADR	EQU	2377H		; LOCATION IN BOOT MODULE TO PLACE SECTOR
 				;  ADDRESS OF OPERATING SYSTEM
 DRIV0	EQU	70
 
-GIDE$DA	equ	060h	; GIDE data port
-GIDE$ER	equ	061h	; GIDE error register
-GIDE$SC	equ	062h	; GIDE sector count
-GIDE$SE	equ	063h	; GIDE sector number
-GIDE$CL	equ	064h	; GIDE cylinder low
-GIDE$CH	equ	065h	; GIDE cylinder high
-GIDE$DH	equ	066h	; GIDE drive/head
-GIDE$CS	equ	067h	; GIDE command/status
+GIDE	equ	060h	; GIDE base port
+GIDE$DA	equ	GIDE+8	; GIDE data port
+GIDE$EF	equ	GIDE+9	; GIDE feature/error register
+GIDE$SC	equ	GIDE+10	; GIDE sector count
+GIDE$SE	equ	GIDE+11	; GIDE sector number	(lba7:0)
+GIDE$CL	equ	GIDE+12	; GIDE cylinder low	(lba15:8)
+GIDE$CH	equ	GIDE+13	; GIDE cylinder high	(lba23:16)
+GIDE$DH	equ	GIDE+14	; GIDE drive+head	(drive+lba27:24)
+GIDE$CS	equ	GIDE+15	; GIDE command/status
 
 ERR	EQU	00000001B
 DRQ	EQU	00001000B

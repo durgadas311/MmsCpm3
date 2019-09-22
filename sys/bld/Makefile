@@ -23,7 +23,7 @@ DSO = -p def,a:
 all: c3z17krr.sys c3z37krr.sys c3z67mr.sys c3g37krr.sys
 
 %.rel: %.asm
-	vcpm rmac "$?" '$$SZLAPO'
+	vcpm rmac "$?" '$$SZLA'
 
 ldr%.com: ldr%.rel ldrb%.rel ldrprog.rel ldrbdos.rel ldrbios.rel
 	vcpm link "ldr$*=ldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
@@ -52,3 +52,10 @@ c3%.sys: b3%.spr
 	mv cpm3.sys $@
 
 .PRECIOUS: %.rel
+
+syncdown:
+	unix2cpm -s ~/git/MmsCpm3/sys/src/*.asm .
+
+syncup:
+	rsync -Wurv --existing . ~/git/MmsCpm3/sys/bin/.
+	rsync -Wurv --existing . ~/git/MmsCpm3/sys/prn/.
