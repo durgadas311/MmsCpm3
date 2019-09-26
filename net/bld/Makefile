@@ -18,6 +18,19 @@ all:	ndos3-u.com ntpdt-u.com \
 	vcpm mac "$?" '$$SZLA'
 	vcpm hexcom "$*"
 
+# Fictitious virtual CP/NET device on Kaypro
+ndos3-k.com: ndos3.rel snios3kp.rel
+	vcpm link "ndos3-k.rsx=ndos3,snios3kp[op,nr]"
+	@rm -f ndos3-k.com
+	vcpm gencom ndos3-k "[null]"
+
+ntpdt-k.com: ntpdate.rel snios3kp.rel
+	vcpm link "ntpdt-k=ntpdate,snios3kp[oc,nr]"
+
+snios-k.spr: snios3kp.rel snios12.rel
+	vcpm link "snios-k=snios12.rel,snios3kp.rel[os,nr]"
+
+# FT245R USB-FIFO device
 ndos3-u.com: ndos3.rel sniosusb.rel
 	vcpm link "ndos3-u.rsx=ndos3,sniosusb[op,nr]"
 	@rm -f ndos3-u.com
@@ -67,6 +80,8 @@ cpnldr-w.com: cpnldr-w.rel libwiznt.rel libnvram.rel
 
 wiz: wizcfg.com wizdbg.com ntpdt-w.com ndos3-w.com snios-w.spr
 
+kaypro: ntpdt-k.com ndos3-k.com snios-k.spr
+
 usb: ntpdt-u.com ndos3-u.com
 
 mms: ntpdt-m.com ndos3-m.com
@@ -90,6 +105,8 @@ CPN12_UTLS = $(CPNET_UTLS) ndos.spr ccp.spr xsubnet.com
 
 NET_UTLS = wizcfg.com wizdbg.com netstat.com srvstat.com
 
+NET3KP_UTLS = netstat.com srvstat.com ndos3-k.com ntpdt-k.com
+NET12KP_UTLS = netstat.com srvstat.com snios-k.spr
 NET3_UTLS = $(NET_UTLS) ndos3-w.com ntpdt-w.com
 NET12_UTLS = $(NET_UTLS) snios-w.spr cpnldr-w.com
 
@@ -101,6 +118,18 @@ CPNET_DOC = CPNET-WIZ850io.pdf dri-cpnet.pdf H8x-SPI-OP.pdf
 ship: cpnet3.tgz cpnet12.tgz cpnetdocs.tgz
 
 # Warning: --xform might have unintended consequences
+
+cpnet3kp.tgz: __FRC__
+	tar -czf cpnet3kp.tgz --xform='s/ntpdt-k/ntpdate/' --xform='s/-k//' \
+		-C ../dist/bin $(CPNET_UTLS) \
+		-C ../../bin $(NET3KP_UTLS) \
+		-C ../../util/bin tr.com
+
+cpnet12kp.tgz: __FRC__
+	tar -czf cpnet12kp.tgz --xform='s/cpnldr-k/cpnetldr/' --xform='s/-k//' \
+		-C ../dist/bin $(CPN12_UTLS) cpnetldr.com \
+		-C ../../bin $(NET12KP_UTLS) \
+		-C ../../util/bin tr.com
 
 cpnet3.tgz: __FRC__
 	tar -czf cpnet3.tgz --xform='s/ntpdt-w/ntpdate/' --xform='s/-w//' \
