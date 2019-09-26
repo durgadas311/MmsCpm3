@@ -1,0 +1,136 @@
+                ;********************************************************
+                ; KEYBOARD MAP REPLACER FOR CP/M PLUS ON THE KAYPRO		*
+                ; COPYRIGHT (C) 2019 DOUGLAS MILLER <DURGADAS311@GMAIL.COM>	*
+                ;********************************************************
+                	MACLIB Z80
+                
+ 0000 =         FALSE	EQU	0
+ FFFF =         TRUE	EQU	NOT FALSE
+                
+ 0000 =         CPM	EQU	0000H
+ 0005 =         BDOS	EQU	0005H
+                
+ 0009 =         PRINT	EQU	9
+ 000C =         VERSION	EQU	12
+                
+ 00C8 =         DBASE	EQU	200	;BASE FOR ALL CHAR I/O DEVICES
+ 0001 =         DEV0	EQU	001	;FIRST DEVICE, REL. TO BASE
+ 0001 =         NDEV	EQU	1
+                 
+ 0001 =         CTRLA	EQU	1
+ 0002 =         CTRLB	EQU	2
+ 0004 =         CTRLD	EQU	4
+ 0005 =         CTRLE	EQU	5
+ 0006 =         CTRLF	EQU	6
+ 0007 =         CTRLG	EQU	7
+ 000A =         LF	EQU	10
+ 000D =         CR	EQU	13
+ 000E =         CTRLN	EQU	14
+ 000F =         CTRLO	EQU	15
+ 0010 =         CTRLP	EQU	16
+ 0011 =         CTRLQ	EQU	17
+ 0012 =         CTRLR	EQU	18
+ 0013 =         CTRLS	EQU	19
+ 0014 =         CTRLT	EQU	20
+ 0015 =         CTRLU	EQU	21
+ 0016 =         CTRLV	EQU	22
+ 0017 =         CTRLW	EQU	23
+ 0018 =         CTRLX	EQU	24
+ 0019 =         CTRLY	EQU	25
+ 001A =         CLS	EQU	26
+                
+                ; OFFSETS
+ 0063 =         THREAD	EQU	063H	; REL. TO WBOOT ENTRY
+ 0013 =         STRKEY	EQU	013H	; REL. TO MODULE START
+ 003F =         KEYCNV	EQU	03FH	; REL. TO MODULE START
+                
+ 0100           	ORG 0100H
+ 0100 C36501    	JMP	START
+                
+ 0103 4D61676963MAPNAM:	DB	'Magic Wand$'
+                
+                ;PRIMARY CONVERSION TABLE FOR CURSOR AND NUMBERPAD KEYS
+                ;		--0-- --1-- --2-- --3-- --4--
+ 010E 0010150000NEWCNV: DB	    0,CTRLP,CTRLU,    0,    0	; B
+ 0113 1617191100	DB	CTRLV,CTRLW,CTRLY,CTRLQ,    0	; C
+ 0118 120F060200	DB	CTRLR,CTRLO,CTRLF,CTRLB,    0	; D
+ 011D 00010E0714	DB	    0,CTRLA,CTRLN,CTRLG,CTRLT	; E
+ 0122 0005181304	DB	    0,CTRLE,CTRLX,CTRLS,CTRLD	; F
+ 0019 =         CNVLEN	EQU	$-NEWCNV
+                ;
+                ;   * 0 . * *	     E = ENTER
+                ;   1 2 3 E *	     U = UP ARROW
+                ;   4 5 6 , *	     D = DOWN
+                ;   * 7 8 9 -	     L = LEFT
+                ;   * U D L R	     R = RIGHT
+                ;
+                
+ 0127 0D0A4E6F20ERRMSG:	DB	CR,LF,'No keyboard driver found$'
+ 0142 0D0A526571REQMSG:	DB	CR,LF,'Requires CP/M 3$'
+ 0154 2070617463PATMSG:	DB	' patched for $'
+ 0162 0D0A24    CRLF:	DB	CR,LF,'$'
+                
+                START:
+ 0165 0E0C      	MVI	C,VERSION
+ 0167 CD0500    	CALL	BDOS
+ 016A 7D        	MOV 	A,L
+ 016B FE1E      	CPI	30
+ 016D DA9501    	JC	REQ3
+                	; TODO: LOOK FOR KAYPRO CP/M 3 BY DRM
+ 0170 2A0100    	LHLD	CPM+1
+ 0173 116300    	LXI	D,THREAD
+ 0176 19        	DAD	D
+ 0177 5E        LOOP:	MOV	E,M
+ 0178 23        	INX	H
+ 0179 56        	MOV	D,M	; DE = NEXT
+ 017A 23        	INX	H
+ 017B 7E        	MOV	A,M	; DEV0
+ 017C D6C9      	SUI	DBASE+DEV0
+ 017E CA9B01    	JZ	FOUND
+ 0181 7B        	MOV	A,E
+ 0182 B2        	ORA	D
+ 0183 CA8A01    	JZ	NONE
+ 0186 EB        	XCHG
+ 0187 C37701    	JMP	LOOP
+                
+ 018A 112701    NONE:	LXI	D,ERRMSG
+ 018D 0E09      ERR0:	MVI	C,PRINT
+ 018F CD0500    	CALL	BDOS
+ 0192 C30000    	JMP	CPM
+ 0195 114201    REQ3:	LXI	D,REQMSG
+ 0198 C38D01    	JMP	ERR0
+                
+                ; HL=MODULE+2
+                FOUND:
+ 019B E5        	PUSH	H
+ 019C 116201    	LXI	D,CRLF
+ 019F 0E09      	MVI	C,PRINT
+ 01A1 CD0500    	CALL	BDOS
+ 01A4 D1        	POP	D	; DE=MODULE+2
+ 01A5 211100    	LXI	H,STRKEY-2
+ 01A8 19        	DAD	D
+ 01A9 E5        	PUSH	H	; ADR OF ADR OF STRING
+ 01AA 213D00    	LXI	H,KEYCNV-2
+ 01AD 19        	DAD	D
+ 01AE 110E01    	LXI	D,NEWCNV
+ 01B1 011900    	LXI	B,CNVLEN
+ 01B4 EB        	XCHG
+                	; CROSS YOUR FINGERS...
+                	LDIR
+ 01B5+EDB0      	DB	0EDH,0B0H
+ 01B7 E1        	POP	H	; ADR OF ADR OF STRING
+ 01B8 5E        	MOV	E,M
+ 01B9 23        	INX	H
+ 01BA 56        	MOV	D,M	; DE=MODULE ID STRING
+ 01BB 0E09      	MVI	C,PRINT
+ 01BD CD0500    	CALL	BDOS
+ 01C0 115401    	LXI	D,PATMSG
+ 01C3 0E09      	MVI	C,PRINT
+ 01C5 CD0500    	CALL	BDOS
+ 01C8 110301    	LXI	D,MAPNAM
+ 01CB 0E09      	MVI	C,PRINT
+ 01CD CD0500    	CALL	BDOS
+ 01D0 C30000    	JMP	CPM
+                
+ 01D3           	END
+
