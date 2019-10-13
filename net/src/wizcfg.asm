@@ -40,12 +40,16 @@ ntmsg:	db	'Subnet:   $'
 mcmsg:	db	'MAC:      $'
 ipmsg:	db	'IP Addr:  $'
 
-usage:	db	'WIZCFG version 1.2',CR,LF
+usage:	db	'WIZCFG version 1.3',CR,LF
 	db	'Usage: WIZCFG {G|I|S} ipadr',CR,LF
 	db	'       WIZCFG M macadr',CR,LF
 	db	'       WIZCFG N cid',CR,LF
 	db	'       WIZCFG {0..7} sid ipadr port [keep]',CR,LF
 	db	'       WIZCFG R',CR,LF
+	db	'       WIZCFG L {A:..P:,LST:}',CR,LF
+	db	'       WIZCFG T {A:..P:}={A:..P:}[sid]',CR,LF
+	db	'       WIZCFG T LST:=idx[sid]',CR,LF
+	db	'       WIZCFG X {A:..P:,LST:}',CR,LF
 	db	'Sets network config in NVRAM',CR,LF
 	db	'Prefix cmd with W to set WIZ850io directly',CR,LF
 	db	'R cmd sets WIZ850io from NVRAM',CR,LF
@@ -53,10 +57,24 @@ usage:	db	'WIZCFG version 1.2',CR,LF
 done:	db	'Set',CR,LF,'$'
 sock:	db	'Socket '
 sokn:	db	'N: $'
-ncfg:	db	'- Not Configured',CR,LF,'$'
+ncfg:	db	'No Sockets Configured',CR,LF,'$'
+ndcfg:	db	'No Devices Configured',CR,LF,'$'
 nocpn:	db	'CP/NET is running! Restoring config anyway...',CR,LF,'$'
 nverr:	db	'NVRAM block not initialized',CR,LF,'$'
 newbuf:	db	'Initializing new NVRAM block',CR,LF,'$'
+nowerr:	db	'"W" prefix not allowed',CR,LF,'$'
+
+ldrv:	db	'Local '
+l0:	db	'_:',CR,LF,'$'
+ndrv:	db	'Network '
+n0:	db	'_: = '
+n1:	db	'_:['
+n2:	db	'__]',CR,LF,'$'
+
+llst:	db	'Local LST:',CR,LF,'$'
+nlst:	db	'Network LST: = '
+nl1:	db	'_['
+nl2:	db	'__]',CR,LF,'$'
 
 	cseg
 start:
@@ -129,6 +147,12 @@ notw:
 	jz	pars3
 	cpi 	'N'
 	jz	pars4
+	cpi 	'L'
+	jz	locdv
+	cpi 	'X'
+	jz	locdv
+	cpi 	'T'
+	jz	netwk
 	cpi	'0'
 	jc	help
 	cpi	'7'+1
@@ -354,9 +378,35 @@ shnvsk0:
 	pop	h
 	pop	b
 	djnz	shnvsk0
+	lda	count
+	ora	a
+	cz	nocfg
+	; Now show any preset cfgtbl entries
+	xra	a
+	sta	count
+	lxi	h,nvbuf+288	; cfgtbl template
+	mvi	b,16
+shnvcf0:
+	inx	h
+	inx	h
+	mov	a,m
+	cpi	0ffh
+	cnz	shdrv
+	djnz	shnvcf0
+	inx	h	; skip CON:
+	inx	h
+	inx	h
+	inx	h
+	call	shlst
+	lda	count
+	ora	a
+	cz	nodcfg
 	jmp	exit
 
 pars5:	; restore config from NVRAM
+	lda	direct
+	ora	a
+	jnz	now
 	lda	cpnet
 	ora	a
 	jz	xocpnt
@@ -368,6 +418,89 @@ xocpnt:
 	jc	cserr
 	jmp	exit
 	;...
+
+now:	lxi	d,nowerr
+	mvi	c,print
+	call	bdos
+	jmp	exit
+
+locdv:	; skipb already called
+	push	psw	; 'X' or 'L'
+	lda	direct
+	ora	a
+	jnz	now
+	mvi	c,0
+	call	parsdv
+	jc	help
+	pop	psw
+	sui	'L'	; 0C or 00
+	jrz	locdv0
+	mvi	a,0ffh
+locdv0:
+	; E= 0-15, or 17 (LST:)
+	inr	e
+	mvi	d,0
+	lxi	h,nvbuf+288
+	dad	d
+	dad	d
+	mov	m,a
+	inx	h
+	mov	m,a
+	jmp	nvsetit
+
+netwk:	; skipb already called
+	lda	direct
+	ora	a
+	jnz	now
+	call	parsdv
+	jc	help
+	mvi	a,'='
+	call	check1
+	jc	help
+	; E= 0-15, or 17 (LST:)
+	mov	a,e
+	inr	e
+	mvi	d,0
+	lxix	nvbuf+288
+	dadx	d
+	dadx	d
+	cpi	17	; LST:
+	jrz	netlst
+	call	parsdv
+	jc	help
+	mvi	a,'['
+	call	check1
+	push	psw
+	mov	a,e
+	cpi	16
+	jnc	help
+netwk1:
+	ori	080h
+	stx	a,+0
+	pop	psw
+	mvi	d,0
+	jrc	netwk2
+	mvi	c,']'
+	call	parshx	; get SID
+	jc	help
+	mov	a,d
+	cpi	0ffh
+	jz	help
+netwk2:
+	stx	d,+1
+	jmp	nvsetit
+netlst:
+	mvi	c,'['
+	call	parshx	; get LST: num
+	jc	help
+	mov	a,d
+	cpi	16
+	jnc	help
+	mvi	a,'['
+	call	check1
+	push	psw
+	mov	a,d
+	jr	netwk1
 
 nvsetit:
 	lxix	nvbuf
@@ -381,6 +514,34 @@ nvsetit:
 	;jmp	exit
 exit:
 	jmp	cpm
+
+if 0
+trace:
+	push	h
+	push	d
+	push	b
+	mov	a,h
+	call	hexout
+	mov	a,l
+	call	hexout
+	mvi	a,' '
+	call	chrout
+	mov	a,d
+	call	hexout
+	mov	a,e
+	call	hexout
+	mvi	a,' '
+	call	chrout
+	mov	a,b
+	call	hexout
+	mov	a,c
+	call	hexout
+	call	crlf
+	pop	b
+	pop	d
+	pop	h
+	ret
+endif
 
 cserr:	lxi	d,nverr
 	jr	xtmsg
@@ -452,19 +613,26 @@ show0:	push	b
 	add	d
 	mov	d,a
 	djnz	show0
+	lda	count
+	ora	a
+	cz	nocfg
 
 	jmp	exit
 
+; Do not show unconfigured sockets
 showsok:
+	lda	sokpt
+	cpi	31h
+	rnz
+	lda	count
+	inr	a
+	sta	count
 	mov	a,e
 	adi	'0'
 	sta	sokn
 	lxi	d,sock
 	mvi	c,print
 	call	bdos
-	lda	sokpt
-	cpi	31h
-	jnz	nocfg
 	lda	sokpt+1
 	call	hexout
 	mvi	a,'H'
@@ -489,6 +657,11 @@ showsok:
 	ret
 
 nocfg:	lxi	d,ncfg
+	mvi	c,print
+	call	bdos
+	ret
+
+nodcfg:	lxi	d,ndcfg
 	mvi	c,print
 	call	bdos
 	ret
@@ -658,6 +831,22 @@ hexdig:
 	daa
 	jmp	chrout
 
+hexbuf:	push	psw
+	rrc
+	rrc
+	rrc
+	rrc
+	call	hexdbf
+	pop	psw
+hexdbf:	ani	0fh
+	adi	90h
+	daa
+	aci	40h
+	daa
+	mov	m,a
+	inx	h
+	ret
+
 skipb1:	; skip character, then skip blanks
 	inx	h
 	dcr	b
@@ -697,17 +886,18 @@ pm1:
 
 ; C=term char
 ; returns CY if error, Z if term char, NZ end of text
+; returns D=value
 parshx:
 	mvi	d,0
 pm0:	mov	a,m
 	cmp	c
 	rz
 	cpi	' '
-	jz	nzret
+	jrz	nzret
 	sui	'0'
 	rc
 	cpi	'9'-'0'+1
-	jc	pm3
+	jrc	pm3
 	sui	'A'-'0'
 	rc
 	cpi	'F'-'A'+1
@@ -814,6 +1004,60 @@ pd0:	mov	a,m
 pd1:	pop	h
 	ret	; CY still set
 
+; Parse device, A:..P: or LST:
+; returns E=0..15,17 or CY if error
+parsdv:
+	mov	a,b	; chars left
+	cpi	2
+	rc
+	mov	a,m
+	sui	'A'
+	rc
+	mov	e,a
+	inx	h
+	mov	a,m
+	dcr	b
+	cpi	':'
+	jrnz	pv1	; LST: or error
+	inx	h
+	dcr	b
+	mov	a,e	; must be 0..15
+	cpi	16
+	cmc
+	ret
+pv1:
+	mov	a,e
+	cpi	'L'-'A'
+	stc
+	rnz
+	mvi	a,'S'
+	call	check1
+	rc
+	mvi	a,'T'
+	call	check1
+	rc
+	mvi	a,':'
+	call	check1
+	rc
+	mvi	e,17
+	xra	a
+	ret
+
+; Tests if A==curr char on cmdlin
+; CY if fail, next char if true
+check1:
+	cmp	m
+	stc
+	rnz
+	mov	a,b
+	ora	a
+	stc
+	rz
+	inx	h
+	dcr	b
+	xra	a
+	ret
+	
 
 ; Get a block of data from NVRAM to 'buf'
 ; Verify checksum, init block if needed.
@@ -1000,6 +1244,61 @@ shmac:	push	h
 	call	hwout
 	jmp	crlf
 
+shdrv:	push	h
+	push	b
+	lda	count
+	inr	a
+	sta	count
+	mvi	a,16
+	sub	b
+	adi	'A'
+	sta	l0
+	sta	n0
+	mov	a,m
+	ani	080h
+	jrnz	shdrv1
+	lxi	d,ldrv
+	mvi	c,print
+	call	bdos
+shdrv9:	pop	b
+	pop	h
+	ret
+shdrv1:
+	mov	a,m
+	ani	0fh
+	adi	'A'
+	sta	n1
+	inx	h
+	mov	a,m
+	lxi	h,n2
+	call	hexbuf
+	lxi	d,ndrv
+	mvi	c,print
+	call	bdos
+	jr	shdrv9
+
+shlst:	mov	a,m
+	cpi	0ffh
+	rz
+	ani	080h
+	lxi	d,llst
+	jrz	shlst1
+	xchg
+	lxi	h,nl1
+	ldax	d
+	inx	d
+	call	hexdbf
+	lxi	h,nl2
+	ldax	d
+	call	hexbuf
+	lxi	d,nlst
+shlst1:	mvi	c,print
+	call	bdos
+	lda	count
+	inr	a
+	sta	count
+	ret
+
 	dseg
 	ds	40
 stack:	ds	0
@@ -1008,6 +1307,7 @@ usrstk:	dw	0
 direct:	db	0
 cpnet:	db	0
 netcfg:	dw	0
+count:	db	0
 
 wizmag:	db	0	; used as client (node) ID
 

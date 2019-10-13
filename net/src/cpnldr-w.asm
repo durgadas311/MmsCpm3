@@ -6,7 +6,7 @@
 ;
 wiznet	equ	1
 if	wiznet
-	extrn	wizcfg
+	extrn	wizcfg,cpnsetup
 	public	nvbuf
 endif
 ;
@@ -164,6 +164,7 @@ endif
 	JMP	ERROR		;SNIOS.SPR LOAD ERROR
 ;
 	LHLD	TOPPNT
+	shld	sniose
 	MOV	B,H
 	MOV	C,L
 	CALL	LOCPR		;PRINT SNIOS TOP
@@ -231,7 +232,17 @@ endif
 	LXI	B,CLEND
 	CALL	BUFPRN		;PRINT LOADING END COMMENT
 	CALL	CRLF
+if	wiznet
+	lda	nverr
+	ora	a
+	jnz	nonv
+	call	netcfg	; HL=network config table
+	lxi	d,nvbuf+288	; cfgtbl template area
+	call	cpnsetup
+nonv:
+endif
 	CALL	GOTDOS		;TO NDOS OR BREAK
+	; NOTREACHED
 ;
 ;  ERROR ROUTINE
 ;
@@ -773,9 +784,17 @@ SUDEHM:
 	RET
 
 if	wiznet
-nocfg:	lxi	d,ncfg
+nocfg:	mvi	a,1
+	sta	nverr
+	lxi	d,ncfg
 	mvi	c,CBUFPR
 	jmp	bdos
+
+netcfg:
+	lhld	sniose
+	lxi	d,6
+	dad	d
+	pchl
 endif
 
 	dseg
@@ -799,6 +818,11 @@ PNDOS:	DW	0
 CNTLDR:	DB	0
 CNTNDS:	DB	0
 ;
+
+if	wiznet
+ncfg:	db	'NVRAM not configured',cr,lf,'$'
+nverr:	db	0
+endif
 ;
 	DS	60		;STACK AREA
 STACK:
@@ -820,11 +844,8 @@ FSNIOS:				;FOR SNIOS.SPR
 	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 ;
 FDEBUG:	DS	1
-PNDOSC:	DS	2
-
-if	wiznet
-ncfg:	db	'NVRAM not configured',cr,lf,'$'
-endif
+PNDOSC:	DS	2	; NDOS cold start entry
+sniose:	ds	2	; SNIOS entry base
 
 nvbuf:	ds	512
 

@@ -192,7 +192,7 @@ COLDST:
 	call	next
 	pop	b
 	pop	d
-	jmp	next
+	jmp	NDOSE	; this one might be for us
 
 scbadd:	db	03ah, 0
 

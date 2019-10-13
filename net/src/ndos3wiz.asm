@@ -4,6 +4,7 @@
 	maclib	z80
 
 	extrn	wizcfg
+	extrn	cpnsetup
 	public	nvbuf
 
 cr	equ	13
@@ -15,6 +16,8 @@ bdos	equ	5
 
 ; BDOS functions
 print	equ	9
+; NDOS functions
+cfgtbl	equ	69
 
 ; RSX is already linked-in, but might be a duplicate
 
@@ -55,7 +58,17 @@ rm$us:
 ; hit LOADER3 RSX, no dup found...
 ldr3:
 	call	wizcfg
-	cc	nocfg	; report error, but continue...
+	jrc	wizerr
+	; This will also cold-start NDOS...
+	; hopefully, no bad effects.
+	mvi	c,cfgtbl
+	call	bdos
+	; HL=cfgtbl (check error?)
+	lxi	d,nvbuf+288	; 64 bytes for cfgtbl template
+	call	cpnsetup
+	jmp	cpm
+wizerr:
+	call	nocfg	; report error, but continue...
 	jmp	cpm	; let RSX init itself
 
 chkdup:	pushix
