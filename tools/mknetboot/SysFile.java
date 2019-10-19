@@ -20,8 +20,8 @@ public class SysFile {
 	boolean org0 = false;
 	boolean lmsg = false;
 
-	SprFile snios;
-	SprFile bios;
+	Relocatable snios;
+	Relocatable bios;
 	int cfgtbl = 0;
 	int mixer = 0;
 	byte[] buf;

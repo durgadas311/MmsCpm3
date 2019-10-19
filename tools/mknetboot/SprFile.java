@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.Vector;
 import java.io.*;
 
-public class SprFile {
+public class SprFile implements Relocatable {
 	File spr;
 	byte[] img;
 	int resStart = 0;
@@ -25,8 +25,9 @@ public class SprFile {
 	static final int R_SCBABS = 0xfb;
 	static final int R_SNIOS = 0xfa;
 	static final int R_NDOS = 0xf9;
+	static final int R_EXT = 0xf0;	// base for external relocations
 
-	static Map<Integer,SprFile> spcl = new HashMap<Integer,SprFile>();
+	static Map<Integer,Relocatable> spcl = new HashMap<Integer,Relocatable>();
 
 	static Map<String,Integer> rels = new HashMap<String,Integer>();
 	static {
@@ -38,7 +39,7 @@ public class SprFile {
 	}
 	static boolean isReloc(String k) { return rels.containsKey(k); }
 	static int getReloc(String k) { return rels.get(k); }
-	static SprFile getSpcl(String k) {
+	static Relocatable getSpcl(String k) {
 		if (!rels.containsKey(k)) {
 			return null;
 		}
@@ -90,6 +91,11 @@ public class SprFile {
 		}
 		if (rels.containsValue(t)) {
 			spcl.put(t, this);
+			if (t == R_BDOS) {
+				// not all BDOS's have SCB, but should be ok
+				spcl.put(R_SCB, new Scb(this));
+				spcl.put(R_SCBABS, new ScbAbs(this));
+			}
 		}
 	}
 
@@ -140,6 +146,8 @@ public class SprFile {
 	public int getBnk() { return (bnkBase >> 8) & 0xff; }
 	public void setRes(int pg) { resBase = pg << 8; }
 	public void setBnk(int pg) { bnkBase = pg << 8; }
+	public void relocResOne(byte[] img, int off) { img[off] = (byte)getRes(); }
+	public void relocBnkOne(byte[] img, int off) { img[off] = (byte)getBnk(); }
 
 	public void relocRes() {
 		if (resStart == 0) {
@@ -158,11 +166,13 @@ public class SprFile {
 			}
 			int hi = img[resStart + x] & 0xff;
 			if (spcl.containsKey(hi)) {
-				hi = spcl.get(hi).getRes();
+				spcl.get(hi).relocResOne(img, resStart + x);
+			} else if (hi >= R_EXT) {
+				System.err.format("%s: unhandled ext reloc at %04x\n",
+						spr.getName(), resStart + x);
 			} else {
-				hi += pg;
+				img[resStart + x] += (byte)(hi + pg);
 			}
-			img[resStart + x] = (byte)hi;
 		}
 	}
 
@@ -183,11 +193,13 @@ public class SprFile {
 			}
 			int hi = img[bnkStart + x] & 0xff;
 			if (spcl.containsKey(hi)) {
-				hi = spcl.get(hi).getBnk();
+				spcl.get(hi).relocBnkOne(img, bnkStart + x);
+			} else if (hi >= R_EXT) {
+				System.err.format("%s: unhandled ext reloc at %04x\n",
+						spr.getName(), bnkStart + x);
 			} else {
-				hi += pg;
+				img[bnkStart + x] += (byte)(hi + pg);
 			}
-			img[bnkStart + x] = (byte)hi;
 		}
 	}
 
