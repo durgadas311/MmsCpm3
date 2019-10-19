@@ -77,13 +77,14 @@ public class SprFile implements Relocatable {
 			o += r;
 		}
 		if (b != 0) {
-			bnkStart = o;
+			bnkStart = ((o + 0xff) & ~0xff);
 			bnkLen = b;
 			o += b;
 		}
 		if (r != 0) {
 			resReloc = o;
-			o += ((r + 7) / 8);
+			o += (((r + 0xff) & ~0xff) / 8);
+
 		}
 		if (b != 0) {
 			bnkReloc = o;
@@ -126,19 +127,27 @@ public class SprFile implements Relocatable {
 		int a = 0;
 		int n = 0;
 		String[] fn = spr.getName().toUpperCase().split("\\.");
+		String s = String.format("%-8s %-3s", fn[0], fn[1]);
 		if (resLen > 0) {
 			a = getRes() << 8;
-			n = resPages() << 8;
+			int l = resPages() << 8;
+			if (l > 0) {
+				n += l;
+				s += String.format("  %04X %04X", a, l);
+			}
 		}
 		if (bnkLen > 0) {
 			a = getBnk() << 8;
-			n = bnkPages() << 8;
+			int l = bnkPages() << 8;
+			if (l > 0) {
+				n += l;
+				s += String.format("  %04X %04X", a, l);
+			}
 		}
-		if (n == 0) {
-			return str;
+		if (n > 0) {
+			str += s;
+			str += '\n';
 		}
-		str += String.format("  %-8s %-3s  %04X  %04X\n",
-			fn[0], fn[1], a, n);
 		return str;
 	}
 
@@ -168,8 +177,8 @@ public class SprFile implements Relocatable {
 			if (spcl.containsKey(hi)) {
 				spcl.get(hi).relocResOne(img, resStart + x);
 			} else if (hi >= R_EXT) {
-				System.err.format("%s: unhandled ext reloc at %04x\n",
-						spr.getName(), resStart + x);
+				System.err.format("%s: unhandled ext reloc %02x at %04x\n",
+						spr.getName(), hi, resStart + x);
 			} else {
 				img[resStart + x] += (byte)(hi + pg);
 			}
@@ -195,8 +204,11 @@ public class SprFile implements Relocatable {
 			if (spcl.containsKey(hi)) {
 				spcl.get(hi).relocBnkOne(img, bnkStart + x);
 			} else if (hi >= R_EXT) {
-				System.err.format("%s: unhandled ext reloc at %04x\n",
-						spr.getName(), bnkStart + x);
+				System.err.format("%s: unhandled ext reloc %02x at %04x " +
+					"bnk res=%04x bnk=%04x rel=%04x %04x %04x %04x %d)\n",
+						spr.getName(), hi, bnkStart + x,
+						resStart, bnkStart, resReloc, bnkReloc,
+						x, byt, bit);
 			} else {
 				img[bnkStart + x] += (byte)(hi + pg);
 			}

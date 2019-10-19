@@ -20,7 +20,7 @@ public class SysFile {
 	boolean org0 = false;
 	boolean lmsg = false;
 
-	Relocatable snios;
+	Relocatable netmod;
 	Relocatable bios;
 	int cfgtbl = 0;
 	int mixer = 0;
@@ -71,15 +71,21 @@ public class SysFile {
 	}
 
 	private void setCfgtbl() {
-		int adr = (snios.getRes() << 8) + 6; // CNFTBL entry
-		if (snios.getByte(adr) != 0xc3) { // 'JMP'?
+		int adr = (netmod.getRes() << 8) + 6; // CNFTBL entry
+		if (netmod.getByte(adr) != 0xc3) { // 'JMP'?
 			return;
 		}
-		adr = snios.getByte(adr + 1) | (snios.getByte(adr + 2) << 8);
-		if (snios.getByte(adr) != 0x21) { // 'LXI H,'?
+		adr = netmod.getByte(adr + 1) | (netmod.getByte(adr + 2) << 8);
+		if (netmod.getByte(adr) != 0x21) { // 'LXI H,'?
 			return;
 		}
-		cfgtbl = snios.getByte(adr + 1) | (snios.getByte(adr + 2) << 8);
+		cfgtbl = netmod.getByte(adr + 1) | (netmod.getByte(adr + 2) << 8);
+	}
+
+	private void setCfgtblNdos() {
+		int adr = (netmod.getRes() << 8); // CFGTBL stuffed here...
+		adr = netmod.getByte(adr) | (netmod.getByte(adr + 1) << 8);
+		cfgtbl = adr;	// might be 0 (NULL), checked later
 	}
 
 	private void setMixer() {
@@ -90,8 +96,8 @@ public class SysFile {
 	}
 
 	private void netDrive(int ld, int rd, int rs) {
-		snios.putByte(cfgtbl + (ld * 2) + 2, 0x80 + rd);
-		snios.putByte(cfgtbl + (ld * 2) + 3, rs);
+		netmod.putByte(cfgtbl + (ld * 2) + 2, 0x80 + rd);
+		netmod.putByte(cfgtbl + (ld * 2) + 3, rs);
 	}
 
 	private void phyDrive(int ld, int pd) {
@@ -152,7 +158,7 @@ public class SysFile {
 			str += spr.loadMsg();
 		}
 		int tpa = resBase > 0 ? resBase << 8 : bnkBase << 8;
-		str += String.format("\n%3dK TPA", tpa / 1024);
+		str += String.format("\n%2dK TPA", tpa / 1024);
 		System.err.format("\n%s\n", str);
 		str += '$';
 		byte[] stb = str.replace("\n", "\r\n").getBytes();
@@ -170,11 +176,16 @@ public class SysFile {
 			spr.relocRes();
 			spr.relocBnk();
 		}
-		snios = SprFile.getSpcl("snios");
-		bios = SprFile.getSpcl("bios");
-		if (snios != null) {
+		netmod = SprFile.getSpcl("snios");
+		if (netmod != null) {
 			setCfgtbl();
+		} else {
+			netmod = SprFile.getSpcl("ndos");
+			if (netmod != null) {
+				setCfgtblNdos();
+			}
 		}
+		bios = SprFile.getSpcl("bios");
 		if (bios != null) {
 			setMixer();
 		}
