@@ -2,6 +2,8 @@ VPATH = drm cpnet mms
 
 # Also: help.raw => 0:HELP.DAT, "HELP [C]", to re-create HELP.HLP if 'makehelp'
 # doesn't produce a working HELP.HLP file.
+#
+# Paragraphs may be justified using "par j".
 
 HELPS = commands.help \
 	cntrlchars.help \
@@ -31,6 +33,7 @@ HELPS = commands.help \
 	logoff.help \
 	mac.help \
 	mode.help \
+	modules.help \
 	netstat.help \
 	network.help \
 	ntpdate.help \
@@ -46,11 +49,13 @@ HELPS = commands.help \
 	setup.help \
 	show.help \
 	sid.help \
+	srvstat.help \
 	submit.help \
 	tpa.help \
 	tr.help \
 	type.help \
 	user.help \
+	wizcfg.help \
 	xref.help
 
 all: makehelp ../bin/help.hlp
