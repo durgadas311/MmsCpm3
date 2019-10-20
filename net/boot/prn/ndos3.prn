@@ -1,0 +1,1468 @@
+                ;	NETWORK DISK OPERATING SYSTEM FOR CP/NET on CP/M Plus v3
+                ;
+                ; 1982.12.31. exact date unknown
+                ; 2016.05.20. adapted for direct attachment on CP/M Plus
+                ;	Dropped support for remote console, due to BIOS intercept issues.
+                ;
+                ;TITLE	NETWORK DISK OPERATING SYSTEM FOR CP/NET SLAVE
+                	maclib	z80
+                
+                	extrn	NTWKIN, NTWKST, CNFTBL, SNDMSG, RCVMSG, NTWKBT, NTWKDN, CFGTBL
+                ;
+                ;
+                ;	EQUATIONS OF DATA
+                ;
+ 000A =         LF	EQU	0AH	;LINE FEED
+ 000D =         CR	EQU	0DH	;CARRIAGE RETURN
+ 001A =         EOF	EQU	1AH	;CTRL-Z IS END OF FILE
+ 00FF =         LEOF	EQU	0ffh	;-1 is logical end of file
+                ;
+ 0000 =         TOP	equ	0000h
+ 0004 =         CDISK	equ	0004h
+ 0005 =         BDOS	equ	0005h
+ 0080 =         SYSDMA	equ	0080h
+ 0100 =         TPA	equ	0100h
+                
+ 0080 =         SCTLNG	equ	128	;ONE SECTOR LENGTH
+                ;
+                ;	EQUATIONS OF DOS FUNCTION
+                ;
+ 0003 =         CCNDIN	EQU	3	;CONSOLE INPUT WITH DEVICE CODE
+ 0004 =         CCNDOT	EQU	4	;CONSOLE OUTPUT WITH DEVICE CODE
+ 0009 =         CBUFPR	EQU	9	;BUFFER PRINT
+ 000A =         CRDBUF	EQU	10	;READ BUFFER
+ 000B =         CCONST	EQU	11	;GET CONSOLE STATUS
+ 000C =         CGETVR	EQU	12	;GET VERSION NUMBER
+ 000D =         CRSDSK	EQU	13	;RESET DISK
+ 000F =         COPEN	EQU	15	;OPEN FILE
+ 0010 =         CCLOSE	EQU	16	;CLOSE FILE
+ 0011 =         CSRFST	EQU	17	;SEARCH FIRST
+ 0012 =         CSRNXT	EQU	18	;SEARCH NEXT DIRECTORY
+ 0014 =         CREAD	EQU	20	;READ SEQ
+ 0015 =         CWRITE	EQU	21	;WRITE SEQ
+ 001A =         CSTDMA	EQU	26	;SET DMA ADDRESS
+ 001B =         CGTALL	EQU	27	;get alloc vector addr
+ 001F =         CGTDPB	EQU	31	;get DPB addr
+ 0020 =         CSTUSC	EQU	32	;SET USER CODE
+ 0021 =         CRREAD	EQU	33	;READ SEQ
+ 0022 =         CRWRIT	EQU	34	;WRITE SEQ
+ 0025 =         CRSDSN	EQU	37	;RESET DISK BY DISK VERCTOR
+ 002E =         CFRSP	equ	46	; get disk free space
+ 0031 =         scbf	equ	49	; get/set SCB
+ 0032 =         CBIOS	equ	50	; direct BIOS call
+ 003B =         COVLY	equ	59	; load overlay
+ 003C =         CRSX	equ	60	; call RSX function
+ 006A =         CDEFPW	EQU	106	;set default password
+ 0070 =         CLSBLK	equ	112	; List Block - does not fit in table...
+                
+ 0032 =         CBMAX	EQU	50	;MAX OF BDOS FUNCTION - CXMIN.. collapsed here
+ 0062 =         CXMIN	EQU	98	;extended bdos functions base - collapse into CBMAX
+                ;
+ 0040 =         CNMIN	EQU	64	;MIN OF NDOS FUNCTION
+ 0040 =         CLOGIN	EQU	64	;LOGIN
+ 0041 =         CLOGOF	EQU	65	;LOGOFF
+ 0048 =         CNMAX	EQU	72	;MAX OF NDOS FUNCTION
+                
+                ;
+                ;	SLAVE CONFIGRATION TABLE
+                ;
+                ; -1	NETWORK STATUS
+                ;	0	SLAVE PROCESSOR ID
+                ;	1-32 A - P DISK DEVICE CODE
+                ; 33-34 CONSOLE DEVICE
+                ; 35-36 LIST DEVICE
+                ; 37	LIST BUFFER COUNTER
+                ; 38-42 MESSAGE HEADER FOR LIST OUT
+                ; 43	LISTER DEVICE NUMBER
+                ; 44-171 LIST OUT DATA BUFFER
+                ;
+                ;	EACH DEVICE DATA USED 2 BYTES
+                ;	IN 1-36
+                ;	1B:BIT 7 H ON NETWORK
+                ;	BIT 6 H SET UP IN DISK
+                ;	BIT 0-3 DEVICE NUMBER IN MASTER
+                ;	2B:MASTER ID
+                ;
+                ;	BIAS TO DATA IN CONFIGRATION TABLE
+                ;
+ 0001 =         BSRID	equ	1	;client ID
+ 0002 =         BSDSKS	equ	2	;first byte in disk table
+ 0021 =         BSDSKE	equ	33	;last byte in disk table
+ 0022 =         BSCONS	EQU	34	;BIAS TO CONSOLE DATA
+ 0024 =         BSLIST	EQU	36	;BIAS TO LISTER DATA
+                
+ 0021 =         FCBRR0	equ	33	; offset of RR0 field in FCB (not FCB in MSG)
+                
+ 0000           	org	0
+ 0000 =         ndos$0	equ	$
+ FD00 =         bdos$0	equ	ndos$0+0fd00h
+ FD06 =         bdose	equ	bdos$0+6
+ FD06 =         next	equ	bdose
+ FB00 =         scb	equ	ndos$0+0fb00h	; Use abs SCB refs
+ FBE7 =         ermde	equ	scb+09ch+04bh
+ FBE6 =         mltio	equ	scb+09ch+04ah
+ FBE0 =         crusr	equ	scb+09ch+044h
+ FBE3 =         ssrch	equ	scb+09ch+047h
+ FBDA =         crdrv	equ	scb+09ch+03eh
+ FBD8 =         dmaad	equ	scb+09ch+03ch
+ FBA1 =         vers	equ	scb+09ch+005h
+                
+                serial:
+ 0000 0000      	dw	CFGTBL	; for easy access during boot
+ 0002 00000000  	db	0,0,0,0
+ 0006 C3AF01    start:	jmp	COLDST
+                
+ 0009 434F505952	db	'COPYRIGHT (C) 1980-82, DIGITAL RESEARCH '
+ 0031 0000000000	db	0,0,0,0,0,0
+                
+ 0037 0D0A4E444FNDERRM:	db	CR,LF,'NDOS Err $'
+ 0043 2C2046756ENDERR2:	db	', Func $'
+                
+ 004B 00        CURSID: db	0
+                
+ 004C 00        MSGTOP:	db	0
+ 004D 00        MSGID:	db	0
+ 004E 00        	db	0	; We assume network hw/sw sets this.
+ 004F 00        MSGFUN:	db	0
+ 0050 00        MSGSIZ:	db	0
+ 0051           MSGDAT:	ds	256
+                
+ 0151 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0157 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 015D C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0163 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0169 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 016F C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0175 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 017B C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0181 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 0187 C7C7C7C7C7	db	0c7h,0c7h,0c7h,0c7h,0c7h,0c7h
+ 018D           STACK:	ds	0
+                
+ 018D 0000      USTACK:	dw	0
+ 018F 00        FUNCOD:	db	0
+ 0190 0000      PARAMT:	dw	0
+ 0192 00        RETCOD:	db	0
+ 0193 0000      MCRPNT:	dw	0
+ 0195 00        LSTUNT: db	0
+ 0196 00        F5SETF: db	0
+ 0197 00        FNTMPF: db	0
+ 0198 0000      ORGBIO: dw	0
+                
+ 019A 000024    HEXMSG: db	0,0,'$'
+                
+ 019D 4E65742065CLDERR:	db	'Net err$'
+                
+                COLDSE:	; BC and DE are pushed...
+ 01A5 119D01    	lxi	d,CLDERR
+ 01A8 0E09      	mvi	c,CBUFPR
+ 01AA CD06FD    	call	next
+                	; TODO: try to run without CP/NET?
+ 01AD F376      	di ! hlt
+                
+                ; Not a true cold start - we are in context of a valid BDOS call...
+                COLDST:
+ 01AF D5        	push	d
+ 01B0 C5        	push	b
+ 01B1 CD0000    	call	NTWKIN
+ 01B4 B7        	ora	a
+ 01B5 C2A501    	jnz	COLDSE
+ 01B8 21D701    	lxi	h,NDOSE
+ 01BB 220700    	shld	start+1
+ 01BE 215100    	lxi	h,MSGDAT
+ 01C1 229301    	shld	MCRPNT
+ 01C4 C1        	pop	b
+ 01C5 D1        	pop	d
+ 01C6 C3D701    	jmp	NDOSE	; this one might be for us
+                
+                ; Some sneaky programs, like ERASE.COM, use the "saved search address" from the SCB.
+                ; so we must put the address there if the BDOS does not (i.e. networked drive).
+ 01C9 2A9001    SETSRA:	lhld	PARAMT
+ 01CC 22E3FB    	shld	ssrch
+ 01CF C9        	ret
+                
+ 01D0 3A9001    SETDSK:	lda	PARAMT
+ 01D3 32DAFB    	sta	crdrv
+ 01D6 C9        	ret
+                
+                NDOSE:
+ 01D7 79        	mov	a,c	; must save REAL function code!
+ 01D8 328F01    	sta	FUNCOD
+ 01DB 324F00    	sta	MSGFUN
+ 01DE B7        	ora	a
+ 01DF CA4509    	jz	WARMST
+ 01E2 FE3B      	cpi	COVLY
+ 01E4 CA4509    	jz	LDOVLY	; LOAD OVERLAY (RSX SCRUB) - indication of warm boot
+ 01E7 FE32      	cpi	CBIOS
+ 01E9 CA06FD    	jz	next	; DIRECT BIOS CALL - might need to trap for LIST OUT
+                
+ 01EC 213703    	lxi	h,FUNTBS
+                NDOSE1:
+ 01EF 79        	mov	a,c
+ 01F0 96        	sub	m
+ 01F1 DA06FD    	jc	next
+ 01F4 23        	inx	h
+ 01F5 BE        	cmp	m
+ 01F6 23        	inx	h
+ 01F7 DA0402    	jc	NDOSE2
+ 01FA 23        	inx	h
+ 01FB 23        	inx	h
+ 01FC 7E        	mov	a,m
+ 01FD B7        	ora	a
+ 01FE C2EF01    	jnz	NDOSE1
+ 0201 C306FD    	jmp	next
+                
+                NDOSE2:
+                	sspd	USTACK
+ 0204+ED73      	DB	0EDH,73H
+ 0206+8D01      	DW	USTACK
+ 0208 318D01    	lxi	sp,STACK
+ 020B 4F        	mov	c,a	; modified func code!
+ 020C 7E        	mov	a,m
+ 020D 23        	inx	h
+ 020E 66        	mov	h,m
+ 020F 6F        	mov	l,a	; HL = func table
+ 0210 E5        	push	h
+ 0211 EB        	xchg
+ 0212 229001    	shld	PARAMT
+ 0215 2AD8FB    	lhld	dmaad
+ 0218 221D09    	shld	DMAADR	; cache DMA address for this call...
+ 021B 215000    	lxi	h,MSGSIZ
+ 021E 3600      	mvi	m,0	; assume 1-byte payload
+ 0220 23        	inx	h
+ 0221 229301    	shld	MCRPNT	; MSGDAT
+ 0224 AF        	xra	a
+ 0225 47        	mov	b,a
+ 0226 57        	mov	d,a
+ 0227 E1        	pop	h	; specific func table in HL
+ 0228 09        	dad	b
+ 0229 5E        	mov	e,m	; don't need HL anymore
+ 022A 93        	sub	e	; assumes A=0
+ 022B CA8D03    	jz	tnextp	; code 0 = not handled by CP/Net
+                NDOSE4:
+ 022E 217403    	lxi	h,NDENDR
+ 0231 E5        	push	h
+ 0232 219D02    	lxi	h,FUNTB2
+ 0235 19        	dad	d
+ 0236 E5        	push	h
+                NDOSE5:
+ 0237 C1        	pop	b
+ 0238 0A        	ldax	b
+ 0239 57        	mov	d,a
+ 023A E67F      	ani	07fh	; strip off EOP bit
+ 023C 5F        	mov	e,a
+ 023D 7A        	mov	a,d
+ 023E 1600      	mvi	d,0
+ 0240 215302    	lxi	h,FUNTB3
+ 0243 19        	dad	d
+ 0244 5E        	mov	e,m
+ 0245 23        	inx	h
+ 0246 56        	mov	d,m
+ 0247 03        	inx	b
+ 0248 17        	ral
+ 0249 DA5102    	jc	NDOSE6
+ 024C C5        	push	b
+ 024D 213702    	lxi	h,NDOSE5
+ 0250 E5        	push	h
+                NDOSE6:
+ 0251 EB        	xchg
+ 0252 E9        	pchl
+                
+                FUNTB3:
+ 0253 0000      	dw	0	; 0	000h	080h - never called
+ 0255 4503      	dw	SNDHDR	; 2	002h	082h
+ 0257 8003      	dw	RCVPAR	; 4	004h	084h
+ 0259 CE03      	dw	SNDFCB	; 6	006h	086h
+ 025B D403      	dw	CKSFCB	; 8	008h	088h
+ 025D 4904      	dw	RENTMP	; 10	00ah	08ah
+ 025F 5304      	dw	WTDTC2	; 12	00ch	08ch
+ 0261 5904      	dw	WTDTC8	; 14	00eh	08eh
+ 0263 5F04      	dw	WTDTCP	; 16	010h	090h
+ 0265 7804      	dw	CKSTDK	; 18	012h	092h
+ 0267 4C05      	dw	BCSTFN	; 20	014h	094h
+ 0269 8005      	dw	BCSTVC	; 22	016h	096h
+ 026B 9A06      	dw	RCVEC	; 24	018h	098h
+ 026D F306      	dw	GTFCB	; 26	01ah	09ah
+ 026F 0007      	dw	GTFCCR	; 28	01ch	09ch
+ 0271 FA06      	dw	GTFCRR	; 30	01eh	09eh
+ 0273 3807      	dw	GTDIRE	; 32	020h	0a0h
+ 0275 6607      	dw	GTOSCT	; 34	022h	0a2h
+ 0277 7D07      	dw	GTMISC	; 36	024h	0a4h
+ 0279 BD07      	dw	GTLOGV	; 38	026h	0a6h
+ 027B 4708      	dw	LIST1	; 40	028h	0a8h
+ 027D 1E08      	dw	SELDSK	; 42	02ah	0aah
+ 027F 5008      	dw	LSTBLK	; 44	02ch	0ach
+ 0281 BD08      	dw	GETVER	; 46	02eh	0aeh
+ 0283 0000      	dw	0	; 48	030h	0b0h - to be removed
+ 0285 3E08      	dw	RESET	; 50	032h	0b2h
+ 0287 C708      	dw	NWSTAT	; 52	034h	0b4h
+ 0289 CE08      	dw	NWCFTB	; 54	036h	0b6h
+ 028B F708      	dw	SDMSGU	; 56	038h	0b8h
+ 028D 0309      	dw	RVMSGU	; 58	03ah	0bah
+ 028F D608      	dw	LOGIN	; 60	03ch	0bch
+ 0291 EE08      	dw	LOGOFF	; 62	03eh	0beh - generic send to server 'E'
+ 0293 4B06      	dw	STSF	; 64	040h	0c0h
+ 0295 7A06      	dw	STSN	; 66	042h	0c2h
+ 0297 0000      	dw	0	; 68	044h	0c4h - to be removed
+ 0299 7204      	dw	CKSTDP	;	046h	0c6h
+ 029B 9604      	dw	CHKMSC	;	048h	0c8h
+                
+                ; hi bit is "end" signal, else keep executing routines in list...
+                ; byte & 07fh is index into FUNTB3, routine to call.
+                FUNTB2:
+ 029D 80        	db	080h			; - never called
+ 0001 =         fgtvr	equ	$-FUNTB2
+ 029E AE        	db	0aeh			;
+ 0002 =         frssy	equ	$-FUNTB2
+ 029F B2        	db	0b2h			;
+ 0003 =         frsvc	equ	$-FUNTB2
+ 02A0 96        	db	096h			;
+ 0004 =         fsldk	equ	$-FUNTB2
+ 02A1 AA        	db	0aah			;
+ 0005 =         fopfi	equ	$-FUNTB2
+ 02A2 080E189A  	db	008h, 00eh, 018h, 09ah	;
+ 0009 =         fdlfi	equ	$-FUNTB2
+ 02A6 0698      	db	006h, 098h		;
+ 000B =         fsrfs	equ	$-FUNTB2
+ 02A8 4018A0    	db	040h, 018h, 0a0h	;
+ 000E =         fsrnx	equ	$-FUNTB2
+ 02AB 4218A0    	db	042h, 018h, 0a0h	;
+ 0011 =         frdsq	equ	$-FUNTB2
+ 02AE 4806181CA2	db	048h, 006h, 018h, 01ch, 0a2h	; READ SEQ
+ 0016 =         fwrsq	equ	$-FUNTB2
+ 02B3 480810189C	db	048h, 008h, 010h, 018h, 09ch	; WRITE SEQ
+ 001B =         frefi	equ	$-FUNTB2
+ 02B8 080A0298  	db	008h, 00ah, 002h, 098h	;
+ 001F =         flgvc	equ	$-FUNTB2
+ 02BC A6        	db	0a6h			;
+ 0020 =         fgtal	equ	$-FUNTB2
+ 02BD 120218A4  	db	012h, 002h, 018h, 0a4h	;
+ 0024 =         fwrpr	equ	$-FUNTB2
+ 02C1 120298    	db	012h, 002h, 098h	;
+ 0027 =         fstfi	equ	$-FUNTB2
+ 02C4 06189C    	db	006h, 018h, 09ch	;
+ 002A =         frdrr	equ	$-FUNTB2
+ 02C7 4806181EA2	db	048h, 006h, 018h, 01eh, 0a2h	; READ RAND
+ 002F =         fwrrr	equ	$-FUNTB2
+ 02CC 480810189E	db	048h, 008h, 010h, 018h, 09eh	; WRITE RAND [ZEROFIL]
+ 0034 =         fgtsz	equ	$-FUNTB2
+ 02D1 06189E    	db	006h, 018h, 09eh	;
+ 0037 =         flkrc	equ	$-FUNTB2
+ 02D4 080C189E  	db	008h, 00ch, 018h, 09eh	;
+ 003B =         fstpw	equ	$-FUNTB2
+ 02D8 94        	db	094h			;
+ 003C =         flgin	equ	$-FUNTB2
+ 02D9 3C98      	db	03ch, 098h		;
+ 003E =         flgof	equ	$-FUNTB2
+ 02DB 3E98      	db	03eh, 098h		;
+ 0040 =         fsdnw	equ	$-FUNTB2
+ 02DD B8        	db	0b8h			;
+ 0041 =         frvnw	equ	$-FUNTB2
+ 02DE BA        	db	0bah			;
+ 0042 =         fnwst	equ	$-FUNTB2
+ 02DF B4        	db	0b4h			;
+ 0043 =         fnwcf	equ	$-FUNTB2
+ 02E0 B6        	db	0b6h			;
+ 0044 =         fstcp	equ	$-FUNTB2	; ***** DUPLICATE of fstpw *****
+ 02E1 94        	db	094h			;
+ 0045 =         fsvcf	equ	$-FUNTB2
+ 02E2 3E18A4    	db	03eh, 018h, 0a4h	;
+ 0048 =         fgtdl	equ	$-FUNTB2
+ 02E5 460298    	db	046h, 002h, 098h	;
+ 004B =         fdkms	equ	$-FUNTB2
+ 02E8 460218A4  	db	046h, 002h, 018h, 0a4h	;
+ 004F =         flst1	equ	$-FUNTB2
+ 02EC A8        	db	0a8h
+ 0050 =         flstbk	equ	$-FUNTB2
+ 02ED AC        	db	0ach
+                
+                ; table of message handlers? per BDOS func?
+                ; -1 = ERROR, 0 = PASSTHRU, else index into FUNTB2
+                FUNTB1:
+ 02EE 00        	db	0	; 0 -
+ 02EF 00        	db	0	; 1 -
+ 02F0 00        	db	0	; 2 -
+ 02F1 00        	db	0	; 3 -
+ 02F2 00        	db	0	; 4 -
+ 02F3 4F        	db	flst1	; 5 -
+ 02F4 00        	db	0	; 6 -
+ 02F5 00        	db	0	; 7 -
+ 02F6 00        	db	0	; 8 -
+ 02F7 00        	db	0	; 9 -
+ 02F8 00        	db	0	; 10 -
+ 02F9 00        	db	0	; 11 -
+ 02FA 01        	db	fgtvr	; 12 - GET VERSION
+ 02FB 02        	db	frssy	; 13 - RESET DISK SYSTEM
+ 02FC 04        	db	fsldk	; 14 - SELECT DISK
+ 02FD 05        	db	fopfi	; 15 - OPEN FILE
+ 02FE 05        	db	fopfi	; 16 - CLOSE FILE
+ 02FF 0B        	db	fsrfs	; 17 - SEARCH FIRST
+ 0300 0E        	db	fsrnx	; 18 - SEARCH NEXT
+ 0301 09        	db	fdlfi	; 19 - DELETE FILE
+ 0302 11        	db	frdsq	; 20 - READ SEQUENTIAL
+ 0303 16        	db	fwrsq	; 21 - WRITE SEQUENTIAL
+ 0304 05        	db	fopfi	; 22 - MAKE FILE
+ 0305 1B        	db	frefi	; 23 - RENAME FILE
+ 0306 1F        	db	flgvc	; 24 - GET LOGIN VECTOR
+ 0307 00        	db	0	; 25 - GET CURRENT DISK
+ 0308 00        	db	0	; 26 - SET DMA ADDR
+ 0309 20        	db	fgtal	; 27 - GET ALLOC ADDR
+ 030A 24        	db	fwrpr	; 28 - WRITE PROTECT DISK
+ 030B 1F        	db	flgvc	; 29 - GET R/O VECTOR
+ 030C 27        	db	fstfi	; 30 - SET FILE ATTR
+ 030D 20        	db	fgtal	; 31 - GET DPB ADDR
+ 030E 00        	db	0	; 32 - GET/SET USER CODE
+ 030F 2A        	db	frdrr	; 33 - READ RANDOM
+ 0310 2F        	db	fwrrr	; 34 - WRITE RANDOM
+ 0311 34        	db	fgtsz	; 35 - GET FILE SIZE
+ 0312 34        	db	fgtsz	; 36 - SET RAND RECORD
+ 0313 03        	db	frsvc	; 37 - RESET DRIVE
+ 0314 03        	db	frsvc	; 38 - ACCESS DRIVE
+ 0315 03        	db	frsvc	; 39 - FREE DRIVE
+ 0316 2F        	db	fwrrr	; 40 - WRITE RAND ZERO FILL
+ 0317 00        	db	0	; 41 - TEST & WRITE RECORD
+ 0318 37        	db	flkrc	; 42 - LOCK RECORD
+ 0319 37        	db	flkrc	; 43 - UNLOCK RECORD
+ 031A 00        	db	0	; 44 - SET MULTISECTOR COUNT
+ 031B 00        	db	0	; 45 - SET BDOS ERR MODE
+ 031C 4B        	db	fdkms	; 46 - GET DISK FREE SPACE
+ 031D 00        	db	0	; 47 - CHAIN TO PROGRAM (***? can't chain to remote program)
+ 031E 44        	db	fstcp	; 48 - FLUSH BUFFERS
+ 031F 00        	db	0	; 49 - GET/SET SCB
+                	; 50..63 - handled by special case
+ 0032 =         NFTB1	equ	$-FUNTB1
+                
+                	; if any are passed to server, must preserve FUNCOD as real code
+                FUNTBX:
+ 0320 44        	db	fstcp	; 98 - FREE BLOCKS
+ 0321 05        	db	fopfi	; 99 - TRUNCATE FILE
+ 0322 00        	db	0	; 100 - SET DIR LABEL ****support?****
+ 0323 48        	db	fgtdl	; 101 - GET DIR LABEL BYTE
+ 0324 48        	db	fgtdl	; 102 - READ FILE DATE-PWD MODE
+ 0325 00        	db	0	; 103 - WRITE FILE XFCB ****support?****
+ 0326 00        	db	0	; 104 - SET DATE & TIME
+ 0327 00        	db	0	; 105 - GET DATE & TIME - can't support here, use SEND NW MESG
+ 0328 3B        	db	fstpw	; 106 - SET DEF PASSWORD
+ 0329 00        	db	0	; 107 - GET SERIAL NUMBER
+ 032A 00        	db	0	; 108 - GET/SET PGM RET CODE
+ 032B 00        	db	0	; 109 - GET/SET CONS MODE
+ 032C 00        	db	0	; 110 - GET/SET OUT DELIM
+ 032D 00        	db	0	; 111 - PRINT BLOCK
+ 032E 50        	db	flstbk	; 112 - LIST BLOCK
+ 000F =         NFTBX	equ	$-FUNTBX
+                
+                	; CP/Net functions, not known to BDOS
+                FUNTBN:
+ 032F 3C        	db	flgin	; 64 - LOGIN
+ 0330 3E        	db	flgof	; 65 - LOGOFF
+ 0331 40        	db	fsdnw	; 66 - SEND NW MESG
+ 0332 41        	db	frvnw	; 67 - RECV NW MESG
+ 0333 42        	db	fnwst	; 68 - GET NW STATUS
+ 0334 43        	db	fnwcf	; 69 - GET NW CFG
+ 0335 44        	db	fstcp	; 70 - SET COMP ATTR
+ 0336 45        	db	fsvcf	; 71 - GET SERVER CFG
+ 0008 =         NFTBN	equ	$-FUNTBN
+                
+                FUNTBS:
+ 0337 0032      	db	0,NFTB1
+ 0339 EE02      	dw	FUNTB1
+ 033B 4008      	db	CNMIN,NFTBN
+ 033D 2F03      	dw	FUNTBN
+ 033F 620F      	db	CXMIN,NFTBX
+ 0341 2003      	dw	FUNTBX
+ 0343 0000      	dw	0
+                
+                SNDHDR:
+ 0345 214C00    	lxi	h,MSGTOP
+ 0348 3600      	mvi	m,0	; FMT = CP/Net
+ 034A 23        	inx	h
+                	; DID (server ID) already set
+ 034B 23        	inx	h
+                	; SID, our node ID, will be set by SNIOS
+ 034C 23        	inx	h
+ 034D 23        	inx	h
+ 034E 23        	inx	h
+ 034F EB        	xchg		; DE = MSGDAT
+ 0350 2A9301    	lhld	MCRPNT
+ 0353 B7        	ora	a
+                	dsbc	d	; HL -= DE
+ 0354+ED52      	DB	0EDH,D*8+42H
+ 0356 CA5D03    	jz	SNDHD1	; size set already
+ 0359 2B        	dcx	h	; SIZ is -1
+ 035A EB        	xchg
+ 035B 2B        	dcx	h	; point to SIZ byte
+ 035C 73        	mov	m,e	; SIZ = length - 1
+                SNDHD1:
+ 035D 014C00    	lxi	b,MSGTOP
+                SDMSGE:
+ 0360 CD0000    	call	SNDMSG
+ 0363 3C        	inr	a
+ 0364 C0        	rnz
+ 0365 C36D03    	jmp	NERROR
+                
+                RVMSGE:
+ 0368 CD0000    	call	RCVMSG
+ 036B 3C        	inr	a
+ 036C C0        	rnz
+                NERROR:
+ 036D 21FFFF    	lxi	h,-1
+ 0370 7C        	mov	a,h
+ 0371 C37703    	jmp	NDEND
+                
+                NDENDR:
+ 0374 3A9201    	lda	RETCOD
+                NDEND:
+ 0377 EB        	xchg
+ 0378 2A8D01    	lhld	USTACK
+ 037B F9        	sphl
+ 037C EB        	xchg
+ 037D 6F        	mov	l,a
+ 037E 44        	mov	b,h
+ 037F C9        	ret
+                
+                RCVPAR:
+ 0380 014C00    	lxi	b,MSGTOP
+ 0383 CD6803    	call	RVMSGE
+ 0386 215100    	lxi	h,MSGDAT
+ 0389 229301    	shld	MCRPNT
+ 038C C9        	ret
+                
+                tnextp:	; abandon call to real BDOS
+ 038D 2A8D01    	lhld	USTACK
+ 0390 F9        	sphl
+                TBDOSP:
+ 0391 2A9001    	lhld	PARAMT
+ 0394 EB        	xchg
+ 0395 3A8F01    	lda	FUNCOD
+ 0398 4F        	mov	c,a
+ 0399 C306FD    	jmp	next
+                
+                CKFCBD:
+ 039C 2A9001    	lhld	PARAMT
+ 039F 7E        	mov	a,m
+ 03A0 3D        	dcr	a
+ 03A1 F2A703    	jp	CKFCB1
+ 03A4 3ADAFB    	lda	crdrv
+                CKFCB1:
+ 03A7 5F        	mov	e,a
+ 03A8 1600      	mvi	d,0
+ 03AA CDB603    	call	CHKDSK
+ 03AD FEFF      	cpi	0ffh
+ 03AF C0        	rnz
+ 03B0 CD9103    	call	TBDOSP
+ 03B3 C37703    	jmp	NDEND
+                
+                CHKDSK:
+ 03B6 210200    	lxi	h,CFGTBL+BSDSKS
+ 03B9 19        	dad	d
+ 03BA 19        	dad	d
+ 03BB 7E        	mov	a,m
+ 03BC 17        	ral
+ 03BD DAC303    	jc	CHKDS1	; remote disk
+ 03C0 3EFF      	mvi	a,0ffh
+ 03C2 C9        	ret
+                CHKDS1:
+ 03C3 1F        	rar
+ 03C4 E60F      	ani	00fh	; remote server disk number
+ 03C6 3C        	inr	a
+ 03C7 4F        	mov	c,a
+ 03C8 23        	inx	h
+ 03C9 7E        	mov	a,m	; remote server node ID
+ 03CA 324D00    	sta	MSGID
+ 03CD C9        	ret
+                
+                SNDFCB:
+ 03CE CDD403    	call	CKSFCB
+ 03D1 C34503    	jmp	SNDHDR
+                
+                CKSFCB:
+ 03D4 CD9C03    	call	CKFCBD		; check FCB disk for local/remote (local does not return)
+                STFCB:
+ 03D7 3AE0FB    	lda	crusr
+ 03DA 2A9301    	lhld	MCRPNT
+ 03DD 77        	mov	m,a	; put USR in msg buf
+ 03DE 23        	inx	h
+ 03DF 71        	mov	m,c	; put DSK in msg buf
+ 03E0 23        	inx	h
+ 03E1 E5        	push	h
+ 03E2 EB        	xchg
+ 03E3 2A9001    	lhld	PARAMT
+ 03E6 23        	inx	h
+ 03E7 012300    	lxi	b,35
+                	ldir	; copy FCB to msg buf
+ 03EA+EDB0      	DB	0EDH,0B0H
+ 03EC EB        	xchg
+ 03ED 229301    	shld	MCRPNT
+ 03F0 AF        	xra	a
+ 03F1 329701    	sta	FNTMPF
+ 03F4 329601    	sta	F5SETF
+ 03F7 E1        	pop	h	; point to start of FCB name in msg buf
+                SUBTMP:
+ 03F8 CD1A04    	call	CKDOL	; substitute $NN for $$$ at start of name
+ 03FB 0600      	mvi	b,0
+ 03FD 09        	dad	b	; skip rest of 3 chars
+ 03FE 23        	inx	h
+ 03FF 7E        	mov	a,m
+ 0400 E680      	ani	080h	; check f5' attr - partial close/delete XFCBs only
+ 0402 23        	inx	h
+ 0403 CA1004    	jz	SUBTM1
+ 0406 7E        	mov	a,m
+ 0407 E680      	ani	080h	; check f6' attr - assign passwd/set byte count
+ 0409 C21004    	jnz	SUBTM1
+ 040C 3D        	dcr	a
+ 040D 329601    	sta	F5SETF
+                SUBTM1:
+ 0410 3A9701    	lda	FNTMPF
+ 0413 87        	add	a
+ 0414 329701    	sta	FNTMPF
+ 0417 23        	inx	h
+ 0418 23        	inx	h
+ 0419 23        	inx	h
+                CKDOL:
+ 041A 0E03      	mvi	c,3
+ 041C 3E24      	mvi	a,'$'
+                CKDOL1:
+ 041E BE        	cmp	m
+ 041F C0        	rnz
+ 0420 23        	inx	h
+ 0421 0D        	dcr	c
+ 0422 C21E04    	jnz	CKDOL1
+ 0425 EB        	xchg
+ 0426 219701    	lxi	h,FNTMPF
+ 0429 34        	inr	m
+ 042A 1B        	dcx	d
+ 042B 3A0100    	lda	CFGTBL+BSRID	; client (slave) ID
+ 042E 47        	mov	b,a
+ 042F CD3F04    	call	HEXDIG
+ 0432 1B        	dcx	d
+ 0433 78        	mov	a,b
+ 0434 1F        	rar
+ 0435 1F        	rar
+ 0436 1F        	rar
+ 0437 1F        	rar
+ 0438 CD3F04    	call	HEXDIG
+ 043B 13        	inx	d
+ 043C 13        	inx	d
+ 043D EB        	xchg
+ 043E C9        	ret
+                
+                HEXDIG:
+ 043F E60F      	ani	00fh
+ 0441 C690      	adi	90h
+ 0443 27        	daa
+ 0444 CE40      	aci	40h
+ 0446 27        	daa
+ 0447 12        	stax	d
+ 0448 C9        	ret
+                
+                RENTMP:
+ 0449 2A9301    	lhld	MCRPNT
+ 044C 11EDFF    	lxi	d,-19
+ 044F 19        	dad	d
+ 0450 C3F803    	jmp	SUBTMP
+                
+                WTDTC2:	; hardly worth ldir, should just hard-code
+ 0453 010200    	lxi	b,2
+ 0456 C36204    	jmp	WTDTCS
+                WTDTC8:
+ 0459 010800    	lxi	b,8
+ 045C C36204    	jmp	WTDTCS
+                
+                WTDTCP:
+ 045F 018000    	lxi	b,SCTLNG
+                WTDTCS:
+ 0462 2A9301    	lhld	MCRPNT
+ 0465 EB        	xchg
+ 0466 2A1D09    	lhld	DMAADR
+                	ldir
+ 0469+EDB0      	DB	0EDH,0B0H
+ 046B EB        	xchg
+ 046C 229301    	shld	MCRPNT
+ 046F C34503    	jmp	SNDHDR
+                
+                CKSTDP:
+ 0472 3A9001    	lda	PARAMT
+ 0475 C37B04    	jmp	STDSK0
+                CKSTDK:
+ 0478 3ADAFB    	lda	crdrv
+                STDSK0:
+ 047B 5F        	mov	e,a
+ 047C 1600      	mvi	d,000h
+ 047E CDB603    	call	CHKDSK
+ 0481 FEFF      	cpi	0ffh
+ 0483 C28C04    	jnz	STDSK1
+ 0486 CD9103    	call	TBDOSP
+ 0489 C37703    	jmp	NDEND
+                
+                STDSK1:	; server already set in MSGID
+ 048C 2A9301    	lhld	MCRPNT
+ 048F 0D        	dcr	c
+ 0490 71        	mov	m,c
+ 0491 23        	inx	h
+ 0492 229301    	shld	MCRPNT
+ 0495 C9        	ret
+                
+                ; Handle multi-sector count
+                CHKMSC:
+ 0496 CD9C03    	call	CKFCBD	; does not return if disk is local
+                	; From here on, we know the disk is remote
+ 0499 3AE6FB    	lda	mltio
+ 049C FE01      	cpi	1
+                	; skip multi-sector handling if count == 1
+ 049E C8        	rz	; returns to NDOSE5, goto next opcode.
+ 049F 321C09    	sta	CURMSC
+ 04A2 E1        	pop	h	; NDOSE5 ret addr
+ 04A3 221809    	shld	MSCRET
+ 04A6 E1        	pop	h	; FUNTB2 pointer (past CHKMSC)
+ 04A7 221A09    	shld	MSCTBP
+ 04AA 3A8F01    	lda	FUNCOD
+ 04AD FE21      	cpi	CRREAD
+ 04AF DA0305    	jc	CKMSC2
+                	; save rand rec position
+ 04B2 2A9001    	lhld	PARAMT	; FCB
+ 04B5 012100    	lxi	b,FCBRR0
+ 04B8 09        	dad	b
+ 04B9 5E        	mov	e,m
+ 04BA 23        	inx	h
+ 04BB 56        	mov	d,m
+ 04BC 23        	inx	h
+ 04BD 7E        	mov	a,m
+ 04BE 321709    	sta	SAVRR+2
+ 04C1 EB        	xchg
+ 04C2 221509    	shld	SAVRR
+ 04C5 C30305    	jmp	CKMSC2
+                CKMSC0:
+ 04C8 3A9201    	lda	RETCOD
+ 04CB B7        	ora	a
+ 04CC C20F05    	jnz	CKMSC1
+ 04CF 3A1C09    	lda	CURMSC
+ 04D2 3D        	dcr	a
+ 04D3 321C09    	sta	CURMSC
+ 04D6 CA0F05    	jz	CKMSC1
+ 04D9 215100    	lxi	h,MSGDAT
+ 04DC 229301    	shld	MCRPNT
+ 04DF 2A1D09    	lhld	DMAADR
+ 04E2 018000    	lxi	b,128
+ 04E5 09        	dad	b
+ 04E6 221D09    	shld	DMAADR
+ 04E9 3A8F01    	lda	FUNCOD
+ 04EC FE21      	cpi	CRREAD
+ 04EE DA0305    	jc	CKMSC2
+                	; advance random record number...
+ 04F1 2A9001    	lhld	PARAMT	; FCB
+ 04F4 012100    	lxi	b,FCBRR0
+ 04F7 09        	dad	b
+ 04F8 34        	inr	m
+ 04F9 C20305    	jnz	CKMSC2
+ 04FC 23        	inx	h
+ 04FD 34        	inr	m
+ 04FE C20305    	jnz	CKMSC2
+ 0501 23        	inx	h
+ 0502 34        	inr	m
+                CKMSC2:
+ 0503 21C804    	lxi	h,CKMSC0
+ 0506 E5        	push	h
+ 0507 2A1A09    	lhld	MSCTBP
+ 050A E5        	push	h
+ 050B 2A1809    	lhld	MSCRET
+ 050E E9        	pchl	; jmp NDOSE5 - do next opcode. Returns to CKMSC0 when done.
+                
+                ; done with multi-sec read/write, restore everything.
+                CKMSC1:	; could be EOF, or some physical error
+ 050F 3A8F01    	lda	FUNCOD
+ 0512 FE21      	cpi	CRREAD
+ 0514 DA3B05    	jc	CKMSC3
+                	; restore file position...
+ 0517 3A1709    	lda	SAVRR+2
+ 051A 2A1509    	lhld	SAVRR
+ 051D EB        	xchg
+ 051E 2A9001    	lhld	PARAMT	; FCB
+ 0521 012100    	lxi	b,FCBRR0
+ 0524 09        	dad	b
+ 0525 73        	mov	m,e
+ 0526 23        	inx	h
+ 0527 72        	mov	m,d
+ 0528 23        	inx	h
+ 0529 77        	mov	m,a
+                	; If the program's next op is random read/write, then we are
+                	; finished now. But, if the next op is sequential then
+                	; we must set the file position back to where it started.
+                	; Use READ RAND to set file position. Response is ignored.
+ 052A 3E21      	mvi	a,CRREAD
+ 052C 324F00    	sta	MSGFUN
+ 052F 215100    	lxi	h,MSGDAT
+ 0532 229301    	shld	MCRPNT
+ 0535 CDCE03    	call	SNDFCB
+ 0538 CD8003    	call	RCVPAR
+                	; ignore data/error returned by CRREAD
+                CKMSC3:
+ 053B 2600      	mvi	h,0	; success returns NREC=0
+ 053D 3A9201    	lda	RETCOD
+ 0540 B7        	ora	a
+ 0541 C8        	rz		; NDENDR
+ 0542 3A1C09    	lda	CURMSC	; if error ended us early, need num sec completed.
+ 0545 5F        	mov	e,a
+ 0546 3AE6FB    	lda	mltio
+ 0549 93        	sub	e
+ 054A 67        	mov	h,a
+ 054B C9        	ret		; NDENDR
+                
+                
+                BCSTFN:	; broadcast func (set default password, set compat attrs)
+ 054C 110000    	lxi	d,0
+ 054F CDD505    	call	FORALL
+ 0552 79        	mov	a,c
+ 0553 0C        	inr	c
+ 0554 CA3B06    	jz	RSTALL	; no (more) servers, reset and return
+ 0557 324D00    	sta	MSGID
+ 055A 2A9001    	lhld	PARAMT
+ 055D EB        	xchg
+ 055E 2A9301    	lhld	MCRPNT
+ 0561 3A8F01    	lda	FUNCOD
+ 0564 FE38      	cpi	CDEFPW-CBMAX	; a.k.a. 106 - set def password
+ 0566 CA6D05    	jz	BCST1
+                	; fn 70 - set compat attr
+ 0569 73        	mov	m,e
+ 056A C37705    	jmp	BCST2
+                BCST1:
+ 056D 010800    	lxi	b,8
+ 0570 EB        	xchg
+                	ldir
+ 0571+EDB0      	DB	0EDH,0B0H
+ 0573 EB        	xchg
+ 0574 229301    	shld	MCRPNT
+                BCST2:
+ 0577 CD4503    	call	SNDHDR
+ 057A CD8003    	call	RCVPAR
+ 057D C34C05    	jmp	BCSTFN
+                
+                BCSTVC:	; broadcast "drive vector" funcs to all servers
+ 0580 2A9001    	lhld	PARAMT
+ 0583 EB        	xchg
+                BCSTV1:
+ 0584 CDD505    	call	FORALL
+ 0587 E5        	push	h
+ 0588 79        	mov	a,c
+ 0589 0C        	inr	c
+ 058A C29F05    	jnz	BCSTV2	; some remote drives to do
+ 058D CD3B06    	call	RSTALL
+ 0590 D1        	pop	d
+ 0591 3A8F01    	lda	FUNCOD
+ 0594 FE25      	cpi	CRSDSN	; reset drive
+ 0596 C0        	rnz		; only reset drive is passed to local
+ 0597 4F        	mov	c,a
+ 0598 CD06FD    	call	next
+ 059B 329201    	sta	RETCOD
+ 059E C9        	ret
+                BCSTV2:
+ 059F 324D00    	sta	MSGID
+ 05A2 215100    	lxi	h,MSGDAT
+ 05A5 73        	mov	m,e
+ 05A6 23        	inx	h
+ 05A7 72        	mov	m,d
+ 05A8 23        	inx	h
+ 05A9 229301    	shld	MCRPNT
+ 05AC CD4503    	call	SNDHDR
+ 05AF 3A8F01    	lda	FUNCOD
+ 05B2 D626      	sui	38	; access drive
+ 05B4 CACE05    	jz	BCSTV3
+ 05B7 F5        	push	psw
+ 05B8 CD8003    	call	RCVPAR
+ 05BB F1        	pop	psw
+ 05BC D1        	pop	d
+ 05BD 3D        	dcr	a
+ 05BE CA8405    	jz	BCSTV1
+ 05C1 3A5100    	lda	MSGDAT
+ 05C4 329201    	sta	RETCOD
+ 05C7 3C        	inr	a
+ 05C8 CA3B06    	jz	RSTALL
+ 05CB C38405    	jmp	BCSTV1
+                
+                BCSTV3:
+ 05CE CD9A06    	call	RCVEC
+ 05D1 D1        	pop	d
+ 05D2 C38405    	jmp	BCSTV1
+                
+                ; Returns vector of all disks for given server,
+                ; each call skips servers already reported.
+                FORALL:
+ 05D5 210200    	lxi	h,CFGTBL+BSDSKS
+ 05D8 D5        	push	d
+ 05D9 110000    	lxi	d,0
+ 05DC 01FF10    	lxi	b,010ffh
+                FORAL1:
+ 05DF 7E        	mov	a,m
+ 05E0 17        	ral
+ 05E1 D21F06    	jnc	FORAL6	; local
+ 05E4 17        	ral
+ 05E5 DA1F06    	jc	FORAL6	; "already did" flag
+ 05E8 23        	inx	h
+ 05E9 79        	mov	a,c
+ 05EA FEFF      	cpi	0ffh
+ 05EC CAF705    	jz	FORAL2
+ 05EF BE        	cmp	m
+ 05F0 CAF805    	jz	FORAL3
+ 05F3 2B        	dcx	h
+ 05F4 C31F06    	jmp	FORAL6
+                FORAL2:
+ 05F7 4E        	mov	c,m
+                FORAL3:
+ 05F8 2B        	dcx	h
+ 05F9 7E        	mov	a,m
+ 05FA F640      	ori	040h	; mark this one done...
+ 05FC 77        	mov	m,a
+ 05FD E3        	xthl
+ 05FE CD3306    	call	RHLR0
+ 0601 D22A06    	jnc	FORAL7
+ 0604 E3        	xthl
+ 0605 7E        	mov	a,m
+ 0606 E60F      	ani	00fh
+ 0608 3C        	inr	a
+ 0609 E5        	push	h
+ 060A 210100    	lxi	h,1
+                FORAL4:
+ 060D 3D        	dcr	a
+ 060E CA1506    	jz	FORAL5
+ 0611 29        	dad	h
+ 0612 C30D06    	jmp	FORAL4
+                FORAL5:
+ 0615 7B        	mov	a,e
+ 0616 B5        	ora	l
+ 0617 5F        	mov	e,a
+ 0618 7A        	mov	a,d
+ 0619 B4        	ora	h
+ 061A 57        	mov	d,a
+ 061B E1        	pop	h
+ 061C C32B06    	jmp	FORAL8
+                FORAL6:
+ 061F E3        	xthl
+ 0620 CD3306    	call	RHLR0
+ 0623 D22A06    	jnc	FORAL7
+ 0626 7C        	mov	a,h
+ 0627 F680      	ori	080h
+ 0629 67        	mov	h,a
+                FORAL7:
+ 062A E3        	xthl
+                FORAL8:
+ 062B 23        	inx	h
+ 062C 23        	inx	h
+ 062D 05        	dcr	b
+ 062E C2DF05    	jnz	FORAL1
+ 0631 E1        	pop	h
+ 0632 C9        	ret
+                
+                RHLR0:
+ 0633 B7        	ora	a
+ 0634 7C        	mov	a,h
+ 0635 1F        	rar
+ 0636 67        	mov	h,a
+ 0637 7D        	mov	a,l
+ 0638 1F        	rar
+ 0639 6F        	mov	l,a
+ 063A C9        	ret
+                
+                ; Reset from FORALL
+                RSTALL:
+ 063B 210200    	lxi	h,CFGTBL+BSDSKS
+ 063E 0610      	mvi	b,16
+                RSTAL1:
+ 0640 7E        	mov	a,m
+ 0641 E68F      	ani	08fh	; clear FORALL iterator flag(s)
+ 0643 77        	mov	m,a
+ 0644 23        	inx	h
+ 0645 23        	inx	h
+ 0646 05        	dcr	b
+ 0647 C24006    	jnz	RSTAL1
+ 064A C9        	ret
+                
+                STSF:	; setup Search First
+ 064B 3EFF      	mvi	a,0ffh
+ 064D 324B00    	sta	CURSID	; assume local
+ 0650 2A9001    	lhld	PARAMT
+ 0653 7E        	mov	a,m
+ 0654 FE3F      	cpi	'?'
+ 0656 C26406    	jnz	STSF1
+ 0659 CD7804    	call	CKSTDK
+ 065C 0EBF      	mvi	c,'?'+080h	; "drive" code with CP/M3 flag
+ 065E CDD703    	call	STFCB
+ 0661 C36E06    	jmp	STSF2
+                STSF1:
+ 0664 2A9301    	lhld	MCRPNT
+ 0667 23        	inx	h
+ 0668 229301    	shld	MCRPNT
+ 066B CDD403    	call	CKSFCB	; if remote, set FCB in msg
+                STSF2:
+ 066E 3A4D00    	lda	MSGID
+ 0671 324B00    	sta	CURSID
+ 0674 CDC901    	call	SETSRA
+ 0677 C34503    	jmp	SNDHDR
+                
+                STSN:	; setup Search Next
+ 067A 3A4B00    	lda	CURSID
+ 067D FEFF      	cpi	0ffh	; was Search First a local op?
+ 067F C28806    	jnz	STSN1
+ 0682 CD9103    	call	TBDOSP
+ 0685 C37703    	jmp	NDEND
+                STSN1:
+ 0688 324D00    	sta	MSGID
+ 068B 3AE0FB    	lda	crusr
+ 068E 2A9301    	lhld	MCRPNT
+ 0691 23        	inx	h
+ 0692 77        	mov	m,a
+ 0693 23        	inx	h
+ 0694 229301    	shld	MCRPNT
+ 0697 C34503    	jmp	SNDHDR
+                
+                RCVEC:
+ 069A CD8003    	call	RCVPAR
+ 069D 215200    	lxi	h,MSGDAT+1
+ 06A0 229301    	shld	MCRPNT
+ 06A3 56        	mov	d,m	; D = ext err code
+ 06A4 2B        	dcx	h
+ 06A5 7E        	mov	a,m
+ 06A6 329201    	sta	RETCOD
+ 06A9 2B        	dcx	h
+ 06AA 7E        	mov	a,m	; SIZ
+ 06AB 3D        	dcr	a
+ 06AC 2600      	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
+ 06AE C0        	rnz		; not extended error - skip rest
+ 06AF 3AE7FB    	lda	ermde
+ 06B2 3C        	inr	a
+ 06B3 C2BA06    	jnz	NDERR
+ 06B6 EB        	xchg
+ 06B7 C37403    	jmp	NDENDR
+                
+                NDERR:
+ 06BA D5        	push	d
+ 06BB 113700    	lxi	d,NDERRM
+ 06BE CDEE06    	call	PRMSG
+ 06C1 F1        	pop	psw	; A = (D), ext err code
+ 06C2 F5        	push	psw	; Fix bug in NDOS.ASM
+ 06C3 CDDE06    	call	HEXOUT
+ 06C6 114300    	lxi	d,NDERR2
+ 06C9 CDEE06    	call	PRMSG
+ 06CC 3A8F01    	lda	FUNCOD
+ 06CF CDDE06    	call	HEXOUT
+ 06D2 3AE7FB    	lda	ermde
+ 06D5 E1        	pop	h	; H = ext err code
+ 06D6 FEFE      	cpi	0feh
+ 06D8 CA7403    	jz	NDENDR
+ 06DB C30000    	jmp	TOP	; abort program
+                
+                HEXOUT:
+ 06DE 119B01    	lxi	d,HEXMSG+1	; do low nibble first
+ 06E1 F5        	push	psw
+ 06E2 CD3F04    	call	HEXDIG
+ 06E5 F1        	pop	psw
+ 06E6 1F        	rar
+ 06E7 1F        	rar
+ 06E8 1F        	rar
+ 06E9 1F        	rar
+ 06EA 1B        	dcx	d	; back to hi nibble
+ 06EB CD3F04    	call	HEXDIG
+                PRMSG:
+ 06EE 0E09      	mvi	c,CBUFPR
+ 06F0 C306FD    	jmp	next
+                
+                GTFCB:
+ 06F3 3A9601    	lda	F5SETF
+ 06F6 3C        	inr	a
+ 06F7 C20007    	jnz	GTFCCR
+                GTFCRR:
+ 06FA 012300    	lxi	b,35	; FCB+CR+RR (-drive)
+ 06FD C30307    	jmp	GTFC1
+                GTFCCR:
+ 0700 012000    	lxi	b,32	; FCB+CR, not RR
+                GTFC1:
+ 0703 CD1707    	call	RSTMP	; un-do temp file subst
+ 0706 2A9001    	lhld	PARAMT
+ 0709 23        	inx	h
+ 070A EB        	xchg
+ 070B 2A9301    	lhld	MCRPNT
+ 070E 23        	inx	h
+                	ldir
+ 070F+EDB0      	DB	0EDH,0B0H
+ 0711 229301    	shld	MCRPNT
+ 0714 2600      	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
+ 0716 C9        	ret
+                
+                RSTMP:	; restore TMP filename
+ 0717 3A9701    	lda	FNTMPF
+ 071A 1F        	rar
+ 071B 1F        	rar
+ 071C D22907    	jnc	RSTMP1
+ 071F 2A9301    	lhld	MCRPNT
+ 0722 23        	inx	h
+ 0723 23        	inx	h
+ 0724 3624      	mvi	m,'$'
+ 0726 23        	inx	h
+ 0727 3624      	mvi	m,'$'
+                RSTMP1:
+ 0729 17        	ral
+ 072A D0        	rnc
+ 072B 2A9301    	lhld	MCRPNT
+ 072E 110A00    	lxi	d,10
+ 0731 19        	dad	d
+ 0732 3624      	mvi	m,'$'
+ 0734 23        	inx	h
+ 0735 3624      	mvi	m,'$'
+ 0737 C9        	ret
+                
+                GTDIRE:
+ 0738 3A9201    	lda	RETCOD
+ 073B 3C        	inr	a
+ 073C 2600      	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
+ 073E C8        	rz
+ 073F 2A9301    	lhld	MCRPNT
+                	; Special case for CP/M3 full search, although really
+                	; any SEARCH that wants to be fully compatible with CP/M
+                	; neuances - specifically that the DMA buffer contains the
+                	; full directory sector after a search.
+                	;
+                	; CP/Net breaks SEARCH funcs 17/18 by only returning
+                	; one DIRENT at a time, while the local BDOS calls
+                	; actually fill the DMA buffer with the directory sector.
+                	; DIR.COM depends on this for getting timestamps.
+ 0742 3A5000    	lda	MSGSIZ
+ 0745 B7        	ora	a	; 00 = 1 byte, dir code only, DMA buf implied
+ 0746 C8        	rz		; NDENDR will return dir code to user
+ 0747 FE24      	cpi	32+4	; anything 1 < x < 128 really, pick a number (expect 32).
+ 0749 D26E07    	jnc	STOSC0	; assume 128 bytes, copy all to DMA buffer.
+                	; single DIRENT returned, copy to correct location.
+ 074C EB        	xchg
+ 074D 2A1D09    	lhld	DMAADR
+ 0750 3A9201    	lda	RETCOD
+ 0753 3C        	inr	a
+ 0754 012000    	lxi	b,32
+                GTDIR1:
+ 0757 3D        	dcr	a
+ 0758 CA5F07    	jz	GTDIR2
+ 075B 09        	dad	b
+ 075C C35707    	jmp	GTDIR1
+                GTDIR2:
+ 075F EB        	xchg
+                	ldir
+ 0760+EDB0      	DB	0EDH,0B0H
+ 0762 229301    	shld	MCRPNT
+ 0765 C9        	ret
+                
+                GTOSCT:
+ 0766 3A9201    	lda	RETCOD
+ 0769 B7        	ora	a
+ 076A C0        	rnz
+ 076B 217600    	lxi	h,MSGDAT+37
+                STOSC0:
+                	lded	DMAADR
+ 076E+ED5B      	DB	0EDH,5BH
+ 0770+1D09      	DW	DMAADR
+ 0772 018000    	lxi	b,SCTLNG
+                	ldir
+ 0775+EDB0      	DB	0EDH,0B0H
+ 0777 229301    	shld	MCRPNT
+ 077A 2600      	mvi	h,0	; ensure H=0 to avoid confusion with extended errors
+ 077C C9        	ret
+                
+                GTMISC:
+ 077D 2A9301    	lhld	MCRPNT
+ 0780 2B        	dcx	h	; drop error byte
+ 0781 3A8F01    	lda	FUNCOD
+ 0784 FE1B      	cpi	CGTALL	; get alloc addr
+ 0786 CAB807    	jz	GTMSC3	; for alloc vec, just leave in message buffer
+ 0789 FE2E      	cpi	CFRSP	; get disk free space
+ 078B CA9D07    	jz	GTMSC4
+ 078E FE1F      	cpi	CGTDPB	; get DPB addr
+ 0790 C2AB07    	jnz	GTMSC1
+                	; fn 31 - get DPB
+ 0793 111F09    	lxi	d,CURDPB
+ 0796 D5        	push	d
+ 0797 011000    	lxi	b,16	; should be 15 for CP/M 2.2, 17 for CP/M 3
+ 079A C3B207    	jmp	GTMSC2
+                GTMSC4:
+ 079D 110000    	lxi	d,0
+ 07A0 D5        	push	d
+                	lded	DMAADR
+ 07A1+ED5B      	DB	0EDH,5BH
+ 07A3+1D09      	DW	DMAADR
+ 07A5 010300    	lxi	b,3
+ 07A8 C3B207    	jmp	GTMSC2
+                
+                GTMSC1:		; fn 71 - get server config
+ 07AB 112E09    	lxi	d,CURSCF
+ 07AE D5        	push	d
+ 07AF 011700    	lxi	b,23
+                GTMSC2:
+                	ldir
+ 07B2+EDB0      	DB	0EDH,0B0H
+ 07B4 229301    	shld	MCRPNT
+ 07B7 E1        	pop	h
+                GTMSC3:
+ 07B8 7D        	mov	a,l
+ 07B9 329201    	sta	RETCOD
+ 07BC C9        	ret
+                
+                GTLOGV:
+ 07BD 112100    	lxi	d,CFGTBL+BSDSKE
+ 07C0 210000    	lxi	h,0
+ 07C3 0610      	mvi	b,16
+                GTLGV1:
+ 07C5 1A        	ldax	d
+ 07C6 1B        	dcx	d
+ 07C7 4F        	mov	c,a
+ 07C8 1A        	ldax	d
+ 07C9 1B        	dcx	d
+ 07CA 29        	dad	h
+ 07CB CDD707    	call	DRVSTS
+ 07CE 05        	dcr	b
+ 07CF C2C507    	jnz	GTLGV1
+ 07D2 7D        	mov	a,l
+ 07D3 329201    	sta	RETCOD
+ 07D6 C9        	ret
+                
+                ; Get a drive's status (i.e. GET LOGIN VECTOR)
+                ; B = local drive num
+                ; A = net cfg byte, bit-7 = remote, bit-0:3 = remote drive num
+                ; Returns DE bit-0 = drive's status
+                DRVSTS:
+ 07D7 D5        	push	d
+ 07D8 C5        	push	b
+ 07D9 E5        	push	h
+ 07DA 17        	ral
+ 07DB DAE807    	jc	DRVST1
+                	; drive is local
+ 07DE C5        	push	b
+ 07DF CD9103    	call	TBDOSP
+ 07E2 C1        	pop	b
+ 07E3 05        	dcr	b
+ 07E4 EB        	xchg
+ 07E5 C30408    	jmp	DRVST2
+                
+                DRVST1:	; drive is remote
+ 07E8 1F        	rar
+ 07E9 E60F      	ani	00fh
+ 07EB 47        	mov	b,a	; remote drive number
+ 07EC 79        	mov	a,c	; server ID
+ 07ED 324D00    	sta	MSGID
+ 07F0 215100    	lxi	h,MSGDAT
+ 07F3 229301    	shld	MCRPNT
+ 07F6 C5        	push	b
+ 07F7 CD4503    	call	SNDHDR
+ 07FA CD8003    	call	RCVPAR
+ 07FD C1        	pop	b
+ 07FE 2A9301    	lhld	MCRPNT
+ 0801 5E        	mov	e,m
+ 0802 23        	inx	h
+ 0803 56        	mov	d,m
+                DRVST2:	; DE = vector of active drives
+ 0804 78        	mov	a,b
+ 0805 B7        	ora	a
+ 0806 CA1308    	jz	DRVST4
+                DRVST3:	; get drive 'B' bit to LSB
+ 0809 7A        	mov	a,d
+ 080A 1F        	rar
+ 080B 57        	mov	d,a
+ 080C 7B        	mov	a,e
+ 080D 1F        	rar
+ 080E 5F        	mov	e,a
+ 080F 05        	dcr	b
+ 0810 C20908    	jnz	DRVST3
+                DRVST4:
+ 0813 1600      	mvi	d,000h
+ 0815 7B        	mov	a,e
+ 0816 E601      	ani	001h
+ 0818 5F        	mov	e,a
+ 0819 E1        	pop	h
+ 081A 19        	dad	d
+ 081B C1        	pop	b
+ 081C D1        	pop	d
+ 081D C9        	ret
+                
+                SELDSK:
+ 081E 3A9001    	lda	PARAMT
+ 0821 1600      	mvi	d,000h
+ 0823 5F        	mov	e,a
+ 0824 CDB603    	call	CHKDSK
+ 0827 FEFF      	cpi	0ffh	; local disk
+ 0829 CA9103    	jz	TBDOSP	; let BDOS handle
+ 082C CDD001    	call	SETDSK
+ 082F 2A9301    	lhld	MCRPNT
+ 0832 0D        	dcr	c
+ 0833 71        	mov	m,c
+ 0834 23        	inx	h
+ 0835 229301    	shld	MCRPNT
+ 0838 CD4503    	call	SNDHDR
+ 083B C39A06    	jmp	RCVEC
+                
+                RESET:	; anything to do? BDOS will be called... but BDOS does not call 0005 (us)?
+ 083E 215100    	lxi	h,MSGDAT
+ 0841 229301    	shld	MCRPNT
+                	; A: cannot be remote...
+ 0844 C306FD    	jmp	next
+                
+                LIST1:
+ 0847 119001    	lxi	d,PARAMT
+ 084A 010100    	lxi	b,1
+ 084D C35D08    	jmp	lstbk2
+                
+                LSTBLK:
+ 0850 2A9001    	lhld	PARAMT
+ 0853 5E        	mov	e,m
+ 0854 23        	inx	h
+ 0855 56        	mov	d,m	; address of data
+ 0856 23        	inx	h
+ 0857 4E        	mov	c,m
+ 0858 23        	inx	h
+ 0859 46        	mov	b,m	; length
+ 085A 79        	mov	a,c
+ 085B B0        	ora	b
+ 085C C8        	rz
+                lstbk2:
+                	lxix	CFGTBL+BSLIST
+ 085D+DD21      	DB	0DDH,21H
+ 085F+2400      	DW	CFGTBL+BSLIST
+                	bitx	7,+0
+ 0861+DDCB007E  	DB	0DDH,0CBH,+0,7*8+46H
+ 0865 CA8D03    	jz	tnextp
+ 0868 212D00    	lxi	h,CFGTBL+BSLIST+9
+ 086B D5        	push	d
+                	ldx	e,+7
+ 086C+DD5E07    	DB	0DDH,E*8+46H,+7
+ 086F 1600      	mvi	d,0
+ 0871 19        	dad	d
+ 0872 D1        	pop	d
+                lstbk0:
+ 0873 1A        	ldax	d
+ 0874 13        	inx	d
+ 0875 77        	mov	m,a
+ 0876 23        	inx	h
+                	inrx	+7	; dirty == not-zero
+ 0877+DD3407    	DB	0DDH,34H,+7
+ 087A FA8908    	jm	lstbk3	; send data
+ 087D FEFF      	cpi	0ffh	; stop at 0ffh? or need to continue if more?
+ 087F CA8908    	jz	lstbk3	; this will continue if more chars exist...
+                lstbk1:
+ 0882 0B        	dcx	b
+ 0883 78        	mov	a,b
+ 0884 B1        	ora	c
+ 0885 C27308    	jnz	lstbk0
+ 0888 C9        	ret
+                
+                lstbk3:	; must send buffer
+                	ldx	a,+0
+ 0889+DD7E00    	DB	0DDH,A*8+46H,+0
+ 088C E60F      	ani	0fh
+                	stx	a,+8
+ 088E+DD7708    	DB	0DDH,70H+A,+8
+                	; SIZ already len-1, incl LST unit
+                	ldx	a,+1	; LST server
+ 0891+DD7E01    	DB	0DDH,A*8+46H,+1
+                	stx	a,+4	; DID
+ 0894+DD7704    	DB	0DDH,70H+A,+4
+ 0897 D5        	push	d
+ 0898 C5        	push	b
+                	pushix
+ 0899+DDE5      	DB	0DDH,0E5H
+ 089B 012700    	lxi	b,CFGTBL+BSLIST+3	; MSG buffer
+ 089E CD0000    	call	SNDMSG
+                	popix
+ 08A1+DDE1      	DB	0DDH,0E1H
+                	pushix
+ 08A3+DDE5      	DB	0DDH,0E5H
+                	mvix	0,+7	; clear dirty flag, setup for next char
+ 08A5+DD360700  	DB	0DDH,36H,+7,0
+ 08A9 3C        	inr	a
+ 08AA CA6D03    	jz	NERROR
+ 08AD 014C00    	lxi	b,MSGTOP
+ 08B0 CD6803    	call	RVMSGE
+                	popix
+ 08B3+DDE1      	DB	0DDH,0E1H
+ 08B5 C1        	pop	b
+ 08B6 D1        	pop	d
+ 08B7 212D00    	lxi	h,CFGTBL+BSLIST+9
+ 08BA C38208    	jmp	lstbk1
+                
+                GETVER:
+ 08BD 3AA1FB    	lda	vers
+ 08C0 329201    	sta	RETCOD
+ 08C3 6F        	mov	l,a
+ 08C4 2602      	mvi	h,002h
+ 08C6 C9        	ret
+                
+                NWSTAT:
+ 08C7 CD0000    	call	NTWKST
+ 08CA 329201    	sta	RETCOD
+ 08CD C9        	ret
+                
+                NWCFTB:
+ 08CE CD0000    	call	CNFTBL
+ 08D1 7D        	mov	a,l
+ 08D2 329201    	sta	RETCOD
+ 08D5 C9        	ret
+                
+                LOGIN:
+ 08D6 2A9301    	lhld	MCRPNT
+ 08D9 EB        	xchg
+ 08DA 2A9001    	lhld	PARAMT
+ 08DD 7E        	mov	a,m
+ 08DE 324D00    	sta	MSGID
+ 08E1 23        	inx	h
+ 08E2 010800    	lxi	b,8
+                	ldir
+ 08E5+EDB0      	DB	0EDH,0B0H
+ 08E7 EB        	xchg
+ 08E8 229301    	shld	MCRPNT
+ 08EB C34503    	jmp	SNDHDR
+                
+                LOGOFF:
+ 08EE 3A9001    	lda	PARAMT
+ 08F1 324D00    	sta	MSGID
+ 08F4 C34503    	jmp	SNDHDR
+                
+                SDMSGU:
+ 08F7 2A9001    	lhld	PARAMT
+ 08FA 44        	mov	b,h
+ 08FB 4D        	mov	c,l
+ 08FC CD0000    	call	SNDMSG
+ 08FF 329201    	sta	RETCOD
+ 0902 C9        	ret
+                
+                RVMSGU:
+ 0903 2A9001    	lhld	PARAMT
+ 0906 44        	mov	b,h
+ 0907 4D        	mov	c,l
+ 0908 CD0000    	call	RCVMSG
+ 090B 329201    	sta	RETCOD
+ 090E C9        	ret
+                
+                LDERR:
+ 090F 3EFF      	mvi	a,-1
+ 0911 E1        	pop	h
+ 0912 C9        	ret
+                
+ 0913 0000      SAVDMA:	dw	0
+ 0915 000000    SAVRR:	db	0,0,0
+ 0918 0000      MSCRET:	dw	0
+ 091A 0000      MSCTBP:	dw	0
+ 091C 00        CURMSC:	db	0
+ 091D 0000      DMAADR:	dw	0
+                
+ 091F           CURDPB:	ds	15
+ 092E           CURSCF:	ds	23
+                
+                ; this is used to do warm boot initialization, since most
+                ; programs do not call BDOS Function 0 but instead just
+                ; JMP 0. The CCP then makes this call, either upon startup
+                ; and/or immediately prior to running a program.
+                ; Perportedly, the CCP calls this with DE=NULL in order
+                ; to scrub RSXs on warm boot.
+                LDOVLY:
+                WARMST:
+ 0945 D5        	push	d
+ 0946 C5        	push	b
+ 0947 CD0000    	call	NTWKBT
+                	; TODO: any other re-init? reset some context?
+ 094A C1        	pop	b
+ 094B D1        	pop	d
+ 094C C306FD    	jmp	next
+                
+ 094F           	end
+

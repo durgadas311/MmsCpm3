@@ -3,9 +3,10 @@
 export CPMDrive_D = $(HOME)/CpmDev/netboot	# a.k.a. $(PWD)
 export CPMDefault = d:
 
-SYSS = cpnos.sys dump.sys dump3.sys cpnet3.sys # cpnet.sys
+SYSS = cpnos.sys dump.sys dump3.sys cpnet3g.sys cpnet3z.sys # cpnet.sys
 BASE3 = nbios3.rel chrio3.rel end.rel lptbl.rel getdp.rel scb.rel
 GIDEDRVS = -d b:=70,c:=71,d:=72,e:=73,f:=74,g:=75,h:=76,i:=77
+Z67DRVS = -d b:=50,c:=51,d:=52,e:=53,f:=54,g:=55,h:=56,i:=57
 RDDRVS = -d j:=40
 DSO = -p def,a:
 
@@ -34,20 +35,32 @@ dump3.sys: dump3.spr
 	mknetboot -x -o $@ -b 0x2400 \
 		dump3.spr
 
-netbios3.spr: $(BASE3) gide'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
-	vcpm link "netbios3=nbios3,chrio3,gide'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
+nbios3g.spr: $(BASE3) gide'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
+	vcpm link "nbios3g=nbios3,chrio3,gide'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(GIDEDRVS) $(RDDRVS) $(DSO) $@
+
+nbios3z.spr: $(BASE3) m320'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
+	vcpm link "nbios3z=nbios3,chrio3,m320'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(Z67DRVS) $(RDDRVS) $(DSO) $@
 
 ndos3.spr: ndos3.rel snioswiz.rel
 	vcpm link "ndos3=ndos3,snioswiz[os,nr]"
 
-cpnet3.sys: netbios3.spr ndos3.spr resbdos3.spr bnkbdos3.spr
+cpnet3g.sys: nbios3g.spr ndos3.spr resbdos3.spr bnkbdos3.spr
 	mknetboot -g -o $@ \
 		a:=b: \
 		-ndos ndos3.spr \
 		-bdos -s resbdos3.spr \
 		-bnkbdos -k bnkbdos3.spr \
-		-bios -e netbios3.spr
+		-bios -e nbios3g.spr
+
+cpnet3z.sys: nbios3z.spr ndos3.spr resbdos3.spr bnkbdos3.spr
+	mknetboot -g -o $@ \
+		a:=b: \
+		-ndos ndos3.spr \
+		-bdos -s resbdos3.spr \
+		-bnkbdos -k bnkbdos3.spr \
+		-bios -e nbios3z.spr
 
 
 cpnet.sys: bdos22.spr ndos.spr bios22.spr # snios.spr...
