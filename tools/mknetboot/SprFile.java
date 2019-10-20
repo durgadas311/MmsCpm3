@@ -9,10 +9,12 @@ public class SprFile implements Relocatable {
 	File spr;
 	byte[] img;
 	int resStart = 0;
+	int resPage = 0;
 	int resLen = 0;
 	int resBase = 0;
 	int resReloc = 0;
 	int bnkStart = 0;
+	int bnkPage = 0;
 	int bnkLen = 0;
 	int bnkBase = 0;
 	int bnkReloc = 0;
@@ -73,11 +75,13 @@ public class SprFile implements Relocatable {
 		}
 		if (r != 0) {
 			resStart = o;
+			resPage = (resStart - 0x0100) >> 8;
 			resLen = r;
 			o += r;
 		}
 		if (b != 0) {
 			bnkStart = ((o + 0xff) & ~0xff);
+			bnkPage = (bnkStart - 0x0100) >> 8;
 			bnkLen = b;
 			o += b;
 		}
@@ -156,13 +160,12 @@ public class SprFile implements Relocatable {
 	public void setRes(int pg) { resBase = pg << 8; }
 	public void setBnk(int pg) { bnkBase = pg << 8; }
 	public void relocResOne(byte[] img, int off) { img[off] = (byte)getRes(); }
-	public void relocBnkOne(byte[] img, int off) { img[off] = (byte)getBnk(); }
+	public void relocBnkOne(byte[] img, int off) { img[off] = (byte)getRes(); }
 
 	public void relocRes() {
 		if (resStart == 0) {
 			return;
 		}
-		int pg = getRes();
 		for (int x = 0; x < resLen; ++x) {
 			int bit = (x & 7);
 			int byt = (x >> 3);
@@ -179,8 +182,10 @@ public class SprFile implements Relocatable {
 			} else if (hi >= R_EXT) {
 				System.err.format("%s: unhandled ext reloc %02x at %04x\n",
 						spr.getName(), hi, resStart + x);
+			} else if (bnkPage != 0 && hi >= bnkPage) {
+				img[resStart + x] = (byte)(hi - bnkPage + getBnk());
 			} else {
-				img[resStart + x] += (byte)(hi + pg);
+				img[resStart + x] = (byte)(hi + getRes());
 			}
 		}
 	}
@@ -189,7 +194,6 @@ public class SprFile implements Relocatable {
 		if (bnkStart == 0) {
 			return;
 		}
-		int pg = getBnk();
 		for (int x = 0; x < bnkLen; ++x) {
 			int bit = (x & 7);
 			int byt = (x >> 3);
@@ -209,8 +213,10 @@ public class SprFile implements Relocatable {
 						spr.getName(), hi, bnkStart + x,
 						resStart, bnkStart, resReloc, bnkReloc,
 						x, byt, bit);
+			} else if (bnkPage != 0 && hi >= bnkPage) {
+				img[bnkStart + x] = (byte)(hi - bnkPage + getBnk());
 			} else {
-				img[bnkStart + x] += (byte)(hi + pg);
+				img[bnkStart + x] = (byte)(hi + getRes());
 			}
 		}
 	}
@@ -250,7 +256,7 @@ public class SprFile implements Relocatable {
 		int off = bnkLen & 0x7f;
 		int rec = bnkStart + (bnkLen - 128);
 		try {
-			if (part > off) {
+			if (part != 0 && part == off) {
 				fo.write(zero);
 			}
 			if (off > 0) {

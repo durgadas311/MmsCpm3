@@ -17,7 +17,7 @@ public class ScbAbs implements Relocatable {
 		img[off] = (byte)(org.getRes() + scb);
 	}
 	public void relocBnkOne(byte[] img, int off) {
-		img[off] = (byte)org.getBnk();
+		img[off] = (byte)(org.getRes() + scb);
 	}
 }
 

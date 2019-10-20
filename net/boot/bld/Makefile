@@ -47,7 +47,7 @@ cpnet3.sys: netbios3.spr ndos3.spr resbdos3.spr bnkbdos3.spr
 		-ndos ndos3.spr \
 		-bdos resbdos3.spr \
 		-bnkbdos -k bnkbdos3.spr \
-		-bios netbios3.spr
+		-bios -e netbios3.spr
 
 
 cpnet.sys: bdos22.spr ndos.spr bios22.spr # snios.spr...

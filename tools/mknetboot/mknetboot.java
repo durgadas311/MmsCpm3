@@ -9,10 +9,11 @@ public class mknetboot {
 	Vector<SprFile> files;
 	Map<Integer,Integer> drvs;
 	boolean banked = false;
+	boolean entry = false;
 	boolean org0 = false;
 	boolean lmsg = true;
 	int type = 0;
-	int ent = 0;
+	int ent = -1;
 	int top = 0x00; // TODO: configurable...
 	int com = 0xc0; // TODO: configurable...
 	String outfile = "out.sys";
@@ -72,6 +73,8 @@ public class mknetboot {
 				org0 = true;
 			} else if (args[x].equals("-x")) {
 				lmsg = false;
+			} else if (args[x].equals("-e")) {
+				entry = true;
 			} else if (args[x].equals("-t")) {
 				++x;
 				if (x < args.length) {
@@ -103,16 +106,21 @@ public class mknetboot {
 					System.exit(1);
 				}
 				SprFile spr = new SprFile(f, banked, type);
+				if (entry) {
+					ent = files.size();
+				}
 				files.add(spr);
 				banked = false;
+				entry = false;
 				type = 0;
 			}
 		}
 		if (files.size() == 0) {
 			help(); // does not return
 		}
-		// TODO: choose 'entry' module...
-		ent = files.size() - 1;
+		if (ent == -1) {
+			ent = files.size() - 1;
+		}
 		SysFile sys = new SysFile(files, drvs, top, com, ent, org0, lmsg);
 		// TODO: check failure...
 		sys.combine();
