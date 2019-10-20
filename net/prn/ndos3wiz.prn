@@ -1,5 +1,5 @@
                 ; Initialization code for NDOS3 on WIZ850io
-                ; Checks for duplicate NDOS3, then initializes WIZ850io
+                ; Checks for CP/NET already running, then initializes WIZ850io
                 ;
                 	maclib	z80
                 
@@ -16,13 +16,14 @@
                 
                 ; BDOS functions
  0009 =         print	equ	9
+ 000C =         vers	equ	12
                 ; NDOS functions
  0045 =         cfgtbl	equ	69
                 
                 ; RSX is already linked-in, but might be a duplicate
                 
                 	cseg
- 0000 317800    	lxi	sp,stack
+ 0000 317300    	lxi	sp,stack
                 
                 	lixd	bdos+1	; this should be our NDOS3
  0003+DD2A      	DB	0DDH,2AH
@@ -30,96 +31,71 @@
                 	sixd	us
  0007+DD22      	DB	0DDH,22H
  0009+0000      	DW	US
- 000B C31F00    	jmp	dup0
-                dup1:
-                	ldx	a,+18	; LOADER3?
- 000E+DD7E12    	DB	0DDH,A*8+46H,+18
- 0011 FEFF      	cpi	0ffh
- 0013 CA4700    	jz	ldr3
- 0016 CD6000    	call	chkdup
- 0019 110200    	lxi	d,dupmsg
- 001C CA2B00    	jz	rm$us	; duplicate NDOS3, remove "us"
-                dup0:
                 	ldx	l,+4	; next RSX...
- 001F+DD6E04    	DB	0DDH,L*8+46H,+4
+ 000B+DD6E04    	DB	0DDH,L*8+46H,+4
                 	ldx	h,+5	;
- 0022+DD6605    	DB	0DDH,H*8+46H,+5
- 0025 E5        	push	h
-                	popix
- 0026+DDE1      	DB	0DDH,0E1H
- 0028 C30E00    	jmp	dup1
-                
-                ; DE = message to print
-                rm$us:
+ 000E+DD6605    	DB	0DDH,H*8+46H,+5
+ 0011 220200    	shld	next
+ 0014 0E0C      	mvi	c,vers
+ 0016 CD5F00    	call	bdose	; by-pass ourself
+ 0019 7C        	mov	a,h
+ 001A E602      	ani	02h
+ 001C CA3E00    	jz	ldr3
                 	lixd	us
- 002B+DD2A      	DB	0DDH,2AH
- 002D+0000      	DW	US
-                	mvix	0ffh,+8	; set remove flag
- 002F+DD3608FF  	DB	0DDH,36H,+8,0FFH
+ 001F+DD2A      	DB	0DDH,2AH
+ 0021+0000      	DW	US
+                	mvix	0ffh,+8	; set remove flag
+ 0023+DD3608FF  	DB	0DDH,36H,+8,0FFH
                 	; also short-circuit it
                 	ldx	l,+4	; next RSX...
- 0033+DD6E04    	DB	0DDH,L*8+46H,+4
+ 0027+DD6E04    	DB	0DDH,L*8+46H,+4
                 	ldx	h,+5	;
- 0036+DD6605    	DB	0DDH,H*8+46H,+5
+ 002A+DD6605    	DB	0DDH,H*8+46H,+5
                 	stx	l,+1	; by-pass duplicate
- 0039+DD7501    	DB	0DDH,70H+L,+1
+ 002D+DD7501    	DB	0DDH,70H+L,+1
                 	stx	h,+2	;
- 003C+DD7402    	DB	0DDH,70H+H,+2
+ 0030+DD7402    	DB	0DDH,70H+H,+2
                 	; report what happened
- 003F 0E09      	mvi	c,print
- 0041 CD0500    	call	bdos
- 0044 C30000    	jmp	cpm
+ 0033 110400    	lxi	d,dupmsg
+ 0036 0E09      	mvi	c,print
+ 0038 CD0500    	call	bdos
+ 003B C30000    	jmp	cpm
                 
                 ; hit LOADER3 RSX, no dup found...
                 ldr3:
- 0047 CD0000    	call	wizcfg
+ 003E CD0000    	call	wizcfg
                 	jrc	wizerr
- 004A+380E      	DB	38H,WIZERR-$-1
+ 0041+380E      	DB	38H,WIZERR-$-1
                 	; This will also cold-start NDOS...
                 	; hopefully, no bad effects.
- 004C 0E45      	mvi	c,cfgtbl
- 004E CD0500    	call	bdos
+ 0043 0E45      	mvi	c,cfgtbl
+ 0045 CD0500    	call	bdos
                 	; HL=cfgtbl (check error?)
- 0051 119801    	lxi	d,nvbuf+288	; 64 bytes for cfgtbl template
- 0054 CD0000    	call	cpnsetup
- 0057 C30000    	jmp	cpm
+ 0048 119301    	lxi	d,nvbuf+288	; 64 bytes for cfgtbl template
+ 004B CD0000    	call	cpnsetup
+ 004E C30000    	jmp	cpm
                 wizerr:
- 005A CD7900    	call	nocfg	; report error, but continue...
- 005D C30000    	jmp	cpm	; let RSX init itself
+ 0051 CD5700    	call	nocfg	; report error, but continue...
+ 0054 C30000    	jmp	cpm	; let RSX init itself
                 
-                chkdup:	pushix
- 0060+DDE5      	DB	0DDH,0E5H
- 0062 E1        	pop	h
- 0063 110A00    	lxi	d,10	; offset of name
- 0066 19        	dad	d
- 0067 111900    	lxi	d,ndos3
- 006A 010800    	lxi	b,8
- 006D 1A        chk0:	ldax	d
- 006E BE        	cmp	m
- 006F C0        	rnz
- 0070 23        	inx	h
- 0071 13        	inx	d
- 0072 0B        	dcx	b
- 0073 78        	mov	a,b
- 0074 B1        	ora	c
- 0075 C26D00    	jnz	chk0
- 0078 C9        	ret	; ZR = match
+ 0057 111C00    nocfg:	lxi	d,ncfg
+ 005A 0E09      	mvi	c,print
+ 005C C30500    	jmp	bdos
                 
- 0079 112100    nocfg:	lxi	d,ncfg
- 007C 0E09      	mvi	c,print
- 007E C30500    	jmp	bdos
+ 005F 2A0200    bdose:	lhld	next
+ 0062 E9        	pchl
                 
                 	dseg
- 0000 0000      us:	dw	0	; our copy of NDOS3 (remove if dup)
+ 0000 0000      us:	dw	0	; our copy of NDOS3 (remove if dup)
+ 0002 0000      next:	dw	0
                 
- 0002 4E444F5333dupmsg:	db	'NDOS3 already loaded',cr,lf,'$'
- 0019 4E444F5333ndos3:	db	'NDOS3   '
- 0021 4E5652414Dncfg:	db	'NVRAM not configured',cr,lf,'$'
+ 0004 43502F4E45dupmsg:	db	'CP/NET already loaded',cr,lf,'$'
+ 001C 4E5652414Dncfg:	db	'NVRAM not configured',cr,lf,'$'
                 
- 0038           	ds	64
- 0078           stack:	ds	0
+ 0033           	ds	64
+ 0073           stack:	ds	0
                 
- 0078           nvbuf:	ds	512
+ 0073           nvbuf:	ds	512
                 
- 0278           	end
-
+ 0273           	end
+

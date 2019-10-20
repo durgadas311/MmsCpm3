@@ -1,5 +1,5 @@
 ; Initialization code for NDOS3 on WIZ850io
-; Checks for duplicate NDOS3, then initializes WIZ850io
+; Checks for CP/NET already running, then initializes WIZ850io
 ;
 	maclib	z80
 
@@ -16,6 +16,7 @@ bdos	equ	5
 
 ; BDOS functions
 print	equ	9
+vers	equ	12
 ; NDOS functions
 cfgtbl	equ	69
 
@@ -26,23 +27,14 @@ cfgtbl	equ	69
 
 	lixd	bdos+1	; this should be our NDOS3
 	sixd	us
-	jmp	dup0
-dup1:
-	ldx	a,+18	; LOADER3?
-	cpi	0ffh
-	jz	ldr3
-	call	chkdup
-	lxi	d,dupmsg
-	jz	rm$us	; duplicate NDOS3, remove "us"
-dup0:
 	ldx	l,+4	; next RSX...
 	ldx	h,+5	;
-	push	h
-	popix
-	jmp	dup1
-
-; DE = message to print
-rm$us:
+	shld	next
+	mvi	c,vers
+	call	bdose	; by-pass ourself
+	mov	a,h
+	ani	02h
+	jz	ldr3
 	lixd	us
 	mvix	0ffh,+8	; set remove flag
 	; also short-circuit it
@@ -51,6 +43,7 @@ rm$us:
 	stx	l,+1	; by-pass duplicate
 	stx	h,+2	;
 	; report what happened
+	lxi	d,dupmsg
 	mvi	c,print
 	call	bdos
 	jmp	cpm
@@ -71,32 +64,18 @@ wizerr:
 	call	nocfg	; report error, but continue...
 	jmp	cpm	; let RSX init itself
 
-chkdup:	pushix
-	pop	h
-	lxi	d,10	; offset of name
-	dad	d
-	lxi	d,ndos3
-	lxi	b,8
-chk0:	ldax	d
-	cmp	m
-	rnz
-	inx	h
-	inx	d
-	dcx	b
-	mov	a,b
-	ora	c
-	jnz	chk0
-	ret	; ZR = match
-
 nocfg:	lxi	d,ncfg
 	mvi	c,print
 	jmp	bdos
 
+bdose:	lhld	next
+	pchl
+
 	dseg
 us:	dw	0	; our copy of NDOS3 (remove if dup)
+next:	dw	0
 
-dupmsg:	db	'NDOS3 already loaded',cr,lf,'$'
-ndos3:	db	'NDOS3   '
+dupmsg:	db	'CP/NET already loaded',cr,lf,'$'
 ncfg:	db	'NVRAM not configured',cr,lf,'$'
 
 	ds	64
