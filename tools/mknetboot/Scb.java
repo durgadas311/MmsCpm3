@@ -17,11 +17,7 @@ public class Scb implements Relocatable {
 	public int getByte(int adr) { return org.getByte(adr + scb); }
 	public void putByte(int adr, int val) { org.putByte(adr + scb, val); }
 
-	public void relocResOne(byte[] img, int off) {
-		img[off - 1] += (byte)scblo;
-		img[off] = (byte)(org.getRes() + scb);
-	}
-	public void relocBnkOne(byte[] img, int off) {
+	public void relocOne(byte[] img, int off) {
 		img[off - 1] += (byte)scblo;
 		img[off] = (byte)(org.getRes() + scb);
 	}

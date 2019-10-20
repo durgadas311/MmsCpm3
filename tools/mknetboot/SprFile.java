@@ -157,8 +157,13 @@ public class SprFile implements Relocatable {
 	public int getBnk() { return (bnkBase >> 8) & 0xff; }
 	public void setRes(int pg) { resBase = pg << 8; }
 	public void setBnk(int pg) { bnkBase = pg << 8; }
-	public void relocResOne(byte[] img, int off) { img[off] = (byte)getRes(); }
-	public void relocBnkOne(byte[] img, int off) { img[off] = (byte)getRes(); }
+	public void relocOne(byte[] img, int off) {
+		if (resStart != 0) {
+			img[off] = (byte)getRes();
+		} else {
+			img[off] = (byte)getBnk();
+		}
+	}
 
 	public void relocRes() {
 		if (resStart == 0) {
@@ -176,7 +181,7 @@ public class SprFile implements Relocatable {
 			}
 			int hi = img[resStart + x] & 0xff;
 			if (spcl.containsKey(hi)) {
-				spcl.get(hi).relocResOne(img, resStart + x);
+				spcl.get(hi).relocOne(img, resStart + x);
 			} else if (hi >= R_EXT) {
 				System.err.format("%s: unhandled ext reloc %02x at %04x\n",
 						spr.getName(), hi, resStart + x);
@@ -204,7 +209,7 @@ public class SprFile implements Relocatable {
 			}
 			int hi = img[bnkStart + x] & 0xff;
 			if (spcl.containsKey(hi)) {
-				spcl.get(hi).relocBnkOne(img, bnkStart + x);
+				spcl.get(hi).relocOne(img, bnkStart + x);
 			} else if (hi >= R_EXT) {
 				System.err.format("%s: unhandled ext reloc %02x at %04x " +
 					"bnk res=%04x bnk=%04x rel=%04x %04x %04x %04x %d)\n",
