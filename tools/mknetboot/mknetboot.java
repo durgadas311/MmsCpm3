@@ -10,6 +10,7 @@ public class mknetboot {
 	Map<Integer,Integer> drvs;
 	boolean banked = false;
 	boolean entry = false;
+	boolean scb = false;
 	boolean org0 = false;
 	boolean lmsg = true;
 	int type = 0;
@@ -25,6 +26,8 @@ public class mknetboot {
 			"    -t <adr> = Use <adr> as memtop\n" +
 			"    -b <adr> = Use <adr> as base\n" +
 			"    -k       = next spr-file is BNK instead of RES\n" +
+			"    -e       = next spr-file is entry for sys\n" +
+			"    -s       = next spr-file contains SCB\n" +
 			"    -<type>  = next spr-file is <type>\n" +
 			"               { \"bios\", \"bdos\", \"snios\", \"ndos\" }\n" +
 			"    -o file  = output file name, else first spr-file.sys\n" +
@@ -75,6 +78,8 @@ public class mknetboot {
 				lmsg = false;
 			} else if (args[x].equals("-e")) {
 				entry = true;
+			} else if (args[x].equals("-s")) {
+				scb = true;
 			} else if (args[x].equals("-t")) {
 				++x;
 				if (x < args.length) {
@@ -105,13 +110,14 @@ public class mknetboot {
 					System.err.format("No file \"%s\"\n", f.getAbsolutePath());
 					System.exit(1);
 				}
-				SprFile spr = new SprFile(f, banked, type);
+				SprFile spr = new SprFile(f, banked, scb, type);
 				if (entry) {
 					ent = files.size();
 				}
 				files.add(spr);
 				banked = false;
 				entry = false;
+				scb = false;
 				type = 0;
 			}
 		}

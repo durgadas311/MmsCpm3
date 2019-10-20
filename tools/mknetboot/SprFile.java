@@ -41,6 +41,12 @@ public class SprFile implements Relocatable {
 	}
 	static boolean isReloc(String k) { return rels.containsKey(k); }
 	static int getReloc(String k) { return rels.get(k); }
+	static Relocatable getSpcl(int k) {
+		if (!spcl.containsKey(k)) {
+			return null;
+		}
+		return spcl.get(k);
+	}
 	static Relocatable getSpcl(String k) {
 		if (!rels.containsKey(k)) {
 			return null;
@@ -48,7 +54,7 @@ public class SprFile implements Relocatable {
 		return spcl.get(rels.get(k));
 	}
 
-	public SprFile(File f, boolean k, int t) {
+	public SprFile(File f, boolean bnk, boolean scb, int t) {
 		try {
 			FileInputStream fi = new FileInputStream(f);
 			img = new byte[fi.available()];
@@ -65,7 +71,7 @@ public class SprFile implements Relocatable {
 		int r = (img[10] & 0xff) | ((img[11] & 0xff) << 8);
 		int b = 0;
 		if (r == 0) {
-			if (k) {
+			if (bnk) {
 				b = n;
 			} else {
 				r = n;
@@ -94,8 +100,7 @@ public class SprFile implements Relocatable {
 		}
 		if (rels.containsValue(t)) {
 			spcl.put(t, this);
-			if (t == R_BDOS) {
-				// not all BDOS's have SCB, but should be ok
+			if (scb) {
 				spcl.put(R_SCB, new Scb(this));
 				spcl.put(R_SCBABS, new ScbAbs(this));
 			}

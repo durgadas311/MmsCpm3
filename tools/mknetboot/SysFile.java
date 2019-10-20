@@ -19,6 +19,7 @@ public class SysFile {
 	int entry = 0;
 	boolean org0 = false;
 	boolean lmsg = false;
+	int com;
 
 	Relocatable netmod;
 	Relocatable bios;
@@ -32,6 +33,7 @@ public class SysFile {
 		this.drvs = drvs;
 		this.org0 = org0;
 		this.lmsg = lmsg;
+		this.com = com;
 		buf = new byte[128];
 		// if 'top' is negative, use as base address...
 		if (top < 0) {
@@ -170,6 +172,25 @@ public class SysFile {
 		System.arraycopy(stb, 0, buf, 0, n);
 	}
 
+	private void gencpm(Relocatable scb) {
+		// TODO: make these configurable
+		scb.putByte(0x13, 0);	// drive A: default
+		scb.putByte(0x1a, 79);	// console width
+		scb.putByte(0x1c, 23);	// console width
+		scb.putByte(0x2e, 0);	// Backspace echoes
+		scb.putByte(0x2f, 1);	// Rubout echoes
+		scb.putByte(0x58, 0x12);	// Default time/date
+		scb.putByte(0x59, 0x07);	//
+		scb.putByte(0x5a, 0x00);	//
+		scb.putByte(0x5b, 0x00);	//
+		scb.putByte(0x5c, 0x00);	//
+		int cfg = scb.getByte(0x57);
+		cfg &= 0b01111111;	// short error msgs
+		cfg &= 0b10111111;	// banked always
+		scb.putByte(0x57, cfg);	// sys bits...
+		scb.putByte(0x5e, com);	// com page
+	}
+
 	public void combine() {
 		for (int x = 0; x < sprs.size(); ++x) {
 			SprFile spr = sprs.get(x);
@@ -191,6 +212,10 @@ public class SysFile {
 		}
 		if (drvs.size() > 0) {
 			setDrives();
+		}
+		Relocatable scb = SprFile.getSpcl(SprFile.R_SCB);
+		if (scb != null) {
+			gencpm(scb);
 		}
 	}
 

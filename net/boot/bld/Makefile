@@ -45,7 +45,7 @@ cpnet3.sys: netbios3.spr ndos3.spr resbdos3.spr bnkbdos3.spr
 	mknetboot -g -o $@ \
 		a:=b: \
 		-ndos ndos3.spr \
-		-bdos resbdos3.spr \
+		-bdos -s resbdos3.spr \
 		-bnkbdos -k bnkbdos3.spr \
 		-bios -e netbios3.spr
 
