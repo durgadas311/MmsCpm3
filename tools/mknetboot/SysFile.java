@@ -173,6 +173,8 @@ public class SysFile {
 	}
 
 	private void gencpm(Relocatable scb) {
+		// need to fudge the "bdosbase" address...
+		scb.putByte(-3, resBase);	// make NDOS3 the "real bdos"
 		// TODO: make these configurable
 		scb.putByte(0x13, 0);	// drive A: default
 		scb.putByte(0x1a, 79);	// console width

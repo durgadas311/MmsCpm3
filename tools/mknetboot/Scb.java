@@ -21,7 +21,7 @@ public class Scb implements Relocatable {
 	}
 	public void putByte(int adr, int val) {
 		adr += scblo + (getRes() << 8);
-System.err.format("SCB %04x = %02x\n", adr, val);
+		//System.err.format("SCB %04x = %02x\n", adr, val);
 		org.putByte(adr, val);
 	}
 
