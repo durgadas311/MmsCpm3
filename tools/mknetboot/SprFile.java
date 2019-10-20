@@ -88,11 +88,9 @@ public class SprFile implements Relocatable {
 		if (r != 0) {
 			resReloc = o;
 			o += (((r + 0xff) & ~0xff) / 8);
-
 		}
 		if (b != 0) {
 			bnkReloc = o;
-			o += ((b + 7) / 8);
 		}
 		if (rels.containsValue(t)) {
 			spcl.put(t, this);
@@ -182,7 +180,7 @@ public class SprFile implements Relocatable {
 			} else if (hi >= R_EXT) {
 				System.err.format("%s: unhandled ext reloc %02x at %04x\n",
 						spr.getName(), hi, resStart + x);
-			} else if (bnkPage != 0 && hi >= bnkPage) {
+			} else if (bnkStart != 0 && hi >= bnkPage) {
 				img[resStart + x] = (byte)(hi - bnkPage + getBnk());
 			} else {
 				img[resStart + x] = (byte)(hi + getRes());
@@ -213,7 +211,7 @@ public class SprFile implements Relocatable {
 						spr.getName(), hi, bnkStart + x,
 						resStart, bnkStart, resReloc, bnkReloc,
 						x, byt, bit);
-			} else if (bnkPage != 0 && hi >= bnkPage) {
+			} else if (bnkStart != 0 && hi >= bnkPage) {
 				img[bnkStart + x] = (byte)(hi - bnkPage + getBnk());
 			} else {
 				img[bnkStart + x] = (byte)(hi + getRes());
