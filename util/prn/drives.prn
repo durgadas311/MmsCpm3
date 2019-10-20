@@ -1,0 +1,354 @@
+ 2033 =         VERS EQU '3 ' ; OCT 20, 2019  14:59  DRM  "DRIVES.ASM"
+                
+                	MACLIB Z80
+                
+                ; PROGRAM TO DISPLAY LOGICAL/PHYSICAL DRIVE RELATIONSHIPS FOR CP/M 3
+                ; ALSO TO WORK ON MP/M-II ON 77500
+                ; ALSO OVERLAYS CP/NET DRIVE ASSIGNMENTS.
+                
+ 0000 =         MPM	EQU	0	; MP/M REQUIRES RMAC,LINK TO PRL
+                
+ 0000 =         CPM	EQU	0
+                 
+ 0002 =         CONOUT	EQU	2
+ 0009 =         MSGOUT	EQU	9
+ 000C =         RETVER	EQU	12
+ 0045 =         NETTBL	EQU	69
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+                IF MPM
+                	CSEG
+                ELSE
+ 0100           	ORG	0100H
+                ENDIF
+ 0100 C3AE01    BASE:	JMP	START
+                
+                IF MPM
+                BDOS	EQU	BASE-100H+5	; FOR MP/M AND PRL...
+                ELSE
+ 0005 =         BDOS	EQU	5
+                ENDIF
+                
+ 0103 0D0A445249SIGNON: DB	CR,LF,'DRIVES v3.10'
+ 0111 3320      	DW	VERS
+ 0113 2020286329	DB	'  (c) Magnolia Microsystems',CR,LF,'$'
+ 0131 3A203D2024STR1:	DB	': = $'
+ 0136 4472697665STR2:	DB	'Drive '
+ 013C 5F3A206F6ESTR2A:	DB	'_: on Network Server ID = $'
+ 0157 0D0A4D7573VERR:	DB	CR,LF,'Must have MMS CP/M 3$'
+ 016E 00        OSVER:	DB	0
+                
+ 016F 115701    VERERR: LXI	D,VERR
+ 0172 0E09      	MVI	C,MSGOUT
+ 0174 CD0500    	CALL	BDOS
+ 0177 C3C602    	JMP	XIT
+                
+ 017A 0000      THREAD: DW	0
+ 017C 0000      LPTBL:	DW	0
+                
+                ; PHYSICAL DRIVE NUMBER, STRING ADDRESS FOR EACH DRIVE,
+                ; OR 0F0H, REM, SRV FOR CP/NET DRIVES.
+                LPSETUP:
+ 017E 000000    	DB	0,0,0	;PHYSICAL DRIVE NUMBER, STRING ADDRESS FOR DRIVE A:
+ 0181 000000    	DB	0,0,0	; DRIVE B:
+ 0184 000000    	DB	0,0,0	; C:
+ 0187 000000    	DB	0,0,0
+ 018A 000000    	DB	0,0,0
+ 018D 000000    	DB	0,0,0
+ 0190 000000    	DB	0,0,0
+ 0193 000000    	DB	0,0,0
+ 0196 000000    	DB	0,0,0
+ 0199 000000    	DB	0,0,0
+ 019C 000000    	DB	0,0,0
+ 019F 000000    	DB	0,0,0
+ 01A2 000000    	DB	0,0,0
+ 01A5 000000    	DB	0,0,0
+ 01A8 000000    	DB	0,0,0
+ 01AB 000000    	DB	0,0,0	; P:
+                
+                START:	SSPD	SAVSTK
+ 01AE+ED73      	DB	0EDH,73H
+ 01B0+0C03      	DW	SAVSTK
+ 01B2 310C03    	LXI	SP,STACK
+ 01B5 110301    	LXI	D,SIGNON
+ 01B8 0E09      	MVI	C,MSGOUT
+ 01BA CD0500    	CALL	BDOS
+ 01BD 0E0C      	MVI	C,RETVER
+ 01BF CD0500    	CALL	BDOS
+ 01C2 7D        	MOV	A,L
+ 01C3 D630      	SUI	30H
+ 01C5 FE10      	CPI	16
+ 01C7 D26F01    	JNC	VERERR
+ 01CA 7C        	MOV	A,H
+ 01CB 326E01    	STA	OSVER
+ 01CE 2A0100    	LHLD	CPM+1
+ 01D1 FE01      	CPI	1	;MP/M?
+                	JRNZ	ST0
+ 01D3+2005      	DB	20H,ST0-$-1
+ 01D5 23        	INX	H
+ 01D6 5E        	MOV	E,M
+ 01D7 23        	INX	H
+ 01D8 56        	MOV	D,M
+ 01D9 EB        	XCHG
+ 01DA 2E65      ST0:	MVI	L,65H	;LPTBL
+ 01DC 5E        	MOV	E,M
+ 01DD 23        	INX	H
+ 01DE 56        	MOV	D,M
+ 01DF 23        	INX	H
+ 01E0 4E        	MOV	C,M	;THREAD
+ 01E1 23        	INX	H
+ 01E2 46        	MOV	B,M
+                	SBCD	THREAD
+ 01E3+ED43      	DB	0EDH,43H
+ 01E5+7A01      	DW	THREAD
+                	SDED	LPTBL
+ 01E7+ED53      	DB	0EDH,53H
+ 01E9+7C01      	DW	LPTBL
+                
+ 01EB 2A7C01    	LHLD	LPTBL
+ 01EE 117E01    	LXI	D,LPSETUP
+ 01F1 0610      	MVI	B,16
+ 01F3 7E        SU0:	MOV	A,M
+ 01F4 12        	STAX	D
+ 01F5 23        	INX	H
+ 01F6 13        	INX	D
+ 01F7 13        	INX	D
+ 01F8 13        	INX	D
+                	DJNZ	SU0
+ 01F9+10F8      	DB	10H,SU0-$-1
+                
+ 01FB 2A7A01    	LHLD	THREAD
+ 01FE 5E        SU2:	MOV	E,M
+ 01FF 23        	INX	H
+ 0200 56        	MOV	D,M
+ 0201 23        	INX	H
+ 0202 7A        	MOV	A,D
+ 0203 B3        	ORA	E
+ 0204 CA3F02    	JZ	SU1
+ 0207 D5        	PUSH	D
+ 0208 7E        	MOV	A,M	;FIRST DEVICE
+ 0209 FEC8      	CPI	200
+ 020B D23B02    	JNC	SU3	;DISK I/O ONLY, NO CHARACTER I/O.
+ 020E 47        	MOV	B,A
+ 020F 23        	INX	H
+ 0210 4E        	MOV	C,M	;NUMBER OF DEVICES
+ 0211 110D00    	LXI	D,13	;
+ 0214 19        	DAD	D	;POINT TO STRING ADDRESS
+ 0215 5E        	MOV	E,M
+ 0216 23        	INX	H
+ 0217 56        	MOV	D,M
+ 0218 217E01    	LXI	H,LPSETUP
+ 021B EB        	XCHG
+ 021C E5        	PUSH	H
+ 021D 2E10      	MVI	L,16
+                
+ 021F 1A        SU6:	LDAX	D	;PHYSICAL DRIVE NUMBER OF LOGICAL DRIVE.
+ 0220 13        	INX	D
+ 0221 90        	SUB	B
+ 0222 B9        	CMP	C	;IN RANGE?
+ 0223 D23602    	JNC	SU4	;
+ 0226 E3        	XTHL
+ 0227 EB        	XCHG
+ 0228 73        	MOV	M,E	;PUT STRING ADDRESS IN SETUP TABLE
+ 0229 23        	INX	H
+ 022A 72        	MOV	M,D
+ 022B 23        	INX	H
+ 022C EB        	XCHG
+ 022D E3        	XTHL
+ 022E 2D        SU5:	DCR	L
+ 022F C21F02    	JNZ	SU6
+ 0232 E1        	POP	H	;DISCARD
+ 0233 C33B02    	JMP	SU3
+                
+ 0236 13        SU4:	INX	D
+ 0237 13        	INX	D
+ 0238 C32E02    	JMP	SU5
+                
+ 023B E1        SU3:	POP	H
+ 023C C3FE01    	JMP	SU2
+                
+                SU1:	; NOW GET CP/NET DRIVES, IF ANY
+ 023F 3A6E01    	LDA	OSVER
+ 0242 E602      	ANI	02H
+ 0244 CA7402    	JZ	SU11
+ 0247 0E45      	MVI	C,NETTBL
+ 0249 CD0500    	CALL	BDOS
+ 024C 0610      	MVI	B,16
+ 024E 23        	INX	H
+ 024F 23        	INX	H	; POINT TO DRIVE A: MAP
+                	LXIX	LPSETUP
+ 0250+DD21      	DB	0DDH,21H
+ 0252+7E01      	DW	LPSETUP
+ 0254 110300    	LXI	D,3
+ 0257 7E        NT0:	MOV	A,M
+ 0258 E680      	ANI	80H
+ 025A CA6E02    	JZ	NT1
+ 025D 7E        	MOV	A,M
+ 025E E60F      	ANI	0FH
+                	STX	A,+1	; REMOTE DRIVE
+ 0260+DD7701    	DB	0DDH,70H+A,+1
+ 0263 23        	INX	H
+ 0264 7E        	MOV	A,M
+ 0265 2B        	DCX	H	; BETTER THAN AN EXTRA JUMP?
+                	STX	A,+2	; REMOTE SERVER ID
+ 0266+DD7702    	DB	0DDH,70H+A,+2
+ 0269 3EF0      	MVI	A,0F0H
+                	STX	A,+0	; FLAG AS NETWORK DRIVE
+ 026B+DD7700    	DB	0DDH,70H+A,+0
+                NT1:	DADX	D
+ 026E+DD19      	DB	0DDH,D*8+09H
+ 0270 23        	INX	H
+ 0271 23        	INX	H
+                	DJNZ	NT0
+ 0272+10E3      	DB	10H,NT0-$-1
+                
+ 0274 217E01    SU11:	LXI	H,LPSETUP	;NOW PRINT OUT LIST OF DRIVES
+ 0277 0610      	MVI	B,16
+                
+ 0279 7E        SU9:	MOV	A,M
+ 027A FEFF      	CPI	255	;DRIVE NOT AVAILABLE
+ 027C CACB02    	JZ	NXTONE
+ 027F CD0E03    	CALL	CRLF
+ 0282 3E10      	MVI	A,16
+ 0284 90        	SUB	B	;MAKE 0,1,2,3,4... FOR A,B,C,...
+ 0285 C641      	ADI	'A'
+ 0287 CD1503    	CALL	CHROUT
+ 028A 113101    	LXI	D,STR1
+ 028D CD2203    	CALL	STROUT
+ 0290 7E        	MOV	A,M	;PHYSICAL DRIVE NUMBER OR NET FLAG
+ 0291 FEF0      	CPI	0F0H
+ 0293 CAD102    	JZ	NETDRV
+ 0296 3E28      	MVI	A,'('
+ 0298 CD1503    	CALL	CHROUT
+ 029B 7E        	MOV	A,M	;PHYSICAL DRIVE NUMBER
+ 029C CD2C03    	CALL	DECOUT
+ 029F 3E29      	MVI	A,')'
+ 02A1 CD1503    	CALL	CHROUT
+ 02A4 3E05      	MVI	A,3+1+1
+ 02A6 91        	SUB	C	;
+ 02A7 4F        	MOV	C,A
+ 02A8 0D        	DCR	C
+ 02A9 CAB502    	JZ	SU7
+ 02AC 3E20      SU8:	MVI	A,' '
+ 02AE CD1503    	CALL	CHROUT
+ 02B1 0D        	DCR	C
+ 02B2 C2AC02    	JNZ	SU8
+ 02B5 23        SU7:	INX	H
+ 02B6 5E        	MOV	E,M
+ 02B7 23        	INX	H
+ 02B8 56        	MOV	D,M
+ 02B9 23        	INX	H
+ 02BA 7B        	MOV	A,E
+ 02BB B2        	ORA	D
+                	JRZ	SU10
+ 02BC+2803      	DB	28H,SU10-$-1
+ 02BE CD2203    	CALL	STROUT
+                SU10:	DJNZ	SU9
+ 02C1+10B6      	DB	10H,SU9-$-1
+                
+ 02C3 CD0E03    	CALL	CRLF
+                XIT:	LSPD	SAVSTK
+ 02C6+ED7B      	DB	0EDH,07BH
+ 02C8+0C03      	DW	SAVSTK
+ 02CA C9        	RET
+                
+ 02CB 23        NXTONE: INX	H
+ 02CC 23        	INX	H
+ 02CD 23        	INX	H
+ 02CE C3C102    	JMP	SU10
+                
+                NETDRV:
+ 02D1 23        	INX	H
+ 02D2 7E        	MOV	A,M	; REMOTE DRIVE
+ 02D3 C641      	ADI	'A'
+ 02D5 323C01    	STA	STR2A
+ 02D8 113601    	LXI	D,STR2
+ 02DB CD2203    	CALL	STROUT
+ 02DE 23        	INX	H
+ 02DF 7E        	MOV	A,M	; SERVER ID
+ 02E0 23        	INX	H
+ 02E1 CD6103    	CALL	HEXOUT
+ 02E4 3E48      	MVI	A,'H'
+ 02E6 CD1503    	CALL	CHROUT
+ 02E9 C3C102    	JMP	SU10
+                
+ 02EC           	DS	32
+ 030C           STACK:	DS	0
+                
+ 030C           SAVSTK: DS	2
+                
+ 030E 3E0D      CRLF:	MVI	A,CR
+ 0310 CD1503    	CALL	CHROUT
+ 0313 3E0A      	MVI	A,LF
+ 0315 C5        CHROUT: PUSH	B
+ 0316 D5        	PUSH	D
+ 0317 E5        	PUSH	H
+ 0318 5F        	MOV	E,A
+ 0319 0E02      	MVI	C,CONOUT
+ 031B CD0500    	CALL	BDOS
+ 031E E1        	POP	H
+ 031F D1        	POP	D
+ 0320 C1        	POP	B
+ 0321 C9        	RET
+                
+ 0322 C5        STROUT: PUSH	B
+ 0323 E5        	PUSH	H
+ 0324 0E09      	MVI	C,MSGOUT
+ 0326 CD0500    	CALL	BDOS
+ 0329 E1        	POP	H
+ 032A C1        	POP	B
+ 032B C9        	RET
+                
+ 032C C5        DECOUT: PUSH	B
+ 032D E5        	PUSH	H
+ 032E 010000    	LXI	B,0	;FOR LEADING ZERO DELETION, OUTPUT COUNT
+ 0331 1E64      	MVI	E,100
+ 0333 CD4303    	CALL	DIVOUT
+ 0336 1E0A      	MVI	E,10
+ 0338 CD4303    	CALL	DIVOUT
+ 033B CD5703    	CALL	DV1	;ALWAYS DISPLAY ONE'S DIGIT.
+ 033E E1        	POP	H
+ 033F 79        	MOV	A,C
+ 0340 C1        	POP	B
+ 0341 4F        	MOV	C,A	;NUMBER OF CHARACTERS OUTPUTED IN C
+ 0342 C9        	RET
+                
+ 0343 1600      DIVOUT: MVI	D,0
+ 0345 14        DV0:	INR	D
+ 0346 93        	SUB	E
+ 0347 D24503    	JNC	DV0
+ 034A 83        	ADD	E
+ 034B 15        	DCR	D
+ 034C 6F        	MOV	L,A	;REMAINDER IN L, TEMP.
+                	BIT	0,B	;LEADING ZERO?
+ 034D+CB40      	DB	0CBH,0*8+B+40H
+ 034F C25703    	JNZ	DV1
+ 0352 7A        	MOV	A,D
+ 0353 B7        	ORA	A
+ 0354 CA5F03    	JZ	DV2
+                DV1:	SETB	0,B
+ 0357+CBC0      	DB	0CBH,0*8+B+0C0H
+ 0359 0C        	INR	C
+ 035A C630      	ADI	'0'
+ 035C CD1503    	CALL	CHROUT
+ 035F 7D        DV2:	MOV	A,L
+ 0360 C9        	RET
+                
+ 0361 F5        HEXOUT:	PUSH	PSW
+ 0362 07        	RLC
+ 0363 07        	RLC
+ 0364 07        	RLC
+ 0365 07        	RLC
+ 0366 CD6A03    	CALL	HEXDIG
+ 0369 F1        	POP	PSW
+ 036A E60F      HEXDIG:	ANI	0FH
+ 036C C690      	ADI	90H
+ 036E 27        	DAA
+ 036F CE40      	ACI	40H
+ 0371 27        	DAA
+ 0372 C31503    	JMP	CHROUT
+                
+ 0375           	END
+
