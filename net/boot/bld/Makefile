@@ -102,5 +102,7 @@ snioswiz.rel: ~/git/MmsCpm3/net/bin/snioswiz.rel
 # The following run from ~/git/MmsCpm3/net/boot/bld...
 ship: netboots.tgz
 
-netboots.tgz: # $(SYSS) org0boot.bin
+netboots.tgz: __FRC__ # $(SYSS) org0boot.bin
 	tar -czf netboots.tgz -C ../bin $(SYSS) -C ../../../rom/bin org0boot.bin
+
+__FRC__:

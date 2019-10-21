@@ -110,6 +110,10 @@ LOCS =	modules.com \
 	spdsbc.com \
 	tpa.com \
 	tr.com
+# TODO:
+#	edit.com
+#	print.com
+#	fixmsoft.com
 
 cpm3dist.tgz: __FRC__
 	tar -czf $@ z80.lib \
@@ -118,7 +122,13 @@ cpm3dist.tgz: __FRC__
 		-C ../../../help/bin help.hlp \
 		-C ../../util/bin $(LOCS)
 
-#	edit.com
-#	print.com
-#	fixmsoft.com
+BLDS = $(patsubst ../bin/%,"%",$(wildcard ../bin/*.rel))
+
+cpm3bld.tgz: __FRC__
+	tar -czf $@ *.sub \
+		-C ../bin $(BLDS)
+
+publish:
+	rsync -Wuv cpm3dist.tgz cpm3bld.tgz durgadas.com:/http/durgadas.com/sebhc/mms89
+
 __FRC__:
