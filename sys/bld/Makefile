@@ -59,3 +59,66 @@ syncdown:
 syncup:
 	rsync -Wurv --existing . ~/git/MmsCpm3/sys/bin/.
 	rsync -Wurv --existing . ~/git/MmsCpm3/sys/prn/.
+
+# Run from sys/bld dir
+VPATH = ../../dist/bin ../../dist/cmd/bin ../../util/bin ../../help/bin
+
+z80.lib: ../../sys/src/z80.lib
+	unix2dos -n $? $@
+
+DRIS =	ccp.com \
+	date.com \
+	device.com \
+	dir.com \
+	dump.com \
+	ed.com \
+	erase.com \
+	gencom.com \
+	gencpm.com \
+	get.com \
+	help.com \
+	hexcom.com \
+	initdir.com \
+	lib.com \
+	link.com \
+	patch.com \
+	pip.com \
+	put.com \
+	rename.com \
+	save.com \
+	set.com \
+	setdef.com \
+	show.com \
+	sid.com \
+	submit.com \
+	type.com \
+	xref.com \
+	zsid.com \
+	resbdos3.spr \
+	bnkbdos3.spr
+
+PATS =	mac.com \
+	rmac.com
+
+LOCS =	modules.com \
+	copysys.com \
+	drives.com \
+	format.com \
+	mode.com \
+	rsxrm.com \
+	setup.com \
+	spdsbc.com \
+	tpa.com \
+	tr.com
+
+cpm3dist.tgz: __FRC__
+	tar -czf $@ z80.lib \
+		-C ../../dist/bin $(DRIS) \
+		-C ../cmd/bin $(PATS) \
+		-C ../../../help/bin help.hlp \
+		-C ../../util/bin $(LOCS)
+
+#	edit.com
+#	print.com
+#	fixmsoft.com
+__FRC__:
