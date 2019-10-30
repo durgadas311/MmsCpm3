@@ -3,7 +3,7 @@
 /* CP/M */
 
 /* TODO: use real-time units. */
-#define CHRTIME	1000
+#define CHRTIME	1000	/* approx 1/8 "game time-unit" */
 static int t = CHRTIME;
 
 osinit() {

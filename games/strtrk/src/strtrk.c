@@ -146,10 +146,10 @@ struct { char x; char y; char *str; }
 #define CRTHIT 7
 #define LEVEL 10
 
-char course,dir;
-int cmmnd,oprnd,phas,imp,shlds,shlde,phot;
+char course,dir = -1;
+int cmmnd = -1,oprnd = -1,phas = -1,imp = -1,shlds = -1,shlde,phot = -1;
 int savpht,crithit;
-char wrpe,dock,scnnr;
+char wrpe = -1,dock = -1,scnnr = -1;
 char skil,key;
 int phre,shre,imre,t1,t2,nklg,numklg,numbas;
 int crh,wind,expe,xx,yy,dd,seed,type,idx,power;
@@ -174,16 +174,16 @@ static hitinit();
 static sethit();
 static char setklg();
 static int chkklg();
-static setwpe();
-static setdck();
-static setpht();
-static setphs();
-static setimp();
-static setcom();
-static setop();
-static setscn();
-static setdir();
-static setshl();
+static void setwpe();
+static void setdck();
+static void setpht();
+static void setphs();
+static void setimp();
+static void setcom();
+static void setop();
+static void setscn();
+static void setdir();
+static void setshl(); /* (shlds,shlde) */
 static int setent();
 static char chkdck();
 static longscan();
@@ -191,6 +191,12 @@ static dispgm();
 static shortscan();
 static botline();
 static frame();
+static void fiximp();
+static void fixphs();
+static void fixshl();
+static void fixscn();
+static void fixpht();
+static void fixwpe();
 
 main() {
 	osinit();
@@ -237,7 +243,7 @@ main() {
 			default: break;
 			}
 			break;
-		case KSHLD: if (dock==0) setshl(1-shlds); break;
+		case KSHLD: if (dock==0) setshl(1-shlds,shlde); break;
 		case 0x09:
 			if (phas<=0 || dock==1) break;
 			power=(phas>=1000?1000:phas);
@@ -308,8 +314,7 @@ static reset() {
 	prtwin(0);
 	setdir(0);
 	setcom(0);
-	shlde=3000;
-	setshl(0);	/* shields down */
+	setshl(0,3000);	/* shields down */
 	setphs(3000);   /* phasor energy = 3000 */
 	setpht(10);     /* 10 photon torpedos */
 	setscn(1);	/* clear scanner display */
@@ -577,12 +582,11 @@ static upde() {
 		}
 		if (shlds==1) {
 			if (shlde>=power) {
-				shlde =- power;
-				power=0; setshl(shlds);
+				setshl(shlds,shlde-power);
+				power=0;
 			} else {
 				power =- shlde;
-				shlde=0;
-				setshl(shlds);
+				setshl(shlds,0);
 			}
 		}
 		if (power<150) continue;
@@ -603,7 +607,7 @@ static upde() {
 		case 3:
 			break;
 		case 4: /* damage to shields */
-			shlde=0-xx; setshl(shlds);
+			setshl(shlds,0-xx);
 			break;
 		case 5: /* damage to scanner */
 			setscn(xx);
@@ -635,6 +639,7 @@ static char inchr() {
 			skil = c-'0';
 			c = 0;
 			cursor(stats[LEVEL].x,stats[LEVEL].y+1); outchr(skil+'0');
+			setdck(0);
 		}
 		init = 0;
 		e = (rnd()*2+rnd())*2+rnd()+1; /* max 442 stars */
@@ -675,22 +680,24 @@ static char inchr() {
 				settim(--t1);
 				if (t1<=0 && t2==0 && ep.ti!=0 && nklg!=0) prtwin(22);
 			}
-			if (imp<0 && ++imp==0) setimp(0);
-			if (phas<0 && ++phas==0) setphs(0);
-			if (shlde<0 && ++shlde==0) setshl(shlds);
-			if (scnnr>0 && --scnnr==0) {setscn(0); shortscan();}
-			if (phot<0 && ++phot==0) setpht(savpht);
-			if (wrpe>0 && --wrpe==0) setwpe(0);
+			if (imp<0) fiximp();
+			if (phas<0) fixphs();
+			if (shlde<0) fixshl();
+			if (scnnr>0) fixscn();
+			if (phot<0) fixpht();
+			if (wrpe>0) fixwpe();
 		}
-		if (wrpe==0) {
- if (imp>=0 && imp<3000) setimp((imp+imre>3000 ? 3000 : imp+imre));
- if (phas>=0 && phas<3000) setphs((phas+phre>3000 ? 3000 : phas+phre));
+		if (wrpe==0) { /* warp engines are working */
+ 			if (imp>=0 && imp<3000)
+				setimp((imp+imre>3000 ? 3000 : imp+imre));
+ 			if (phas>=0 && phas<3000)
+				setphs((phas+phre>3000 ? 3000 : phas+phre));
 			if (shlde>=0 && shlde<3000) {
-				shlde=(shlde+shre>3000 ? 3000 : shlde+shre);
-				setshl(shlds);
+				a=(shlde+shre>3000 ? 3000 : shlde+shre);
+				setshl(shlds,a);
 			}
 		}
- 			if (dock==0) setdck(0);    /* revise condition */
+		if (dock==0) setdck(0);    /* revise condition */
 		if (explod.ti!=0 && --explod.ti==0 && scnnr==0) {
 			cursor(1+(explod.ix&0x07),32+(explod.iy&0x07)*2);
 			outchr(item[galaxy[explod.ix][explod.iy/4]>>(explod.iy&0x03)*2 &0x03]);
@@ -753,24 +760,29 @@ int a;
 	return(-1);
 }
 
-static setwpe(c)
+static void fixwpe() {
+	if (wrpe == 1) setwpe(0);
+	else --wrpe;
+}
+static void setwpe(c)
 char c;
 {
+	if (wrpe == c) return;
 	cursor(stats[WRPST].x,stats[WRPST].y);
 	if (c==0) prts(wrking);
 	else prts(outstr);
 	wrpe=c;
 }
 
-static setdck(c)
+static void setdck(c)
 char c;
 {
 	int ttt;
+	if (dock == c) return;
 	cursor(stats[DCKST].x,stats[DCKST].y);
 	if (c) {
 		prts("DOCKED  ");
-		shlde=3000;
-		setshl(0);  /* shields down */
+		setshl(0,3000);  /* shields down */
 		setphs(3000);	/* phasor energy = 3000 */
 		setimp(3000);	/* impulse power = 3000 */
 		if (phot<0) phot=savpht;
@@ -789,9 +801,14 @@ char c;
 	dock=c;
 }
 
-static setpht(a)
+static void fixpht() {
+	if (phot == -1) setpht(savpht);
+	else ++phot;
+}
+static void setpht(a)
 int a;
 {
+	if (phot == a) return;
 	cursor(stats[PHTST].x,stats[PHTST].y);
 	if (a<0) prts(outstr);
 	else {
@@ -801,9 +818,14 @@ int a;
 	phot=a;
 }
 
-static setphs(a)
+static void fixphs() {
+	if (phas == -1) setphs(0);
+	else ++phas;
+}
+static void setphs(a)
 int a;
 {
+	if (phas == a) return;
 	cursor(stats[PHSST].x,stats[PHSST].y);
 	if (a<0) prts(outstr);
 	else {
@@ -813,9 +835,14 @@ int a;
 	phas=a;
 }
 
-static setimp(a)
+static void fiximp() {
+	if (imp == -1) setimp(0);
+	else ++imp;
+}
+static void setimp(a)
 int a;
 {
+	if (imp == a) return;
 	cursor(stats[IMPST].x,stats[IMPST].y);
 	if (a<0) prts(outstr);
 	else {
@@ -825,9 +852,10 @@ int a;
 	imp=a;
 }
 
-static setcom(c)
+static void setcom(c)
 int c;
 {
+	if (cmmnd == c) return;
 	cursor(commnd[COM1ST+cmmnd].x,commnd[COM1ST+cmmnd].y);
 	outchr(' ');
 	cursor(commnd[COM1ST+c].x,commnd[COM1ST+c].y);
@@ -835,18 +863,26 @@ int c;
 	cmmnd=c;
 }
 
-static setop(c)
+static void setop(c)
 int c;
 {
+	if (oprnd == c) return;
 	cursor(opcom[OPS1ST+oprnd].x,opcom[OPS1ST+oprnd].y); outchr(' ');
 	cursor(opcom[OPS1ST+c].x,opcom[OPS1ST+c].y); outchr('*');
 	oprnd=c;
 }
 
-static setscn(c)
+static void fixscn() {
+	if (scnnr == 1) {
+		setscn(0);
+		shortscan();
+	} else --scnnr;
+}
+static void setscn(c)
 char c;
 {
 	char a;
+	if (scnnr == c) return;
 	cursor(stats[SCNST].x,stats[SCNST].y);
 	if (c==0) prts(wrking);
 	else {
@@ -859,20 +895,29 @@ char c;
 }
 
 
-static setdir(a)
+static void setdir(a)
 char a;
 {
-	cursor(direct[dir].x,direct[dir].y);
-	outchr(' ');
+	if (dir == a) return;
+	if (dir >= 0) {
+		cursor(direct[dir].x,direct[dir].y);
+		outchr(' ');
+	}
 	cursor(direct[a].x,direct[a].y);
 	pos0();
 	dir=a;
 }
 
-static setshl(a)
-int a;
+static void fixshl() {
+	if (shlde == -1) setshl(shlds,0);
+	else ++shlde;
+}
+static void setshl(a,b)
+int a,b;
 {
+	if (shlds == a && shlde == b) return;
 	shlds=a;
+	shlde=b;
 	cursor(15,38);
 	if (shlde<=0) a=0;
 	putshl(15,38,a);
@@ -887,6 +932,7 @@ static int setent(a,b)
 int a,b;
 {
 	char f,g,h;
+	if (ep.ix == a && ep.iy == b) return(0); /* TODO: right value? */
 	if (g= !(a<0 || a>63 || b<0 || b>63)) {
 		if ((galaxy[a][b/4]&(0x03<< (b&0x03)*2)) != 0) return(-1);
 	}
