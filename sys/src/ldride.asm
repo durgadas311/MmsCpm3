@@ -20,7 +20,7 @@ NDRIV	EQU	9
 ***************************************************
 GPIO	EQU	0F2H		; SWITCH 501
 
-GIDE	equ	060h	; GIDE base port
+GIDE	equ	080h	; GIDE base port
 GIDE$DA	equ	GIDE+8	; GIDE data port
 GIDE$EF	equ	GIDE+9	; GIDE feature/error register
 GIDE$SC	equ	GIDE+10	; GIDE sector count

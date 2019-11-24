@@ -22,7 +22,7 @@ SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
 				; ADDRESS IN.
 SEGOFF	EQU	2156H		; address where ROM put segment offset
 
-GIDE	equ	060h	; GIDE base port
+GIDE	equ	080h	; GIDE base port
 GIDE$DA	equ	GIDE+8	; GIDE data port
 GIDE$EF	equ	GIDE+9	; GIDE feature/error register
 GIDE$SC	equ	GIDE+10	; GIDE sector count

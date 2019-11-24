@@ -29,7 +29,7 @@ SYSADR	EQU	2377H		; LOCATION IN BOOT MODULE TO PLACE SECTOR
 				;  ADDRESS OF OPERATING SYSTEM
 DRIV0	EQU	70
 
-GIDE	equ	060h	; GIDE base port
+GIDE	equ	080h	; GIDE base port
 GIDE$DA	equ	GIDE+8	; GIDE data port
 GIDE$EF	equ	GIDE+9	; GIDE feature/error register
 GIDE$SC	equ	GIDE+10	; GIDE sector count
