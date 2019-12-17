@@ -1,0 +1,1077 @@
+                ; MAC.COM - module 5
+ 0001 =         M2580	equ	1
+                
+                	public	L2580,L2583,L2586,L2589,L258c,L258f,msgcre,L2595,setere
+                	public	hexpte,hexfne,L25a1,libfie,L25a7,L25aa,L25ad
+                	public	L2600	; termination? patch???
+                	maclib	m1200
+                	maclib	m1600
+                	maclib	m1c00
+                	maclib	m2100
+                
+                	maclib	macg
+                
+                ; Module start L2580 - I/O, OS?
+                	;org	2580h
+                	cseg
+ 0000 C37601    L2580:	jmp	osinit		;; 2580: c3 f6 26    ..&
+ 0003 C38503    L2583:	jmp	L2905		;; 2583: c3 05 29    ..)
+ 0006 C3CC03    L2586:	jmp	L294c		;; 2586: c3 4c 29    .L)
+ 0009 C38E04    L2589:	jmp	prnput		;; 2589: c3 0e 2a    ..*
+ 000C C31505    L258c:	jmp	hexput		;; 258c: c3 95 2a    ..*
+ 000F C34905    L258f:	jmp	chrout		;; 258f: c3 c9 2a    ..*
+ 0012 C3F800    msgcre:	jmp	msgcr		;; 2592: c3 78 26    .x&
+ 0015 C3F405    L2595:	jmp	L2b74		;; 2595: c3 74 2b    .t+
+ 0018 C3A106    setere:	jmp	seterr		;; 2598: c3 21 2c    ..,
+ 001B C32308    hexpte:	jmp	hexpt0		;; 259b: c3 a3 2d    ..-
+ 001E C30B07    hexfne:	jmp	hexpt2		;; 259e: c3 8b 2c    ..,
+ 0021 C3C906    L25a1:	jmp	L2c49		;; 25a1: c3 49 2c    .I,
+ 0024 C32101    libfie:	jmp	libfil		;; 25a4: c3 a1 26    ..&
+ 0027 C36101    L25a7:	jmp	L26e1		;; 25a7: c3 e1 26    ..&
+ 002A C3CD05    L25aa:	jmp	L2b4d		;; 25aa: c3 4d 2b    .M+
+ 002D C37905    L25ad:	jmp	L2af9		;; 25ad: c3 f9 2a    ..*
+                
+ 0030 800000    L25b0:	db	80h,0,0	; line number, ASCII ("000")
+ 0033 00        paglin:	db	0	; max PRN lines/page (0=infinit)
+ 0034 00        curlin:	db	0	; current PRN line (in page)
+ 0035 00        Fflag:	db	0	; $[+-*]1 flag
+ 0036 0000      hexadr:	db	0,0
+ 0038 00        hexlen:	db	0
+ 0039 0000000019L25b9:	db	0,0,0,0,19h,0,0,0,'7',0eh,1ah,0c3h,5,0,11h,80h
+ 0049 00        curdrv:	db	0	; current disk (any op)
+ 004A C3        asmsrc:	db	0c3h	; source - ASM "$Ax"
+ 004B C2        prndst:	db	0c2h	; dest for PRN "$Px"
+ 004C 25        symdst:	db	'%'	; dest for SYM "$Sx"
+ 004D 21        hexdst:	db	21h	; dest for HEX "$Hx"
+ 004E 49        libsrc:	db	'I'	; src libs LIB "$Lx"
+ 004F 25        L25cf:	db	'%'
+ 0050 BEC8      dmaidx:	db	0beh,0c8h
+ 0052 77        L25d2:	db	'w'
+ 0053 5F0E0ECD05L25d3:	db	'_',0eh,0eh,0cdh,5,0,0c9h
+ 005A 3A4A41534D	db	':JASM'
+ 005F 00504500C3L25df:	db	0,'PE',0,0c3h,0cdh,'%:L%',0c3h,0cdh,'%:M%',0c3h,0cdh,'%'
+ 0072 3A        	db	':'
+ 0073 00        L25f3:	db	0
+ 0074 0004      L25f4:	db	0,4
+ 0076 0000      L25f6:	db	0,0
+                
+                ; FCB for output files (PRN, SYM)
+ 0078 04CD492A7Eprnfcb:	db	4,0cdh,'I*~#',0feh,0dh
+ 0080 FF        L2600:	db	0ffh	;something is wrong here - module termination?
+ 0081 50524E0046	db	'PRN',0,'FTYPE',0,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
+ 0093 FFFFFFFF73	db	0ffh,0ffh,0ffh,0ffh,'s'
+ 0098 00        	db	0
+                
+ 0099 0000      prnidx:	db	0,0
+ 009B FFFF      L261b:	db	0ffh,0ffh
+                
+ 009D FF000000FFhexfcb:	db	0ffh,0,0,0,0ffh,0ffh,0ffh,0ffh,0ffh,'HEX',0,0ffh,0ffh,'&FTYP'
+ 00B1 4500FFFFFF	db	'E',0,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0
+                
+ 00BE 0000      hexidx:	db	0,0
+                
+ 00C0 FFFF      L2640:	db	0ffh,0ffh
+                
+ 00C2 0E1A      L2642:	mvi	c,setdma	;; 2642: 0e 1a       ..
+ 00C4 C30500    	jmp	bdos		;; 2644: c3 05 00    ...
+                
+ 00C7 118000    L2647:	lxi	d,defdma	;; 2647: 11 80 00    ...
+ 00CA C3C200    	jmp	L2642		;; 264a: c3 42 26    .B&
+                
+ 00CD 214900    seldrv:	lxi	h,curdrv		;; 264d: 21 c9 25    ..%
+ 00D0 BE        	cmp	m		;; 2650: be          .
+ 00D1 C8        	rz			;; 2651: c8          .
+ 00D2 77        	mov	m,a		;; 2652: 77          w
+ 00D3 5F        	mov	e,a		;; 2653: 5f          _
+ 00D4 0E0E      	mvi	c,seldsk	;; 2654: 0e 0e       ..
+ 00D6 CD0500    	call	bdos		;; 2656: cd 05 00    ...
+ 00D9 C9        	ret			;; 2659: c9          .
+                
+ 00DA 3A4A00    setasm:	lda	asmsrc		;; 265a: 3a ca 25    :.%
+ 00DD C3CD00    	jmp	seldrv		;; 265d: c3 4d 26    .M&
+                
+ 00E0 3A4B00    setprn:	lda	prndst		;; 2660: 3a cb 25    :.%
+ 00E3 C3CD00    	jmp	seldrv		;; 2663: c3 4d 26    .M&
+                
+ 00E6 3A4C00    setsym:	lda	symdst		;; 2666: 3a cc 25    :.%
+ 00E9 C3CD00    	jmp	seldrv		;; 2669: c3 4d 26    .M&
+                
+ 00EC 3A4D00    sethex:	lda	hexdst		;; 266c: 3a cd 25    :.%
+ 00EF C3CD00    	jmp	seldrv		;; 266f: c3 4d 26    .M&
+                
+ 00F2 3A4E00    setlib:	lda	libsrc		;; 2672: 3a ce 25    :.%
+ 00F5 C3CD00    	jmp	seldrv		;; 2675: c3 4d 26    .M&
+                
+                ; print string until CR, add LF
+ 00F8 7E        msgcr:	mov	a,m		;; 2678: 7e          ~
+ 00F9 CD4905    	call	chrout		;; 2679: cd c9 2a    ..*
+ 00FC 7E        	mov	a,m		;; 267c: 7e          ~
+ 00FD 23        	inx	h		;; 267d: 23          #
+ 00FE FE0D      	cpi	cr		;; 267e: fe 0d       ..
+ 0100 C2F800    	jnz	msgcr		;; 2680: c2 78 26    .x&
+ 0103 3E0A      	mvi	a,lf		;; 2683: 3e 0a       >.
+ 0105 CD4905    	call	chrout		;; 2685: cd c9 2a    ..*
+ 0108 C9        	ret			;; 2688: c9          .
+                
+                ; Copy cmdline FCB basename to (HL)
+ 0109 115C00    L2689:	lxi	d,deffcb	;; 2689: 11 5c 00    .\.
+ 010C 0609      	mvi	b,009h		;; 268c: 06 09       ..
+ 010E 1A        L268e:	ldax	d		;; 268e: 1a          .
+ 010F FE3F      	cpi	'?'		;; 268f: fe 3f       .?
+ 0111 CABD03    	jz	L293d		;; 2691: ca 3d 29    .=)
+ 0114 FE24      	cpi	'$'		;; 2694: fe 24       .$
+ 0116 CABD03    	jz	L293d		;; 2696: ca 3d 29    .=)
+ 0119 77        	mov	m,a		;; 2699: 77          w
+ 011A 23        	inx	h		;; 269a: 23          #
+ 011B 13        	inx	d		;; 269b: 13          .
+ 011C 05        	dcr	b		;; 269c: 05          .
+ 011D C20E01    	jnz	L268e		;; 269d: c2 8e 26    ..&
+ 0120 C9        	ret			;; 26a0: c9          .
+                
+                ; setup LIB FCB, open it
+ 0121 215C00    libfil:	lxi	h,deffcb	;; 26a1: 21 5c 00    .\.
+ 0124 3600      	mvi	m,0		;; 26a4: 36 00       6.
+ 0126 110000    	lxi	d,L3008		;; 26a6: 11 08 30    ..0
+ 0129 1A        	ldax	d		;; 26a9: 1a          .
+ 012A FE09      	cpi	9		;; 26aa: fe 09       ..
+ 012C DA3101    	jc	L26b1		;; 26ac: da b1 26    ..&
+ 012F 3E08      	mvi	a,8		;; 26af: 3e 08       >.
+ 0131 47        L26b1:	mov	b,a		;; 26b1: 47          G
+ 0132 4F        	mov	c,a		;; 26b2: 4f          O
+ 0133 13        L26b3:	inx	d		;; 26b3: 13          .
+ 0134 23        	inx	h		;; 26b4: 23          #
+ 0135 1A        	ldax	d		;; 26b5: 1a          .
+ 0136 77        	mov	m,a		;; 26b6: 77          w
+ 0137 0D        	dcr	c		;; 26b7: 0d          .
+ 0138 C23301    	jnz	L26b3		;; 26b8: c2 b3 26    ..&
+ 013B 3E08      	mvi	a,8		;; 26bb: 3e 08       >.
+ 013D 90        	sub	b		;; 26bd: 90          .
+ 013E 4F        	mov	c,a		;; 26be: 4f          O
+ 013F 0C        	inr	c		;; 26bf: 0c          .
+ 0140 23        L26c0:	inx	h		;; 26c0: 23          #
+ 0141 0D        	dcr	c		;; 26c1: 0d          .
+ 0142 CA4A01    	jz	L26ca		;; 26c2: ca ca 26    ..&
+ 0145 3620      	mvi	m,' '		;; 26c5: 36 20       6 
+ 0147 C34001    	jmp	L26c0		;; 26c7: c3 c0 26    ..&
+                
+ 014A 364C      L26ca:	mvi	m,'L'		;; 26ca: 36 4c       6L
+ 014C 23        	inx	h		;; 26cc: 23          #
+ 014D 3649      	mvi	m,'I'		;; 26cd: 36 49       6I
+ 014F 23        	inx	h		;; 26cf: 23          #
+ 0150 3642      	mvi	m,'B'		;; 26d0: 36 42       6B
+ 0152 23        	inx	h		;; 26d2: 23          #
+ 0153 AF        	xra	a		;; 26d3: af          .
+ 0154 77        	mov	m,a		;; 26d4: 77          w
+ 0155 327C00    	sta	deffcb+32	;; 26d5: 32 7c 00    2|.
+ 0158 CDF200    	call	setlib		;; 26d8: cd 72 26    .r&
+ 015B 115C00    	lxi	d,deffcb	;; 26db: 11 5c 00    .\.
+ 015E C3F501    	jmp	L2775		;; 26de: c3 75 27    .u'
+                
+ 0161 3EFF      L26e1:	mvi	a,0ffh		;; 26e1: 3e ff       >.
+ 0163 320000    	sta	L305d		;; 26e3: 32 5d 30    2]0
+ 0166 218000    	lxi	h,128		;; 26e6: 21 80 00    ...
+ 0169 225000    	shld	dmaidx		;; 26e9: 22 d0 25    ".%
+ 016C 210000    	lxi	h,L305b		;; 26ec: 21 5b 30    .[0
+ 016F 7E        	mov	a,m		;; 26ef: 7e          ~
+ 0170 324F00    	sta	L25cf		;; 26f0: 32 cf 25    2.%
+ 0173 AF        	xra	a		;; 26f3: af          .
+ 0174 77        	mov	m,a		;; 26f4: 77          w
+ 0175 C9        	ret			;; 26f5: c9          .
+                
+ 0176 CDC700    osinit:	call	L2647		;; 26f6: cd 47 26    .G&
+ 0179 215307    	lxi	h,L2cd3		;; 26f9: 21 d3 2c    ..,
+ 017C CDF800    	call	msgcr		;; 26fc: cd 78 26    .x&
+ 017F 3E38      	mvi	a,56		;; 26ff: 3e 38       >8
+ 0181 323300    	sta	paglin		;; 2701: 32 b3 25    2.%
+ 0184 AF        	xra	a		;; 2704: af          .
+ 0185 323400    	sta	curlin		;; 2705: 32 b4 25    2.%
+ 0188 210000    	lxi	h,0		;; 2708: 21 00 00    ...
+ 018B 220000    	shld	L3062		;; 270b: 22 62 30    "b0
+ 018E 2A0600    	lhld	bdos+1		;; 270e: 2a 06 00    *..
+ 0191 220000    	shld	memtop		;; 2711: 22 4d 30    "M0
+ 0194 210000    	lxi	h,buffer	;; 2714: 21 00 31    ..1
+ 0197 227600    	shld	L25f6		;; 2717: 22 f6 25    ".%
+ 019A 110004    	lxi	d,1024		;; 271a: 11 00 04    ...
+ 019D 19        	dad	d		;; 271d: 19          .
+ 019E 229B00    	shld	L261b		;; 271e: 22 1b 26    ".&
+ 01A1 110003    	lxi	d,768		;; 2721: 11 00 03    ...
+ 01A4 19        	dad	d		;; 2724: 19          .
+ 01A5 22C000    	shld	L2640		;; 2725: 22 40 26    "@&
+ 01A8 110003    	lxi	d,768		;; 2728: 11 00 03    ...
+ 01AB 19        	dad	d		;; 272b: 19          .
+ 01AC 23        	inx	h		;; 272c: 23          #
+ 01AD 220000    	shld	L304b		;; 272d: 22 4b 30    "K0
+ 01B0 220000    	shld	syheap		;; 2730: 22 54 30    "T0
+ 01B3 C36A02    	jmp	parcmd		;; 2733: c3 ea 27    ..'
+                
+                ; print char if not blank
+ 01B6 FE20      L2736:	cpi	' '		;; 2736: fe 20       . 
+ 01B8 C8        	rz			;; 2738: c8          .
+ 01B9 C5        	push	b		;; 2739: c5          .
+ 01BA E5        	push	h		;; 273a: e5          .
+ 01BB 5F        	mov	e,a		;; 273b: 5f          _
+ 01BC 0E02      	mvi	c,conout	;; 273c: 0e 02       ..
+ 01BE CD0500    	call	bdos		;; 273e: cd 05 00    ...
+ 01C1 E1        	pop	h		;; 2741: e1          .
+ 01C2 C1        	pop	b		;; 2742: c1          .
+ 01C3 C9        	ret			;; 2743: c9          .
+                
+ 01C4 23        L2744:	inx	h		;; 2744: 23          #
+ 01C5 7E        	mov	a,m		;; 2745: 7e          ~
+ 01C6 CDB601    	call	L2736		;; 2746: cd 36 27    .6'
+ 01C9 0D        	dcr	c		;; 2749: 0d          .
+ 01CA C2C401    	jnz	L2744		;; 274a: c2 44 27    .D'
+ 01CD C9        	ret			;; 274d: c9          .
+                
+ 01CE E5        L274e:	push	h		;; 274e: e5          .
+ 01CF EB        	xchg			;; 274f: eb          .
+ 01D0 3A4900    	lda	curdrv		;; 2750: 3a c9 25    :.%
+ 01D3 C641      	adi	'A'		;; 2753: c6 41       .A
+ 01D5 CDB601    	call	L2736		;; 2755: cd 36 27    .6'
+ 01D8 3E3A      	mvi	a,':'		;; 2758: 3e 3a       >:
+ 01DA CDB601    	call	L2736		;; 275a: cd 36 27    .6'
+ 01DD 0E08      	mvi	c,008h		;; 275d: 0e 08       ..
+ 01DF CDC401    	call	L2744		;; 275f: cd 44 27    .D'
+ 01E2 3E2E      	mvi	a,'.'		;; 2762: 3e 2e       >.
+ 01E4 CDB601    	call	L2736		;; 2764: cd 36 27    .6'
+ 01E7 0E03      	mvi	c,003h		;; 2767: 0e 03       ..
+ 01E9 CDC401    	call	L2744		;; 2769: cd 44 27    .D'
+ 01EC 3E2D      	mvi	a,'-'		;; 276c: 3e 2d       >-
+ 01EE CDB601    	call	L2736		;; 276e: cd 36 27    .6'
+ 01F1 E1        	pop	h		;; 2771: e1          .
+ 01F2 C3F800    	jmp	msgcr		;; 2772: c3 78 26    .x&
+                
+ 01F5 0E0F      L2775:	mvi	c,open		;; 2775: 0e 0f       ..
+ 01F7 D5        	push	d		;; 2777: d5          .
+ 01F8 CD0500    	call	bdos		;; 2778: cd 05 00    ...
+ 01FB FEFF      	cpi	0ffh		;; 277b: fe ff       ..
+ 01FD D1        	pop	d		;; 277d: d1          .
+ 01FE C0        	rnz			;; 277e: c0          .
+ 01FF 216807    	lxi	h,L2ce8		;; 277f: 21 e8 2c    ..,
+ 0202 CDCE01    	call	L274e		;; 2782: cd 4e 27    .N'
+ 0205 C30000    	jmp	cpm		;; 2785: c3 00 00    ...
+                
+ 0208 0E10      closef:	mvi	c,close		;; 2788: 0e 10       ..
+ 020A D5        	push	d		;; 278a: d5          .
+ 020B CD0500    	call	bdos		;; 278b: cd 05 00    ...
+ 020E FEFF      	cpi	0ffh		;; 278e: fe ff       ..
+ 0210 D1        	pop	d		;; 2790: d1          .
+ 0211 C0        	rnz			;; 2791: c0          .
+ 0212 21EB07    	lxi	h,L2d6b		;; 2792: 21 6b 2d    .k-
+ 0215 CDF800    	call	msgcr		;; 2795: cd 78 26    .x&
+ 0218 C30000    	jmp	cpm		;; 2798: c3 00 00    ...
+                
+ 021B 0E13      deletf:	mvi	c,delete	;; 279b: 0e 13       ..
+ 021D C30500    	jmp	bdos		;; 279d: c3 05 00    ...
+                
+ 0220 0E16      makef:	mvi	c,make		;; 27a0: 0e 16       ..
+ 0222 D5        	push	d		;; 27a2: d5          .
+ 0223 CD0500    	call	bdos		;; 27a3: cd 05 00    ...
+ 0226 FEFF      	cpi	0ffh		;; 27a6: fe ff       ..
+ 0228 D1        	pop	d		;; 27a8: d1          .
+ 0229 C0        	rnz			;; 27a9: c0          .
+ 022A 217F07    	lxi	h,L2cff		;; 27aa: 21 ff 2c    ..,
+ 022D CDCE01    	call	L274e		;; 27ad: cd 4e 27    .N'
+ 0230 C30000    	jmp	cpm		;; 27b0: c3 00 00    ...
+                
+ 0233 3A4B00    isfile:	lda	prndst		;; 27b3: 3a cb 25    :.%
+ 0236 FE19      	cpi	DRVNUL		;; 27b6: fe 19       ..
+ 0238 C8        	rz			;; 27b8: c8          .
+ 0239 FE17      	cpi	DRVCON		;; 27b9: fe 17       ..
+ 023B C8        	rz			;; 27bb: c8          .
+ 023C FE0F      	cpi	DRVLST		;; 27bc: fe 0f       ..
+ 023E C9        	ret			;; 27be: c9          .
+                
+                ; expand TAB char
+ 023F FE09      L27bf:	cpi	tab		;; 27bf: fe 09       ..
+ 0241 C25202    	jnz	L27d2		;; 27c1: c2 d2 27    ..'
+ 0244 3E20      L27c4:	mvi	a,' '		;; 27c4: 3e 20       > 
+ 0246 CD5202    	call	L27d2		;; 27c6: cd d2 27    ..'
+ 0249 3A5200    	lda	L25d2		;; 27c9: 3a d2 25    :.%
+ 024C E607      	ani	007h		;; 27cc: e6 07       ..
+ 024E C24402    	jnz	L27c4		;; 27ce: c2 c4 27    ..'
+ 0251 C9        	ret			;; 27d1: c9          .
+                
+ 0252 F5        L27d2:	push	psw		;; 27d2: f5          .
+ 0253 5F        	mov	e,a		;; 27d3: 5f          _
+ 0254 0E05      	mvi	c,lstout	;; 27d4: 0e 05       ..
+ 0256 CD0500    	call	bdos		;; 27d6: cd 05 00    ...
+ 0259 F1        	pop	psw		;; 27d9: f1          .
+ 025A 215200    	lxi	h,L25d2		;; 27da: 21 d2 25    ..%
+ 025D FE0A      	cpi	lf		;; 27dd: fe 0a       ..
+ 025F C26502    	jnz	L27e5		;; 27df: c2 e5 27    ..'
+ 0262 3600      	mvi	m,000h		;; 27e2: 36 00       6.
+ 0264 C9        	ret			;; 27e4: c9          .
+                
+                ; count printable chars
+ 0265 FE20      L27e5:	cpi	' '		;; 27e5: fe 20       . 
+ 0267 D8        	rc			;; 27e7: d8          .
+ 0268 34        	inr	m		;; 27e8: 34          4
+ 0269 C9        	ret			;; 27e9: c9          .
+                
+                ; parse commandline buffer
+ 026A AF        parcmd:	xra	a		;; 27ea: af          .
+                	; set all defaults
+ 026B 325200    	sta	L25d2		;; 27eb: 32 d2 25    2.%
+ 026E 320000    	sta	L305d		;; 27ee: 32 5d 30    2]0
+ 0271 320000    	sta	Lflag		;; 27f1: 32 65 30    2e0
+ 0274 320000    	sta	Qflag		;; 27f4: 32 64 30    2d0
+ 0277 320000    	sta	Rflag		;; 27f7: 32 67 30    2g0
+ 027A 323500    	sta	Fflag		;; 27fa: 32 b5 25    2.%
+ 027D 3A5C00    	lda	deffcb		;; 27fd: 3a 5c 00    :\.
+ 0280 FE20      	cpi	' '		;; 2800: fe 20       . 
+ 0282 CABD03    	jz	L293d		;; 2802: ca 3d 29    .=)
+ 0285 0E19      	mvi	c,curdsk	;; 2805: 0e 19       ..
+ 0287 CD0500    	call	bdos		;; 2807: cd 05 00    ...
+ 028A 214900    	lxi	h,curdrv	;; 280a: 21 c9 25    ..%
+ 028D 77        	mov	m,a		;; 280d: 77          w
+ 028E 23        	inx	h		;; 280e: 23          #
+ 028F 77        	mov	m,a		;; 280f: 77          w
+ 0290 23        	inx	h		;; 2810: 23          #
+ 0291 77        	mov	m,a		;; 2811: 77          w
+ 0292 23        	inx	h		;; 2812: 23          #
+ 0293 77        	mov	m,a		;; 2813: 77          w
+ 0294 23        	inx	h		;; 2814: 23          #
+ 0295 77        	mov	m,a		;; 2815: 77          w
+ 0296 23        	inx	h		;; 2816: 23          #
+ 0297 77        	mov	m,a		;; 2817: 77          w
+ 0298 23        	inx	h		;; 2818: 23          #
+ 0299 3E01      	mvi	a,1		;; 2819: 3e 01       >.
+ 029B 320000    	sta	Sflag		;; 281b: 32 5e 30    2^0
+ 029E 320000    	sta	Mflag		;; 281e: 32 5f 30    2_0
+                	; see if options specified
+ 02A1 3A6D00    	lda	deffcb+17	;; 2821: 3a 6d 00    :m.
+ 02A4 FE24      	cpi	'$'		;; 2824: fe 24       .$
+ 02A6 C24803    	jnz	L28c8		;; 2826: c2 c8 28    ..(
+ 02A9 218100    	lxi	h,cmdlin+1	;; 2829: 21 81 00    ...
+ 02AC 7E        L282c:	mov	a,m		;; 282c: 7e          ~
+ 02AD 23        	inx	h		;; 282d: 23          #
+ 02AE FE24      	cpi	'$'		;; 282e: fe 24       .$
+ 02B0 C2AC02    	jnz	L282c		;; 2830: c2 2c 28    .,(
+ 02B3 7E        L2833:	mov	a,m		;; 2833: 7e          ~
+ 02B4 B7        	ora	a		;; 2834: b7          .
+ 02B5 CA4803    	jz	L28c8		;; 2835: ca c8 28    ..(
+ 02B8 23        	inx	h		;; 2838: 23          #
+ 02B9 FE20      	cpi	' '		;; 2839: fe 20       . 
+ 02BB CAB302    	jz	L2833		;; 283b: ca 33 28    .3(
+ 02BE 114A00    	lxi	d,asmsrc	;; 283e: 11 ca 25    ..%
+ 02C1 FE41      	cpi	'A'		;; 2841: fe 41       .A
+ 02C3 CA2903    	jz	L28a9		;; 2843: ca a9 28    ..(
+ 02C6 13        	inx	d		;; 2846: 13          .
+ 02C7 FE50      	cpi	'P'		;; 2847: fe 50       .P
+ 02C9 CA2903    	jz	L28a9		;; 2849: ca a9 28    ..(
+ 02CC 13        	inx	d		;; 284c: 13          .
+ 02CD FE53      	cpi	'S'		;; 284d: fe 53       .S
+ 02CF CA2903    	jz	L28a9		;; 284f: ca a9 28    ..(
+ 02D2 13        	inx	d		;; 2852: 13          .
+ 02D3 FE48      	cpi	'H'		;; 2853: fe 48       .H
+ 02D5 CA2903    	jz	L28a9		;; 2855: ca a9 28    ..(
+ 02D8 13        	inx	d		;; 2858: 13          .
+ 02D9 FE4C      	cpi	'L'		;; 2859: fe 4c       .L
+ 02DB CA2903    	jz	L28a9		;; 285b: ca a9 28    ..(
+ 02DE 13        	inx	d		;; 285e: 13          .
+ 02DF 0607      	mvi	b,007h		;; 285f: 06 07       ..
+ 02E1 FE2A      	cpi	'*'		;; 2861: fe 2a       .*
+ 02E3 CAF402    	jz	L2874		;; 2863: ca 74 28    .t(
+ 02E6 0603      	mvi	b,003h		;; 2866: 06 03       ..
+ 02E8 FE2B      	cpi	'+'		;; 2868: fe 2b       .+
+ 02EA CAF402    	jz	L2874		;; 286a: ca 74 28    .t(
+ 02ED 0600      	mvi	b,000h		;; 286d: 06 00       ..
+ 02EF FE2D      	cpi	'-'		;; 286f: fe 2d       .-
+ 02F1 C23603    	jnz	cmderr		;; 2871: c2 b6 28    ..(
+ 02F4 110000    L2874:	lxi	d,Sflag		;; 2874: 11 5e 30    .^0
+ 02F7 7E        	mov	a,m		;; 2877: 7e          ~
+ 02F8 FE53      	cpi	'S'		;; 2878: fe 53       .S
+ 02FA CA2303    	jz	L28a3		;; 287a: ca a3 28    ..(
+ 02FD 13        	inx	d		;; 287d: 13          .
+ 02FE FE4D      	cpi	'M'		;; 287e: fe 4d       .M
+ 0300 CA2303    	jz	L28a3		;; 2880: ca a3 28    ..(
+ 0303 110000    	lxi	d,Lflag		;; 2883: 11 65 30    .e0
+ 0306 FE4C      	cpi	'L'		;; 2886: fe 4c       .L
+ 0308 CA2303    	jz	L28a3		;; 2888: ca a3 28    ..(
+ 030B 110000    	lxi	d,Qflag		;; 288b: 11 64 30    .d0
+ 030E FE51      	cpi	'Q'		;; 288e: fe 51       .Q
+ 0310 CA2303    	jz	L28a3		;; 2890: ca a3 28    ..(
+ 0313 110000    	lxi	d,Rflag		;; 2893: 11 67 30    .g0
+ 0316 FE52      	cpi	'R'		;; 2896: fe 52       .R
+ 0318 CA2303    	jz	L28a3		;; 2898: ca a3 28    ..(
+ 031B 113500    	lxi	d,Fflag		;; 289b: 11 b5 25    ..%
+ 031E FE31      	cpi	'1'		;; 289e: fe 31       .1
+ 0320 C23603    	jnz	cmderr		;; 28a0: c2 b6 28    ..(
+ 0323 78        L28a3:	mov	a,b		;; 28a3: 78          x
+ 0324 12        	stax	d		;; 28a4: 12          .
+ 0325 23        	inx	h		;; 28a5: 23          #
+ 0326 C3B302    	jmp	L2833		;; 28a6: c3 33 28    .3(
+                
+ 0329 7E        L28a9:	mov	a,m		;; 28a9: 7e          ~
+ 032A D641      	sui	'A'		;; 28aa: d6 41       .A
+ 032C FE1A      	cpi	'Z'-'A'+1	;; 28ac: fe 1a       ..
+ 032E D23603    	jnc	cmderr		;; 28ae: d2 b6 28    ..(
+ 0331 12        	stax	d		;; 28b1: 12          .
+ 0332 23        	inx	h		;; 28b2: 23          #
+ 0333 C3B302    	jmp	L2833		;; 28b3: c3 33 28    .3(
+                
+                ; syntax error in commandline
+ 0336 23        cmderr:	inx	h		;; 28b6: 23          #
+ 0337 360D      	mvi	m,cr		;; 28b7: 36 0d       6.
+ 0339 21A907    	lxi	h,L2d29		;; 28b9: 21 29 2d    .)-
+ 033C CDF800    	call	msgcr		;; 28bc: cd 78 26    .x&
+ 033F 218100    	lxi	h,cmdlin+1	;; 28bf: 21 81 00    ...
+ 0342 CDF800    	call	msgcr		;; 28c2: cd 78 26    .x&
+ 0345 C30000    	jmp	cpm		;; 28c5: c3 00 00    ...
+                
+ 0348 215300    L28c8:	lxi	h,L25d3		;; 28c8: 21 d3 25    ..%
+ 034B CD0901    	call	L2689		;; 28cb: cd 89 26    ..&
+ 034E 217800    	lxi	h,prnfcb	;; 28ce: 21 f8 25    ..%
+ 0351 E5        	push	h		;; 28d1: e5          .
+ 0352 CD0901    	call	L2689		;; 28d2: cd 89 26    ..&
+ 0355 E1        	pop	h		;; 28d5: e1          .
+ 0356 CD3302    	call	isfile		;; 28d6: cd b3 27    ..'
+ 0359 CA6903    	jz	L28e9		;; 28d9: ca e9 28    ..(
+ 035C E5        	push	h		;; 28dc: e5          .
+ 035D E5        	push	h		;; 28dd: e5          .
+ 035E CDE000    	call	setprn		;; 28de: cd 60 26    .`&
+ 0361 D1        	pop	d		;; 28e1: d1          .
+ 0362 CD1B02    	call	deletf		;; 28e2: cd 9b 27    ..'
+ 0365 D1        	pop	d		;; 28e5: d1          .
+ 0366 CD2002    	call	makef		;; 28e6: cd a0 27    ..'
+ 0369 3A4D00    L28e9:	lda	hexdst		;; 28e9: 3a cd 25    :.%
+ 036C FE19      	cpi	DRVNUL		;; 28ec: fe 19       ..
+ 036E CA8403    	jz	L2904		;; 28ee: ca 04 29    ..)
+ 0371 219D00    	lxi	h,hexfcb	;; 28f1: 21 1d 26    ..&
+ 0374 E5        	push	h		;; 28f4: e5          .
+ 0375 E5        	push	h		;; 28f5: e5          .
+ 0376 CD0901    	call	L2689		;; 28f6: cd 89 26    ..&
+ 0379 CDEC00    	call	sethex		;; 28f9: cd 6c 26    .l&
+ 037C D1        	pop	d		;; 28fc: d1          .
+ 037D CD1B02    	call	deletf		;; 28fd: cd 9b 27    ..'
+ 0380 D1        	pop	d		;; 2900: d1          .
+ 0381 CD2002    	call	makef		;; 2901: cd a0 27    ..'
+ 0384 C9        L2904:	ret			;; 2904: c9          .
+                
+ 0385 213000    L2905:	lxi	h,L25b0		;; 2905: 21 b0 25    ..%
+ 0388 3630      	mvi	m,'0'		;; 2908: 36 30       60
+ 038A 23        	inx	h		;; 290a: 23          #
+ 038B 3630      	mvi	m,'0'		;; 290b: 36 30       60
+ 038D 23        	inx	h		;; 290d: 23          #
+ 038E 3630      	mvi	m,'0'		;; 290e: 36 30       60
+ 0390 23        	inx	h		;; 2910: 23          #
+ 0391 3EFF      	mvi	a,0ffh		;; 2911: 3e ff       >.
+ 0393 320000    	sta	L3066		;; 2913: 32 66 30    2f0
+ 0396 210000    	lxi	h,0		;; 2916: 21 00 00    ...
+ 0399 229900    	shld	prnidx		;; 2919: 22 19 26    ".&
+ 039C 3A0000    	lda	pass		;; 291c: 3a 4f 30    :O0
+ 039F B7        	ora	a		;; 291f: b7          .
+ 03A0 C47905    	cnz	L2af9		;; 2920: c4 f9 2a    ..*
+ 03A3 210004    	lxi	h,1024		;; 2923: 21 00 04    ...
+ 03A6 227400    	shld	L25f4		;; 2926: 22 f4 25    ".%
+ 03A9 AF        	xra	a		;; 2929: af          .
+ 03AA 325F00    	sta	L25df		;; 292a: 32 df 25    2.%
+ 03AD 327300    	sta	L25f3		;; 292d: 32 f3 25    2.%
+ 03B0 323800    	sta	hexlen		;; 2930: 32 b8 25    2.%
+ 03B3 CDDA00    	call	setasm		;; 2933: cd 5a 26    .Z&
+ 03B6 115300    	lxi	d,L25d3		;; 2936: 11 d3 25    ..%
+ 03B9 CDF501    	call	L2775		;; 2939: cd 75 27    .u'
+ 03BC C9        	ret			;; 293c: c9          .
+                
+ 03BD 219207    L293d:	lxi	h,L2d12		;; 293d: 21 12 2d    ..-
+ 03C0 CDF800    	call	msgcr		;; 2940: cd 78 26    .x&
+ 03C3 C30000    	jmp	cpm		;; 2943: c3 00 00    ...
+                
+ 03C6 7A        compar:	mov	a,d		;; 2946: 7a          z
+ 03C7 BC        	cmp	h		;; 2947: bc          .
+ 03C8 C0        	rnz			;; 2948: c0          .
+ 03C9 7B        	mov	a,e		;; 2949: 7b          {
+ 03CA BD        	cmp	l		;; 294a: bd          .
+ 03CB C9        	ret			;; 294b: c9          .
+                
+ 03CC C5        L294c:	push	b		;; 294c: c5          .
+ 03CD D5        	push	d		;; 294d: d5          .
+ 03CE E5        	push	h		;; 294e: e5          .
+ 03CF 3A0000    	lda	L305d		;; 294f: 3a 5d 30    :]0
+ 03D2 B7        	ora	a		;; 2952: b7          .
+ 03D3 CA2204    	jz	L29a2		;; 2953: ca a2 29    ..)
+ 03D6 2A5000    	lhld	dmaidx		;; 2956: 2a d0 25    *.%
+ 03D9 118000    	lxi	d,128		;; 2959: 11 80 00    ...
+ 03DC CDC603    	call	compar		;; 295c: cd 46 29    .F)
+ 03DF C2F703    	jnz	L2977		;; 295f: c2 77 29    .w)
+ 03E2 210000    	lxi	h,0		;; 2962: 21 00 00    ...
+ 03E5 225000    	shld	dmaidx		;; 2965: 22 d0 25    ".%
+ 03E8 CDF200    	call	setlib		;; 2968: cd 72 26    .r&
+ 03EB 0E14      	mvi	c,read		;; 296b: 0e 14       ..
+ 03ED 115C00    	lxi	d,deffcb	;; 296d: 11 5c 00    .\.
+ 03F0 CD0500    	call	bdos		;; 2970: cd 05 00    ...
+ 03F3 B7        	ora	a		;; 2973: b7          .
+ 03F4 C20904    	jnz	L2989		;; 2974: c2 89 29    ..)
+ 03F7 2A5000    L2977:	lhld	dmaidx		;; 2977: 2a d0 25    *.%
+ 03FA 23        	inx	h		;; 297a: 23          #
+ 03FB 225000    	shld	dmaidx		;; 297b: 22 d0 25    ".%
+ 03FE 2B        	dcx	h		;; 297e: 2b          +
+ 03FF 118000    	lxi	d,defdma	;; 297f: 11 80 00    ...
+ 0402 19        	dad	d		;; 2982: 19          .
+ 0403 7E        	mov	a,m		;; 2983: 7e          ~
+ 0404 FE1A      	cpi	eof		;; 2984: fe 1a       ..
+ 0406 C27F04    	jnz	L29ff		;; 2986: c2 ff 29    ..)
+ 0409 3A0000    L2989:	lda	L2ea3		;; 2989: 3a a3 2e    :..
+ 040C B7        	ora	a		;; 298c: b7          .
+ 040D 320000    	sta	L305d		;; 298d: 32 5d 30    2]0
+ 0410 CA2204    	jz	L29a2		;; 2990: ca a2 29    ..)
+ 0413 CDF200    	call	setlib		;; 2993: cd 72 26    .r&
+ 0416 115C00    	lxi	d,deffcb	;; 2996: 11 5c 00    .\.
+ 0419 21FE07    	lxi	h,L2d7e		;; 2999: 21 7e 2d    .~-
+ 041C CDCE01    	call	L274e		;; 299c: cd 4e 27    .N'
+ 041F C30000    	jmp	cpm		;; 299f: c3 00 00    ...
+                
+ 0422 2A7400    L29a2:	lhld	L25f4		;; 29a2: 2a f4 25    *.%
+ 0425 110004    	lxi	d,1024		;; 29a5: 11 00 04    ...
+ 0428 CDC603    	call	compar		;; 29a8: cd 46 29    .F)
+ 042B C27004    	jnz	L29f0		;; 29ab: c2 f0 29    ..)
+ 042E CDDA00    	call	setasm		;; 29ae: cd 5a 26    .Z&
+ 0431 210000    	lxi	h,0		;; 29b1: 21 00 00    ...
+ 0434 227400    	shld	L25f4		;; 29b4: 22 f4 25    ".%
+ 0437 0608      	mvi	b,008h		;; 29b7: 06 08       ..
+ 0439 2A7600    	lhld	L25f6		;; 29b9: 2a f6 25    *.%
+ 043C C5        L29bc:	push	b		;; 29bc: c5          .
+ 043D E5        	push	h		;; 29bd: e5          .
+ 043E EB        	xchg			;; 29be: eb          .
+ 043F CDC200    	call	L2642		;; 29bf: cd 42 26    .B&
+ 0442 0E14      	mvi	c,read		;; 29c2: 0e 14       ..
+ 0444 115300    	lxi	d,L25d3		;; 29c4: 11 d3 25    ..%
+ 0447 CD0500    	call	bdos		;; 29c7: cd 05 00    ...
+ 044A E1        	pop	h		;; 29ca: e1          .
+ 044B 118000    	lxi	d,128		;; 29cb: 11 80 00    ...
+ 044E 19        	dad	d		;; 29ce: 19          .
+ 044F C1        	pop	b		;; 29cf: c1          .
+ 0450 B7        	ora	a		;; 29d0: b7          .
+ 0451 C25B04    	jnz	L29db		;; 29d1: c2 db 29    ..)
+ 0454 05        	dcr	b		;; 29d4: 05          .
+ 0455 C23C04    	jnz	L29bc		;; 29d5: c2 bc 29    ..)
+ 0458 C36D04    	jmp	L29ed		;; 29d8: c3 ed 29    ..)
+                
+ 045B FE03      L29db:	cpi	003h		;; 29db: fe 03       ..
+ 045D D28504    	jnc	L2a05		;; 29dd: d2 05 2a    ..*
+ 0460 05        	dcr	b		;; 29e0: 05          .
+ 0461 CA6D04    	jz	L29ed		;; 29e1: ca ed 29    ..)
+ 0464 0E80      	mvi	c,128		;; 29e4: 0e 80       ..
+ 0466 361A      L29e6:	mvi	m,eof		;; 29e6: 36 1a       6.
+ 0468 23        	inx	h		;; 29e8: 23          #
+ 0469 0D        	dcr	c		;; 29e9: 0d          .
+ 046A C26604    	jnz	L29e6		;; 29ea: c2 e6 29    ..)
+ 046D CDC700    L29ed:	call	L2647		;; 29ed: cd 47 26    .G&
+ 0470 2A7600    L29f0:	lhld	L25f6		;; 29f0: 2a f6 25    *.%
+ 0473 EB        	xchg			;; 29f3: eb          .
+ 0474 2A7400    	lhld	L25f4		;; 29f4: 2a f4 25    *.%
+ 0477 E5        	push	h		;; 29f7: e5          .
+ 0478 23        	inx	h		;; 29f8: 23          #
+ 0479 227400    	shld	L25f4		;; 29f9: 22 f4 25    ".%
+ 047C E1        	pop	h		;; 29fc: e1          .
+ 047D 19        	dad	d		;; 29fd: 19          .
+ 047E 7E        	mov	a,m		;; 29fe: 7e          ~
+ 047F E1        L29ff:	pop	h		;; 29ff: e1          .
+ 0480 D1        	pop	d		;; 2a00: d1          .
+ 0481 C1        	pop	b		;; 2a01: c1          .
+ 0482 E67F      	ani	07fh		;; 2a02: e6 7f       ..
+ 0484 C9        	ret			;; 2a04: c9          .
+                
+ 0485 21BC07    L2a05:	lxi	h,L2d3c		;; 2a05: 21 3c 2d    .<-
+ 0488 CDF800    	call	msgcr		;; 2a08: cd 78 26    .x&
+ 048B C30000    	jmp	cpm		;; 2a0b: c3 00 00    ...
+                
+ 048E C5        prnput:	push	b		;; 2a0e: c5          .
+ 048F 47        	mov	b,a		;; 2a0f: 47          G
+ 0490 3A4B00    	lda	prndst		;; 2a10: 3a cb 25    :.%
+ 0493 FE19      	cpi	DRVNUL		;; 2a13: fe 19       ..
+ 0495 CAB704    	jz	L2a37		;; 2a15: ca 37 2a    .7*
+ 0498 FE17      	cpi	DRVCON		;; 2a18: fe 17       ..
+ 049A C2A404    	jnz	L2a24		;; 2a1a: c2 24 2a    .$*
+ 049D 78        	mov	a,b		;; 2a1d: 78          x
+ 049E CD4905    	call	chrout		;; 2a1e: cd c9 2a    ..*
+ 04A1 C3B704    	jmp	L2a37		;; 2a21: c3 37 2a    .7*
+                
+ 04A4 D5        L2a24:	push	d		;; 2a24: d5          .
+ 04A5 E5        	push	h		;; 2a25: e5          .
+ 04A6 FE0F      	cpi	DRVLST		;; 2a26: fe 0f       ..
+ 04A8 78        	mov	a,b		;; 2a28: 78          x
+ 04A9 C2B204    	jnz	L2a32		;; 2a29: c2 32 2a    .2*
+ 04AC CD3F02    	call	L27bf		;; 2a2c: cd bf 27    ..'
+ 04AF C3B504    	jmp	L2a35		;; 2a2f: c3 35 2a    .5*
+                
+ 04B2 CDB904    L2a32:	call	L2a39		;; 2a32: cd 39 2a    .9*
+ 04B5 E1        L2a35:	pop	h		;; 2a35: e1          .
+ 04B6 D1        	pop	d		;; 2a36: d1          .
+ 04B7 C1        L2a37:	pop	b		;; 2a37: c1          .
+ 04B8 C9        	ret			;; 2a38: c9          .
+                
+ 04B9 2A9900    L2a39:	lhld	prnidx		;; 2a39: 2a 19 26    *.&
+ 04BC EB        	xchg			;; 2a3c: eb          .
+ 04BD 2A9B00    	lhld	L261b		;; 2a3d: 2a 1b 26    *.&
+ 04C0 19        	dad	d		;; 2a40: 19          .
+ 04C1 77        	mov	m,a		;; 2a41: 77          w
+ 04C2 EB        	xchg			;; 2a42: eb          .
+ 04C3 23        	inx	h		;; 2a43: 23          #
+ 04C4 229900    	shld	prnidx		;; 2a44: 22 19 26    ".&
+ 04C7 EB        	xchg			;; 2a47: eb          .
+ 04C8 210003    	lxi	h,768		;; 2a48: 21 00 03    ...
+ 04CB CDC603    	call	compar		;; 2a4b: cd 46 29    .F)
+ 04CE C0        	rnz			;; 2a4e: c0          .
+ 04CF CDE000    	call	setprn		;; 2a4f: cd 60 26    .`&
+ 04D2 210000    	lxi	h,0		;; 2a52: 21 00 00    ...
+ 04D5 229900    	shld	prnidx		;; 2a55: 22 19 26    ".&
+ 04D8 2A9B00    	lhld	L261b		;; 2a58: 2a 1b 26    *.&
+ 04DB 117800    	lxi	d,prnfcb	;; 2a5b: 11 f8 25    ..%
+ 04DE 0606      	mvi	b,006h		;; 2a5e: 06 06       ..
+ 04E0 7E        L2a60:	mov	a,m		;; 2a60: 7e          ~
+ 04E1 FE1A      	cpi	eof		;; 2a61: fe 1a       ..
+ 04E3 CA0505    	jz	L2a85		;; 2a63: ca 85 2a    ..*
+ 04E6 C5        	push	b		;; 2a66: c5          .
+ 04E7 D5        	push	d		;; 2a67: d5          .
+ 04E8 E5        	push	h		;; 2a68: e5          .
+ 04E9 EB        	xchg			;; 2a69: eb          .
+ 04EA CDC200    	call	L2642		;; 2a6a: cd 42 26    .B&
+ 04ED E1        	pop	h		;; 2a6d: e1          .
+ 04EE 118000    	lxi	d,128		;; 2a6e: 11 80 00    ...
+ 04F1 19        	dad	d		;; 2a71: 19          .
+ 04F2 D1        	pop	d		;; 2a72: d1          .
+ 04F3 D5        	push	d		;; 2a73: d5          .
+ 04F4 E5        	push	h		;; 2a74: e5          .
+ 04F5 0E15      	mvi	c,write		;; 2a75: 0e 15       ..
+ 04F7 CD0500    	call	bdos		;; 2a77: cd 05 00    ...
+ 04FA E1        	pop	h		;; 2a7a: e1          .
+ 04FB D1        	pop	d		;; 2a7b: d1          .
+ 04FC C1        	pop	b		;; 2a7c: c1          .
+ 04FD B7        	ora	a		;; 2a7d: b7          .
+ 04FE C20C05    	jnz	L2a8c		;; 2a7e: c2 8c 2a    ..*
+ 0501 05        	dcr	b		;; 2a81: 05          .
+ 0502 C2E004    	jnz	L2a60		;; 2a82: c2 60 2a    .`*
+ 0505 CDC700    L2a85:	call	L2647		;; 2a85: cd 47 26    .G&
+ 0508 C9        	ret			;; 2a88: c9          .
+                
+ 0509 C3E004    	jmp	L2a60		;; 2a89: c3 60 2a    .`*
+                
+ 050C 21D307    L2a8c:	lxi	h,L2d53		;; 2a8c: 21 53 2d    .S-
+ 050F CDF800    	call	msgcr		;; 2a8f: cd 78 26    .x&
+ 0512 C33607    	jmp	L2cb6		;; 2a92: c3 b6 2c    ..,
+                
+ 0515 C5        hexput:	push	b		;; 2a95: c5          .
+ 0516 D5        	push	d		;; 2a96: d5          .
+ 0517 E5        	push	h		;; 2a97: e5          .
+ 0518 CD1F05    	call	hexpt		;; 2a98: cd 9f 2a    ..*
+ 051B E1        	pop	h		;; 2a9b: e1          .
+ 051C D1        	pop	d		;; 2a9c: d1          .
+ 051D C1        	pop	b		;; 2a9d: c1          .
+ 051E C9        L2a9e:	ret			;; 2a9e: c9          .
+                
+ 051F 2ABE00    hexpt:	lhld	hexidx		;; 2a9f: 2a 3e 26    *>&
+ 0522 EB        	xchg			;; 2aa2: eb          .
+ 0523 2AC000    	lhld	L2640		;; 2aa3: 2a 40 26    *@&
+ 0526 19        	dad	d		;; 2aa6: 19          .
+ 0527 77        	mov	m,a		;; 2aa7: 77          w
+ 0528 EB        	xchg			;; 2aa8: eb          .
+ 0529 23        	inx	h		;; 2aa9: 23          #
+ 052A 22BE00    	shld	hexidx		;; 2aaa: 22 3e 26    ">&
+ 052D EB        	xchg			;; 2aad: eb          .
+ 052E 210003    	lxi	h,768		;; 2aae: 21 00 03    ...
+ 0531 CDC603    	call	compar		;; 2ab1: cd 46 29    .F)
+ 0534 C0        	rnz			;; 2ab4: c0          .
+ 0535 CDEC00    	call	sethex		;; 2ab5: cd 6c 26    .l&
+ 0538 210000    	lxi	h,0		;; 2ab8: 21 00 00    ...
+ 053B 22BE00    	shld	hexidx		;; 2abb: 22 3e 26    ">&
+ 053E 2AC000    	lhld	L2640		;; 2abe: 2a 40 26    *@&
+ 0541 119D00    	lxi	d,hexfcb	;; 2ac1: 11 1d 26    ..&
+ 0544 0606      	mvi	b,006h		;; 2ac4: 06 06       ..
+ 0546 C3E004    	jmp	L2a60		;; 2ac6: c3 60 2a    .`*
+                
+                ; print char
+ 0549 C5        chrout:	push	b		;; 2ac9: c5          .
+ 054A D5        	push	d		;; 2aca: d5          .
+ 054B E5        	push	h		;; 2acb: e5          .
+ 054C 0E02      	mvi	c,conout	;; 2acc: 0e 02       ..
+ 054E 5F        	mov	e,a		;; 2ace: 5f          _
+ 054F CD0500    	call	bdos		;; 2acf: cd 05 00    ...
+ 0552 E1        	pop	h		;; 2ad2: e1          .
+ 0553 D1        	pop	d		;; 2ad3: d1          .
+ 0554 C1        	pop	b		;; 2ad4: c1          .
+ 0555 C9        	ret			;; 2ad5: c9          .
+                
+                ; increment a 3-digit ASCII numeric field
+ 0556 213200    L2ad6:	lxi	h,L25b0+2	;; 2ad6: 21 b2 25    ..%
+ 0559 0E03      	mvi	c,3		;; 2ad9: 0e 03       ..
+ 055B 7E        L2adb:	mov	a,m		;; 2adb: 7e          ~
+ 055C 3C        	inr	a		;; 2adc: 3c          <
+ 055D 77        	mov	m,a		;; 2add: 77          w
+ 055E FE3A      	cpi	'9'+1		;; 2ade: fe 3a       .:
+ 0560 DA6A05    	jc	L2aea		;; 2ae0: da ea 2a    ..*
+ 0563 3630      	mvi	m,'0'		;; 2ae3: 36 30       60
+ 0565 2B        	dcx	h		;; 2ae5: 2b          +
+ 0566 0D        	dcr	c		;; 2ae6: 0d          .
+ 0567 C25B05    	jnz	L2adb		;; 2ae7: c2 db 2a    ..*
+ 056A 213000    L2aea:	lxi	h,L25b0		;; 2aea: 21 b0 25    ..%
+ 056D 0E03      	mvi	c,3		;; 2aed: 0e 03       ..
+ 056F 7E        L2aef:	mov	a,m		;; 2aef: 7e          ~
+ 0570 CD8E04    	call	prnput		;; 2af0: cd 0e 2a    ..*
+ 0573 23        	inx	h		;; 2af3: 23          #
+ 0574 0D        	dcr	c		;; 2af4: 0d          .
+ 0575 C26F05    	jnz	L2aef		;; 2af5: c2 ef 2a    ..*
+ 0578 C9        	ret			;; 2af8: c9          .
+                
+ 0579 3A3300    L2af9:	lda	paglin		;; 2af9: 3a b3 25    :.%
+ 057C B7        	ora	a		;; 2afc: b7          .
+ 057D C8        	rz			;; 2afd: c8          .
+ 057E 3E0C      	mvi	a,vt		;; 2afe: 3e 0c       >.
+ 0580 CD8E04    	call	prnput		;; 2b00: cd 0e 2a    ..*
+ 0583 AF        	xra	a		;; 2b03: af          .
+ 0584 323400    	sta	curlin		;; 2b04: 32 b4 25    2.%
+ 0587 2A0000    	lhld	L3062		;; 2b07: 2a 62 30    *b0
+ 058A 7D        	mov	a,l		;; 2b0a: 7d          }
+ 058B B4        	ora	h		;; 2b0b: b4          .
+ 058C C8        	rz			;; 2b0c: c8          .
+ 058D 215307    	lxi	h,L2cd3		;; 2b0d: 21 d3 2c    ..,
+ 0590 7E        L2b10:	mov	a,m		;; 2b10: 7e          ~
+ 0591 FE0D      	cpi	cr		;; 2b11: fe 0d       ..
+ 0593 CA9D05    	jz	L2b1d		;; 2b13: ca 1d 2b    ..+
+ 0596 CD8E04    	call	prnput		;; 2b16: cd 0e 2a    ..*
+ 0599 23        	inx	h		;; 2b19: 23          #
+ 059A C39005    	jmp	L2b10		;; 2b1a: c3 10 2b    ..+
+                
+                ; what is this? append " # ..."?
+ 059D 3E09      L2b1d:	mvi	a,tab		;; 2b1d: 3e 09       >.
+ 059F CD8E04    	call	prnput		;; 2b1f: cd 0e 2a    ..*
+ 05A2 3E23      	mvi	a,'#'		;; 2b22: 3e 23       >#
+ 05A4 CD8E04    	call	prnput		;; 2b24: cd 0e 2a    ..*
+ 05A7 CD5605    	call	L2ad6		;; 2b27: cd d6 2a    ..*
+ 05AA 3E09      	mvi	a,tab		;; 2b2a: 3e 09       >.
+ 05AC CD8E04    	call	prnput		;; 2b2c: cd 0e 2a    ..*
+ 05AF 2A0000    	lhld	L3062		;; 2b2f: 2a 62 30    *b0
+ 05B2 7E        L2b32:	mov	a,m		;; 2b32: 7e          ~
+ 05B3 B7        	ora	a		;; 2b33: b7          .
+ 05B4 CABE05    	jz	L2b3e		;; 2b34: ca 3e 2b    .>+
+ 05B7 CD8E04    	call	prnput		;; 2b37: cd 0e 2a    ..*
+ 05BA 23        	inx	h		;; 2b3a: 23          #
+ 05BB C3B205    	jmp	L2b32		;; 2b3b: c3 32 2b    .2+
+                
+ 05BE 3E0D      L2b3e:	mvi	a,cr		;; 2b3e: 3e 0d       >.
+ 05C0 CD8E04    	call	prnput		;; 2b40: cd 0e 2a    ..*
+ 05C3 3E0A      	mvi	a,lf		;; 2b43: 3e 0a       >.
+ 05C5 CD8E04    	call	prnput		;; 2b45: cd 0e 2a    ..*
+ 05C8 3E0A      	mvi	a,lf		;; 2b48: 3e 0a       >.
+ 05CA C38E04    	jmp	prnput		;; 2b4a: c3 0e 2a    ..*
+                
+ 05CD 7D        L2b4d:	mov	a,l		;; 2b4d: 7d          }
+ 05CE 323300    	sta	paglin		;; 2b4e: 32 b3 25    2.%
+ 05D1 213400    	lxi	h,curlin	;; 2b51: 21 b4 25    ..%
+ 05D4 96        	sub	m		;; 2b54: 96          .
+ 05D5 D0        	rnc			;; 2b55: d0          .
+ 05D6 C37905    	jmp	L2af9		;; 2b56: c3 f9 2a    ..*
+                
+ 05D9 4F        L2b59:	mov	c,a		;; 2b59: 4f          O
+ 05DA CD8E04    	call	prnput		;; 2b5a: cd 0e 2a    ..*
+ 05DD 3A0000    	lda	curerr		;; 2b5d: 3a 8c 2f    :./
+ 05E0 FE20      	cpi	' '		;; 2b60: fe 20       . 
+ 05E2 C8        	rz			;; 2b62: c8          .
+ 05E3 3A0000    	lda	pass		;; 2b63: 3a 4f 30    :O0
+ 05E6 FE02      	cpi	002h		;; 2b66: fe 02       ..
+ 05E8 C8        	rz			;; 2b68: c8          .
+ 05E9 3A4B00    	lda	prndst		;; 2b69: 3a cb 25    :.%
+ 05EC FE17      	cpi	DRVCON		;; 2b6c: fe 17       ..
+ 05EE C8        	rz			;; 2b6e: c8          .
+ 05EF 79        	mov	a,c		;; 2b6f: 79          y
+ 05F0 CD4905    	call	chrout		;; 2b70: cd c9 2a    ..*
+ 05F3 C9        	ret			;; 2b73: c9          .
+                
+ 05F4 3A3500    L2b74:	lda	Fflag		;; 2b74: 3a b5 25    :.%
+ 05F7 210000    	lxi	h,pass		;; 2b77: 21 4f 30    .O0
+ 05FA B6        	ora	m		;; 2b7a: b6          .
+ 05FB C21506    	jnz	L2b95		;; 2b7b: c2 95 2b    ..+
+ 05FE 3A0000    	lda	Lflag		;; 2b7e: 3a 65 30    :e0
+ 0601 210000    	lxi	h,L305d		;; 2b81: 21 5d 30    .]0
+ 0604 A6        	ana	m		;; 2b84: a6          .
+ 0605 C26306    	jnz	L2be3		;; 2b85: c2 e3 2b    ..+
+ 0608 7E        	mov	a,m		;; 2b88: 7e          ~
+ 0609 B7        	ora	a		;; 2b89: b7          .
+ 060A CA9006    	jz	L2c10		;; 2b8a: ca 10 2c    ..,
+ 060D 3A0000    	lda	curerr		;; 2b8d: 3a 8c 2f    :./
+ 0610 FE20      	cpi	' '		;; 2b90: fe 20       . 
+ 0612 CA9006    	jz	L2c10		;; 2b92: ca 10 2c    ..,
+ 0615 210000    L2b95:	lxi	h,curerr	;; 2b95: 21 8c 2f    ../
+ 0618 7E        	mov	a,m		;; 2b98: 7e          ~
+ 0619 FE20      	cpi	' '		;; 2b99: fe 20       . 
+ 061B C26306    	jnz	L2be3		;; 2b9b: c2 e3 2b    ..+
+ 061E 3A0000    	lda	L3066		;; 2b9e: 3a 66 30    :f0
+ 0621 B7        	ora	a		;; 2ba1: b7          .
+ 0622 CA9006    	jz	L2c10		;; 2ba2: ca 10 2c    ..,
+ 0625 3A0500    	lda	prnbuf+5	;; 2ba5: 3a 91 2f    :./
+ 0628 FE2B      	cpi	'+'		;; 2ba8: fe 2b       .+
+ 062A C26306    	jnz	L2be3		;; 2baa: c2 e3 2b    ..+
+ 062D 3A0000    	lda	Mflag		;; 2bad: 3a 5f 30    :_0
+ 0630 B7        	ora	a		;; 2bb0: b7          .
+ 0631 CA9006    	jz	L2c10		;; 2bb1: ca 10 2c    ..,
+ 0634 FE03      	cpi	003h		;; 2bb4: fe 03       ..
+ 0636 CA6306    	jz	L2be3		;; 2bb6: ca e3 2b    ..+
+ 0639 3A0600    	lda	prnbuf+6	;; 2bb9: 3a 92 2f    :./
+ 063C FE23      	cpi	'#'		;; 2bbc: fe 23       .#
+ 063E CA9006    	jz	L2c10		;; 2bbe: ca 10 2c    ..,
+ 0641 3A0100    	lda	prnbuf+1	;; 2bc1: 3a 8d 2f    :./
+ 0644 FE20      	cpi	' '		;; 2bc4: fe 20       . 
+ 0646 CA9006    	jz	L2c10		;; 2bc6: ca 10 2c    ..,
+ 0649 3A0000    	lda	Mflag		;; 2bc9: 3a 5f 30    :_0
+ 064C 3D        	dcr	a		;; 2bcc: 3d          =
+ 064D CA6306    	jz	L2be3		;; 2bcd: ca e3 2b    ..+
+ 0650 111000    	lxi	d,16		;; 2bd0: 11 10 00    ...
+ 0653 1B        L2bd3:	dcx	d		;; 2bd3: 1b          .
+ 0654 210000    	lxi	h,prnbuf	;; 2bd4: 21 8c 2f    ../
+ 0657 19        	dad	d		;; 2bd7: 19          .
+ 0658 7E        	mov	a,m		;; 2bd8: 7e          ~
+ 0659 FE20      	cpi	' '		;; 2bd9: fe 20       . 
+ 065B CA5306    	jz	L2bd3		;; 2bdb: ca d3 2b    ..+
+ 065E 13        	inx	d		;; 2bde: 13          .
+ 065F 210000    	lxi	h,L3004		;; 2bdf: 21 04 30    ..0
+ 0662 73        	mov	m,e		;; 2be2: 73          s
+ 0663 213400    L2be3:	lxi	h,curlin	;; 2be3: 21 b4 25    ..%
+ 0666 E5        	push	h		;; 2be6: e5          .
+ 0667 7E        	mov	a,m		;; 2be7: 7e          ~
+ 0668 213300    	lxi	h,paglin	;; 2be8: 21 b3 25    ..%
+ 066B 96        	sub	m		;; 2beb: 96          .
+ 066C D47905    	cnc	L2af9		;; 2bec: d4 f9 2a    ..*
+ 066F E1        	pop	h		;; 2bef: e1          .
+ 0670 34        	inr	m		;; 2bf0: 34          4
+ 0671 3A0000    	lda	L3004		;; 2bf1: 3a 04 30    :.0
+ 0674 210000    	lxi	h,prnbuf	;; 2bf4: 21 8c 2f    ../
+ 0677 B7        L2bf7:	ora	a		;; 2bf7: b7          .
+ 0678 CA8606    	jz	L2c06		;; 2bf8: ca 06 2c    ..,
+ 067B 47        	mov	b,a		;; 2bfb: 47          G
+ 067C 7E        	mov	a,m		;; 2bfc: 7e          ~
+ 067D CDD905    	call	L2b59		;; 2bfd: cd 59 2b    .Y+
+ 0680 23        	inx	h		;; 2c00: 23          #
+ 0681 78        	mov	a,b		;; 2c01: 78          x
+ 0682 3D        	dcr	a		;; 2c02: 3d          =
+ 0683 C37706    	jmp	L2bf7		;; 2c03: c3 f7 2b    ..+
+                
+ 0686 3E0D      L2c06:	mvi	a,cr		;; 2c06: 3e 0d       >.
+ 0688 CDD905    	call	L2b59		;; 2c08: cd 59 2b    .Y+
+ 068B 3E0A      	mvi	a,lf		;; 2c0b: 3e 0a       >.
+ 068D CDD905    	call	L2b59		;; 2c0d: cd 59 2b    .Y+
+ 0690 AF        L2c10:	xra	a		;; 2c10: af          .
+ 0691 320000    	sta	L3004		;; 2c11: 32 04 30    2.0
+ 0694 210000    	lxi	h,prnbuf	;; 2c14: 21 8c 2f    ../
+ 0697 3E78      	mvi	a,120		;; 2c17: 3e 78       >x
+ 0699 3620      L2c19:	mvi	m,' '		;; 2c19: 36 20       6 
+ 069B 23        	inx	h		;; 2c1b: 23          #
+ 069C 3D        	dcr	a		;; 2c1c: 3d          =
+ 069D C29906    	jnz	L2c19		;; 2c1d: c2 19 2c    ..,
+ 06A0 C9        	ret			;; 2c20: c9          .
+                
+ 06A1 47        seterr:	mov	b,a		;; 2c21: 47          G
+ 06A2 210000    	lxi	h,curerr	;; 2c22: 21 8c 2f    ../
+ 06A5 7E        	mov	a,m		;; 2c25: 7e          ~
+ 06A6 FE20      	cpi	' '		;; 2c26: fe 20       . 
+ 06A8 C0        	rnz			;; 2c28: c0          .
+ 06A9 70        	mov	m,b		;; 2c29: 70          p
+ 06AA C9        	ret			;; 2c2a: c9          .
+                
+ 06AB CD3302    L2c2b:	call	isfile		;; 2c2b: cd b3 27    ..'
+ 06AE C8        	rz			;; 2c2e: c8          .
+ 06AF 2A9900    L2c2f:	lhld	prnidx		;; 2c2f: 2a 19 26    *.&
+ 06B2 7D        	mov	a,l		;; 2c32: 7d          }
+ 06B3 B4        	ora	h		;; 2c33: b4          .
+ 06B4 CABF06    	jz	L2c3f		;; 2c34: ca 3f 2c    .?,
+ 06B7 3E1A      	mvi	a,eof		;; 2c37: 3e 1a       >.
+ 06B9 CD8E04    	call	prnput		;; 2c39: cd 0e 2a    ..*
+ 06BC C3AF06    	jmp	L2c2f		;; 2c3c: c3 2f 2c    ./,
+                
+ 06BF CDE000    L2c3f:	call	setprn		;; 2c3f: cd 60 26    .`&
+ 06C2 117800    	lxi	d,prnfcb	;; 2c42: 11 f8 25    ..%
+ 06C5 CD0802    	call	closef		;; 2c45: cd 88 27    ..'
+ 06C8 C9        	ret			;; 2c48: c9          .
+                
+                ; SYM file setup - uses same facilities as PRN
+ 06C9 3A0000    L2c49:	lda	Sflag		;; 2c49: 3a 5e 30    :^0
+ 06CC FE03      	cpi	003h		;; 2c4c: fe 03       ..
+ 06CE CA7905    	jz	L2af9		;; 2c4e: ca f9 2a    ..*
+ 06D1 CDAB06    	call	L2c2b		;; 2c51: cd 2b 2c    .+,
+ 06D4 218100    	lxi	h,prnfcb+9	;; 2c54: 21 01 26    ..&
+ 06D7 3653      	mvi	m,'S'		;; 2c57: 36 53       6S
+ 06D9 23        	inx	h		;; 2c59: 23          #
+ 06DA 3659      	mvi	m,'Y'		;; 2c5a: 36 59       6Y
+ 06DC 23        	inx	h		;; 2c5c: 23          #
+ 06DD 364D      	mvi	m,'M'		;; 2c5d: 36 4d       6M
+ 06DF 23        	inx	h		;; 2c5f: 23          #
+ 06E0 AF        	xra	a		;; 2c60: af          .
+ 06E1 77        	mov	m,a		;; 2c61: 77          w
+ 06E2 219800    	lxi	h,prnfcb+32	;; 2c62: 21 18 26    ..&
+ 06E5 77        	mov	m,a		;; 2c65: 77          w
+                	; should be calling setsym?
+ 06E6 3A4C00    	lda	symdst		;; 2c66: 3a cc 25    :.%
+ 06E9 324B00    	sta	prndst		;; 2c69: 32 cb 25    2.%
+ 06EC 210000    	lxi	h,0		;; 2c6c: 21 00 00    ...
+ 06EF 229900    	shld	prnidx		;; 2c6f: 22 19 26    ".&
+ 06F2 CD3302    	call	isfile		;; 2c72: cd b3 27    ..'
+ 06F5 CA7905    	jz	L2af9		;; 2c75: ca f9 2a    ..*
+ 06F8 AF        	xra	a		;; 2c78: af          .
+ 06F9 323300    	sta	paglin		;; 2c79: 32 b3 25    2.%
+ 06FC CDE000    	call	setprn		;; 2c7c: cd 60 26    .`&
+ 06FF 117800    	lxi	d,prnfcb	;; 2c7f: 11 f8 25    ..%
+ 0702 D5        	push	d		;; 2c82: d5          .
+ 0703 CD1B02    	call	deletf		;; 2c83: cd 9b 27    ..'
+ 0706 D1        	pop	d		;; 2c86: d1          .
+ 0707 CD2002    	call	makef		;; 2c87: cd a0 27    ..'
+ 070A C9        	ret			;; 2c8a: c9          .
+                
+ 070B CDAB06    hexpt2:	call	L2c2b		;; 2c8b: cd 2b 2c    .+,
+ 070E 3A4D00    	lda	hexdst		;; 2c8e: 3a cd 25    :.%
+ 0711 FE19      	cpi	DRVNUL		;; 2c91: fe 19       ..
+ 0713 CA3607    	jz	L2cb6		;; 2c93: ca b6 2c    ..,
+ 0716 3A3800    	lda	hexlen		;; 2c96: 3a b8 25    :.%
+ 0719 B7        	ora	a		;; 2c99: b7          .
+ 071A C48F08    	cnz	hexlin		;; 2c9a: c4 0f 2e    ...
+ 071D 2A0000    	lhld	curadr		;; 2c9d: 2a 50 30    *P0
+ 0720 223600    	shld	hexadr		;; 2ca0: 22 b6 25    ".%
+ 0723 CD8F08    	call	hexlin		;; 2ca3: cd 0f 2e    ...
+ 0726 2ABE00    L2ca6:	lhld	hexidx		;; 2ca6: 2a 3e 26    *>&
+ 0729 7D        	mov	a,l		;; 2ca9: 7d          }
+ 072A B4        	ora	h		;; 2caa: b4          .
+ 072B CA3607    	jz	L2cb6		;; 2cab: ca b6 2c    ..,
+ 072E 3E1A      	mvi	a,eof		;; 2cae: 3e 1a       >.
+ 0730 CD1505    	call	hexput		;; 2cb0: cd 95 2a    ..*
+ 0733 C32607    	jmp	L2ca6		;; 2cb3: c3 a6 2c    ..,
+                
+ 0736 00        L2cb6:	nop	; patch?	;; 2cb6: 00          .
+ 0737 00        	nop			;; 2cb7: 00          .
+ 0738 00        	nop			;; 2cb8: 00          .
+ 0739 3A4D00    	lda	hexdst		;; 2cb9: 3a cd 25    :.%
+ 073C FE19      	cpi	DRVNUL		;; 2cbc: fe 19       ..
+ 073E CA4A07    	jz	L2cca		;; 2cbe: ca ca 2c    ..,
+ 0741 CDEC00    	call	sethex		;; 2cc1: cd 6c 26    .l&
+ 0744 119D00    	lxi	d,hexfcb	;; 2cc4: 11 1d 26    ..&
+ 0747 CD0802    	call	closef		;; 2cc7: cd 88 27    ..'
+                ; end of assembly...
+ 074A 211308    L2cca:	lxi	h,endmsg	;; 2cca: 21 93 2d    ..-
+ 074D CDF800    	call	msgcr		;; 2ccd: cd 78 26    .x&
+ 0750 C30000    	jmp	cpm		;; 2cd0: c3 00 00    ...
+                
+ 0753 43502F4D20L2cd3:	db	'CP/M MACRO ASSEM 2.0',0dh
+ 0768 4E4F20534FL2ce8:	db	'NO SOURCE FILE PRESENT',0dh
+ 077F 4E4F204449L2cff:	db	'NO DIRECTORY SPACE',0dh
+ 0792 534F555243L2d12:	db	'SOURCE FILE NAME ERROR',0dh
+ 07A9 494E56414CL2d29:	db	'INVALID PARAMETER:',0dh
+ 07BC 534F555243L2d3c:	db	'SOURCE FILE READ ERROR',0dh
+ 07D3 4F55545055L2d53:	db	'OUTPUT FILE WRITE ERROR',0dh
+ 07EB 43414E4E4FL2d6b:	db	'CANNOT CLOSE FILES',0dh
+ 07FE 554E42414CL2d7e:	db	'UNBALANCED MACRO LIB',0dh
+ 0813 454E44204Fendmsg:	db	'END OF ASSEMBLY',0dh
+                
+ 0823 C5        hexpt0:	push	b		;; 2da3: c5          .
+ 0824 47        	mov	b,a		;; 2da4: 47          G
+ 0825 3A4D00    	lda	hexdst		;; 2da5: 3a cd 25    :.%
+ 0828 FE19      	cpi	DRVNUL		;; 2da8: fe 19       ..
+ 082A 78        	mov	a,b		;; 2daa: 78          x
+ 082B CA6F08    	jz	L2def		;; 2dab: ca ef 2d    ..-
+ 082E D5        	push	d		;; 2dae: d5          .
+ 082F F5        	push	psw		;; 2daf: f5          .
+ 0830 213800    	lxi	h,hexlen	;; 2db0: 21 b8 25    ..%
+ 0833 7E        	mov	a,m		;; 2db3: 7e          ~
+ 0834 B7        	ora	a		;; 2db4: b7          .
+ 0835 CA5B08    	jz	L2ddb		;; 2db5: ca db 2d    ..-
+ 0838 FE10      	cpi	16		;; 2db8: fe 10       ..
+ 083A DA4308    	jc	hexpt1		;; 2dba: da c3 2d    ..-
+ 083D CD8F08    	call	hexlin		;; 2dbd: cd 0f 2e    ...
+ 0840 C35B08    	jmp	L2ddb		;; 2dc0: c3 db 2d    ..-
+                
+ 0843 2A0000    hexpt1:	lhld	curadr		;; 2dc3: 2a 50 30    *P0
+ 0846 EB        	xchg			;; 2dc6: eb          .
+ 0847 2A3600    	lhld	hexadr		;; 2dc7: 2a b6 25    *.%
+ 084A 4F        	mov	c,a		;; 2dca: 4f          O
+ 084B 0600      	mvi	b,0		;; 2dcb: 06 00       ..
+ 084D 09        	dad	b		;; 2dcd: 09          .
+ 084E 7B        	mov	a,e		;; 2dce: 7b          {
+ 084F BD        	cmp	l		;; 2dcf: bd          .
+ 0850 C25808    	jnz	L2dd8		;; 2dd0: c2 d8 2d    ..-
+ 0853 7A        	mov	a,d		;; 2dd3: 7a          z
+ 0854 BC        	cmp	h		;; 2dd4: bc          .
+ 0855 CA6108    	jz	L2de1		;; 2dd5: ca e1 2d    ..-
+ 0858 CD8F08    L2dd8:	call	hexlin		;; 2dd8: cd 0f 2e    ...
+ 085B 2A0000    L2ddb:	lhld	curadr		;; 2ddb: 2a 50 30    *P0
+ 085E 223600    	shld	hexadr		;; 2dde: 22 b6 25    ".%
+ 0861 213800    L2de1:	lxi	h,hexlen	;; 2de1: 21 b8 25    ..%
+ 0864 5E        	mov	e,m		;; 2de4: 5e          ^
+ 0865 34        	inr	m		;; 2de5: 34          4
+ 0866 1600      	mvi	d,0		;; 2de6: 16 00       ..
+ 0868 213900    	lxi	h,L25b9		;; 2de8: 21 b9 25    ..%
+ 086B 19        	dad	d		;; 2deb: 19          .
+ 086C F1        	pop	psw		;; 2dec: f1          .
+ 086D 77        	mov	m,a		;; 2ded: 77          w
+ 086E D1        	pop	d		;; 2dee: d1          .
+ 086F C1        L2def:	pop	b		;; 2def: c1          .
+ 0870 C9        	ret			;; 2df0: c9          .
+                
+                ; send byte to HEX file, checksum in D
+ 0871 F5        hexbyt:	push	psw		;; 2df1: f5          .
+ 0872 0F        	rrc			;; 2df2: 0f          .
+ 0873 0F        	rrc			;; 2df3: 0f          .
+ 0874 0F        	rrc			;; 2df4: 0f          .
+ 0875 0F        	rrc			;; 2df5: 0f          .
+ 0876 E60F      	ani	00fh		;; 2df6: e6 0f       ..
+ 0878 CD8608    	call	L2e06		;; 2df8: cd 06 2e    ...
+ 087B F1        	pop	psw		;; 2dfb: f1          .
+ 087C F5        	push	psw		;; 2dfc: f5          .
+ 087D E60F      	ani	00fh		;; 2dfd: e6 0f       ..
+ 087F CD8608    	call	L2e06		;; 2dff: cd 06 2e    ...
+ 0882 F1        	pop	psw		;; 2e02: f1          .
+ 0883 82        	add	d		;; 2e03: 82          .
+ 0884 57        	mov	d,a		;; 2e04: 57          W
+ 0885 C9        	ret			;; 2e05: c9          .
+                
+ 0886 C690      L2e06:	adi	090h		;; 2e06: c6 90       ..
+ 0888 27        	daa			;; 2e08: 27          '
+ 0889 CE40      	aci	040h		;; 2e09: ce 40       .@
+ 088B 27        	daa			;; 2e0b: 27          '
+ 088C C31505    	jmp	hexput		;; 2e0c: c3 95 2a    ..*
+                
+                ; output one line of HEX file.
+                ; (hexlen)=num bytes, (hexadr)=address
+                ; uses D for checksum
+ 088F 3E3A      hexlin:	mvi	a,':'		;; 2e0f: 3e 3a       >:
+ 0891 CD1505    	call	hexput		;; 2e11: cd 95 2a    ..*
+ 0894 213800    	lxi	h,hexlen	;; 2e14: 21 b8 25    ..%
+ 0897 5E        	mov	e,m		;; 2e17: 5e          ^
+ 0898 AF        	xra	a		;; 2e18: af          .
+ 0899 57        	mov	d,a		;; 2e19: 57          W
+ 089A 77        	mov	m,a		;; 2e1a: 77          w
+ 089B 2A3600    	lhld	hexadr		;; 2e1b: 2a b6 25    *.%
+ 089E 7B        	mov	a,e		;; 2e1e: 7b          {
+ 089F CD7108    	call	hexbyt		;; 2e1f: cd f1 2d    ..-
+ 08A2 7C        	mov	a,h		;; 2e22: 7c          |
+ 08A3 CD7108    	call	hexbyt		;; 2e23: cd f1 2d    ..-
+ 08A6 7D        	mov	a,l		;; 2e26: 7d          }
+ 08A7 CD7108    	call	hexbyt		;; 2e27: cd f1 2d    ..-
+ 08AA AF        	xra	a		;; 2e2a: af          .
+ 08AB CD7108    	call	hexbyt		;; 2e2b: cd f1 2d    ..-
+ 08AE 7B        	mov	a,e		;; 2e2e: 7b          {
+ 08AF B7        	ora	a		;; 2e2f: b7          .
+ 08B0 CABF08    	jz	L2e3f		;; 2e30: ca 3f 2e    .?.
+ 08B3 213900    	lxi	h,L25b9		;; 2e33: 21 b9 25    ..%
+ 08B6 7E        L2e36:	mov	a,m		;; 2e36: 7e          ~
+ 08B7 23        	inx	h		;; 2e37: 23          #
+ 08B8 CD7108    	call	hexbyt		;; 2e38: cd f1 2d    ..-
+ 08BB 1D        	dcr	e		;; 2e3b: 1d          .
+ 08BC C2B608    	jnz	L2e36		;; 2e3c: c2 36 2e    .6.
+ 08BF AF        L2e3f:	xra	a		;; 2e3f: af          .
+ 08C0 92        	sub	d		;; 2e40: 92          .
+ 08C1 CD7108    	call	hexbyt		;; 2e41: cd f1 2d    ..-
+ 08C4 3E0D      	mvi	a,cr		;; 2e44: 3e 0d       >.
+ 08C6 CD1505    	call	hexput		;; 2e46: cd 95 2a    ..*
+ 08C9 3E0A      	mvi	a,lf		;; 2e49: 3e 0a       >.
+ 08CB CD1505    	call	hexput		;; 2e4b: cd 95 2a    ..*
+ 08CE C9        	ret			;; 2e4e: c9          .
+                
+ 08CF CD1E05    	call	L2a9e		;; 2e4f: cd 9e 2a    ..*
+ 08D2 3E0A      	mvi	a,lf		;; 2e52: 3e 0a       >.
+ 08D4 CD1E05    	call	L2a9e		;; 2e54: cd 9e 2a    ..*
+ 08D7 C9        	ret			;; 2e57: c9          .
+                
+ 08D8 F7FFFFFFFF	db	0f7h,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0efh,0ffh,0ffh,0ffh,0ffh
+ 08E4 FFFFFFFFFF	db	0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
+ 08F0 FFFFFFFFFF	db	0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
+ 08FC FFFFFFFF  	db	0ffh,0ffh,0ffh,0ffh
+                ; L2e80:
+ 0900           	end
+

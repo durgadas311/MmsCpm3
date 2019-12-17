@@ -1,0 +1,571 @@
+                ; MAC.COM module 1
+                
+                	public	L1200,L1203,L1206,divide
+                	maclib	m1600
+                	maclib	m1c00
+                	maclib	m2100
+                	maclib	m2580
+                	maclib	macg
+                
+                ; Module begin L1200
+                	;org	1200h
+                	cseg
+ 0000 C30000    L1200:	jmp	L1600		;; 0c3h,0,16h
+ 0003 C32D02    L1203:	jmp	L142d		;; 1203: c3 2d 14    .-.
+ 0006 C31E01    L1206:	jmp	L131e		;; 1206: c3 1e 13    ...
+ 0009 C3E800    divide:	jmp	div16		;; 1209: c3 e8 12    ...
+                
+ 000C 00        L120c:	db	0
+                
+                ; some sort of dual stack/fifo - 10 bytes/entries
+ 000D 0000000000L120d:	db	0,0,0,0,0,0,0,0,0,0
+ 0017 0000000000L1217:	db	0,0,0,0,0,0,0,0,0,0
+                
+                ; some sort of stack/fifo - 16 bytes/8 words
+ 0021 0000000000L1221:	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                
+ 0031 00        L1231:	db	0	; L120d "sp"
+ 0032 00        L1232:	db	0	; L1221 "sp"
+                
+                ; "push" HL into L1221 "fifo stack"
+                ; "stack" wraps after 8 entries...
+ 0033 EB        L1233:	xchg			;; 1233: eb          .
+ 0034 213200    	lxi	h,L1232		;; 1234: 21 32 12    .2.
+ 0037 7E        	mov	a,m		;; 1237: 7e          ~
+ 0038 FE10      	cpi	16		;; 1238: fe 10       ..
+ 003A DA4200    	jc	L1242		;; 123a: da 42 12    .B.
+ 003D CDE403    	call	Eerror		;; 123d: cd e4 15    ...
+ 0040 3600      	mvi	m,0		;; 1240: 36 00       6.
+ 0042 7E        L1242:	mov	a,m		;; 1242: 7e          ~
+ 0043 34        	inr	m		;; 1243: 34          4
+ 0044 34        	inr	m		;; 1244: 34          4
+ 0045 4F        	mov	c,a		;; 1245: 4f          O
+ 0046 0600      	mvi	b,0		;; 1246: 06 00       ..
+ 0048 212100    	lxi	h,L1221		;; 1248: 21 21 12    ...
+ 004B 09        	dad	b		;; 124b: 09          .
+ 004C 73        	mov	m,e		;; 124c: 73          s
+ 004D 23        	inx	h		;; 124d: 23          #
+ 004E 72        	mov	m,d		;; 124e: 72          r
+ 004F C9        	ret			;; 124f: c9          .
+                
+                ; push bytes onto parallel stacks L120d, L1217
+                ; A => L120d, B => L1217
+ 0050 F5        L1250:	push	psw		;; 1250: f5          .
+ 0051 213100    	lxi	h,L1231		;; 1251: 21 31 12    .1.
+ 0054 7E        	mov	a,m		;; 1254: 7e          ~
+ 0055 FE0A      	cpi	10		;; 1255: fe 0a       ..
+ 0057 DA5F00    	jc	L125f		;; 1257: da 5f 12    ._.
+ 005A 3600      	mvi	m,0		;; 125a: 36 00       6.
+ 005C CDE403    	call	Eerror		;; 125c: cd e4 15    ...
+ 005F 5E        L125f:	mov	e,m		;; 125f: 5e          ^
+ 0060 1600      	mvi	d,0		;; 1260: 16 00       ..
+ 0062 34        	inr	m		;; 1262: 34          4
+ 0063 F1        	pop	psw		;; 1263: f1          .
+ 0064 210D00    	lxi	h,L120d		;; 1264: 21 0d 12    ...
+ 0067 19        	dad	d		;; 1267: 19          .
+ 0068 77        	mov	m,a		;; 1268: 77          w
+ 0069 211700    	lxi	h,L1217		;; 1269: 21 17 12    ...
+ 006C 19        	dad	d		;; 126c: 19          .
+ 006D 70        	mov	m,b		;; 126d: 70          p
+ 006E C9        	ret			;; 126e: c9          .
+                
+                ; "pop" HL off L1221 "fifo stack"
+ 006F 213200    L126f:	lxi	h,L1232		;; 126f: 21 32 12    .2.
+ 0072 7E        	mov	a,m		;; 1272: 7e          ~
+ 0073 B7        	ora	a		;; 1273: b7          .
+ 0074 C27E00    	jnz	L127e		;; 1274: c2 7e 12    .~.
+ 0077 CDE403    	call	Eerror		;; 1277: cd e4 15    ...
+ 007A 210000    	lxi	h,0		;; 127a: 21 00 00    ...
+ 007D C9        	ret			;; 127d: c9          .
+                
+ 007E 35        L127e:	dcr	m		;; 127e: 35          5
+ 007F 35        	dcr	m		;; 127f: 35          5
+ 0080 4E        	mov	c,m		;; 1280: 4e          N
+ 0081 0600      	mvi	b,0		;; 1281: 06 00       ..
+ 0083 212100    	lxi	h,L1221		;; 1283: 21 21 12    ...
+ 0086 09        	dad	b		;; 1286: 09          .
+ 0087 4E        	mov	c,m		;; 1287: 4e          N
+ 0088 23        	inx	h		;; 1288: 23          #
+ 0089 66        	mov	h,m		;; 1289: 66          f
+ 008A 69        	mov	l,c		;; 128a: 69          i
+ 008B C9        	ret			;; 128b: c9          .
+                
+ 008C CD6F00    L128c:	call	L126f		;; 128c: cd 6f 12    .o.
+ 008F EB        	xchg			;; 128f: eb          .
+ 0090 CD6F00    	call	L126f		;; 1290: cd 6f 12    .o.
+ 0093 C9        	ret			;; 1293: c9          .
+                
+ 0094 6F        L1294:	mov	l,a		;; 1294: 6f          o
+ 0095 2600      	mvi	h,000h		;; 1295: 26 00       &.
+ 0097 29        	dad	h		;; 1297: 29          )
+ 0098 11A100    	lxi	d,L12a1		;; 1298: 11 a1 12    ...
+ 009B 19        	dad	d		;; 129b: 19          .
+ 009C 5E        	mov	e,m		;; 129c: 5e          ^
+ 009D 23        	inx	h		;; 129d: 23          #
+ 009E 66        	mov	h,m		;; 129e: 66          f
+ 009F 6B        	mov	l,e		;; 129f: 6b          k
+ 00A0 E9        	pchl			;; 12a0: e9          .
+                
+ 00A1 3901      L12a1:	dw	L1339
+ 00A3 4201      	dw	L1342
+ 00A5 4901      	dw	L1349
+ 00A7 4F01      	dw	L134f
+ 00A9 5B01      	dw	L135b
+ 00AB 6F01      	dw	L136f
+ 00AD 7601      	dw	L1376
+ 00AF 8001      	dw	L1380
+ 00B1 8F01      	dw	L138f
+ 00B3 9B01      	dw	L139b
+ 00B5 A801      	dw	L13a8
+ 00B7 B401      	dw	L13b4
+ 00B9 BB01      	dw	L13bb
+ 00BB C201      	dw	L13c2
+ 00BD DA01      	dw	L13da
+ 00BF E101      	dw	L13e1
+ 00C1 ED01      	dw	L13ed
+ 00C3 F901      	dw	L13f9
+ 00C5 0502      	dw	L1405
+ 00C7 0C02      	dw	L140c
+ 00C9 E403      	dw	Eerror
+ 00CB CD8C00    L12cb:	call	L128c		;; 12cb: cd 8c 12    ...
+ 00CE 7A        	mov	a,d		;; 12ce: 7a          z
+ 00CF B7        	ora	a		;; 12cf: b7          .
+ 00D0 C2D700    	jnz	L12d7		;; 12d0: c2 d7 12    ...
+ 00D3 7B        	mov	a,e		;; 12d3: 7b          {
+ 00D4 FE11      	cpi	011h		;; 12d4: fe 11       ..
+ 00D6 D8        	rc			;; 12d6: d8          .
+ 00D7 CDE403    L12d7:	call	Eerror		;; 12d7: cd e4 15    ...
+ 00DA 3E10      	mvi	a,010h		;; 12da: 3e 10       >.
+ 00DC C9        	ret			;; 12dc: c9          .
+                
+ 00DD AF        L12dd:	xra	a		;; 12dd: af          .
+ 00DE 95        	sub	l		;; 12de: 95          .
+ 00DF 6F        	mov	l,a		;; 12df: 6f          o
+ 00E0 3E00      	mvi	a,000h		;; 12e0: 3e 00       >.
+ 00E2 9C        	sbb	h		;; 12e2: 9c          .
+ 00E3 67        	mov	h,a		;; 12e3: 67          g
+ 00E4 C9        	ret			;; 12e4: c9          .
+                
+ 00E5 CD8C00    L12e5:	call	L128c		;; 12e5: cd 8c 12    ...
+                ; some sort of division operation
+ 00E8 EB        div16:	xchg			;; 12e8: eb          .
+ 00E9 221B01    	shld	L131b		;; 12e9: 22 1b 13    "..
+ 00EC 211D01    	lxi	h,L131d		;; 12ec: 21 1d 13    ...
+ 00EF 3611      	mvi	m,011h		;; 12ef: 36 11       6.
+ 00F1 010000    	lxi	b,0		;; 12f1: 01 00 00    ...
+ 00F4 C5        	push	b		;; 12f4: c5          .
+ 00F5 AF        	xra	a		;; 12f5: af          .
+ 00F6 7B        L12f6:	mov	a,e		;; 12f6: 7b          {
+ 00F7 17        	ral			;; 12f7: 17          .
+ 00F8 5F        	mov	e,a		;; 12f8: 5f          _
+ 00F9 7A        	mov	a,d		;; 12f9: 7a          z
+ 00FA 17        	ral			;; 12fa: 17          .
+ 00FB 57        	mov	d,a		;; 12fb: 57          W
+ 00FC 35        	dcr	m		;; 12fc: 35          5
+ 00FD E1        	pop	h		;; 12fd: e1          .
+ 00FE C8        	rz			;; 12fe: c8          .
+ 00FF 3E00      	mvi	a,0		;; 12ff: 3e 00       >.
+ 0101 CE00      	aci	0		;; 1301: ce 00       ..
+ 0103 29        	dad	h		;; 1303: 29          )
+ 0104 44        	mov	b,h		;; 1304: 44          D
+ 0105 85        	add	l		;; 1305: 85          .
+ 0106 2A1B01    	lhld	L131b		;; 1306: 2a 1b 13    *..
+ 0109 95        	sub	l		;; 1309: 95          .
+ 010A 4F        	mov	c,a		;; 130a: 4f          O
+ 010B 78        	mov	a,b		;; 130b: 78          x
+ 010C 9C        	sbb	h		;; 130c: 9c          .
+ 010D 47        	mov	b,a		;; 130d: 47          G
+ 010E C5        	push	b		;; 130e: c5          .
+ 010F D21401    	jnc	L1314		;; 130f: d2 14 13    ...
+ 0112 09        	dad	b		;; 1312: 09          .
+ 0113 E3        	xthl			;; 1313: e3          .
+ 0114 211D01    L1314:	lxi	h,L131d		;; 1314: 21 1d 13    ...
+ 0117 3F        	cmc			;; 1317: 3f          ?
+ 0118 C3F600    	jmp	L12f6		;; 1318: c3 f6 12    ...
+                
+ 011B 0000      L131b:	db	0,0
+ 011D 00        L131d:	db	0
+ 011E 44        L131e:	mov	b,h		;; 131e: 44          D
+ 011F 4D        	mov	c,l		;; 131f: 4d          M
+ 0120 210000    	lxi	h,0		;; 1320: 21 00 00    ...
+ 0123 AF        L1323:	xra	a		;; 1323: af          .
+ 0124 78        	mov	a,b		;; 1324: 78          x
+ 0125 1F        	rar			;; 1325: 1f          .
+ 0126 47        	mov	b,a		;; 1326: 47          G
+ 0127 79        	mov	a,c		;; 1327: 79          y
+ 0128 1F        	rar			;; 1328: 1f          .
+ 0129 4F        	mov	c,a		;; 1329: 4f          O
+ 012A DA3201    	jc	L1332		;; 132a: da 32 13    .2.
+ 012D B0        	ora	b		;; 132d: b0          .
+ 012E C8        	rz			;; 132e: c8          .
+ 012F C33301    	jmp	L1333		;; 132f: c3 33 13    .3.
+                
+ 0132 19        L1332:	dad	d		;; 1332: 19          .
+ 0133 EB        L1333:	xchg			;; 1333: eb          .
+ 0134 29        	dad	h		;; 1334: 29          )
+ 0135 EB        	xchg			;; 1335: eb          .
+ 0136 C32301    	jmp	L1323		;; 1336: c3 23 13    .#.
+                
+ 0139 CD8C00    L1339:	call	L128c		;; 1339: cd 8c 12    ...
+ 013C CD1E01    	call	L131e		;; 133c: cd 1e 13    ...
+ 013F C31102    	jmp	L1411		;; 133f: c3 11 14    ...
+                
+ 0142 CDE500    L1342:	call	L12e5		;; 1342: cd e5 12    ...
+ 0145 EB        	xchg			;; 1345: eb          .
+ 0146 C31102    	jmp	L1411		;; 1346: c3 11 14    ...
+                
+ 0149 CDE500    L1349:	call	L12e5		;; 1349: cd e5 12    ...
+ 014C C31102    	jmp	L1411		;; 134c: c3 11 14    ...
+                
+ 014F CDCB00    L134f:	call	L12cb		;; 134f: cd cb 12    ...
+ 0152 B7        L1352:	ora	a		;; 1352: b7          .
+ 0153 CA1102    	jz	L1411		;; 1353: ca 11 14    ...
+ 0156 29        	dad	h		;; 1356: 29          )
+ 0157 3D        	dcr	a		;; 1357: 3d          =
+ 0158 C35201    	jmp	L1352		;; 1358: c3 52 13    .R.
+                
+ 015B CDCB00    L135b:	call	L12cb		;; 135b: cd cb 12    ...
+ 015E B7        L135e:	ora	a		;; 135e: b7          .
+ 015F CA1102    	jz	L1411		;; 135f: ca 11 14    ...
+ 0162 F5        	push	psw		;; 1362: f5          .
+ 0163 AF        	xra	a		;; 1363: af          .
+ 0164 7C        	mov	a,h		;; 1364: 7c          |
+ 0165 1F        	rar			;; 1365: 1f          .
+ 0166 67        	mov	h,a		;; 1366: 67          g
+ 0167 7D        	mov	a,l		;; 1367: 7d          }
+ 0168 1F        	rar			;; 1368: 1f          .
+ 0169 6F        	mov	l,a		;; 1369: 6f          o
+ 016A F1        	pop	psw		;; 136a: f1          .
+ 016B 3D        	dcr	a		;; 136b: 3d          =
+ 016C C35E01    	jmp	L135e		;; 136c: c3 5e 13    .^.
+                
+ 016F CD8C00    L136f:	call	L128c		;; 136f: cd 8c 12    ...
+ 0172 19        L1372:	dad	d		;; 1372: 19          .
+ 0173 C31102    	jmp	L1411		;; 1373: c3 11 14    ...
+                
+ 0176 CD8C00    L1376:	call	L128c		;; 1376: cd 8c 12    ...
+ 0179 EB        	xchg			;; 1379: eb          .
+ 017A CDDD00    	call	L12dd		;; 137a: cd dd 12    ...
+ 017D C37201    	jmp	L1372		;; 137d: c3 72 13    .r.
+                
+ 0180 CD6F00    L1380:	call	L126f		;; 1380: cd 6f 12    .o.
+ 0183 CDDD00    L1383:	call	L12dd		;; 1383: cd dd 12    ...
+ 0186 C31102    	jmp	L1411		;; 1386: c3 11 14    ...
+                
+ 0189 7A        L1389:	mov	a,d		;; 1389: 7a          z
+ 018A BC        	cmp	h		;; 138a: bc          .
+ 018B C0        	rnz			;; 138b: c0          .
+ 018C 7B        	mov	a,e		;; 138c: 7b          {
+ 018D BD        	cmp	l		;; 138d: bd          .
+ 018E C9        	ret			;; 138e: c9          .
+                
+ 018F CD8C00    L138f:	call	L128c		;; 138f: cd 8c 12    ...
+ 0192 CD8901    	call	L1389		;; 1392: cd 89 13    ...
+ 0195 C2D401    	jnz	L13d4		;; 1395: c2 d4 13    ...
+ 0198 C3CE01    	jmp	L13ce		;; 1398: c3 ce 13    ...
+                
+ 019B CD8C00    L139b:	call	L128c		;; 139b: cd 8c 12    ...
+ 019E 7D        L139e:	mov	a,l		;; 139e: 7d          }
+ 019F 93        	sub	e		;; 139f: 93          .
+ 01A0 7C        	mov	a,h		;; 13a0: 7c          |
+ 01A1 9A        	sbb	d		;; 13a1: 9a          .
+ 01A2 DACE01    	jc	L13ce		;; 13a2: da ce 13    ...
+ 01A5 C3D401    	jmp	L13d4		;; 13a5: c3 d4 13    ...
+                
+ 01A8 CD8C00    L13a8:	call	L128c		;; 13a8: cd 8c 12    ...
+ 01AB CD8901    L13ab:	call	L1389		;; 13ab: cd 89 13    ...
+ 01AE CACE01    	jz	L13ce		;; 13ae: ca ce 13    ...
+ 01B1 C39E01    	jmp	L139e		;; 13b1: c3 9e 13    ...
+                
+ 01B4 CD8C00    L13b4:	call	L128c		;; 13b4: cd 8c 12    ...
+ 01B7 EB        	xchg			;; 13b7: eb          .
+ 01B8 C39E01    	jmp	L139e		;; 13b8: c3 9e 13    ...
+                
+ 01BB CD8C00    L13bb:	call	L128c		;; 13bb: cd 8c 12    ...
+ 01BE EB        	xchg			;; 13be: eb          .
+ 01BF C3AB01    	jmp	L13ab		;; 13bf: c3 ab 13    ...
+                
+ 01C2 CD8C00    L13c2:	call	L128c		;; 13c2: cd 8c 12    ...
+ 01C5 CD8901    	call	L1389		;; 13c5: cd 89 13    ...
+ 01C8 C2CE01    	jnz	L13ce		;; 13c8: c2 ce 13    ...
+ 01CB C3D401    	jmp	L13d4		;; 13cb: c3 d4 13    ...
+                
+ 01CE 21FFFF    L13ce:	lxi	h,0ffffh	;; 13ce: 21 ff ff    ...
+ 01D1 C31102    	jmp	L1411		;; 13d1: c3 11 14    ...
+                
+ 01D4 210000    L13d4:	lxi	h,0		;; 13d4: 21 00 00    ...
+ 01D7 C31102    	jmp	L1411		;; 13d7: c3 11 14    ...
+                
+ 01DA CD6F00    L13da:	call	L126f		;; 13da: cd 6f 12    .o.
+ 01DD 23        	inx	h		;; 13dd: 23          #
+ 01DE C38301    	jmp	L1383		;; 13de: c3 83 13    ...
+                
+ 01E1 CD8C00    L13e1:	call	L128c		;; 13e1: cd 8c 12    ...
+ 01E4 7A        	mov	a,d		;; 13e4: 7a          z
+ 01E5 A4        	ana	h		;; 13e5: a4          .
+ 01E6 67        	mov	h,a		;; 13e6: 67          g
+ 01E7 7B        	mov	a,e		;; 13e7: 7b          {
+ 01E8 A5        	ana	l		;; 13e8: a5          .
+ 01E9 6F        	mov	l,a		;; 13e9: 6f          o
+ 01EA C31102    	jmp	L1411		;; 13ea: c3 11 14    ...
+                
+ 01ED CD8C00    L13ed:	call	L128c		;; 13ed: cd 8c 12    ...
+ 01F0 7A        	mov	a,d		;; 13f0: 7a          z
+ 01F1 B4        	ora	h		;; 13f1: b4          .
+ 01F2 67        	mov	h,a		;; 13f2: 67          g
+ 01F3 7B        	mov	a,e		;; 13f3: 7b          {
+ 01F4 B5        	ora	l		;; 13f4: b5          .
+ 01F5 6F        	mov	l,a		;; 13f5: 6f          o
+ 01F6 C31102    	jmp	L1411		;; 13f6: c3 11 14    ...
+                
+ 01F9 CD8C00    L13f9:	call	L128c		;; 13f9: cd 8c 12    ...
+ 01FC 7A        	mov	a,d		;; 13fc: 7a          z
+ 01FD AC        	xra	h		;; 13fd: ac          .
+ 01FE 67        	mov	h,a		;; 13fe: 67          g
+ 01FF 7B        	mov	a,e		;; 13ff: 7b          {
+ 0200 AD        	xra	l		;; 1400: ad          .
+ 0201 6F        	mov	l,a		;; 1401: 6f          o
+ 0202 C31102    	jmp	L1411		;; 1402: c3 11 14    ...
+                
+ 0205 CD6F00    L1405:	call	L126f		;; 1405: cd 6f 12    .o.
+ 0208 6C        	mov	l,h		;; 1408: 6c          l
+ 0209 C30F02    	jmp	L140f		;; 1409: c3 0f 14    ...
+                
+ 020C CD6F00    L140c:	call	L126f		;; 140c: cd 6f 12    .o.
+ 020F 2600      L140f:	mvi	h,000h		;; 140f: 26 00       &.
+ 0211 C33300    L1411:	jmp	L1233		;; 1411: c3 33 12    .3.
+                
+ 0214 3A0000    endstm:	lda	L3005		;; 1414: 3a 05 30    :.0
+ 0217 FE04      	cpi	004h		;; 1417: fe 04       ..
+ 0219 C0        	rnz			;; 1419: c0          .
+ 021A 3A0000    	lda	L3009		;; 141a: 3a 09 30    :.0
+ 021D FE0D      	cpi	cr		;; 141d: fe 0d       ..
+ 021F C8        	rz			;; 141f: c8          .
+ 0220 FE3B      	cpi	';'		;; 1420: fe 3b       .;
+ 0222 C8        	rz			;; 1422: c8          .
+ 0223 FE21      	cpi	'!'		;; 1423: fe 21       ..
+ 0225 C9        	ret			;; 1425: c9          .
+                
+ 0226 CD1402    endtok:	call	endstm		;; 1426: cd 14 14    ...
+ 0229 C8        	rz			;; 1429: c8          .
+ 022A FE2C      	cpi	','		;; 142a: fe 2c       .,
+ 022C C9        	ret			;; 142c: c9          .
+                
+ 022D AF        L142d:	xra	a		;; 142d: af          .
+ 022E 323100    	sta	L1231		;; 142e: 32 31 12    21.
+ 0231 323200    	sta	L1232		;; 1431: 32 32 12    22.
+ 0234 3D        	dcr	a		;; 1434: 3d          =
+ 0235 320C00    	sta	L120c		;; 1435: 32 0c 12    2..
+ 0238 210000    	lxi	h,0		;; 1438: 21 00 00    ...
+ 023B 220000    	shld	L3049		;; 143b: 22 49 30    "I0
+ 023E CD2602    L143e:	call	endtok		;; 143e: cd 26 14    .&.
+ 0241 C27102    	jnz	L1471		;; 1441: c2 71 14    .q.
+                ; "pop" something and process it... until empty
+ 0244 213100    L1444:	lxi	h,L1231		;; 1444: 21 31 12    .1.
+ 0247 7E        	mov	a,m		;; 1447: 7e          ~
+ 0248 B7        	ora	a		;; 1448: b7          .
+ 0249 CA5C02    	jz	L145c		;; 1449: ca 5c 14    .\.
+ 024C 35        	dcr	m		;; 144c: 35          5
+ 024D 5F        	mov	e,a		;; 144d: 5f          _
+ 024E 1D        	dcr	e		;; 144e: 1d          .
+ 024F 1600      	mvi	d,0		;; 144f: 16 00       ..
+ 0251 210D00    	lxi	h,L120d		;; 1451: 21 0d 12    ...
+ 0254 19        	dad	d		;; 1454: 19          .
+ 0255 7E        	mov	a,m		;; 1455: 7e          ~
+ 0256 CD9400    	call	L1294		;; 1456: cd 94 12    ...
+ 0259 C34402    	jmp	L1444		;; 1459: c3 44 14    .D.
+                
+ 025C 3A3200    L145c:	lda	L1232		;; 145c: 3a 32 12    :2.
+ 025F FE02      	cpi	002h		;; 145f: fe 02       ..
+ 0261 C4E403    	cnz	Eerror		;; 1461: c4 e4 15    ...
+ 0264 3A0000    	lda	curerr		;; 1464: 3a 8c 2f    :./
+ 0267 FE20      	cpi	' '		;; 1467: fe 20       . 
+ 0269 C0        	rnz			;; 1469: c0          .
+ 026A 2A2100    	lhld	L1221		;; 146a: 2a 21 12    *..
+ 026D 220000    	shld	L3049		;; 146d: 22 49 30    "I0
+ 0270 C9        	ret			;; 1470: c9          .
+                
+                ; get 1 or 2 chars from L3008 buffer (error if 0 or >2)
+ 0271 3A0000    L1471:	lda	curerr		;; 1471: 3a 8c 2f    :./
+ 0274 FE20      	cpi	' '		;; 1474: fe 20       . 
+ 0276 C2D003    	jnz	L15d0		;; 1476: c2 d0 15    ...
+ 0279 3A0000    	lda	L3005		;; 1479: 3a 05 30    :.0
+ 027C FE03      	cpi	003h		;; 147c: fe 03       ..
+ 027E C29D02    	jnz	L149d		;; 147e: c2 9d 14    ...
+ 0281 3A0000    	lda	L3008		;; 1481: 3a 08 30    :.0
+ 0284 B7        	ora	a		;; 1484: b7          .
+ 0285 CCE403    	cz	Eerror		;; 1485: cc e4 15    ...
+ 0288 FE03      	cpi	003h		;; 1488: fe 03       ..
+ 028A D4E403    	cnc	Eerror		;; 148a: d4 e4 15    ...
+ 028D 1600      	mvi	d,0		;; 148d: 16 00       ..
+ 028F 210000    	lxi	h,L3009		;; 148f: 21 09 30    ..0
+ 0292 5E        	mov	e,m		;; 1492: 5e          ^
+ 0293 23        	inx	h		;; 1493: 23          #
+ 0294 3D        	dcr	a		;; 1494: 3d          =
+ 0295 CA9902    	jz	L1499		;; 1495: ca 99 14    ...
+ 0298 56        	mov	d,m		;; 1498: 56          V
+ 0299 EB        L1499:	xchg			;; 1499: eb          .
+ 029A C3CD03    	jmp	L15cd		;; 149a: c3 cd 15    ...
+                
+ 029D FE02      L149d:	cpi	002h		;; 149d: fe 02       ..
+ 029F C2A802    	jnz	L14a8		;; 149f: c2 a8 14    ...
+ 02A2 2A0000    	lhld	L3006		;; 14a2: 2a 06 30    *.0
+ 02A5 C3CD03    	jmp	L15cd		;; 14a5: c3 cd 15    ...
+                
+ 02A8 CD0000    L14a8:	call	L2106		;; 14a8: cd 06 21    ...
+ 02AB C28D03    	jnz	L158d		;; 14ab: c2 8d 15    ...
+ 02AE FE19      	cpi	019h		;; 14ae: fe 19       ..
+ 02B0 D28203    	jnc	L1582		;; 14b0: d2 82 15    ...
+ 02B3 FE18      	cpi	018h		;; 14b3: fe 18       ..
+ 02B5 C2F102    	jnz	L14f1		;; 14b5: c2 f1 14    ...
+ 02B8 CD0000    	call	L160c		;; 14b8: cd 0c 16    ...
+ 02BB CD1402    	call	endstm		;; 14bb: cd 14 14    ...
+ 02BE CAE802    	jz	L14e8		;; 14be: ca e8 14    ...
+ 02C1 3A0000    	lda	L3005		;; 14c1: 3a 05 30    :.0
+ 02C4 FE03      	cpi	003h		;; 14c4: fe 03       ..
+ 02C6 C2D902    	jnz	L14d9		;; 14c6: c2 d9 14    ...
+ 02C9 3A0000    	lda	L3008		;; 14c9: 3a 08 30    :.0
+ 02CC B7        	ora	a		;; 14cc: b7          .
+ 02CD C2D902    	jnz	L14d9		;; 14cd: c2 d9 14    ...
+ 02D0 CD0000    	call	L1606		;; 14d0: cd 06 16    ...
+ 02D3 CD2602    	call	endtok		;; 14d3: cd 26 14    .&.
+ 02D6 CAE802    	jz	L14e8		;; 14d6: ca e8 14    ...
+ 02D9 CD0000    L14d9:	call	L160c		;; 14d9: cd 0c 16    ...
+ 02DC CD1402    	call	endstm		;; 14dc: cd 14 14    ...
+ 02DF C2D902    	jnz	L14d9		;; 14df: c2 d9 14    ...
+ 02E2 210000    	lxi	h,0		;; 14e2: 21 00 00    ...
+ 02E5 C3EB02    	jmp	L14eb		;; 14e5: c3 eb 14    ...
+                
+ 02E8 21FFFF    L14e8:	lxi	h,0ffffh	;; 14e8: 21 ff ff    ...
+ 02EB CDD603    L14eb:	call	L15d6		;; 14eb: cd d6 15    ...
+ 02EE C33E02    	jmp	L143e		;; 14ee: c3 3e 14    .>.
+                
+ 02F1 FE14      L14f1:	cpi	014h		;; 14f1: fe 14       ..
+ 02F3 4F        	mov	c,a		;; 14f3: 4f          O
+ 02F4 3A0C00    	lda	L120c		;; 14f4: 3a 0c 12    :..
+ 02F7 C20703    	jnz	L1507		;; 14f7: c2 07 15    ...
+ 02FA B7        	ora	a		;; 14fa: b7          .
+ 02FB CCE403    	cz	Eerror		;; 14fb: cc e4 15    ...
+ 02FE 3EFF      	mvi	a,0ffh		;; 14fe: 3e ff       >.
+ 0300 320C00    	sta	L120c		;; 1500: 32 0c 12    2..
+ 0303 79        	mov	a,c		;; 1503: 79          y
+ 0304 C35503    	jmp	L1555		;; 1504: c3 55 15    .U.
+                
+ 0307 B7        L1507:	ora	a		;; 1507: b7          .
+ 0308 C26003    	jnz	L1560		;; 1508: c2 60 15    .`.
+ 030B C5        L150b:	push	b		;; 150b: c5          .
+ 030C 3A3100    	lda	L1231		;; 150c: 3a 31 12    :1.
+ 030F B7        	ora	a		;; 150f: b7          .
+ 0310 CA3003    	jz	L1530		;; 1510: ca 30 15    .0.
+ 0313 5F        	mov	e,a		;; 1513: 5f          _
+ 0314 1D        	dcr	e		;; 1514: 1d          .
+ 0315 1600      	mvi	d,000h		;; 1515: 16 00       ..
+ 0317 211700    	lxi	h,L1217		;; 1517: 21 17 12    ...
+ 031A 19        	dad	d		;; 151a: 19          .
+ 031B 7E        	mov	a,m		;; 151b: 7e          ~
+ 031C B8        	cmp	b		;; 151c: b8          .
+ 031D DA3003    	jc	L1530		;; 151d: da 30 15    .0.
+ 0320 213100    	lxi	h,L1231		;; 1520: 21 31 12    .1.
+ 0323 73        	mov	m,e		;; 1523: 73          s
+ 0324 210D00    	lxi	h,L120d		;; 1524: 21 0d 12    ...
+ 0327 19        	dad	d		;; 1527: 19          .
+ 0328 7E        	mov	a,m		;; 1528: 7e          ~
+ 0329 CD9400    	call	L1294		;; 1529: cd 94 12    ...
+ 032C C1        	pop	b		;; 152c: c1          .
+ 032D C30B03    	jmp	L150b		;; 152d: c3 0b 15    ...
+                
+ 0330 C1        L1530:	pop	b		;; 1530: c1          .
+ 0331 79        	mov	a,c		;; 1531: 79          y
+ 0332 FE15      	cpi	015h		;; 1532: fe 15       ..
+ 0334 C25503    	jnz	L1555		;; 1534: c2 55 15    .U.
+ 0337 213100    	lxi	h,L1231		;; 1537: 21 31 12    .1.
+ 033A 7E        	mov	a,m		;; 153a: 7e          ~
+ 033B B7        	ora	a		;; 153b: b7          .
+ 033C CA4E03    	jz	L154e		;; 153c: ca 4e 15    .N.
+ 033F 3D        	dcr	a		;; 153f: 3d          =
+ 0340 77        	mov	m,a		;; 1540: 77          w
+ 0341 5F        	mov	e,a		;; 1541: 5f          _
+ 0342 1600      	mvi	d,000h		;; 1542: 16 00       ..
+ 0344 210D00    	lxi	h,L120d		;; 1544: 21 0d 12    ...
+ 0347 19        	dad	d		;; 1547: 19          .
+ 0348 7E        	mov	a,m		;; 1548: 7e          ~
+ 0349 FE14      	cpi	014h		;; 1549: fe 14       ..
+ 034B CA5103    	jz	L1551		;; 154b: ca 51 15    .Q.
+ 034E CDE403    L154e:	call	Eerror		;; 154e: cd e4 15    ...
+ 0351 AF        L1551:	xra	a		;; 1551: af          .
+ 0352 C35A03    	jmp	L155a		;; 1552: c3 5a 15    .Z.
+                
+ 0355 CD5000    L1555:	call	L1250		;; 1555: cd 50 12    .P.
+ 0358 3EFF      	mvi	a,0ffh		;; 1558: 3e ff       >.
+ 035A 320C00    L155a:	sta	L120c		;; 155a: 32 0c 12    2..
+ 035D C3D003    	jmp	L15d0		;; 155d: c3 d0 15    ...
+                
+ 0360 79        L1560:	mov	a,c		;; 1560: 79          y
+ 0361 FE05      	cpi	005h		;; 1561: fe 05       ..
+ 0363 CAD003    	jz	L15d0		;; 1563: ca d0 15    ...
+ 0366 FE06      	cpi	006h		;; 1566: fe 06       ..
+ 0368 C27003    	jnz	L1570		;; 1568: c2 70 15    .p.
+ 036B 3C        	inr	a		;; 156b: 3c          <
+ 036C 4F        	mov	c,a		;; 156c: 4f          O
+ 036D C30B03    	jmp	L150b		;; 156d: c3 0b 15    ...
+                
+ 0370 FE0E      L1570:	cpi	00eh		;; 1570: fe 0e       ..
+ 0372 CA0B03    	jz	L150b		;; 1572: ca 0b 15    ...
+ 0375 FE12      	cpi	012h		;; 1575: fe 12       ..
+ 0377 CA0B03    	jz	L150b		;; 1577: ca 0b 15    ...
+ 037A FE13      	cpi	013h		;; 157a: fe 13       ..
+ 037C C4E403    	cnz	Eerror		;; 157c: c4 e4 15    ...
+ 037F C30B03    	jmp	L150b		;; 157f: c3 0b 15    ...
+                
+ 0382 FE1A      L1582:	cpi	eof		;; 1582: fe 1a       ..
+ 0384 CCE403    	cz	Eerror		;; 1584: cc e4 15    ...
+ 0387 68        	mov	l,b		;; 1587: 68          h
+ 0388 2600      	mvi	h,000h		;; 1588: 26 00       &.
+ 038A C3CD03    	jmp	L15cd		;; 158a: c3 cd 15    ...
+                
+ 038D 3A0000    L158d:	lda	L3005		;; 158d: 3a 05 30    :.0
+ 0390 FE04      	cpi	004h		;; 1590: fe 04       ..
+ 0392 C2AC03    	jnz	L15ac		;; 1592: c2 ac 15    ...
+ 0395 3A0000    	lda	L3009		;; 1595: 3a 09 30    :.0
+ 0398 FE24      	cpi	'$'		;; 1598: fe 24       .$
+ 039A CAA603    	jz	L15a6		;; 159a: ca a6 15    ...
+ 039D CDE403    	call	Eerror		;; 159d: cd e4 15    ...
+ 03A0 210000    	lxi	h,0		;; 15a0: 21 00 00    ...
+ 03A3 C3CD03    	jmp	L15cd		;; 15a3: c3 cd 15    ...
+                
+ 03A6 2A0000    L15a6:	lhld	linadr		;; 15a6: 2a 52 30    *R0
+ 03A9 C3CD03    	jmp	L15cd		;; 15a9: c3 cd 15    ...
+                
+ 03AC CD0000    L15ac:	call	L1c06		;; 15ac: cd 06 1c    ...
+ 03AF CD0000    	call	L1c09		;; 15af: cd 09 1c    ...
+ 03B2 C2C003    	jnz	L15c0		;; 15b2: c2 c0 15    ...
+ 03B5 3E50      	mvi	a,'P'		;; 15b5: 3e 50       >P
+ 03B7 CD0000    	call	setere		;; 15b7: cd 98 25    ..%
+ 03BA CD0000    	call	L1c0c		;; 15ba: cd 0c 1c    ...
+ 03BD C3CA03    	jmp	L15ca		;; 15bd: c3 ca 15    ...
+                
+ 03C0 CD0000    L15c0:	call	L1c12		;; 15c0: cd 12 1c    ...
+ 03C3 E607      	ani	007h		;; 15c3: e6 07       ..
+ 03C5 3E55      	mvi	a,'U'		;; 15c5: 3e 55       >U
+ 03C7 CC0000    	cz	setere		;; 15c7: cc 98 25    ..%
+ 03CA CD0000    L15ca:	call	L1c18		;; 15ca: cd 18 1c    ...
+ 03CD CDD603    L15cd:	call	L15d6		;; 15cd: cd d6 15    ...
+ 03D0 CD0000    L15d0:	call	L1606		;; 15d0: cd 06 16    ...
+ 03D3 C33E02    	jmp	L143e		;; 15d3: c3 3e 14    .>.
+                
+ 03D6 3A0C00    L15d6:	lda	L120c		;; 15d6: 3a 0c 12    :..
+ 03D9 B7        	ora	a		;; 15d9: b7          .
+ 03DA CCE403    	cz	Eerror		;; 15da: cc e4 15    ...
+ 03DD AF        	xra	a		;; 15dd: af          .
+ 03DE 320C00    	sta	L120c		;; 15de: 32 0c 12    2..
+ 03E1 C33300    	jmp	L1233		;; 15e1: c3 33 12    .3.
+                
+ 03E4 E5        Eerror:	push	h		;; 15e4: e5          .
+ 03E5 3E45      	mvi	a,'E'		;; 15e5: 3e 45       >E
+ 03E7 CD0000    	call	setere		;; 15e7: cd 98 25    ..%
+ 03EA E1        	pop	h		;; 15ea: e1          .
+ 03EB C9        	ret			;; 15eb: c9          .
+                
+ 03EC 0000000000	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 0400           	end
+
