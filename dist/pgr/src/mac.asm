@@ -4,7 +4,7 @@
 cr	equ	13
 lf	equ	10
 tab	equ	9
-vt	equ	12
+ff	equ	12
 eof	equ	26
 del	equ	127
 
@@ -86,7 +86,7 @@ L0179:	lda	L3005		;; 0179: 3a 05 30    :.0
 	jz	L0176		;; 017e: ca 76 01    .v.
 	cpi	004h		;; 0181: fe 04       ..
 	jnz	L01cb		;; 0183: c2 cb 01    ...
-	lda	L3009		;; 0186: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0186: 3a 09 30    :.0
 	cpi	'$'		;; 0189: fe 24       .$
 	jnz	L0dd5		;; 018b: c2 d5 0d    ...
 	call	L0eea		;; 018e: cd ea 0e    ...
@@ -129,7 +129,7 @@ L01cb:	cpi	001h		;; 01cb: fe 01       ..
 	jmp	L03e9		;; 01e9: c3 e9 03    ...
 
 L01ec:	call	L1c12		;; 01ec: cd 12 1c    ...
-	cpi	006h		;; 01ef: fe 06       ..
+	cpi	6		;; 01ef: fe 06       ..
 	jnz	L03e9		;; 01f1: c2 e9 03    ...
 	lxi	h,0		;; 01f4: 21 00 00    ...
 	shld	L11e0		;; 01f7: 22 e0 11    "..
@@ -168,7 +168,7 @@ L023c:	lhld	cursym		;; 023c: 2a 56 30    *V0
 	call	L1c09		;; 0245: cd 09 1c    ...
 	jz	L0256		;; 0248: ca 56 02    .V.
 	call	L1c12		;; 024b: cd 12 1c    ...
-	cpi	006h		;; 024e: fe 06       ..
+	cpi	6		;; 024e: fe 06       ..
 	jnz	L02bb		;; 0250: c2 bb 02    ...
 	jmp	L0201		;; 0253: c3 01 02    ...
 
@@ -183,10 +183,11 @@ L025f:	lhld	L11e0		;; 025f: 2a e0 11    *..
 	shld	L11c3		;; 026c: 22 c3 11    "..
 	jmp	pMACRO		;; 026f: c3 99 06    ...
 
-L0272:	lhld	L304b		;; 0272: 2a 4b 30    *K0
+; copy name (tokbuf) onto heap (struct symbol.name[0])
+L0272:	lhld	nxheap		;; 0272: 2a 4b 30    *K0
 	push	h		;; 0275: e5          .
 	shld	L3058		;; 0276: 22 58 30    "X0
-	lxi	h,L3008		;; 0279: 21 08 30    ..0
+	lxi	h,tokbuf		;; 0279: 21 08 30    ..0
 	mov	c,m		;; 027c: 4e          N
 	mov	b,c		;; 027d: 41          A
 L027e:	inx	h		;; 027e: 23          #
@@ -200,13 +201,14 @@ L027e:	inx	h		;; 027e: 23          #
 	jnz	L027e		;; 0288: c2 7e 02    .~.
 	pop	h		;; 028b: e1          .
 	mov	m,b		;; 028c: 70          p
-	shld	L304b		;; 028d: 22 4b 30    "K0
+	shld	nxheap		;; 028d: 22 4b 30    "K0
 	ret			;; 0290: c9          .
 
-L0291:	lhld	L304b		;; 0291: 2a 4b 30    *K0
+; copy name out of heap (symbol.name) into tokbuf
+L0291:	lhld	nxheap		;; 0291: 2a 4b 30    *K0
 	mov	c,m		;; 0294: 4e          N
 	shld	L3058		;; 0295: 22 58 30    "X0
-	lxi	h,L3008		;; 0298: 21 08 30    ..0
+	lxi	h,tokbuf		;; 0298: 21 08 30    ..0
 	mov	m,c		;; 029b: 71          q
 L029c:	inx	h		;; 029c: 23          #
 	push	b		;; 029d: c5          .
@@ -268,7 +270,7 @@ L02f6:	lda	L11c2		;; 02f6: 3a c2 11    :..
 L0300:	lda	L3005		;; 0300: 3a 05 30    :.0
 	cpi	004h		;; 0303: fe 04       ..
 	jnz	L0346		;; 0305: c2 46 03    .F.
-	lda	L3009		;; 0308: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0308: 3a 09 30    :.0
 	call	L02e7		;; 030b: cd e7 02    ...
 	jz	L0365		;; 030e: ca 65 03    .e.
 	cpi	'%'		;; 0311: fe 25       .%
@@ -280,10 +282,10 @@ L0300:	lda	L3005		;; 0300: 3a 05 30    :.0
 	lda	L3005		;; 0321: 3a 05 30    :.0
 	cpi	004h		;; 0324: fe 04       ..
 	jnz	L0362		;; 0326: c2 62 03    .b.
-	lda	L3009		;; 0329: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0329: 3a 09 30    :.0
 	push	psw		;; 032c: f5          .
 	xra	a		;; 032d: af          .
-	sta	L3008		;; 032e: 32 08 30    2.0
+	sta	tokbuf		;; 032e: 32 08 30    2.0
 	call	L0d0e		;; 0331: cd 0e 0d    ...
 	call	L03db		;; 0334: cd db 03    ...
 	pop	psw		;; 0337: f1          .
@@ -299,7 +301,7 @@ L0346:	call	L03db		;; 0346: cd db 03    ...
 	lda	L3005		;; 034c: 3a 05 30    :.0
 	cpi	004h		;; 034f: fe 04       ..
 	jnz	L0362		;; 0351: c2 62 03    .b.
-	lda	L3009		;; 0354: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0354: 3a 09 30    :.0
 L0357:	call	L02e7		;; 0357: cd e7 02    ...
 	jz	L0365		;; 035a: ca 65 03    .e.
 	cpi	','		;; 035d: fe 2c       .,
@@ -360,7 +362,7 @@ L03c1:	lda	L2ea3		;; 03c1: 3a a3 2e    :..
 	jmp	L03c1		;; 03d4: c3 c1 03    ...
 
 L03d7:	xra	a		;; 03d7: af          .
-	sta	L3008		;; 03d8: 32 08 30    2.0
+	sta	tokbuf		;; 03d8: 32 08 30    2.0
 L03db:	call	L1c39		;; 03db: cd 39 1c    .9.
 	call	L1c24		;; 03de: cd 24 1c    .$.
 	call	L1c3c		;; 03e1: cd 3c 1c    .<.
@@ -378,7 +380,7 @@ L03e9:	lhld	L11c3		;; 03e9: 2a c3 11    *..
 	lda	L3005		;; 03fa: 3a 05 30    :.0
 	cpi	004h		;; 03fd: fe 04       ..
 	jnz	L0179		;; 03ff: c2 79 01    .y.
-	lda	L3009		;; 0402: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0402: 3a 09 30    :.0
 	cpi	':'		;; 0405: fe 3a       .:
 	jnz	L0179		;; 0407: c2 79 01    .y.
 	jmp	L0176		;; 040a: c3 76 01    .v.
@@ -387,9 +389,9 @@ L040d:	cpi	01ah		;; 040d: fe 1a       ..
 	jnz	L0c21		;; 040f: c2 21 0c    ...
 	; pseudo-ops... B is index
 	mov	e,b		;; 0412: 58          X
-	mvi	d,000h		;; 0413: 16 00       ..
+	mvi	d,0		;; 0413: 16 00       ..
 	dcx	d		;; 0415: 1b          .
-	lxi	h,L0420		;; 0416: 21 20 04    . .
+	lxi	h,poptbl	;; 0416: 21 20 04    . .
 	dad	d		;; 0419: 19          .
 	dad	d		;; 041a: 19          .
 	mov	e,m		;; 041b: 5e          ^
@@ -399,7 +401,7 @@ L040d:	cpi	01ah		;; 040d: fe 1a       ..
 	pchl			;; 041f: e9          .
 
 ; pseudo-op table
-L0420:	dw	pDB	; 1 DB
+poptbl:	dw	pDB	; 1 DB
 	dw	pDS	; 2 DS
 	dw	pDW	; 3 DW
 	dw	pEND	; 4 END
@@ -433,13 +435,13 @@ L045b:	call	L1606		;; 045b: cd 06 16    ...
 	lda	L3005		;; 045e: 3a 05 30    :.0
 	cpi	003h		;; 0461: fe 03       ..
 	jnz	L0489		;; 0463: c2 89 04    ...
-	lda	L3008		;; 0466: 3a 08 30    :.0
+	lda	tokbuf		;; 0466: 3a 08 30    :.0
 	dcr	a		;; 0469: 3d          =
 	jz	L0489		;; 046a: ca 89 04    ...
 	mov	b,a		;; 046d: 47          G
 	inr	b		;; 046e: 04          .
 	inr	b		;; 046f: 04          .
-	lxi	h,L3009		;; 0470: 21 09 30    ..0
+	lxi	h,tokbuf+1		;; 0470: 21 09 30    ..0
 L0473:	dcr	b		;; 0473: 05          .
 	jz	L0483		;; 0474: ca 83 04    ...
 	push	b		;; 0477: c5          .
@@ -456,10 +458,10 @@ L0483:	call	L1606		;; 0483: cd 06 16    ...
 
 L0489:	call	L1203		;; 0489: cd 03 12    ...
 	lhld	L3049		;; 048c: 2a 49 30    *I0
-	call	L0d7c		;; 048f: cd 7c 0d    .|.
+	call	chkbyh		;; 048f: cd 7c 0d    .|.
 	mov	b,l		;; 0492: 45          E
 	call	asmbyt		;; 0493: cd 32 0f    .2.
-L0496:	call	L0ee3		;; 0496: cd e3 0e    ...
+L0496:	call	synadr		;; 0496: cd e3 0e    ...
 	call	L0d56		;; 0499: cd 56 0d    .V.
 	cpi	','		;; 049c: fe 2c       .,
 	jz	L045b		;; 049e: ca 5b 04    .[.
@@ -483,7 +485,7 @@ L04be:	call	L0d6d		;; 04be: cd 6d 0d    .m.
 	pop	h		;; 04c6: e1          .
 	mov	b,h		;; 04c7: 44          D
 	call	asmbyt		;; 04c8: cd 32 0f    .2.
-	call	L0ee3		;; 04cb: cd e3 0e    ...
+	call	synadr		;; 04cb: cd e3 0e    ...
 	call	L0d56		;; 04ce: cd 56 0d    .V.
 	cpi	','		;; 04d1: fe 2c       .,
 	jz	L04be		;; 04d3: ca be 04    ...
@@ -508,7 +510,7 @@ L04f5:	mvi	a,' '		;; 04f5: 3e 20       >
 	lda	L3005		;; 0504: 3a 05 30    :.0
 	cpi	004h		;; 0507: fe 04       ..
 	jnz	L0e20		;; 0509: c2 20 0e    . .
-	lda	L3009		;; 050c: 3a 09 30    :.0
+	lda	tokbuf+1		;; 050c: 3a 09 30    :.0
 	cpi	lf		;; 050f: fe 0a       ..
 	jnz	L0e20		;; 0511: c2 20 0e    . .
 	jmp	L0e2d		;; 0514: c3 2d 0e    .-.
@@ -537,10 +539,10 @@ L053b:	lhld	L2f24		;; 053b: 2a 24 2f    *$/
 	pop	h		;; 0548: e1          .
 	shld	L2f24		;; 0549: 22 24 2f    "$/
 	pop	psw		;; 054c: f1          .
-	cpi	006h		;; 054d: fe 06       ..
+	cpi	6		;; 054d: fe 06       ..
 	jnz	L0616		;; 054f: c2 16 06    ...
 L0552:	lda	L2ea4		;; 0552: 3a a4 2e    :..
-	cpi	006h		;; 0555: fe 06       ..
+	cpi	6		;; 0555: fe 06       ..
 	jnz	L056c		;; 0557: c2 6c 05    .l.
 	lhld	L2eb4		;; 055a: 2a b4 2e    *..
 	mov	e,m		;; 055d: 5e          ^
@@ -572,7 +574,7 @@ L056c:	lhld	L2eb4		;; 056c: 2a b4 2e    *..
 	mov	m,d		;; 0586: 72          r
 	dcx	h		;; 0587: 2b          +
 	mov	m,e		;; 0588: 73          s
-	lxi	h,L3008		;; 0589: 21 08 30    ..0
+	lxi	h,tokbuf		;; 0589: 21 08 30    ..0
 	mvi	m,001h		;; 058c: 36 01       6.
 	inx	h		;; 058e: 23          #
 	mov	m,a		;; 058f: 77          w
@@ -581,7 +583,7 @@ L056c:	lhld	L2eb4		;; 056c: 2a b4 2e    *..
 L0593:	mvi	a,cr		;; 0593: 3e 0d       >.
 	stax	d		;; 0595: 12          .
 	xra	a		;; 0596: af          .
-	sta	L3008		;; 0597: 32 08 30    2.0
+	sta	tokbuf		;; 0597: 32 08 30    2.0
 L059a:	call	L1c39		;; 059a: cd 39 1c    .9.
 	jmp	L0606		;; 059d: c3 06 06    ...
 
@@ -596,11 +598,11 @@ L05a0:	lxi	h,L2f65		;; 05a0: 21 65 2f    .e/
 	xchg			;; 05ae: eb          .
 	shld	L2ef4		;; 05af: 22 f4 2e    "..
 	mov	a,m		;; 05b2: 7e          ~
-	sui	02ch		;; 05b3: d6 2c       .,
+	sui	','		;; 05b3: d6 2c       .,
 	jnz	L05c5		;; 05b5: c2 c5 05    ...
 	inx	h		;; 05b8: 23          #
 	push	h		;; 05b9: e5          .
-	lxi	h,L3008		;; 05ba: 21 08 30    ..0
+	lxi	h,tokbuf		;; 05ba: 21 08 30    ..0
 	mov	m,a		;; 05bd: 77          w
 	call	L1c39		;; 05be: cd 39 1c    .9.
 	pop	h		;; 05c1: e1          .
@@ -623,7 +625,7 @@ L05d0:	call	L1c39		;; 05d0: cd 39 1c    .9.
 L05e0:	lhld	L11e2		;; 05e0: 2a e2 11    *..
 	push	h		;; 05e3: e5          .
 	call	L1606		;; 05e4: cd 06 16    ...
-	lda	L3009		;; 05e7: 3a 09 30    :.0
+	lda	tokbuf+1		;; 05e7: 3a 09 30    :.0
 	cpi	','		;; 05ea: fe 2c       .,
 	cnz	Serror		;; 05ec: c4 b4 11    ...
 	pop	h		;; 05ef: e1          .
@@ -724,7 +726,7 @@ L06bf:	call	L1c18		;; 06bf: cd 18 1c    ...
 	shld	L11d8		;; 06c2: 22 d8 11    "..
 	jmp	L06cd		;; 06c5: c3 cd 06    ...
 
-L06c8:	mvi	a,006h		;; 06c8: 3e 06       >.
+L06c8:	mvi	a,6		;; 06c8: 3e 06       >.
 	call	L1c0f		;; 06ca: cd 0f 1c    ...
 L06cd:	xra	a		;; 06cd: af          .
 	sta	L11da		;; 06ce: 32 da 11    2..
@@ -744,7 +746,7 @@ L06d8:	call	L1606		;; 06d8: cd 06 16    ...
 	lda	L3005		;; 06f1: 3a 05 30    :.0
 	cpi	004h		;; 06f4: fe 04       ..
 	jnz	L0701		;; 06f6: c2 01 07    ...
-	lda	L3009		;; 06f9: 3a 09 30    :.0
+	lda	tokbuf+1		;; 06f9: 3a 09 30    :.0
 	cpi	','		;; 06fc: fe 2c       .,
 	jz	L06d8		;; 06fe: ca d8 06    ...
 L0701:	mvi	a,001h		;; 0701: 3e 01       >.
@@ -769,7 +771,7 @@ L0722:	sta	L305c		;; 0722: 32 5c 30    2\0
 L0725:	lda	L3005		;; 0725: 3a 05 30    :.0
 	cpi	004h		;; 0728: fe 04       ..
 	jnz	L073d		;; 072a: c2 3d 07    .=.
-	lda	L3009		;; 072d: 3a 09 30    :.0
+	lda	tokbuf+1		;; 072d: 3a 09 30    :.0
 	cpi	cr		;; 0730: fe 0d       ..
 	jz	L0746		;; 0732: ca 46 07    .F.
 	cpi	'!'		;; 0735: fe 21       ..
@@ -786,12 +788,12 @@ L0746:	lhld	L3058		;; 0746: 2a 58 30    *X0
 	sta	L305a		;; 074e: 32 5a 30    2Z0
 	call	L1606		;; 0751: cd 06 16    ...
 L0754:	lhld	L3058		;; 0754: 2a 58 30    *X0
-L0757:	shld	L11e0		;; 0757: 22 e0 11    "..
+	shld	L11e0		;; 0757: 22 e0 11    "..
 	call	L1606		;; 075a: cd 06 16    ...
 	lda	L3005		;; 075d: 3a 05 30    :.0
 	cpi	004h		;; 0760: fe 04       ..
 	jnz	L076b		;; 0762: c2 6b 07    .k.
-	lda	L3009		;; 0765: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0765: 3a 09 30    :.0
 	cpi	eof		;; 0768: fe 1a       ..
 	rz			;; 076a: c8          .
 L076b:	cpi	001h		;; 076b: fe 01       ..
@@ -805,7 +807,7 @@ L076b:	cpi	001h		;; 076b: fe 01       ..
 	lda	pass		;; 077f: 3a 4f 30    :O0
 	ora	a		;; 0782: b7          .
 	jnz	L07a6		;; 0783: c2 a6 07    ...
-	lda	L3008		;; 0786: 3a 08 30    :.0
+	lda	tokbuf		;; 0786: 3a 08 30    :.0
 	dcr	a		;; 0789: 3d          =
 	jz	L07a6		;; 078a: ca a6 07    ...
 	dcr	c		;; 078d: 0d          .
@@ -830,7 +832,7 @@ L07a6:	pop	psw		;; 07a6: f1          .
 	rz			;; 07b7: c8          .
 	jmp	L0754		;; 07b8: c3 54 07    .T.
 
-L07bb:	cpi	006h		;; 07bb: fe 06       ..
+L07bb:	cpi	6		;; 07bb: fe 06       ..
 	jnz	L0754		;; 07bd: c2 54 07    .T.
 	lxi	h,L305a		;; 07c0: 21 5a 30    .Z0
 	dcr	m		;; 07c3: 35          5
@@ -907,10 +909,10 @@ pTITLE:	call	L0ef4		;; 085e: cd f4 0e    ...
 	lda	L305a		;; 086c: 3a 5a 30    :Z0
 	ora	a		;; 086f: b7          .
 	jnz	L0e20		;; 0870: c2 20 0e    . .
-	lxi	h,L3008		;; 0873: 21 08 30    ..0
+	lxi	h,tokbuf		;; 0873: 21 08 30    ..0
 	mov	c,m		;; 0876: 4e          N
 	xchg			;; 0877: eb          .
-	lhld	L304b		;; 0878: 2a 4b 30    *K0
+	lhld	nxheap		;; 0878: 2a 4b 30    *K0
 	lda	pass		;; 087b: 3a 4f 30    :O0
 	ora	a		;; 087e: b7          .
 	jnz	L089f		;; 087f: c2 9f 08    ...
@@ -958,7 +960,7 @@ L08c1:	sta	L11ca		;; 08c1: 32 ca 11    2..
 L08cb:	lda	L3005		;; 08cb: 3a 05 30    :.0
 	cpi	004h		;; 08ce: fe 04       ..
 	jnz	L08f1		;; 08d0: c2 f1 08    ...
-	lda	L3009		;; 08d3: 3a 09 30    :.0
+	lda	tokbuf+1		;; 08d3: 3a 09 30    :.0
 	cpi	cr		;; 08d6: fe 0d       ..
 	jnz	L08e1		;; 08d8: c2 e1 08    ...
 	call	L1606		;; 08db: cd 06 16    ...
@@ -987,7 +989,7 @@ L08f7:	call	L1606		;; 08f7: cd 06 16    ...
 	lda	L3005		;; 0913: 3a 05 30    :.0
 	cpi	004h		;; 0916: fe 04       ..
 	jnz	L0926		;; 0918: c2 26 09    .&.
-	lda	L3009		;; 091b: 3a 09 30    :.0
+	lda	tokbuf+1		;; 091b: 3a 09 30    :.0
 	cpi	':'		;; 091e: fe 3a       .:
 	jnz	L08cb		;; 0920: c2 cb 08    ...
 	call	L1606		;; 0923: cd 06 16    ...
@@ -1037,7 +1039,7 @@ L097d:	call	L08b5		;; 097d: cd b5 08    ...
 	cz	Oerror		;; 0987: cc a8 11    ...
 	jmp	L08cb		;; 098a: c3 cb 08    ...
 
-L098d:	cpi	006h		;; 098d: fe 06       ..
+L098d:	cpi	6		;; 098d: fe 06       ..
 	jnz	L08cb		;; 098f: c2 cb 08    ...
 	lxi	h,L11cc		;; 0992: 21 cc 11    ...
 	mov	a,m		;; 0995: 7e          ~
@@ -1053,7 +1055,7 @@ L099e:	mov	b,a		;; 099e: 47          G
 	jnc	Oerror		;; 09a5: d2 a8 11    ...
 	inr	m		;; 09a8: 34          4
 	mov	e,a		;; 09a9: 5f          _
-	mvi	d,000h		;; 09aa: 16 00       ..
+	mvi	d,0		;; 09aa: 16 00       ..
 	lxi	h,L11ce		;; 09ac: 21 ce 11    ...
 	dad	d		;; 09af: 19          .
 	mov	m,b		;; 09b0: 70          p
@@ -1065,7 +1067,7 @@ L09b2:	lxi	h,L11cd		;; 09b2: 21 cd 11    ...
 	jz	Berror		;; 09b7: ca ae 11    ...
 	dcr	m		;; 09ba: 35          5
 	mov	e,m		;; 09bb: 5e          ^
-	mvi	d,000h		;; 09bc: 16 00       ..
+	mvi	d,0		;; 09bc: 16 00       ..
 	lxi	h,L11ce		;; 09be: 21 ce 11    ...
 	dad	d		;; 09c1: 19          .
 	mov	a,m		;; 09c2: 7e          ~
@@ -1081,11 +1083,11 @@ L09cb:	sta	L305c		;; 09cb: 32 5c 30    2\0
 	lda	L3005		;; 09d4: 3a 05 30    :.0
 	cpi	001h		;; 09d7: fe 01       ..
 	jnz	L0a4e		;; 09d9: c2 4e 0a    .N.
-	lhld	L304b		;; 09dc: 2a 4b 30    *K0
+	lhld	nxheap		;; 09dc: 2a 4b 30    *K0
 	shld	L11c5		;; 09df: 22 c5 11    "..
 	dcx	h		;; 09e2: 2b          +
 	shld	L3058		;; 09e3: 22 58 30    "X0
-	lda	L3008		;; 09e6: 3a 08 30    :.0
+	lda	tokbuf		;; 09e6: 3a 08 30    :.0
 	cpi	010h		;; 09e9: fe 10       ..
 	jc	L09f0		;; 09eb: da f0 09    ...
 	mvi	a,010h		;; 09ee: 3e 10       >.
@@ -1098,11 +1100,11 @@ L09f0:	adi	003h		;; 09f0: c6 03       ..
 	lda	L3005		;; 09ff: 3a 05 30    :.0
 	cpi	004h		;; 0a02: fe 04       ..
 	jnz	L0a4e		;; 0a04: c2 4e 0a    .N.
-	lda	L3009		;; 0a07: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0a07: 3a 09 30    :.0
 	cpi	','		;; 0a0a: fe 2c       .,
 	jnz	L0a4e		;; 0a0c: c2 4e 0a    .N.
 	call	L160c		;; 0a0f: cd 0c 16    ...
-	lda	L3008		;; 0a12: 3a 08 30    :.0
+	lda	tokbuf		;; 0a12: 3a 08 30    :.0
 	ora	a		;; 0a15: b7          .
 	jnz	L0a1f		;; 0a16: c2 1f 0a    ...
 	call	L1606		;; 0a19: cd 06 16    ...
@@ -1110,7 +1112,7 @@ L09f0:	adi	003h		;; 09f0: c6 03       ..
 
 L0a1f:	call	L0c0f		;; 0a1f: cd 0f 0c    ...
 	jz	L0a3e		;; 0a22: ca 3e 0a    .>.
-	lxi	h,L3008		;; 0a25: 21 08 30    ..0
+	lxi	h,tokbuf		;; 0a25: 21 08 30    ..0
 	mov	c,m		;; 0a28: 4e          N
 L0a29:	inx	h		;; 0a29: 23          #
 	mov	a,m		;; 0a2a: 7e          ~
@@ -1126,7 +1128,7 @@ L0a29:	inx	h		;; 0a29: 23          #
 	call	L1606		;; 0a3b: cd 06 16    ...
 L0a3e:	xra	a		;; 0a3e: af          .
 	call	L1c27		;; 0a3f: cd 27 1c    .'.
-	lhld	L304b		;; 0a42: 2a 4b 30    *K0
+	lhld	nxheap		;; 0a42: 2a 4b 30    *K0
 	shld	cursym		;; 0a45: 22 56 30    "V0
 	lda	L305c		;; 0a48: 3a 5c 30    :\0
 	jmp	L0a78		;; 0a4b: c3 78 0a    .x.
@@ -1139,16 +1141,16 @@ L0a4e:	call	Serror		;; 0a4e: cd b4 11    ...
 pREPT:	call	L0d6d		;; 0a5a: cd 6d 0d    .m.
 	push	h		;; 0a5d: e5          .
 	mov	a,l		;; 0a5e: 7d          }
-	lhld	L304b		;; 0a5f: 2a 4b 30    *K0
+	lhld	nxheap		;; 0a5f: 2a 4b 30    *K0
 	shld	L11c5		;; 0a62: 22 c5 11    "..
 	dcx	h		;; 0a65: 2b          +
 	shld	L3058		;; 0a66: 22 58 30    "X0
 	call	L1c27		;; 0a69: cd 27 1c    .'.
 	pop	psw		;; 0a6c: f1          .
 	call	L1c27		;; 0a6d: cd 27 1c    .'.
-	lhld	L304b		;; 0a70: 2a 4b 30    *K0
+	lhld	nxheap		;; 0a70: 2a 4b 30    *K0
 	shld	cursym		;; 0a73: 22 56 30    "V0
-	mvi	a,006h		;; 0a76: 3e 06       >.
+	mvi	a,6		;; 0a76: 3e 06       >.
 L0a78:	call	L0722		;; 0a78: cd 22 07    .".
 	jz	L0e34		;; 0a7b: ca 34 0e    .4.
 	call	L03ac		;; 0a7e: cd ac 03    ...
@@ -1183,15 +1185,15 @@ L0a9f:	lhld	L3058		;; 0a9f: 2a 58 30    *X0
 	jmp	L0a9f		;; 0abc: c3 9f 0a    ...
 
 L0abf:	inx	h		;; 0abf: 23          #
-	shld	L304b		;; 0ac0: 22 4b 30    "K0
+	shld	nxheap		;; 0ac0: 22 4b 30    "K0
 	lhld	memtop		;; 0ac3: 2a 4d 30    *M0
 	shld	L2eb4		;; 0ac6: 22 b4 2e    "..
 	nop			;; 0ac9: 00          .
 	lda	L305c		;; 0aca: 3a 5c 30    :\0
-	cpi	006h		;; 0acd: fe 06       ..
+	cpi	6		;; 0acd: fe 06       ..
 	jz	L0add		;; 0acf: ca dd 0a    ...
 	mov	c,m		;; 0ad2: 4e          N
-	mvi	b,000h		;; 0ad3: 06 00       ..
+	mvi	b,0		;; 0ad3: 06 00       ..
 	mov	e,l		;; 0ad5: 5d          ]
 	mov	d,h		;; 0ad6: 54          T
 	dad	b		;; 0ad7: 09          .
@@ -1254,7 +1256,7 @@ L0b3f:	call	L1606		;; 0b3f: cd 06 16    ...
 	lda	L3005		;; 0b42: 3a 05 30    :.0
 	cpi	001h		;; 0b45: fe 01       ..
 	jnz	L0ba2		;; 0b47: c2 a2 0b    ...
-	lhld	L304b		;; 0b4a: 2a 4b 30    *K0
+	lhld	nxheap		;; 0b4a: 2a 4b 30    *K0
 	push	h		;; 0b4d: e5          .
 	dcx	h		;; 0b4e: 2b          +
 	shld	L3058		;; 0b4f: 22 58 30    "X0
@@ -1262,20 +1264,20 @@ L0b3f:	call	L1606		;; 0b3f: cd 06 16    ...
 	xra	a		;; 0b55: af          .
 	sta	L11db		;; 0b56: 32 db 11    2..
 	inr	a		;; 0b59: 3c          <
-	sta	L3008		;; 0b5a: 32 08 30    2.0
+	sta	tokbuf		;; 0b5a: 32 08 30    2.0
 	lhld	L11de		;; 0b5d: 2a de 11    *..
 	inx	h		;; 0b60: 23          #
 	shld	L11de		;; 0b61: 22 de 11    "..
 	shld	L11dc		;; 0b64: 22 dc 11    "..
 	call	L0d0e		;; 0b67: cd 0e 0d    ...
-	lda	L300a		;; 0b6a: 3a 0a 30    :.0
+	lda	tokbuf+2		;; 0b6a: 3a 0a 30    :.0
 	cpi	'0'		;; 0b6d: fe 30       .0
 	cnz	Oerror		;; 0b6f: c4 a8 11    ...
 	lxi	h,'??'		;; 0b72: 21 3f 3f    .??
-	shld	L3009		;; 0b75: 22 09 30    ".0
+	shld	tokbuf+1		;; 0b75: 22 09 30    ".0
 	call	L1c39		;; 0b78: cd 39 1c    .9.
 	pop	h		;; 0b7b: e1          .
-	shld	L304b		;; 0b7c: 22 4b 30    "K0
+	shld	nxheap		;; 0b7c: 22 4b 30    "K0
 	dcx	h		;; 0b7f: 2b          +
 	shld	L3058		;; 0b80: 22 58 30    "X0
 	call	L1c24		;; 0b83: cd 24 1c    .$.
@@ -1286,7 +1288,7 @@ L0b3f:	call	L1606		;; 0b3f: cd 06 16    ...
 	lda	L3005		;; 0b92: 3a 05 30    :.0
 	cpi	004h		;; 0b95: fe 04       ..
 	jnz	L0ba2		;; 0b97: c2 a2 0b    ...
-	lda	L3009		;; 0b9a: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0b9a: 3a 09 30    :.0
 	cpi	','		;; 0b9d: fe 2c       .,
 	jz	L0b3f		;; 0b9f: ca 3f 0b    .?.
 L0ba2:	call	Serror		;; 0ba2: cd b4 11    ...
@@ -1317,7 +1319,7 @@ L0bd9:	call	L1606		;; 0bd9: cd 06 16    ...
 	lda	L3005		;; 0bdc: 3a 05 30    :.0
 	cpi	004h		;; 0bdf: fe 04       ..
 	jnz	L0bd9		;; 0be1: c2 d9 0b    ...
-	lda	L3009		;; 0be4: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0be4: 3a 09 30    :.0
 	cpi	cr		;; 0be7: fe 0d       ..
 	jz	L0bf1		;; 0be9: ca f1 0b    ...
 	cpi	eof		;; 0bec: fe 1a       ..
@@ -1341,7 +1343,7 @@ L0c09:	call	L1606		;; 0c09: cd 06 16    ...
 L0c0f:	lda	L3005		;; 0c0f: 3a 05 30    :.0
 	cpi	004h		;; 0c12: fe 04       ..
 	rnz			;; 0c14: c0          .
-	lda	L3009		;; 0c15: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0c15: 3a 09 30    :.0
 	cpi	cr		;; 0c18: fe 0d       ..
 	rz			;; 0c1a: c8          .
 	cpi	'!'		;; 0c1b: fe 21       ..
@@ -1354,8 +1356,8 @@ L0c21:	sui	01ch		;; 0c21: d6 1c       ..
 	jnc	L0e20		;; 0c25: d2 20 0e    . .
 	; 1ch-2ah - instructions
 	mov	e,a		;; 0c28: 5f          _
-	mvi	d,000h		;; 0c29: 16 00       ..
-	lxi	h,L0c35		;; 0c2b: 21 35 0c    .5.
+	mvi	d,0		;; 0c29: 16 00       ..
+	lxi	h,instbl	;; 0c2b: 21 35 0c    .5.
 	dad	d		;; 0c2e: 19          .
 	dad	d		;; 0c2f: 19          .
 	mov	e,m		;; 0c30: 5e          ^
@@ -1364,7 +1366,8 @@ L0c21:	sui	01ch		;; 0c21: d6 1c       ..
 	mov	l,e		;; 0c33: 6b          k
 	pchl			;; 0c34: e9          .
 
-L0c35:	dw	opnone	; 1ch - no operand
+; instructions
+instbl:	dw	opnone	; 1ch - no operand
 	dw	opX1W	; 1dh - LXI
 	dw	opX1	; 1eh - DAD
 	dw	opX2	; 1fh - PUSH/POP
@@ -1388,7 +1391,7 @@ opnone:	call	asmbyt		;; 0c53: cd 32 0f    .2.
 ; opcode with regpair set 1,word
 opX1W:	call	L0da0		;; 0c5c: cd a0 0d    ...
 	call	L0dbb		;; 0c5f: cd bb 0d    ...
-	call	L0db5		;; 0c62: cd b5 0d    ...
+	call	asmref		;; 0c62: cd b5 0d    ...
 	jmp	L0cfb		;; 0c65: c3 fb 0c    ...
 
 ; opcode with regpair set 1 (B,D,H,SP)
@@ -1408,7 +1411,7 @@ L0c7b:	mov	a,c		;; 0c7b: 79          y
 
 ; opcode with word - exec target, jump/call
 opW1:	call	asmbyt		;; 0c82: cd 32 0f    .2.
-	call	L0db5		;; 0c85: cd b5 0d    ...
+	call	asmref		;; 0c85: cd b5 0d    ...
 	jmp	L0cfb		;; 0c88: c3 fb 0c    ...
 
 ; opcode with two single-reg operands (reg,reg) (00tttsss)
@@ -1423,7 +1426,7 @@ opRR:	call	L0d96		;; 0c8b: cd 96 0d    ...
 ; opcode with reg,byte operands, move imm (00rrr000)
 opRB:	call	L0d96		;; 0c9a: cd 96 0d    ...
 	ora	b		;; 0c9d: b0          .
-	call	L0f31		;; 0c9e: cd 31 0f    .1.
+	call	asmbya		;; 0c9e: cd 31 0f    .1.
 	call	L0dbb		;; 0ca1: cd bb 0d    ...
 	call	L0daf		;; 0ca4: cd af 0d    ...
 	jmp	L0cfb		;; 0ca7: c3 fb 0c    ...
@@ -1444,7 +1447,7 @@ opX3:	call	L0d96		;; 0cb3: cd 96 0d    ...
 
 ; opcode with word (data target)
 opW2:	call	asmbyt		;; 0cc2: cd 32 0f    .2.
-	call	L0db5		;; 0cc5: cd b5 0d    ...
+	call	asmref		;; 0cc5: cd b5 0d    ...
 	jmp	L0cfb		;; 0cc8: c3 fb 0c    ...
 
 ; opcode with reg, arith/logic (00000rrr)
@@ -1478,9 +1481,9 @@ opB2:	call	asmbyt		;; 0cef: cd 32 0f    .2.
 	call	L0daf		;; 0cf2: cd af 0d    ...
 	jmp	L0cfb		;; 0cf5: c3 fb 0c    ...
 
-L0cf8:	call	L0f31		;; 0cf8: cd 31 0f    .1.
+L0cf8:	call	asmbya		;; 0cf8: cd 31 0f    .1.
 L0cfb:	call	L0ef4		;; 0cfb: cd f4 0e    ...
-	call	L0ee3		;; 0cfe: cd e3 0e    ...
+	call	synadr		;; 0cfe: cd e3 0e    ...
 	jmp	L0dd5		;; 0d01: c3 d5 0d    ...
 
 L0d04:	dw	10000
@@ -1489,9 +1492,9 @@ L0d04:	dw	10000
 	dw	10
 	dw	1
 
-; convert (L11dc) to decimal (ASCII) in buffer L3008.
-; suppress leading zeros.
-L0d0e:	mvi	b,005h		;; 0d0e: 06 05       ..
+; convert number in (L11dc) to ASCII decimal string appended to tokbuf.
+; leading zeros suppressed. destructive to L11dc.
+L0d0e:	mvi	b,5		;; 0d0e: 06 05       ..
 	lxi	h,L0d04		;; 0d10: 21 04 0d    ...
 L0d13:	mov	e,m		;; 0d13: 5e          ^
 	inx	h		;; 0d14: 23          #
@@ -1523,11 +1526,11 @@ L0d2a:	dad	d		;; 0d2a: 19          .
 	jz	L0d50		;; 0d3d: ca 50 0d    .P.
 	xra	a		;; 0d40: af          .
 	sta	L11db		;; 0d41: 32 db 11    2..
-L0d44:	lxi	h,L3008		;; 0d44: 21 08 30    ..0
+L0d44:	lxi	h,tokbuf		;; 0d44: 21 08 30    ..0
 	mov	e,m		;; 0d47: 5e          ^
 	inr	m		;; 0d48: 34          4
 	mvi	d,0		;; 0d49: 16 00       ..
-	lxi	h,L3009		;; 0d4b: 21 09 30    ..0
+	lxi	h,tokbuf+1		;; 0d4b: 21 09 30    ..0
 	dad	d		;; 0d4e: 19          .
 	mov	m,c		;; 0d4f: 71          q
 L0d50:	pop	h		;; 0d50: e1          .
@@ -1538,7 +1541,7 @@ L0d50:	pop	h		;; 0d50: e1          .
 L0d56:	lda	L3005		;; 0d56: 3a 05 30    :.0
 	cpi	004h		;; 0d59: fe 04       ..
 	cnz	Derror		;; 0d5b: c4 96 11    ...
-	lda	L3009		;; 0d5e: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0d5e: 3a 09 30    :.0
 	cpi	','		;; 0d61: fe 2c       .,
 	rz			;; 0d63: c8          .
 	cpi	';'		;; 0d64: fe 3b       .;
@@ -1554,8 +1557,9 @@ L0d6d:	push	b		;; 0d6d: c5          .
 	pop	b		;; 0d77: c1          .
 	ret			;; 0d78: c9          .
 
-L0d79:	call	L0d6d		;; 0d79: cd 6d 0d    .m.
-L0d7c:	mov	a,h		;; 0d7c: 7c          |
+; check if value can be stored in a byte
+chkbyt:	call	L0d6d		;; 0d79: cd 6d 0d    .m.
+chkbyh:	mov	a,h		;; 0d7c: 7c          |
 	ora	a		;; 0d7d: b7          .
 	mov	a,l		;; 0d7e: 7d          }
 	rz			;; 0d7f: c8          .
@@ -1567,7 +1571,7 @@ L0d86:	call	Verror		;; 0d86: cd 8c 11    ...
 	mov	l,a		;; 0d89: 6f          o
 	ret			;; 0d8a: c9          .
 
-L0d8b:	call	L0d79		;; 0d8b: cd 79 0d    .y.
+L0d8b:	call	chkbyt		;; 0d8b: cd 79 0d    .y.
 	cpi	008h		;; 0d8e: fe 08       ..
 	cnc	Verror		;; 0d90: d4 8c 11    ...
 	ani	007h		;; 0d93: e6 07       ..
@@ -1587,12 +1591,12 @@ L0da0:	call	L0d96		;; 0da0: cd 96 0d    ...
 	mov	a,c		;; 0da8: 79          y
 	ani	030h		;; 0da9: e6 30       .0
 	ora	b		;; 0dab: b0          .
-	jmp	L0f31		;; 0dac: c3 31 0f    .1.
+	jmp	asmbya		;; 0dac: c3 31 0f    .1.
 
-L0daf:	call	L0d79		;; 0daf: cd 79 0d    .y.
-	jmp	L0f31		;; 0db2: c3 31 0f    .1.
+L0daf:	call	chkbyt		;; 0daf: cd 79 0d    .y.
+	jmp	asmbya		;; 0db2: c3 31 0f    .1.
 
-L0db5:	call	L0d6d		;; 0db5: cd 6d 0d    .m.
+asmref:	call	L0d6d		;; 0db5: cd 6d 0d    .m.
 	jmp	asmadr		;; 0db8: c3 58 0f    .X.
 
 L0dbb:	push	psw		;; 0dbb: f5          .
@@ -1600,7 +1604,7 @@ L0dbb:	push	psw		;; 0dbb: f5          .
 	lda	L3005		;; 0dbd: 3a 05 30    :.0
 	cpi	004h		;; 0dc0: fe 04       ..
 	jnz	L0dcd		;; 0dc2: c2 cd 0d    ...
-	lda	L3009		;; 0dc5: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0dc5: 3a 09 30    :.0
 	cpi	','		;; 0dc8: fe 2c       .,
 	jz	L0dd2		;; 0dca: ca d2 0d    ...
 L0dcd:	mvi	a,'C'		;; 0dcd: 3e 43       >C
@@ -1613,7 +1617,7 @@ L0dd5:	call	L0ef4		;; 0dd5: cd f4 0e    ...
 	lda	L3005		;; 0dd8: 3a 05 30    :.0
 	cpi	004h		;; 0ddb: fe 04       ..
 	jnz	L0e20		;; 0ddd: c2 20 0e    . .
-	lda	L3009		;; 0de0: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0de0: 3a 09 30    :.0
 	cpi	cr		;; 0de3: fe 0d       ..
 	jnz	L0dee		;; 0de5: c2 ee 0d    ...
 	call	L1606		;; 0de8: cd 06 16    ...
@@ -1626,7 +1630,7 @@ L0df6:	call	L1606		;; 0df6: cd 06 16    ...
 	lda	L3005		;; 0df9: 3a 05 30    :.0
 	cpi	004h		;; 0dfc: fe 04       ..
 	jnz	L0df6		;; 0dfe: c2 f6 0d    ...
-	lda	L3009		;; 0e01: 3a 09 30    :.0
+	lda	tokbuf+1		;; 0e01: 3a 09 30    :.0
 	cpi	lf		;; 0e04: fe 0a       ..
 	jz	L0176		;; 0e06: ca 76 01    .v.
 	cpi	eof		;; 0e09: fe 1a       ..
@@ -1691,11 +1695,11 @@ L0e6c:	call	L1606		;; 0e6c: cd 06 16    ...
 	ora	a		;; 0e80: b7          .
 	jz	L0e8f		;; 0e81: ca 8f 0e    ...
 	; generate symbol output/file
-	mvi	a,001h		;; 0e84: 3e 01       >.
+	mvi	a,1		;; 0e84: 3e 01       >.
 	sta	L2ea4		;; 0e86: 32 a4 2e    2..
 	call	L25a1		;; 0e89: cd a1 25    ..%
 	call	L0fb1		;; 0e8c: cd b1 0f    ...
-L0e8f:	lhld	L304b		;; 0e8f: 2a 4b 30    *K0
+L0e8f:	lhld	nxheap		;; 0e8f: 2a 4b 30    *K0
 	xchg			;; 0e92: eb          .
 	lhld	syheap		;; 0e93: 2a 54 30    *T0
 	call	subtra		;; 0e96: cd 26 0e    .&.
@@ -1735,7 +1739,7 @@ compr1:	mov	a,d		;; 0edd: 7a          z
 	cmp	l		;; 0ee1: bd          .
 	ret			;; 0ee2: c9          .
 
-L0ee3:	lhld	curadr		;; 0ee3: 2a 50 30    *P0
+synadr:	lhld	curadr		;; 0ee3: 2a 50 30    *P0
 	shld	linadr		;; 0ee6: 22 52 30    "R0
 	ret			;; 0ee9: c9          .
 
@@ -1773,7 +1777,7 @@ L0f1b:	call	L1c12		;; 0f1b: cd 12 1c    ...
 	ret			;; 0f30: c9          .
 
 ; assemble byte, in A, to output files (PRN, HEX
-L0f31:	mov	b,a		;; 0f31: 47          G
+asmbya:	mov	b,a		;; 0f31: 47          G
 ; assemble byte, in B, to output files (PRN, HEX)
 asmbyt:	push	b		;; 0f32: c5          .
 	lda	pass		;; 0f33: 3a 4f 30    :O0
@@ -1803,7 +1807,7 @@ asmadr:	push	h		;; 0f58: e5          .
 	jmp	asmbyt		;; 0f5f: c3 32 0f    .2.
 
 hexdig:	adi	'0'		;; 0f62: c6 30       .0
-	cpi	'0'+10		;; 0f64: fe 3a       .:
+	cpi	'9'+1		;; 0f64: fe 3a       .:
 	rc			;; 0f66: d8          .
 	adi	'A'-'9'-1	;; 0f67: c6 07       ..
 	ret			;; 0f69: c9          .
@@ -1873,7 +1877,7 @@ L0fc4:	mov	m,a		;; 0fc4: 77          w
 	;
 L0fca:	lhld	cursym		;; 0fca: 2a 56 30    *V0
 	xchg			;; 0fcd: eb          .
-	lhld	L304b		;; 0fce: 2a 4b 30    *K0
+	lhld	nxheap		;; 0fce: 2a 4b 30    *K0
 	mov	a,e		;; 0fd1: 7b          {
 	sub	l		;; 0fd2: 95          .
 	mov	a,d		;; 0fd3: 7a          z
@@ -1885,7 +1889,7 @@ L0fca:	lhld	cursym		;; 0fca: 2a 56 30    *V0
 	shld	L3058		;; 0fdf: 22 58 30    "X0
 	jz	L0ffd		;; 0fe2: ca fd 0f    ...
 	call	L1c12		;; 0fe5: cd 12 1c    ...
-	cpi	006h		;; 0fe8: fe 06       ..
+	cpi	6		;; 0fe8: fe 06       ..
 	jnz	L100b		;; 0fea: c2 0b 10    ...
 	call	L1c1e		;; 0fed: cd 1e 1c    ...
 L0ff0:	ora	a		;; 0ff0: b7          .
@@ -1914,10 +1918,10 @@ L100b:	lxi	h,L2ea4		;; 100b: 21 a4 2e    ...
 	lda	Qflag		;; 101f: 3a 64 30    :d0
 	ora	a		;; 1022: b7          .
 	jnz	L103c		;; 1023: c2 3c 10    .<.
-	lda	L3008		;; 1026: 3a 08 30    :.0
+	lda	tokbuf		;; 1026: 3a 08 30    :.0
 	cpi	002h		;; 1029: fe 02       ..
 	jc	L103c		;; 102b: da 3c 10    .<.
-	lxi	h,L3009		;; 102e: 21 09 30    ..0
+	lxi	h,tokbuf+1		;; 102e: 21 09 30    ..0
 	mov	a,m		;; 1031: 7e          ~
 	cpi	'?'		;; 1032: fe 3f       .?
 	jnz	L103c		;; 1034: c2 3c 10    .<.
@@ -1925,7 +1929,7 @@ L100b:	lxi	h,L2ea4		;; 100b: 21 a4 2e    ...
 	cmp	m		;; 1038: be          .
 	jz	L1090		;; 1039: ca 90 10    ...
 ; lookup symbol/string?
-L103c:	lda	L3009		;; 103c: 3a 09 30    :.0
+L103c:	lda	tokbuf+1		;; 103c: 3a 09 30    :.0
 	call	hashch		;; 103f: cd a1 0f    ...
 	lxi	h,symtab		;; 1042: 21 ac 2e    ...
 	mvi	d,0		;; 1045: 16 00       ..
@@ -1946,7 +1950,7 @@ L1049:	shld	curhsh		;; 1049: 22 a8 2e    "..
 	ani	00fh		;; 105b: e6 0f       ..
 	inr	a		;; 105d: 3c          <
 	mov	c,a		;; 105e: 4f          O
-	lxi	d,L3008		;; 105f: 11 08 30    ..0
+	lxi	d,tokbuf		;; 105f: 11 08 30    ..0
 	mov	b,m		;; 1062: 46          F
 L1063:	inx	d		;; 1063: 13          .
 	inx	h		;; 1064: 23          #
@@ -2018,8 +2022,8 @@ L10bd:	lhld	cursym		;; 10bd: 2a 56 30    *V0
 	lda	L2ea5		;; 10d7: 3a a5 2e    :..
 	ora	a		;; 10da: b7          .
 	jz	L10fa		;; 10db: ca fa 10    ...
-	mvi	a,009h		;; 10de: 3e 09       >.
-	call	L1175		;; 10e0: cd 75 11    .u.
+	mvi	a,tab		;; 10de: 3e 09       >.
+	call	prnchr		;; 10e0: cd 75 11    .u.
 	lxi	h,L2ea5		;; 10e3: 21 a5 2e    ...
 	mov	a,m		;; 10e6: 7e          ~
 	ani	0f8h		;; 10e7: e6 f8       ..
@@ -2030,26 +2034,26 @@ L10bd:	lhld	cursym		;; 10bd: 2a 56 30    *V0
 	mvi	a,008h		;; 10f1: 3e 08       >.
 	add	m		;; 10f3: 86          .
 	mov	m,a		;; 10f4: 77          w
-	mvi	a,009h		;; 10f5: 3e 09       >.
-	call	L1175		;; 10f7: cd 75 11    .u.
+	mvi	a,tab		;; 10f5: 3e 09       >.
+	call	prnchr		;; 10f7: cd 75 11    .u.
 L10fa:	lda	L2ea5		;; 10fa: 3a a5 2e    :..
 	add	b		;; 10fd: 80          .
-	adi	005h		;; 10fe: c6 05       ..
-	cpi	'P'		;; 1100: fe 50       .P
+	adi	5		;; 10fe: c6 05       ..
+	cpi	80		;; 1100: fe 50       .P
 	jc	L1127		;; 1102: da 27 11    .'.
 L1105:	lxi	h,prncol		;; 1105: 21 c9 11    ...
 	dcr	m		;; 1108: 35          5
 	mov	e,m		;; 1109: 5e          ^
-	mvi	d,000h		;; 110a: 16 00       ..
+	mvi	d,0		;; 110a: 16 00       ..
 	dcx	d		;; 110c: 1b          .
 	lxi	h,prnbuf		;; 110d: 21 8c 2f    ../
 	dad	d		;; 1110: 19          .
 	mov	a,m		;; 1111: 7e          ~
-	cpi	009h		;; 1112: fe 09       ..
+	cpi	tab		;; 1112: fe 09       ..
 	jz	L1105		;; 1114: ca 05 11    ...
 	lxi	h,prncol		;; 1117: 21 c9 11    ...
 	mov	a,m		;; 111a: 7e          ~
-	mvi	m,000h		;; 111b: 36 00       6.
+	mvi	m,0		;; 111b: 36 00       6.
 	sta	L3004		;; 111d: 32 04 30    2.0
 	call	L2595		;; 1120: cd 95 25    ..%
 	xra	a		;; 1123: af          .
@@ -2062,10 +2066,10 @@ L1127:	call	L1c18		;; 1127: cd 18 1c    ...
 	mov	a,l		;; 1130: 7d          }
 	call	prnhex		;; 1131: cd 7a 0f    .z.
 	mvi	a,' '		;; 1134: 3e 20       > 
-	call	L1175		;; 1136: cd 75 11    .u.
+	call	prnchr		;; 1136: cd 75 11    .u.
 	lxi	h,L2ea5		;; 1139: 21 a5 2e    ...
 	mov	a,m		;; 113c: 7e          ~
-	adi	005h		;; 113d: c6 05       ..
+	adi	5		;; 113d: c6 05       ..
 	mov	m,a		;; 113f: 77          w
 	lda	L2ea6		;; 1140: 3a a6 2e    :..
 L1143:	ora	a		;; 1143: b7          .
@@ -2073,7 +2077,7 @@ L1143:	ora	a		;; 1143: b7          .
 	dcr	a		;; 1147: 3d          =
 	push	psw		;; 1148: f5          .
 	call	L1c2a		;; 1149: cd 2a 1c    .*.
-	call	L1175		;; 114c: cd 75 11    .u.
+	call	prnchr		;; 114c: cd 75 11    .u.
 	lxi	h,L2ea5		;; 114f: 21 a5 2e    ...
 	inr	m		;; 1152: 34          4
 	pop	psw		;; 1153: f1          .
@@ -2095,7 +2099,7 @@ L1164:	lxi	h,L2ea7		;; 1164: 21 a7 2e    ...
 	call	L2595		;; 1171: cd 95 25    ..%
 	ret			;; 1174: c9          .
 
-L1175:	lxi	h,prncol		;; 1175: 21 c9 11    ...
+prnchr:	lxi	h,prncol		;; 1175: 21 c9 11    ...
 	mov	e,m		;; 1178: 5e          ^
 	mvi	d,0		;; 1179: 16 00       ..
 	inr	m		;; 117b: 34          4
@@ -2182,7 +2186,8 @@ L11ee:	shld	L2ef4		;; 11ee: 22 f4 2e    "..
 	mvi	m,0		;; 11f5: 36 00       6.
 	ret			;; 11f7: c9          .
 
-	db	0,0,0afh,0,0,0,14h,13h ; serial number?
+	db	0,0
+	db	0afh,0,0,0,14h,13h ; serial number?
 
 ; Module begin L1200
 L1200:	jmp	L1600		;; 0c3h,0,16h
@@ -2196,7 +2201,7 @@ L120c:	db	0
 L120d:	db	0,0,0,0,0,0,0,0,0,0
 L1217:	db	0,0,0,0,0,0,0,0,0,0
 
-; some sort of stack/fifo - 16 bytes/8 words
+; some sort of stack/fifo - 8 entries
 L1221:	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 L1231:	db	0	; L120d "sp"
@@ -2271,7 +2276,7 @@ L128c:	call	L126f		;; 128c: cd 6f 12    .o.
 	ret			;; 1293: c9          .
 
 L1294:	mov	l,a		;; 1294: 6f          o
-	mvi	h,000h		;; 1295: 26 00       &.
+	mvi	h,0		;; 1295: 26 00       &.
 	dad	h		;; 1297: 29          )
 	lxi	d,L12a1		;; 1298: 11 a1 12    ...
 	dad	d		;; 129b: 19          .
@@ -2281,42 +2286,43 @@ L1294:	mov	l,a		;; 1294: 6f          o
 	mov	l,e		;; 129f: 6b          k
 	pchl			;; 12a0: e9          .
 
-L12a1:	dw	L1339
-	dw	L1342
-	dw	L1349
-	dw	L134f
-	dw	L135b
-	dw	L136f
-	dw	L1376
-	dw	L1380
-	dw	L138f
-	dw	L139b
-	dw	L13a8
-	dw	L13b4
-	dw	L13bb
-	dw	L13c2
-	dw	L13da
-	dw	L13e1
-	dw	L13ed
-	dw	L13f9
-	dw	L1405
-	dw	L140c
-	dw	Eerror
+L12a1:	dw	L1339	; 0
+	dw	L1342	; 1
+	dw	L1349	; 2
+	dw	L134f	; 3
+	dw	L135b	; 4
+	dw	L136f	; 5
+	dw	L1376	; 6
+	dw	L1380	; 7
+	dw	L138f	; 8
+	dw	L139b	; 9
+	dw	L13a8	; 10
+	dw	L13b4	; 11
+	dw	L13bb	; 12
+	dw	L13c2	; 13
+	dw	L13da	; 14
+	dw	L13e1	; 15
+	dw	L13ed	; 16
+	dw	L13f9	; 17
+	dw	L1405	; 18
+	dw	L140c	; 19
+	dw	Eerror	; 20
+
 L12cb:	call	L128c		;; 12cb: cd 8c 12    ...
 	mov	a,d		;; 12ce: 7a          z
 	ora	a		;; 12cf: b7          .
 	jnz	L12d7		;; 12d0: c2 d7 12    ...
 	mov	a,e		;; 12d3: 7b          {
-	cpi	011h		;; 12d4: fe 11       ..
+	cpi	17		;; 12d4: fe 11       ..
 	rc			;; 12d6: d8          .
 L12d7:	call	Eerror		;; 12d7: cd e4 15    ...
-	mvi	a,010h		;; 12da: 3e 10       >.
+	mvi	a,16		;; 12da: 3e 10       >.
 	ret			;; 12dc: c9          .
 
 L12dd:	xra	a		;; 12dd: af          .
 	sub	l		;; 12de: 95          .
 	mov	l,a		;; 12df: 6f          o
-	mvi	a,000h		;; 12e0: 3e 00       >.
+	mvi	a,0		;; 12e0: 3e 00       >.
 	sbb	h		;; 12e2: 9c          .
 	mov	h,a		;; 12e3: 67          g
 	ret			;; 12e4: c9          .
@@ -2326,7 +2332,7 @@ L12e5:	call	L128c		;; 12e5: cd 8c 12    ...
 div16:	xchg			;; 12e8: eb          .
 	shld	L131b		;; 12e9: 22 1b 13    "..
 	lxi	h,L131d		;; 12ec: 21 1d 13    ...
-	mvi	m,011h		;; 12ef: 36 11       6.
+	mvi	m,17		;; 12ef: 36 11       6.
 	lxi	b,0		;; 12f1: 01 00 00    ...
 	push	b		;; 12f4: c5          .
 	xra	a		;; 12f5: af          .
@@ -2360,6 +2366,7 @@ L1314:	lxi	h,L131d		;; 1314: 21 1d 13    ...
 
 L131b:	db	0,0
 L131d:	db	0
+
 L131e:	mov	b,h		;; 131e: 44          D
 	mov	c,l		;; 131f: 4d          M
 	lxi	h,0		;; 1320: 21 00 00    ...
@@ -2507,13 +2514,13 @@ L1405:	call	L126f		;; 1405: cd 6f 12    .o.
 	jmp	L140f		;; 1409: c3 0f 14    ...
 
 L140c:	call	L126f		;; 140c: cd 6f 12    .o.
-L140f:	mvi	h,000h		;; 140f: 26 00       &.
+L140f:	mvi	h,0		;; 140f: 26 00       &.
 L1411:	jmp	L1233		;; 1411: c3 33 12    .3.
 
 endstm:	lda	L3005		;; 1414: 3a 05 30    :.0
 	cpi	004h		;; 1417: fe 04       ..
 	rnz			;; 1419: c0          .
-	lda	L3009		;; 141a: 3a 09 30    :.0
+	lda	tokbuf+1		;; 141a: 3a 09 30    :.0
 	cpi	cr		;; 141d: fe 0d       ..
 	rz			;; 141f: c8          .
 	cpi	';'		;; 1420: fe 3b       .;
@@ -2551,7 +2558,7 @@ L1444:	lxi	h,L1231		;; 1444: 21 31 12    .1.
 	jmp	L1444		;; 1459: c3 44 14    .D.
 
 L145c:	lda	L1232		;; 145c: 3a 32 12    :2.
-	cpi	002h		;; 145f: fe 02       ..
+	cpi	2		;; 145f: fe 02       ..
 	cnz	Eerror		;; 1461: c4 e4 15    ...
 	lda	curerr		;; 1464: 3a 8c 2f    :./
 	cpi	' '		;; 1467: fe 20       . 
@@ -2560,20 +2567,20 @@ L145c:	lda	L1232		;; 145c: 3a 32 12    :2.
 	shld	L3049		;; 146d: 22 49 30    "I0
 	ret			;; 1470: c9          .
 
-; get 1 or 2 chars from L3008 buffer (error if 0 or >2)
+; get 1 or 2 chars from tokbuf buffer (error if 0 or >2)
 L1471:	lda	curerr		;; 1471: 3a 8c 2f    :./
 	cpi	' '		;; 1474: fe 20       . 
 	jnz	L15d0		;; 1476: c2 d0 15    ...
 	lda	L3005		;; 1479: 3a 05 30    :.0
 	cpi	003h		;; 147c: fe 03       ..
 	jnz	L149d		;; 147e: c2 9d 14    ...
-	lda	L3008		;; 1481: 3a 08 30    :.0
+	lda	tokbuf		;; 1481: 3a 08 30    :.0
 	ora	a		;; 1484: b7          .
 	cz	Eerror		;; 1485: cc e4 15    ...
 	cpi	003h		;; 1488: fe 03       ..
 	cnc	Eerror		;; 148a: d4 e4 15    ...
 	mvi	d,0		;; 148d: 16 00       ..
-	lxi	h,L3009		;; 148f: 21 09 30    ..0
+	lxi	h,tokbuf+1		;; 148f: 21 09 30    ..0
 	mov	e,m		;; 1492: 5e          ^
 	inx	h		;; 1493: 23          #
 	dcr	a		;; 1494: 3d          =
@@ -2589,9 +2596,9 @@ L149d:	cpi	002h		;; 149d: fe 02       ..
 
 L14a8:	call	L2106		;; 14a8: cd 06 21    ...
 	jnz	L158d		;; 14ab: c2 8d 15    ...
-	cpi	019h		;; 14ae: fe 19       ..
+	cpi	25		;; 14ae: fe 19       ..
 	jnc	L1582		;; 14b0: d2 82 15    ...
-	cpi	018h		;; 14b3: fe 18       ..
+	cpi	24		;; 14b3: fe 18       ..
 	jnz	L14f1		;; 14b5: c2 f1 14    ...
 	call	L160c		;; 14b8: cd 0c 16    ...
 	call	endstm		;; 14bb: cd 14 14    ...
@@ -2599,7 +2606,7 @@ L14a8:	call	L2106		;; 14a8: cd 06 21    ...
 	lda	L3005		;; 14c1: 3a 05 30    :.0
 	cpi	003h		;; 14c4: fe 03       ..
 	jnz	L14d9		;; 14c6: c2 d9 14    ...
-	lda	L3008		;; 14c9: 3a 08 30    :.0
+	lda	tokbuf		;; 14c9: 3a 08 30    :.0
 	ora	a		;; 14cc: b7          .
 	jnz	L14d9		;; 14cd: c2 d9 14    ...
 	call	L1606		;; 14d0: cd 06 16    ...
@@ -2615,7 +2622,7 @@ L14e8:	lxi	h,0ffffh	;; 14e8: 21 ff ff    ...
 L14eb:	call	L15d6		;; 14eb: cd d6 15    ...
 	jmp	L143e		;; 14ee: c3 3e 14    .>.
 
-L14f1:	cpi	014h		;; 14f1: fe 14       ..
+L14f1:	cpi	20		;; 14f1: fe 14       ..
 	mov	c,a		;; 14f3: 4f          O
 	lda	L120c		;; 14f4: 3a 0c 12    :..
 	jnz	L1507		;; 14f7: c2 07 15    ...
@@ -2634,7 +2641,7 @@ L150b:	push	b		;; 150b: c5          .
 	jz	L1530		;; 1510: ca 30 15    .0.
 	mov	e,a		;; 1513: 5f          _
 	dcr	e		;; 1514: 1d          .
-	mvi	d,000h		;; 1515: 16 00       ..
+	mvi	d,0		;; 1515: 16 00       ..
 	lxi	h,L1217		;; 1517: 21 17 12    ...
 	dad	d		;; 151a: 19          .
 	mov	a,m		;; 151b: 7e          ~
@@ -2651,7 +2658,7 @@ L150b:	push	b		;; 150b: c5          .
 
 L1530:	pop	b		;; 1530: c1          .
 	mov	a,c		;; 1531: 79          y
-	cpi	015h		;; 1532: fe 15       ..
+	cpi	21		;; 1532: fe 15       ..
 	jnz	L1555		;; 1534: c2 55 15    .U.
 	lxi	h,L1231		;; 1537: 21 31 12    .1.
 	mov	a,m		;; 153a: 7e          ~
@@ -2660,11 +2667,11 @@ L1530:	pop	b		;; 1530: c1          .
 	dcr	a		;; 153f: 3d          =
 	mov	m,a		;; 1540: 77          w
 	mov	e,a		;; 1541: 5f          _
-	mvi	d,000h		;; 1542: 16 00       ..
+	mvi	d,0		;; 1542: 16 00       ..
 	lxi	h,L120d		;; 1544: 21 0d 12    ...
 	dad	d		;; 1547: 19          .
 	mov	a,m		;; 1548: 7e          ~
-	cpi	014h		;; 1549: fe 14       ..
+	cpi	20		;; 1549: fe 14       ..
 	jz	L1551		;; 154b: ca 51 15    .Q.
 L154e:	call	Eerror		;; 154e: cd e4 15    ...
 L1551:	xra	a		;; 1551: af          .
@@ -2676,32 +2683,32 @@ L155a:	sta	L120c		;; 155a: 32 0c 12    2..
 	jmp	L15d0		;; 155d: c3 d0 15    ...
 
 L1560:	mov	a,c		;; 1560: 79          y
-	cpi	005h		;; 1561: fe 05       ..
+	cpi	5		;; 1561: fe 05       ..
 	jz	L15d0		;; 1563: ca d0 15    ...
-	cpi	006h		;; 1566: fe 06       ..
+	cpi	6		;; 1566: fe 06       ..
 	jnz	L1570		;; 1568: c2 70 15    .p.
 	inr	a		;; 156b: 3c          <
 	mov	c,a		;; 156c: 4f          O
 	jmp	L150b		;; 156d: c3 0b 15    ...
 
-L1570:	cpi	00eh		;; 1570: fe 0e       ..
+L1570:	cpi	14		;; 1570: fe 0e       ..
 	jz	L150b		;; 1572: ca 0b 15    ...
-	cpi	012h		;; 1575: fe 12       ..
+	cpi	18		;; 1575: fe 12       ..
 	jz	L150b		;; 1577: ca 0b 15    ...
-	cpi	013h		;; 157a: fe 13       ..
+	cpi	19		;; 157a: fe 13       ..
 	cnz	Eerror		;; 157c: c4 e4 15    ...
 	jmp	L150b		;; 157f: c3 0b 15    ...
 
-L1582:	cpi	eof		;; 1582: fe 1a       ..
+L1582:	cpi	26		;; 1582: fe 1a       ..
 	cz	Eerror		;; 1584: cc e4 15    ...
 	mov	l,b		;; 1587: 68          h
-	mvi	h,000h		;; 1588: 26 00       &.
+	mvi	h,0		;; 1588: 26 00       &.
 	jmp	L15cd		;; 158a: c3 cd 15    ...
 
 L158d:	lda	L3005		;; 158d: 3a 05 30    :.0
 	cpi	004h		;; 1590: fe 04       ..
 	jnz	L15ac		;; 1592: c2 ac 15    ...
-	lda	L3009		;; 1595: 3a 09 30    :.0
+	lda	tokbuf+1		;; 1595: 3a 09 30    :.0
 	cpi	'$'		;; 1598: fe 24       .$
 	jz	L15a6		;; 159a: ca a6 15    ...
 	call	Eerror		;; 159d: cd e4 15    ...
@@ -2769,7 +2776,7 @@ L1619:	lda	L2ea3		;; 1619: 3a a3 2e    :..
 	jz	L163d		;; 162d: ca 3d 16    .=.
 	lxi	h,L1618		;; 1630: 21 18 16    ...
 	inr	m		;; 1633: 34          4
-	mvi	a,000h		;; 1634: 3e 00       >.
+	mvi	a,0		;; 1634: 3e 00       >.
 	rnz			;; 1636: c0          .
 	call	L1be7		;; 1637: cd e7 1b    ...
 	call	L2595		;; 163a: cd 95 25    ..%
@@ -2806,7 +2813,7 @@ L1666:	push	psw		;; 1666: f5          .
 	cpi	120		;; 1674: fe 78       .x
 	jnc	L1687		;; 1676: d2 87 16    ...
 	mov	e,a		;; 1679: 5f          _
-	mvi	d,000h		;; 167a: 16 00       ..
+	mvi	d,0		;; 167a: 16 00       ..
 	inr	a		;; 167c: 3c          <
 	sta	L3004		;; 167d: 32 04 30    2.0
 	lxi	h,prnbuf	;; 1680: 21 8c 2f    ../
@@ -2831,7 +2838,7 @@ L1697:	xra	a		;; 1697: af          .
 	call	L1619		;; 169e: cd 19 16    ...
 	sta	L2f65		;; 16a1: 32 65 2f    2e/
 	lda	L3005		;; 16a4: 3a 05 30    :.0
-	cpi	006h		;; 16a7: fe 06       ..
+	cpi	6		;; 16a7: fe 06       ..
 	rz			;; 16a9: c8          .
 	lda	L2f65		;; 16aa: 3a 65 2f    :e/
 	cpi	128		;; 16ad: fe 80       ..
@@ -2853,12 +2860,12 @@ L16ca:	call	L1689		;; 16ca: cd 89 16    ...
 	jz	L16f0		;; 16cd: ca f0 16    ...
 	lxi	h,L2f66		;; 16d0: 21 66 2f    .f/
 	mov	a,m		;; 16d3: 7e          ~
-	cpi	00fh		;; 16d4: fe 0f       ..
+	cpi	15		;; 16d4: fe 0f       ..
 	jnc	L16ee		;; 16d6: d2 ee 16    ...
 	inr	m		;; 16d9: 34          4
 	lxi	h,L2f67		;; 16da: 21 67 2f    .g/
 	mov	e,a		;; 16dd: 5f          _
-	mvi	d,000h		;; 16de: 16 00       ..
+	mvi	d,0		;; 16de: 16 00       ..
 	dad	d		;; 16e0: 19          .
 	lda	L2f65		;; 16e1: 3a 65 2f    :e/
 	mov	m,a		;; 16e4: 77          w
@@ -2889,7 +2896,7 @@ L170b:	lxi	h,L1617		;; 170b: 21 17 16    ...
 	jnz	L171d		;; 170f: c2 1d 17    ...
 	call	L1bdb		;; 1712: cd db 1b    ...
 	lxi	h,L2f66		;; 1715: 21 66 2f    .f/
-	mvi	m,000h		;; 1718: 36 00       6.
+	mvi	m,0		;; 1718: 36 00       6.
 	shld	L2ef4		;; 171a: 22 f4 2e    "..
 L171d:	lxi	h,L2f66		;; 171d: 21 66 2f    .f/
 	mov	a,m		;; 1720: 7e          ~
@@ -2899,7 +2906,7 @@ L171d:	lxi	h,L2f66		;; 171d: 21 66 2f    .f/
 	lxi	h,L2f64		;; 1726: 21 64 2f    .d/
 	mov	e,m		;; 1729: 5e          ^
 	inr	m		;; 172a: 34          4
-	mvi	d,000h		;; 172b: 16 00       ..
+	mvi	d,0		;; 172b: 16 00       ..
 	lxi	h,L2f67		;; 172d: 21 67 2f    .g/
 	dad	d		;; 1730: 19          .
 	mov	a,m		;; 1731: 7e          ~
@@ -2999,11 +3006,11 @@ L17f1:	call	L180e		;; 17f1: cd 0e 18    ...
 	ret			;; 180d: c9          .
 
 L180e:	xra	a		;; 180e: af          .
-	sta	L3008		;; 180f: 32 08 30    2.0
+	sta	tokbuf		;; 180f: 32 08 30    2.0
 	sta	L1610		;; 1812: 32 10 16    2..
 	ret			;; 1815: c9          .
 
-L1816:	lxi	h,L3008		;; 1816: 21 08 30    ..0
+L1816:	lxi	h,tokbuf		;; 1816: 21 08 30    ..0
 	mov	a,m		;; 1819: 7e          ~
 	cpi	64		;; 181a: fe 40       .@
 	jc	L1824		;; 181c: da 24 18    .$.
@@ -3028,7 +3035,7 @@ L182f:	mov	a,m		;; 182f: 7e          ~
 ; is char '0'-'9'?
 L1836:	lda	L305b		;; 1836: 3a 5b 30    :[0
 L1839:	sui	'0'		;; 1839: d6 30       .0
-	cpi	10		;; 183b: fe 0a       ..
+	cpi	'9'-'0'+1	;; 183b: fe 0a       ..
 	ral			;; 183d: 17          .
 	ani	001h		;; 183e: e6 01       ..
 	ret			;; 1840: c9          .
@@ -3038,7 +3045,7 @@ L1841:	call	L1836		;; 1841: cd 36 18    .6.
 	rnz			;; 1844: c0          .
 	lda	L305b		;; 1845: 3a 5b 30    :[0
 	sui	'A'		;; 1848: d6 41       .A
-	cpi	6		;; 184a: fe 06       ..
+	cpi	'F'-'A'+1	;; 184a: fe 06       ..
 	ral			;; 184c: 17          .
 	ani	001h		;; 184d: e6 01       ..
 	ret			;; 184f: c9          .
@@ -3109,7 +3116,7 @@ L18b6:	xra	a		;; 18b6: af          .
 	jz	L1952		;; 18bf: ca 52 19    .R.
 	cpi	';'		;; 18c2: fe 3b       .;
 	jnz	L192f		;; 18c4: c2 2f 19    ./.
-	mvi	a,006h		;; 18c7: 3e 06       >.
+	mvi	a,6		;; 18c7: 3e 06       >.
 	sta	L3005		;; 18c9: 32 05 30    2.0
 	lda	L305a		;; 18cc: 3a 5a 30    :Z0
 	ora	a		;; 18cf: b7          .
@@ -3221,7 +3228,7 @@ L19a6:	lda	L305b		;; 19a6: 3a 5b 30    :[0
 	lda	L305a		;; 19bb: 3a 5a 30    :Z0
 	ora	a		;; 19be: b7          .
 	rnz			;; 19bf: c0          .
-	lda	L3009		;; 19c0: 3a 09 30    :.0
+	lda	tokbuf+1		;; 19c0: 3a 09 30    :.0
 	cpi	'='		;; 19c3: fe 3d       .=
 	jnz	L19ce		;; 19c5: c2 ce 19    ...
 	lxi	h,'EQ'		;; 19c8: 21 45 51    .EQ
@@ -3245,8 +3252,8 @@ L19e4:	cpi	'>'		;; 19e4: fe 3e       .>
 	lxi	h,'GE'		;; 19f2: 21 47 45    .GE
 L19f5:	xra	a		;; 19f5: af          .
 	sta	L305b		;; 19f6: 32 5b 30    2[0
-L19f9:	shld	L3009		;; 19f9: 22 09 30    ".0
-	lxi	h,L3008		;; 19fc: 21 08 30    ..0
+L19f9:	shld	tokbuf+1		;; 19f9: 22 09 30    ".0
+	lxi	h,tokbuf		;; 19fc: 21 08 30    ..0
 	inr	m		;; 19ff: 34          4
 	mvi	a,001h		;; 1a00: 3e 01       >.
 	sta	L3005		;; 1a02: 32 05 30    2.0
@@ -3262,6 +3269,7 @@ L1a06:	lxi	h,L305b		;; 1a06: 21 5b 30    .[0
 	jnz	L19a6		;; 1a1a: c2 a6 19    ...
 	ret			;; 1a1d: c9          .
 
+; determine number base... from suffix
 L1a1e:	cpi	002h		;; 1a1e: fe 02       ..
 	jnz	L1ab4		;; 1a20: c2 b4 1a    ...
 	call	L182f		;; 1a23: cd 2f 18    ./.
@@ -3273,12 +3281,12 @@ L1a1e:	cpi	002h		;; 1a1e: fe 02       ..
 	jz	L1a3c		;; 1a34: ca 3c 1a    .<.
 	cpi	'Q'		;; 1a37: fe 51       .Q
 	jnz	L1a41		;; 1a39: c2 41 1a    .A.
-L1a3c:	mvi	a,008h		;; 1a3c: 3e 08       >.
+L1a3c:	mvi	a,8		;; 1a3c: 3e 08       >.
 	jmp	L1a48		;; 1a3e: c3 48 1a    .H.
 
 L1a41:	cpi	'H'		;; 1a41: fe 48       .H
 	jnz	L1a52		;; 1a43: c2 52 1a    .R.
-	mvi	a,010h		;; 1a46: 3e 10       >.
+	mvi	a,16		;; 1a46: 3e 10       >.
 L1a48:	sta	L1610		;; 1a48: 32 10 16    2..
 	xra	a		;; 1a4b: af          .
 	sta	L305b		;; 1a4c: 32 5b 30    2[0
@@ -3287,18 +3295,18 @@ L1a48:	sta	L1610		;; 1a48: 32 10 16    2..
 L1a52:	lda	L160f		;; 1a52: 3a 0f 16    :..
 	cpi	'B'		;; 1a55: fe 42       .B
 	jnz	L1a5f		;; 1a57: c2 5f 1a    ._.
-	mvi	a,002h		;; 1a5a: 3e 02       >.
+	mvi	a,2		;; 1a5a: 3e 02       >.
 	jmp	L1a66		;; 1a5c: c3 66 1a    .f.
 
 L1a5f:	cpi	'D'		;; 1a5f: fe 44       .D
-	mvi	a,lf		;; 1a61: 3e 0a       >.
+	mvi	a,10		;; 1a61: 3e 0a       >.
 	jnz	L1a6a		;; 1a63: c2 6a 1a    .j.
-L1a66:	lxi	h,L3008		;; 1a66: 21 08 30    ..0
+L1a66:	lxi	h,tokbuf		;; 1a66: 21 08 30    ..0
 	dcr	m		;; 1a69: 35          5
 L1a6a:	sta	L1610		;; 1a6a: 32 10 16    2..
 L1a6d:	lxi	h,0		;; 1a6d: 21 00 00    ...
 	shld	L3006		;; 1a70: 22 06 30    ".0
-	lxi	h,L3008		;; 1a73: 21 08 30    ..0
+	lxi	h,tokbuf		;; 1a73: 21 08 30    ..0
 	mov	c,m		;; 1a76: 4e          N
 	inx	h		;; 1a77: 23          #
 L1a78:	mov	a,m		;; 1a78: 7e          ~
@@ -3315,7 +3323,7 @@ L1a86:	push	h		;; 1a86: e5          .
 	lxi	h,L1610		;; 1a89: 21 10 16    ...
 	cmp	m		;; 1a8c: be          .
 	cnc	L1bd5		;; 1a8d: d4 d5 1b    ...
-	mvi	b,000h		;; 1a90: 06 00       ..
+	mvi	b,0		;; 1a90: 06 00       ..
 	mov	a,m		;; 1a92: 7e          ~
 	lhld	L3006		;; 1a93: 2a 06 30    *.0
 	xchg			;; 1a96: eb          .
@@ -3548,8 +3556,9 @@ L1c4e:	db	44h,3fh,0b2h,3ch,1eh,3dh,0c7h,3dh,0a1h,3ah,0,0,65h,3eh,0,0,3fh,3bh,20h
 	db	0a8h,3bh,38h,3fh
 L1d4e:	db	1
 L1d4f:	dw	L1c4e
+
 L1d51:	lxi	h,L1c4e		;; 1d51: 21 4e 1c    .N.
-	mvi	b,080h		;; 1d54: 06 80       ..
+	mvi	b,256/2		;; 1d54: 06 80       ..
 	xra	a		;; 1d56: af          .
 L1d57:	mov	m,a		;; 1d57: 77          w
 	inx	h		;; 1d58: 23          #
@@ -3562,7 +3571,7 @@ L1d57:	mov	m,a		;; 1d57: 77          w
 	ret			;; 1d65: c9          .
 
 L1d66:	lxi	h,L2e83		;; 1d66: 21 83 2e    ...
-	mvi	b,010h		;; 1d69: 06 10       ..
+	mvi	b,32/2		;; 1d69: 06 10       ..
 	xra	a		;; 1d6b: af          .
 L1d6c:	mov	m,a		;; 1d6c: 77          w
 	inx	h		;; 1d6d: 23          #
@@ -3579,11 +3588,11 @@ L1d6c:	mov	m,a		;; 1d6c: 77          w
 
 L1d7e:	lxi	h,L2ea3		;; 1d7e: 21 a3 2e    ...
 	mov	a,m		;; 1d81: 7e          ~
-	cpi	00fh		;; 1d82: fe 0f       ..
-	jnc	L1e15		;; 1d84: d2 15 1e    ...
+	cpi	15		;; 1d82: fe 0f       ..
+	jnc	Berro2		;; 1d84: d2 15 1e    ...
 	inr	m		;; 1d87: 34          4
 	mov	e,m		;; 1d88: 5e          ^
-	mvi	d,000h		;; 1d89: 16 00       ..
+	mvi	d,0		;; 1d89: 16 00       ..
 	lxi	h,L2ea4		;; 1d8b: 21 a4 2e    ...
 	mov	a,m		;; 1d8e: 7e          ~
 	dad	d		;; 1d8f: 19          .
@@ -3623,10 +3632,10 @@ L1dbc:	mov	c,m		;; 1dbc: 4e          N
 L1dc5:	lxi	h,L2ea3		;; 1dc5: 21 a3 2e    ...
 	mov	a,m		;; 1dc8: 7e          ~
 	ora	a		;; 1dc9: b7          .
-	jz	L1e15		;; 1dca: ca 15 1e    ...
+	jz	Berro2		;; 1dca: ca 15 1e    ...
 	push	h		;; 1dcd: e5          .
 	mov	e,m		;; 1dce: 5e          ^
-	mvi	d,000h		;; 1dcf: 16 00       ..
+	mvi	d,0		;; 1dcf: 16 00       ..
 	lxi	h,L2ea4		;; 1dd1: 21 a4 2e    ...
 	call	L1e04		;; 1dd4: cd 04 1e    ...
 	lxi	h,L2ed4		;; 1dd7: 21 d4 2e    ...
@@ -3666,10 +3675,10 @@ L1e0a:	push	h		;; 1e0a: e5          .
 	mov	m,b		;; 1e13: 70          p
 	ret			;; 1e14: c9          .
 
-L1e15:	mvi	a,'B'		;; 1e15: 3e 42       >B
+Berro2:	mvi	a,'B'		;; 1e15: 3e 42       >B
 	jmp	setere		;; 1e17: c3 98 25    ..%
 
-L1e1a:	lxi	h,L3008		;; 1e1a: 21 08 30    ..0
+L1e1a:	lxi	h,tokbuf		;; 1e1a: 21 08 30    ..0
 	shld	L20d6		;; 1e1d: 22 d6 20    ". 
 L1e20:	lhld	L20d6		;; 1e20: 2a d6 20    *. 
 	mov	b,m		;; 1e23: 46          F
@@ -3709,7 +3718,7 @@ L1e47:	call	L1e89		;; 1e47: cd 89 1e    ...
 	jz	L1e74		;; 1e54: ca 74 1e    .t.
 	lxi	h,L2ea3		;; 1e57: 21 a3 2e    ...
 	mov	c,m		;; 1e5a: 4e          N
-	mvi	b,000h		;; 1e5b: 06 00       ..
+	mvi	b,0		;; 1e5b: 06 00       ..
 	lxi	h,L2ea4		;; 1e5d: 21 a4 2e    ...
 	dad	b		;; 1e60: 09          .
 L1e61:	mov	a,c		;; 1e61: 79          y
@@ -3758,7 +3767,7 @@ L1e8f:	lxi	h,L2f66		;; 1e8f: 21 66 2f    .f/
 L1ea9:	call	L1e1a		;; 1ea9: cd 1a 1e    ...
 	lxi	h,L1c4e		;; 1eac: 21 4e 1c    .N.
 	shld	L1d4f		;; 1eaf: 22 4f 1d    "O.
-	lxi	h,L3008		;; 1eb2: 21 08 30    ..0
+	lxi	h,tokbuf		;; 1eb2: 21 08 30    ..0
 	shld	L20d6		;; 1eb5: 22 d6 20    ". 
 L1eb8:	lhld	L20d6		;; 1eb8: 2a d6 20    *. 
 	mov	a,m		;; 1ebb: 7e          ~
@@ -3805,10 +3814,10 @@ L1ef8:	lhld	cursym		;; 1ef8: 2a 56 30    *V0
 	xchg			;; 1efe: eb          .
 	jmp	L1ed2		;; 1eff: c3 d2 1e    ...
 
-L1f02:	lxi	h,L3008		;; 1f02: 21 08 30    ..0
+L1f02:	lxi	h,tokbuf		;; 1f02: 21 08 30    ..0
 	mov	e,m		;; 1f05: 5e          ^
 	mvi	d,000h		;; 1f06: 16 00       ..
-	lhld	L304b		;; 1f08: 2a 4b 30    *K0
+	lhld	nxheap		;; 1f08: 2a 4b 30    *K0
 	shld	cursym		;; 1f0b: 22 56 30    "V0
 	dad	d		;; 1f0e: 19          .
 	lxi	d,5		;; 1f0f: 11 05 00    ...
@@ -3821,7 +3830,7 @@ L1f02:	lxi	h,L3008		;; 1f02: 21 08 30    ..0
 	sbb	h		;; 1f1a: 9c          .
 	xchg			;; 1f1b: eb          .
 	jnc	L1ff3		;; 1f1c: d2 f3 1f    ...
-	shld	L304b		;; 1f1f: 22 4b 30    "K0
+	shld	nxheap		;; 1f1f: 22 4b 30    "K0
 	lxi	h,L1c4e		;; 1f22: 21 4e 1c    .N.
 	shld	L1d4f		;; 1f25: 22 4f 1d    "O.
 	call	L1f31		;; 1f28: cd 31 1f    .1.
@@ -3836,7 +3845,7 @@ L1f31:	lhld	cursym		;; 1f31: 2a 56 30    *V0
 	xchg			;; 1f34: eb          .
 	lxi	h,L1d4e		;; 1f35: 21 4e 1d    .N.
 	mov	c,m		;; 1f38: 4e          N
-	mvi	b,000h		;; 1f39: 06 00       ..
+	mvi	b,0		;; 1f39: 06 00       ..
 	lhld	L1d4f		;; 1f3b: 2a 4f 1d    *O.
 	dad	b		;; 1f3e: 09          .
 	dad	b		;; 1f3f: 09          .
@@ -3850,11 +3859,11 @@ L1f31:	lhld	cursym		;; 1f31: 2a 56 30    *V0
 	mov	m,c		;; 1f47: 71          q
 	inx	h		;; 1f48: 23          #
 	mov	m,b		;; 1f49: 70          p
-	lxi	d,L3008		;; 1f4a: 11 08 30    ..0
+	lxi	d,tokbuf		;; 1f4a: 11 08 30    ..0
 	ldax	d		;; 1f4d: 1a          .
-	cpi	011h		;; 1f4e: fe 11       ..
+	cpi	17		;; 1f4e: fe 11       ..
 	jc	L1f55		;; 1f50: da 55 1f    .U.
-	mvi	a,010h		;; 1f53: 3e 10       >.
+	mvi	a,16		;; 1f53: 3e 10       >.
 L1f55:	mov	b,a		;; 1f55: 47          G
 	dcr	a		;; 1f56: 3d          =
 	inx	h		;; 1f57: 23          #
@@ -3869,9 +3878,9 @@ L1f59:	inx	h		;; 1f59: 23          #
 
 L1f62:	lhld	memtop		;; 1f62: 2a 4d 30    *M0
 	xchg			;; 1f65: eb          .
-	lxi	h,L3008		;; 1f66: 21 08 30    ..0
+	lxi	h,tokbuf		;; 1f66: 21 08 30    ..0
 	mov	l,m		;; 1f69: 6e          n
-	mvi	h,000h		;; 1f6a: 26 00       &.
+	mvi	h,0		;; 1f6a: 26 00       &.
 	dad	b		;; 1f6c: 09          .
 	mov	a,e		;; 1f6d: 7b          {
 	sub	l		;; 1f6e: 95          .
@@ -3881,7 +3890,7 @@ L1f62:	lhld	memtop		;; 1f62: 2a 4d 30    *M0
 	mov	h,a		;; 1f72: 67          g
 	shld	cursym		;; 1f73: 22 56 30    "V0
 	xchg			;; 1f76: eb          .
-	lxi	h,L304b		;; 1f77: 21 4b 30    .K0
+	lxi	h,nxheap		;; 1f77: 21 4b 30    .K0
 	mov	a,e		;; 1f7a: 7b          {
 	sub	m		;; 1f7b: 96          .
 	inx	h		;; 1f7c: 23          #
@@ -3896,7 +3905,7 @@ L1f87:	lxi	b,1		;; 1f87: 01 01 00    ...
 	call	L1f62		;; 1f8a: cd 62 1f    .b.
 	lhld	memtop		;; 1f8d: 2a 4d 30    *M0
 	xchg			;; 1f90: eb          .
-	lxi	h,L3008		;; 1f91: 21 08 30    ..0
+	lxi	h,tokbuf		;; 1f91: 21 08 30    ..0
 	mov	c,m		;; 1f94: 4e          N
 L1f95:	inx	h		;; 1f95: 23          #
 	mov	a,c		;; 1f96: 79          y
@@ -3934,7 +3943,7 @@ L1fbb:	lhld	memtop		;; 1fbb: 2a 4d 30    *M0
 	shld	cursym		;; 1fc9: 22 56 30    "V0
 	call	L2024		;; 1fcc: cd 24 20    .$ 
 	mov	e,a		;; 1fcf: 5f          _
-	mvi	d,000h		;; 1fd0: 16 00       ..
+	mvi	d,0		;; 1fd0: 16 00       ..
 	lxi	h,L2e83		;; 1fd2: 21 83 2e    ...
 	dad	d		;; 1fd5: 19          .
 	dad	d		;; 1fd6: 19          .
@@ -3961,6 +3970,7 @@ L1ff3:	lxi	h,L1ffc		;; 1ff3: 21 fc 1f    ...
 	jmp	hexfne		;; 1ff9: c3 9e 25    ..%
 
 L1ffc:	db	'SYMBOL TABLE OVERFLOW',0dh
+
 L2012:	ral			;; 2012: 17          .
 	ral			;; 2013: 17          .
 	ral			;; 2014: 17          .
@@ -3990,7 +4000,7 @@ L2024:	lhld	cursym		;; 2024: 2a 56 30    *V0
 L2031:	call	L1e3d		;; 2031: cd 3d 1e    .=.
 	lhld	cursym		;; 2034: 2a 56 30    *V0
 	mov	e,a		;; 2037: 5f          _
-	mvi	d,000h		;; 2038: 16 00       ..
+	mvi	d,0		;; 2038: 16 00       ..
 	dad	d		;; 203a: 19          .
 	inx	h		;; 203b: 23          #
 	inx	h		;; 203c: 23          #
@@ -4035,16 +4045,16 @@ L2065:	call	L1e1a		;; 2065: cd 1a 1e    ...
 	add	a		;; 206c: 87          .
 	add	a		;; 206d: 87          .
 	mov	c,a		;; 206e: 4f          O
-	lxi	h,L3008		;; 206f: 21 08 30    ..0
+	lxi	h,tokbuf		;; 206f: 21 08 30    ..0
 	mov	a,m		;; 2072: 7e          ~
-	cpi	011h		;; 2073: fe 11       ..
+	cpi	17		;; 2073: fe 11       ..
 	jc	L207a		;; 2075: da 7a 20    .z 
-	mvi	m,010h		;; 2078: 36 10       6.
+	mvi	m,16		;; 2078: 36 10       6.
 L207a:	mov	a,m		;; 207a: 7e          ~
 	dcr	a		;; 207b: 3d          =
 	ora	c		;; 207c: b1          .
 	call	L20bc		;; 207d: cd bc 20    .. 
-	lxi	h,L3008		;; 2080: 21 08 30    ..0
+	lxi	h,tokbuf		;; 2080: 21 08 30    ..0
 	mov	c,m		;; 2083: 4e          N
 L2084:	inx	h		;; 2084: 23          #
 	mov	a,m		;; 2085: 7e          ~
@@ -4069,7 +4079,7 @@ L2092:	call	L20b2		;; 2092: cd b2 20    ..
 	ani	00fh		;; 20a0: e6 0f       ..
 	inr	a		;; 20a2: 3c          <
 	mov	c,a		;; 20a3: 4f          O
-	lxi	d,L3008		;; 20a4: 11 08 30    ..0
+	lxi	d,tokbuf		;; 20a4: 11 08 30    ..0
 	stax	d		;; 20a7: 12          .
 L20a8:	call	L20b2		;; 20a8: cd b2 20    .. 
 	inx	d		;; 20ab: 13          .
@@ -4100,7 +4110,7 @@ L20bc:	mov	c,a		;; 20bc: 4f          O
 	shld	L3058		;; 20cd: 22 58 30    "X0
 	mov	m,c		;; 20d0: 71          q
 	inx	h		;; 20d1: 23          #
-	shld	L304b		;; 20d2: 22 4b 30    "K0
+	shld	nxheap		;; 20d2: 22 4b 30    "K0
 	ret			;; 20d5: c9          .
 
 L20d6:	dw	022ebh
@@ -4122,12 +4132,12 @@ L210c:	jmp	L247b		;; 210c: c3 7b 24    .{$
 
 L210f:	db	0fch
 
-L2110:	dw	L212a	; 1-char tokens
-	dw	L213a	; 2-char tokens
-	dw	L2158	; 3-char tokens
-	dw	L21fd	; 4-char tokens
-	dw	L224d	; 5-char tokens
-	dw	L2270	; 6-char tokens
+L2110:	dw	tok1	; 1-char tokens
+	dw	tok2	; 2-char tokens
+	dw	tok3	; 3-char tokens
+	dw	tok4	; 4-char tokens
+	dw	tok5	; 5-char tokens
+	dw	tok6	; 6-char tokens
 
 	dw	L2282
 
@@ -4138,30 +4148,30 @@ L211e:	dw	L2288	; 1-char token flags
 	dw	L235c	; 5-char token flags
 	dw	L236a	; 6-char token flags
 
-L212a:	db	0dh,'(',')','*','+',',','-','/','A','B','C','D','E','H','L','M'
-num1	equ	$-L212a
+tok1:	db	0dh,'(',')','*','+',',','-','/','A','B','C','D','E','H','L','M'
+num1	equ	$-tok1
 
-L213a:	db	'DB','DI','DS','DW','EI','EQ','GE','GT','IF','IN','LE','LT','NE','OR','SP'
-num2	equ	($-L213a)/2
+tok2:	db	'DB','DI','DS','DW','EI','EQ','GE','GT','IF','IN','LE','LT','NE','OR','SP'
+num2	equ	($-tok2)/2
 
-L2158:	db	'ACI','ADC','ADD','ADI','ANA','AND','ANI','CMA','CMC'
+tok3:	db	'ACI','ADC','ADD','ADI','ANA','AND','ANI','CMA','CMC'
 	db	'CMP','CPI','DAA','DAD','DCR','DCX','END','EQU','HLT','INR'
 	db	'INX','IRP','JMP','LDA','LOW','LXI','MOD','MOV','MVI','NOP'
 	db	'NOT','NUL','ORA','ORG','ORI','OUT','POP','PSW','RAL','RAR'
 	db	'RET','RLC','RRC','RST','SBB','SBI','SET','SHL','SHR','STA'
 	db	'STC','SUB','SUI','XOR','XRA','XRI'
-num3	equ	($-L2158)/3
+num3	equ	($-tok3)/3
 
-L21fd:	db	'ASEG','CALL','CSEG','DSEG','ELSE','ENDM','HIGH','IRPC','LDAX'
+tok4:	db	'ASEG','CALL','CSEG','DSEG','ELSE','ENDM','HIGH','IRPC','LDAX'
 	db	'LHLD','NAME','PAGE','PCHL','PUSH'
 	db	'REPT','SHLD','SPHL','STAX','XCHG','XTHL'
-num4	equ	($-L21fd)/4
+num4	equ	($-tok4)/4
 
-L224d:	db	'ENDIF','EXITM','EXTRN','LOCAL','MACRO','STKLN','TITLE'
-num5	equ	($-L224d)/5
+tok5:	db	'ENDIF','EXITM','EXTRN','LOCAL','MACRO','STKLN','TITLE'
+num5	equ	($-tok5)/5
 
-L2270:	db	'INPAGE','MACLIB','PUBLIC'
-num6	equ	($-L2270)/6
+tok6:	db	'INPAGE','MACLIB','PUBLIC'
+num6	equ	($-tok6)/6
 
 L2282:	db	num1
 L2283:	db	num2,num3,num4,num5,num6
@@ -4184,21 +4194,21 @@ L2288:	db	17h,0ah	; CR
 	db	19h,5	; 'L'
 	db	19h,6	; 'M'
 
-L22a8:	db	1ah,1		; 'DB'
-	db	1ch,0f3h	; 'DI'
-	db	1ah,2		; 'DS'
-	db	1ah,3		; 'DW'
-	db	1ch,0fbh	; 'EI'
-	db	8,41h		; 'EQ'
-	db	0ch,41h		; 'GE'
-	db	0bh,41h		; 'GT'
-	db	1ah,8		; 'IF'
-	db	2ah,0dbh	; 'IN'
-	db	0ah,41h		; 'LE'
-	db	9,41h		; 'LT'
-	db	0dh,41h		; 'NE'
-	db	10h,28h		; 'OR'
-	db	19h,6		; 'SP'
+L22a8:	db	1ah,1		; DB
+	db	1ch,0f3h	; DI
+	db	1ah,2		; DS
+	db	1ah,3		; DW
+	db	1ch,0fbh	; EI
+	db	8,41h		; EQ
+	db	0ch,41h		; GE
+	db	0bh,41h		; GT
+	db	1ah,8		; IF
+	db	2ah,0dbh	; IN
+	db	0ah,41h		; LE
+	db	9,41h		; LT
+	db	0dh,41h		; NE
+	db	10h,28h		; OR
+	db	19h,6		; SP
 
 L22c6:	db	23h,0ceh	; ACI
 	db	26h,88h		; ADC
@@ -4294,7 +4304,7 @@ L2370:	db	'NZ','Z ','NC','C ','PO','PE','P ','M '
 
 L2380:	mvi	e,0ffh		;; 2380: 1e ff       ..
 	inr	b		;; 2382: 04          .
-	mvi	c,000h		;; 2383: 0e 00       ..
+	mvi	c,0		;; 2383: 0e 00       ..
 L2385:	xra	a		;; 2385: af          .
 	mov	a,b		;; 2386: 78          x
 	add	c		;; 2387: 81          .
@@ -4315,7 +4325,7 @@ L2399:	dad	d		;; 2399: 19          .
 	jnz	L2399		;; 239b: c2 99 23    ..#
 	pop	d		;; 239e: d1          .
 	dad	d		;; 239f: 19          .
-	lxi	d,L3009		;; 23a0: 11 09 30    ..0
+	lxi	d,tokbuf+1		;; 23a0: 11 09 30    ..0
 L23a3:	ldax	d		;; 23a3: 1a          .
 	cmp	m		;; 23a4: be          .
 	inx	d		;; 23a5: 13          .
@@ -4344,7 +4354,7 @@ L23c1:	xra	a		;; 23c1: af          .
 	ret			;; 23c3: c9          .
 
 ; parse conditional jump, call, or return
-L23c4:	lda	L3009		;; 23c4: 3a 09 30    :.0
+L23c4:	lda	tokbuf+1		;; 23c4: 3a 09 30    :.0
 	lxi	b,0c220h	;; 23c7: 01 20 c2    . .
 	cpi	'J'		;; 23ca: fe 4a       .J
 	rz			;; 23cc: c8          .
@@ -4355,18 +4365,18 @@ L23c4:	lda	L3009		;; 23c4: 3a 09 30    :.0
 	cpi	'R'		;; 23d5: fe 52       .R
 	ret			;; 23d7: c9          .
 
-L23d8:	lda	L3008		;; 23d8: 3a 08 30    :.0
+L23d8:	lda	tokbuf		;; 23d8: 3a 08 30    :.0
 	cpi	004h		;; 23db: fe 04       ..
 	jnc	L240a		;; 23dd: d2 0a 24    ..$
 	cpi	003h		;; 23e0: fe 03       ..
 	jz	L23ef		;; 23e2: ca ef 23    ..#
 	cpi	002h		;; 23e5: fe 02       ..
 	jnz	L240a		;; 23e7: c2 0a 24    ..$
-	lxi	h,L300b		;; 23ea: 21 0b 30    ..0
+	lxi	h,tokbuf+3		;; 23ea: 21 0b 30    ..0
 	mvi	m,' '		;; 23ed: 36 20       6 
 L23ef:	lxi	b,8		;; 23ef: 01 08 00    ...
 	lxi	d,L2370		;; 23f2: 11 70 23    .p#
-L23f5:	lxi	h,L300a		;; 23f5: 21 0a 30    ..0
+L23f5:	lxi	h,tokbuf+2		;; 23f5: 21 0a 30    ..0
 	ldax	d		;; 23f8: 1a          .
 	cmp	m		;; 23f9: be          .
 	inx	d		;; 23fa: 13          .
@@ -4386,13 +4396,13 @@ L240a:	xra	a		;; 240a: af          .
 	inr	a		;; 240b: 3c          <
 	ret			;; 240c: c9          .
 
-L240d:	lda	L3008		;; 240d: 3a 08 30    :.0
+L240d:	lda	tokbuf		;; 240d: 3a 08 30    :.0
 	mov	c,a		;; 2410: 4f          O
 	dcr	a		;; 2411: 3d          =
 	mov	e,a		;; 2412: 5f          _
 	mvi	d,0		;; 2413: 16 00       ..
 	push	d		;; 2415: d5          .
-	cpi	006h		;; 2416: fe 06       ..
+	cpi	6		;; 2416: fe 06       ..
 	jnc	L245e		;; 2418: d2 5e 24    .^$
 	lxi	h,L2282		;; 241b: 21 82 22    .."
 	dad	d		;; 241e: 19          .
@@ -4450,7 +4460,7 @@ L245e:	pop	d		;; 245e: d1          .
 	inr	a		;; 2460: 3c          <
 	ret			;; 2461: c9          .
 
-L2462:	lxi	h,L3008		;; 2462: 21 08 30    ..0
+L2462:	lxi	h,tokbuf		;; 2462: 21 08 30    ..0
 	mov	c,m		;; 2465: 4e          N
 	dcr	c		;; 2466: 0d          .
 	lxi	h,L2283		;; 2467: 21 83 22    .."
@@ -4469,7 +4479,7 @@ L2474:	lxi	h,L210f		;; 2474: 21 0f 21    ...
 L247b:	ani	07fh		;; 247b: e6 7f       ..
 	lxi	h,L2499		;; 247d: 21 99 24    ..$
 	mov	e,a		;; 2480: 5f          _
-	mvi	d,000h		;; 2481: 16 00       ..
+	mvi	d,0		;; 2481: 16 00       ..
 	dad	d		;; 2483: 19          .
 	dad	d		;; 2484: 19          .
 	mov	e,m		;; 2485: 5e          ^
@@ -4484,11 +4494,12 @@ L247b:	ani	07fh		;; 247b: e6 7f       ..
 	mov	a,m		;; 248f: 7e          ~
 	ani	00fh		;; 2490: e6 0f       ..
 	mov	d,a		;; 2492: 57          W
-	lxi	h,L213a		;; 2493: 21 3a 21    .:.
+	lxi	h,tok2		;; 2493: 21 3a 21    .:.
 	dad	d		;; 2496: 19          .
 	mov	a,b		;; 2497: 78          x
 	ret			;; 2498: c9          .
 
+; length and offset of each token, relative to tok2
 L2499:	dw	2000h
 	dw	2002h
 	dw	2004h
@@ -4589,10 +4600,12 @@ L2499:	dw	2000h
 	dw	6136h
 	dw	613ch
 	dw	6142h
+
+	; ghost code from DS...
 	dw	3058h
-	shld	L11bd		;; 2563: 22 bd 11    "..
-	call	L1606		;; 2566: cd 06 16    ...
-	jmp	L0757		;; 2569: c3 57 07    .W.
+	db	22h,0bdh,11h	;; 2563: 22 bd 11    "..
+	db	0cdh,06h,16h	;; 2566: cd 06 16    ...
+	db	0c3h,57h,07h	;; 2569: c3 57 07    .W.
 
 	db	'z{|}'
 	xra	a		;; 2570: af          .
@@ -4644,15 +4657,17 @@ libsrc:	db	'I'	; src libs LIB "$Lx"
 L25cf:	db	'%'
 dmaidx:	db	0beh,0c8h
 L25d2:	db	'w'
-L25d3:	db	'_',0eh,0eh,0cdh,5,0,0c9h
-	db	':JASM'
-L25df:	db	0,'PE',0,0c3h,0cdh,'%:L%',0c3h,0cdh,'%:M%',0c3h,0cdh,'%'
+
+; FCB for ASM
+asmfcb:	db	'_',0eh,0eh,0cdh,5,0,0c9h,':J','ASM'
+	db	0,'PE',0,0c3h,0cdh,'%:L%',0c3h,0cdh,'%:M%',0c3h,0cdh,'%'
 	db	':'
-L25f3:	db	0
+	db	0
+
 L25f4:	db	0,4
 L25f6:	db	0,0
 
-; FCB for output files (PRN, SYM)
+; FCB for PRN and SYM
 prnfcb:	db	4,0cdh,'I*~#',0feh,0dh
 L2600:	db	0ffh	;something is wrong here - module termination?
 	db	'PRN',0,'FTYPE',0,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
@@ -4662,6 +4677,7 @@ L2600:	db	0ffh	;something is wrong here - module termination?
 prnidx:	db	0,0
 L261b:	db	0ffh,0ffh
 
+; FCB for HEX
 hexfcb:	db	0ffh,0,0,0,0ffh,0ffh,0ffh,0ffh,0ffh,'HEX',0,0ffh,0ffh,'&FTYP'
 	db	'E',0,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0
 
@@ -4712,7 +4728,7 @@ msgcr:	mov	a,m		;; 2678: 7e          ~
 
 ; Copy cmdline FCB basename to (HL)
 L2689:	lxi	d,deffcb	;; 2689: 11 5c 00    .\.
-	mvi	b,009h		;; 268c: 06 09       ..
+	mvi	b,9		;; 268c: 06 09       ..
 L268e:	ldax	d		;; 268e: 1a          .
 	cpi	'?'		;; 268f: fe 3f       .?
 	jz	L293d		;; 2691: ca 3d 29    .=)
@@ -4728,7 +4744,7 @@ L268e:	ldax	d		;; 268e: 1a          .
 ; setup LIB FCB, open it
 libfil:	lxi	h,deffcb	;; 26a1: 21 5c 00    .\.
 	mvi	m,0		;; 26a4: 36 00       6.
-	lxi	d,L3008		;; 26a6: 11 08 30    ..0
+	lxi	d,tokbuf		;; 26a6: 11 08 30    ..0
 	ldax	d		;; 26a9: 1a          .
 	cpi	9		;; 26aa: fe 09       ..
 	jc	L26b1		;; 26ac: da b1 26    ..&
@@ -4762,7 +4778,7 @@ L26ca:	mvi	m,'L'		;; 26ca: 36 4c       6L
 	sta	deffcb+32	;; 26d5: 32 7c 00    2|.
 	call	setlib		;; 26d8: cd 72 26    .r&
 	lxi	d,deffcb	;; 26db: 11 5c 00    .\.
-	jmp	L2775		;; 26de: c3 75 27    .u'
+	jmp	openf		;; 26de: c3 75 27    .u'
 
 L26e1:	mvi	a,0ffh		;; 26e1: 3e ff       >.
 	sta	L305d		;; 26e3: 32 5d 30    2]0
@@ -4797,11 +4813,11 @@ osinit:	call	L2647		;; 26f6: cd 47 26    .G&
 	lxi	d,768		;; 2728: 11 00 03    ...
 	dad	d		;; 272b: 19          .
 	inx	h		;; 272c: 23          #
-	shld	L304b		;; 272d: 22 4b 30    "K0
+	shld	nxheap		;; 272d: 22 4b 30    "K0
 	shld	syheap		;; 2730: 22 54 30    "T0
 	jmp	parcmd		;; 2733: c3 ea 27    ..'
 
-; print char if not blank
+; output char to console, suppressing blanks
 L2736:	cpi	' '		;; 2736: fe 20       . 
 	rz			;; 2738: c8          .
 	push	b		;; 2739: c5          .
@@ -4813,6 +4829,7 @@ L2736:	cpi	' '		;; 2736: fe 20       .
 	pop	b		;; 2742: c1          .
 	ret			;; 2743: c9          .
 
+; output C chars from HL to console, suppressing blanks
 L2744:	inx	h		;; 2744: 23          #
 	mov	a,m		;; 2745: 7e          ~
 	call	L2736		;; 2746: cd 36 27    .6'
@@ -4820,32 +4837,33 @@ L2744:	inx	h		;; 2744: 23          #
 	jnz	L2744		;; 274a: c2 44 27    .D'
 	ret			;; 274d: c9          .
 
-L274e:	push	h		;; 274e: e5          .
+; display file name, incl. drive, then '-' and msg from HL
+filerr:	push	h		;; 274e: e5          .
 	xchg			;; 274f: eb          .
 	lda	curdrv		;; 2750: 3a c9 25    :.%
 	adi	'A'		;; 2753: c6 41       .A
 	call	L2736		;; 2755: cd 36 27    .6'
 	mvi	a,':'		;; 2758: 3e 3a       >:
 	call	L2736		;; 275a: cd 36 27    .6'
-	mvi	c,008h		;; 275d: 0e 08       ..
+	mvi	c,8		;; 275d: 0e 08       ..
 	call	L2744		;; 275f: cd 44 27    .D'
 	mvi	a,'.'		;; 2762: 3e 2e       >.
 	call	L2736		;; 2764: cd 36 27    .6'
-	mvi	c,003h		;; 2767: 0e 03       ..
+	mvi	c,3		;; 2767: 0e 03       ..
 	call	L2744		;; 2769: cd 44 27    .D'
 	mvi	a,'-'		;; 276c: 3e 2d       >-
 	call	L2736		;; 276e: cd 36 27    .6'
 	pop	h		;; 2771: e1          .
 	jmp	msgcr		;; 2772: c3 78 26    .x&
 
-L2775:	mvi	c,open		;; 2775: 0e 0f       ..
+openf:	mvi	c,open		;; 2775: 0e 0f       ..
 	push	d		;; 2777: d5          .
 	call	bdos		;; 2778: cd 05 00    ...
 	cpi	0ffh		;; 277b: fe ff       ..
 	pop	d		;; 277d: d1          .
 	rnz			;; 277e: c0          .
 	lxi	h,L2ce8		;; 277f: 21 e8 2c    ..,
-	call	L274e		;; 2782: cd 4e 27    .N'
+	call	filerr		;; 2782: cd 4e 27    .N'
 	jmp	cpm		;; 2785: c3 00 00    ...
 
 closef:	mvi	c,close		;; 2788: 0e 10       ..
@@ -4868,7 +4886,7 @@ makef:	mvi	c,make		;; 27a0: 0e 16       ..
 	pop	d		;; 27a8: d1          .
 	rnz			;; 27a9: c0          .
 	lxi	h,L2cff		;; 27aa: 21 ff 2c    ..,
-	call	L274e		;; 27ad: cd 4e 27    .N'
+	call	filerr		;; 27ad: cd 4e 27    .N'
 	jmp	cpm		;; 27b0: c3 00 00    ...
 
 isfile:	lda	prndst		;; 27b3: 3a cb 25    :.%
@@ -4897,7 +4915,7 @@ L27d2:	push	psw		;; 27d2: f5          .
 	lxi	h,L25d2		;; 27da: 21 d2 25    ..%
 	cpi	lf		;; 27dd: fe 0a       ..
 	jnz	L27e5		;; 27df: c2 e5 27    ..'
-	mvi	m,000h		;; 27e2: 36 00       6.
+	mvi	m,0		;; 27e2: 36 00       6.
 	ret			;; 27e4: c9          .
 
 ; count printable chars
@@ -5017,7 +5035,7 @@ cmderr:	inx	h		;; 28b6: 23          #
 	call	msgcr		;; 28c2: cd 78 26    .x&
 	jmp	cpm		;; 28c5: c3 00 00    ...
 
-L28c8:	lxi	h,L25d3		;; 28c8: 21 d3 25    ..%
+L28c8:	lxi	h,asmfcb		;; 28c8: 21 d3 25    ..%
 	call	L2689		;; 28cb: cd 89 26    ..&
 	lxi	h,prnfcb	;; 28ce: 21 f8 25    ..%
 	push	h		;; 28d1: e5          .
@@ -5063,12 +5081,12 @@ L2905:	lxi	h,L25b0		;; 2905: 21 b0 25    ..%
 	lxi	h,1024		;; 2923: 21 00 04    ...
 	shld	L25f4		;; 2926: 22 f4 25    ".%
 	xra	a		;; 2929: af          .
-	sta	L25df		;; 292a: 32 df 25    2.%
-	sta	L25f3		;; 292d: 32 f3 25    2.%
+	sta	asmfcb+12	;; 292a: 32 df 25    2.%
+	sta	asmfcb+32	;; 292d: 32 f3 25    2.%
 	sta	hexlen		;; 2930: 32 b8 25    2.%
 	call	setasm		;; 2933: cd 5a 26    .Z&
-	lxi	d,L25d3		;; 2936: 11 d3 25    ..%
-	call	L2775		;; 2939: cd 75 27    .u'
+	lxi	d,asmfcb		;; 2936: 11 d3 25    ..%
+	call	openf		;; 2939: cd 75 27    .u'
 	ret			;; 293c: c9          .
 
 L293d:	lxi	h,L2d12		;; 293d: 21 12 2d    ..-
@@ -5116,7 +5134,7 @@ L2989:	lda	L2ea3		;; 2989: 3a a3 2e    :..
 	call	setlib		;; 2993: cd 72 26    .r&
 	lxi	d,deffcb	;; 2996: 11 5c 00    .\.
 	lxi	h,L2d7e		;; 2999: 21 7e 2d    .~-
-	call	L274e		;; 299c: cd 4e 27    .N'
+	call	filerr		;; 299c: cd 4e 27    .N'
 	jmp	cpm		;; 299f: c3 00 00    ...
 
 L29a2:	lhld	L25f4		;; 29a2: 2a f4 25    *.%
@@ -5126,14 +5144,14 @@ L29a2:	lhld	L25f4		;; 29a2: 2a f4 25    *.%
 	call	setasm		;; 29ae: cd 5a 26    .Z&
 	lxi	h,0		;; 29b1: 21 00 00    ...
 	shld	L25f4		;; 29b4: 22 f4 25    ".%
-	mvi	b,008h		;; 29b7: 06 08       ..
+	mvi	b,8		;; 29b7: 06 08       ..
 	lhld	L25f6		;; 29b9: 2a f6 25    *.%
 L29bc:	push	b		;; 29bc: c5          .
 	push	h		;; 29bd: e5          .
 	xchg			;; 29be: eb          .
 	call	L2642		;; 29bf: cd 42 26    .B&
 	mvi	c,read		;; 29c2: 0e 14       ..
-	lxi	d,L25d3		;; 29c4: 11 d3 25    ..%
+	lxi	d,asmfcb		;; 29c4: 11 d3 25    ..%
 	call	bdos		;; 29c7: cd 05 00    ...
 	pop	h		;; 29ca: e1          .
 	lxi	d,128		;; 29cb: 11 80 00    ...
@@ -5216,7 +5234,7 @@ L2a39:	lhld	prnidx		;; 2a39: 2a 19 26    *.&
 	shld	prnidx		;; 2a55: 22 19 26    ".&
 	lhld	L261b		;; 2a58: 2a 1b 26    *.&
 	lxi	d,prnfcb	;; 2a5b: 11 f8 25    ..%
-	mvi	b,006h		;; 2a5e: 06 06       ..
+	mvi	b,6		;; 2a5e: 06 06       ..
 L2a60:	mov	a,m		;; 2a60: 7e          ~
 	cpi	eof		;; 2a61: fe 1a       ..
 	jz	L2a85		;; 2a63: ca 85 2a    ..*
@@ -5275,7 +5293,7 @@ hexpt:	lhld	hexidx		;; 2a9f: 2a 3e 26    *>&
 	shld	hexidx		;; 2abb: 22 3e 26    ">&
 	lhld	L2640		;; 2abe: 2a 40 26    *@&
 	lxi	d,hexfcb	;; 2ac1: 11 1d 26    ..&
-	mvi	b,006h		;; 2ac4: 06 06       ..
+	mvi	b,6		;; 2ac4: 06 06       ..
 	jmp	L2a60		;; 2ac6: c3 60 2a    .`*
 
 ; print char
@@ -5314,7 +5332,7 @@ L2aef:	mov	a,m		;; 2aef: 7e          ~
 L2af9:	lda	paglin		;; 2af9: 3a b3 25    :.%
 	ora	a		;; 2afc: b7          .
 	rz			;; 2afd: c8          .
-	mvi	a,vt		;; 2afe: 3e 0c       >.
+	mvi	a,ff		;; 2afe: 3e 0c       >.
 	call	prnput		;; 2b00: cd 0e 2a    ..*
 	xra	a		;; 2b03: af          .
 	sta	curlin		;; 2b04: 32 b4 25    2.%
@@ -5513,6 +5531,8 @@ L2c49:	lda	Sflag		;; 2c49: 3a 5e 30    :^0
 	call	makef		;; 2c87: cd a0 27    ..'
 	ret			;; 2c8a: c9          .
 
+; ensure HEX file ends properly...
+; then add END FILE tage.
 hexpt2:	call	L2c2b		;; 2c8b: cd 2b 2c    .+,
 	lda	hexdst		;; 2c8e: 3a cd 25    :.%
 	cpi	DRVNUL		;; 2c91: fe 19       ..
@@ -5688,9 +5708,6 @@ L2ed4:	db	0ffh,0ffh,0ffh,'s',0f7h,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
 	db	0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
 	db	0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
 L2ef4:	db	0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh
-; end of page/record...
-
-; globals/common variables
 	ds	20
 L2f14:	ds	16
 L2f24:	ds	32
@@ -5709,12 +5726,12 @@ curerr:	ds	1	; error code
 L3004:	ds	1
 L3005:	ds	1
 L3006:	ds	2
-L3008:	ds	1	; current token/opcode (len, chrs...)
-L3009:	ds	1
-L300a:	ds	1
-L300b:	ds	62
+
+tokbuf:	ds	1	; current token/opcode (len, chrs...)
+	ds	64
+
 L3049:	ds	2
-L304b:	ds	2
+nxheap:	ds	2
 memtop:	ds	2	; end of TPA
 pass:	ds	1	; assembler pass number (0/1)
 curadr:	ds	2	; prog addr where current byte is (to go)

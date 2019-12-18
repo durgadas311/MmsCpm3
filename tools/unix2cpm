@@ -1,0 +1,69 @@
+#!/bin/bash
+
+unset sync seteof
+
+if [[ ${#} -lt 2 ]]; then
+	echo "Usage: ${0} [-s] [-z] <unix-file> <cpm-file>" >&2
+	echo "       ${0} [-s] [-z] <unix-file>... <cpm-dir>" >&2
+	echo "Where:" >&2
+	echo "       -s = sync, as in rsync, only newer files" >&2
+	echo "       -z = append ^Z (CP/M EOF) to files" >&2
+	exit 1
+fi
+
+while getopts "s" op; do
+	case ${op} in
+	s)	sync=y;;
+	z)	seteof=y;;
+	esac
+done
+shift $((OPTIND-1))
+
+if [[ -n ${seteof} ]]; then
+	seteof=$(type -p seteof)
+	if [[ -z ${seteof} ]]; then
+		echo "-z requires that 'seteof' command be on PATH" >&2
+		exit 1
+	fi
+fi
+
+xcp() {
+	if [[ ! -e ${1} ]]; then
+		echo "No file: ${1}" >&2
+		return 1
+	fi
+	if [[ ${1} -ef ${2} ]]; then
+		echo "Same file: ${1} ${2}" >&2
+		return 1
+	fi
+	if [[ -n ${sync} && ${2} -nt ${1} ]]; then
+		echo "Up to date: ${2}"
+		return 0
+	fi
+	echo "${1} -> ${2}"
+	sed -e 's/$//' ${1} >${2}
+	if [[ -n ${seteof} ]]; then
+		seteof ${2}
+	fi
+	return $?
+}
+
+n=${#}
+args=("${@}")
+dest=${args[n-1]}
+((n-=1))
+
+if [[ -d ${dest} ]]; then
+	x=0; while [[ ${x} -lt ${n} ]]; do
+		f=${args[x]##*/}
+		xcp ${args[x]} ${dest}/${f}
+		if [[ $? -ne 0 ]]; then break; fi
+		((x+=1))
+	done
+elif [[ ${n} -gt 1 ]]; then
+	echo "Multiple files requires dir" >&2
+	exit 1
+else
+	xcp ${args[0]} ${dest}
+fi
+exit $?

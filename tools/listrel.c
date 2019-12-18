@@ -173,7 +173,7 @@ static int value(int t) {
 	printf("%s", op3[a]);
 	int l = addr();
 	if (l < 0) return -1;
-	if (t == 0b1110) {	// end of module... end of byte
+	if (t == 0b1110 && bitter && bitter < 8) {	// end of module... end of byte
 		get_bits(bitter);
 	}
 	return l;
