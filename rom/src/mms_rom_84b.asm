@@ -2270,6 +2270,7 @@ bgide0:
 	; final status check?
 	pop	h	; adj stack for possible string
 	jmp	hwboot
+endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; MMS 77320 SASI HDD boot

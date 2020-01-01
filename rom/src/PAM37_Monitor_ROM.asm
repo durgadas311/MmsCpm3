@@ -37,12 +37,29 @@
 ;  The checksum for the original PAM37.BIN file (directly from the EPROM
 ; burner) is 073FF7.  This file matches it exactly.
 ;============================================================================
+; Modified 12/31/2019 Douglas Miller <durgadas311@gmail.com>
+; To replace H47 boot with GIDE boot code.
+; Only one of these can be "true" (1):
+gide	equ	1
+h47	equ	0
 
 tab	equ	09h
 lf	equ	0ah
 cr	equ	0dh
 bel	equ	07h
 esc	equ	1bh
+
+if gide
+GIDE$BA	equ	80h		; GIDE base port
+GIDE$DA	equ	GIDE$BA+8	; GIDE data port
+GIDE$ER	equ	GIDE$BA+9	; GIDE error register
+GIDE$SC	equ	GIDE$BA+10	; GIDE sector count
+GIDE$SE	equ	GIDE$BA+11	; GIDE sector number
+GIDE$CL	equ	GIDE$BA+12	; GIDE cylinder low
+GIDE$CH	equ	GIDE$BA+13	; GIDE cylinder high
+GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
+GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
+endif
 
 ;============================================================================
 ; H17 ROM Data Table / Routine Entry Point Addresses
@@ -1644,7 +1661,12 @@ Boot6:	LD	A,(MFlag)
 
 BootTbl:
 	dw	H17Boot			; H-17 Boot
+if h47
 	dw	H47Boot			; H-47 Boot
+endif
+if gide
+	dw	gideBoot		; GIDE Boot
+endif
 	dw	H67Boot			; H-67 Boot
 	dw	H37Boot			; H-37 Boot
 
@@ -1897,7 +1919,69 @@ C_0670:	LD	A,(AIO_UNI)
 
 H17BtMsg:	db	10010010b, 11110011b, 11110001b	; Message 'H17'
 
+if gide
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; GIDE HDD boot - hardcoded to partition 0, lun 0, segment 0
+gideBoot:
+	ld	bc,ideBtMsg
+	ld	de,DLeds
+	call	BlkMovStk
+	db	3
+	ld	hl,0	; def segment off
+	ld	(I$2156),hl	; l2156h[0]=27:24, l2156h[1]=23:16
+	ld	a,l
+	or	a,11100000b	; LBA mode + std "1" bits
+	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
+	ld	a,h
+	out	GIDE$CH	; LBA 23:16
+	xor	a,a
+	out	GIDE$CL	; LBA 15:8
+	out	GIDE$SE	; LBA 7:0
+	ld	a,10
+	out	GIDE$SC	; 10 sectors (standard boot length)
+	ld	a,20h	; READ SECTORS
+	out	GIDE$CS
+	ld	hl,UsrFWA
+	ld	c,GIDE$DA
+	ld	e,10
+	ld	b,0	; should always be 0 after inir
+bgide0:
+	in	GIDE$CS
+	bit	7,a	; busy
+	jr	nz,bgide0
+	bit	0,a	; error
+	jr	nz,bgide9
+	bit	6,a	; ready
+	jr	z,bgide9
+	bit	3,a	; DRQ
+	jr	z,bgide0
+	inir	; 256 bytes
+	inir	; 512 bytes
+	dec	e
+	jr	nz,bgide0
+	; final status check? return only on success...
+	; can't use standard PAM37 boot entry...
+	ld	a,70		; phy drv number (MMS)
+	ld	(D$2034),a
+	ld	hl,00c3h	; "no string"
+	push	hl
+	ld	hl,ErrorDisplay
+	push	hl
+	pop	hl
+	ld	a,(MFlag)
+	and	0ffh-UO_DDU		; Turn on Display Update
+	ld	(MFlag),a		; Restore original front panel mode
+	ld	hl,(UsrClk)
+	ld	(UiVec+1),hl		; Clear timeout vector to just user vector
+	jp	UsrFWA
 
+bgide9:
+	jp	ErrorDisplay
+
+ideBtMsg:	db	11110011b, 11000010b, 10001100b	; Message 'IdE'
+endif
+
+if h47
 ;============================================================================
 ;	Boot Processor - H-47
 ;============================================================================
@@ -1987,6 +2071,7 @@ J$06E7:	 CALL	PIN
 	JP	J$06E7
 
 H47BtMsg:	db	10010010b, 10110010b, 11110001b	; Message 'H47'
+endif
 
 
 ;	  Subroutine __________________________
@@ -2292,8 +2377,9 @@ J$07E6:	RLCA
 	pop	bc
 	ret
 
-	db	0ffh, 0ffh, 0ffh, 0ffh
-
+	rept	07F4H-$
+	db	0ffh
+	endm
 	  if  ($ != 07F4H)
 	error "* Address Error @ 07F4H *"
 	  endif
@@ -2931,7 +3017,12 @@ I$0B31:	db	098h,0c6h,0deh  ; "Por"
 I_0B34:	db	083h,0d6h,0f7h  ; "Uni"
 
 I$0B37:	dw	H17BtMsg	; "H17"
+if h47
 	dw	H47BtMsg	; "H47"
+endif
+if gide
+	dw	ideBtMsg	; "IdE"
+endif
 	dw	H67BtMsg	; "H67"
 	dw	H37BtMsg	; "H37"
 
@@ -3248,7 +3339,7 @@ inicrt1:
 	jp	inicrt0
 
 crtmsg:	db	ESC,'E',BEL
-	db	'v1.2',CR,LF
+	db	'v1.3',CR,LF
 	db	'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)
