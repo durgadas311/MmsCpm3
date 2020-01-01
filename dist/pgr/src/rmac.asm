@@ -1341,7 +1341,7 @@ pxSEG:	sta	curseg		;; 0bc2: 32 20 35    2 5
 ; save info on current segment (only needed for COMMON).
 ; called when current segment is about to change.
 savseg:	lda	curseg		;; 0bd1: 3a 20 35    : 5
-	cpi	003h		;; 0bd4: fe 03       ..
+	cpi	11b		;; 0bd4: fe 03       ..
 	rnz			;; 0bd6: c0          .
 	lhld	cursym		;; 0bd7: 2a 23 35    *#5
 	push	h		;; 0bda: e5          .
@@ -1356,7 +1356,7 @@ savseg:	lda	curseg		;; 0bd1: 3a 20 35    : 5
 relloc:	lda	pass		;; 0bec: 3a 15 35    :.5
 	ora	a		;; 0bef: b7          .
 	rz			;; 0bf0: c8          .
-	mvi	c,04bh	; set location counter
+	mvi	c,1$00$1011b	; set location counter
 	call	rel7bs		;; 0bf3: cd 42 13    .B.
 	call	getadr		;; 0bf6: cd 6e 32    .n2
 	lda	curseg		;; 0bf9: 3a 20 35    : 5
@@ -1598,7 +1598,7 @@ L0de1:	shld	L350d		;; 0de1: 22 0d 35    ".5
 L0e09:	call	Serror		;; 0e09: cd f9 15    ...
 	jmp	L0e25		;; 0e0c: c3 25 0e    .%.
 
-L0e0f:	mvi	c,041h	; select common block
+L0e0f:	mvi	c,1$00$0001b	; select common block
 	call	rel7bs		;; 0e11: cd 42 13    .B.
 	call	symlen		;; 0e14: cd 2c 23    .,#
 	lhld	cursym		;; 0e17: 2a 23 35    *#5
@@ -1937,7 +1937,7 @@ subtra:	mov	a,e		;; 1053: 7b          {
 	ret			;; 1059: c9          .
 
 ; Initial data to REL file
-relini:	mvi	c,042h	; program name
+relini:	mvi	c,1$00$0010b	; program name
 	call	rel7bs		;; 105c: cd 42 13    .B.
 	lhld	L162a		;; 105f: 2a 2a 16    **.
 	mov	a,l		;; 1062: 7d          }
@@ -1969,7 +1969,7 @@ L1095:	mov	a,h		;; 1095: 7c          |
 	ora	l		;; 1096: b5          .
 	jz	L10c2		;; 1097: ca c2 10    ...
 	push	h		;; 109a: e5          .
-	mvi	c,045h	; define common size
+	mvi	c,1$00$0101b	; define common size
 	call	rel7bs		;; 109d: cd 42 13    .B.
 	pop	h		;; 10a0: e1          .
 	push	h		;; 10a1: e5          .
@@ -1992,15 +1992,15 @@ L1095:	mov	a,h		;; 1095: 7c          |
 	jmp	L1095		;; 10bf: c3 95 10    ...
 
 L10c2:	call	L10e2		;; 10c2: cd e2 10    ...
-	mvi	c,04ah	; define data size
+	mvi	c,1$00$1010b	; define data size
 	call	rel7bs		;; 10c7: cd 42 13    .B.
-	mvi	c,000h	; abs "address"
+	mvi	c,00b	; abs "address"
 	lhld	dsgadr		;; 10cc: 2a 1c 35    *.5
 	xchg			;; 10cf: eb          .
 	call	reladr		;; 10d0: cd 30 13    .0.
-	mvi	c,04dh	; define prog size
+	mvi	c,1$00$1101b	; define prog size
 	call	rel7bs		;; 10d5: cd 42 13    .B.
-	mvi	c,001h	; prog-relative "address"
+	mvi	c,01b	; prog-relative "address"
 	lhld	csgadr		;; 10da: 2a 1a 35    *.5
 	xchg			;; 10dd: eb          .
 	call	reladr		;; 10de: cd 30 13    .0.
@@ -2081,7 +2081,7 @@ L1150:	call	L1dff		;; 1150: cd ff 1d    ...
 	mvi	a,004h		;; 1173: 3e 04       >.
 	sta	L3376		;; 1175: 32 76 33    2v3
 	call	L1396		;; 1178: cd 96 13    ...
-	mvi	c,04eh	; end module (program)
+	mvi	c,1$00$1110b	; end module (program)
 	call	rel7bs		;; 117d: cd 42 13    .B.
 	lda	L160e		;; 1180: 3a 0e 16    :..
 	mov	c,a		;; 1183: 4f          O
@@ -2213,9 +2213,9 @@ asmext:	lda	pass		;; 126e: 3a 15 35    :.5
 	ora	l		;; 1279: b5          .
 	jz	L1289		;; 127a: ca 89 12    ...
 	push	h		;; 127d: e5          .
-	mvi	c,049h	; external plus offset
+	mvi	c,1$00$1001b	; external plus offset
 	call	rel7bs		;; 1280: cd 42 13    .B.
-	mvi	c,000h	; abs offset
+	mvi	c,00b	; abs offset
 	pop	d		;; 1285: d1          .
 	call	reladr		;; 1286: cd 30 13    .0.
 L1289:	call	getval		;; 1289: cd 3e 25    .>%
@@ -2225,7 +2225,7 @@ L1289:	call	getval		;; 1289: cd 3e 25    .>%
 	pop	d		;; 1291: d1          .
 	call	relref		;; 1292: cd f5 12    ...
 	call	symtyp		;; 1295: cd 1e 25    ..%
-	ani	0fch		;; 1298: e6 fc       ..
+	ani	11111100b	;; 1298: e6 fc       ..
 	mov	c,a		;; 129a: 4f          O
 	lda	curseg		;; 129b: 3a 20 35    : 5
 	ora	c		;; 129e: b1          .
@@ -2253,7 +2253,7 @@ prnadx:	lhld	L3508		;; 12bd: 2a 08 35    *.5
 ; send abs 8-bit item to REL
 ; A=value
 relabs:	push	psw		;; 12c9: f5          .
-	mvi	c,0		;; 12ca: 0e 00       ..
+	mvi	c,0b		;; 12ca: 0e 00       ..
 	mvi	e,1		;; 12cc: 1e 01       ..
 	call	relbts		;; 12ce: cd 8e 32    ..2
 	pop	psw		;; 12d1: f1          .
@@ -2286,7 +2286,7 @@ L12e7:	mov	c,m		;; 12e7: 4e          N
 ; send address reference to REL
 ; C=reloc type, DE=value
 relref:	mov	a,c		;; 12f5: 79          y
-	ani	003h		;; 12f6: e6 03       ..
+	ani	11b		;; 12f6: e6 03       ..
 	jnz	L1304		;; 12f8: c2 04 13    ...
 	; special link item...
 	push	d		;; 12fb: d5          .
@@ -2295,9 +2295,9 @@ relref:	mov	a,c		;; 12f5: 79          y
 	pop	psw		;; 1300: f1          .
 	jmp	relabs		;; 1301: c3 c9 12    ...
 
-L1304:	cpi	003h		;; 1304: fe 03       ..
+L1304:	cpi	11b		;; 1304: fe 03       ..
 	jnz	L1323		;; 1306: c2 23 13    .#.
-	; common relative address
+	; common relative address - select COMMON block
 	push	d		;; 1309: d5          .
 	lhld	L350d		;; 130a: 2a 0d 35    *.5
 	xchg			;; 130d: eb          .
@@ -2308,10 +2308,10 @@ L1304:	cpi	003h		;; 1304: fe 03       ..
 	shld	L350d		;; 131a: 22 0d 35    ".5
 	call	L0e0f		;; 131d: cd 0f 0e    ...
 L1320:	pop	d		;; 1320: d1          .
-	mvi	c,003h		;; 1321: 0e 03       ..
+	mvi	c,3		;; 1321: 0e 03       ..
 L1323:	push	d		;; 1323: d5          .
 	push	b		;; 1324: c5          .
-	mvi	c,1		;; 1325: 0e 01       ..
+	mvi	c,1b		;; 1325: 0e 01       ..
 	mvi	e,1		;; 1327: 1e 01       ..
 	call	relbts		;; 1329: cd 8e 32    ..2
 	pop	b		;; 132c: c1          .
@@ -2454,16 +2454,16 @@ L13ff:	dw	L1434	; n/a
 	dw	L1414	; chain external
 
 ; entry symbol: sym
-L1407:	mvi	c,040h		;; 1407: 0e 40       .@
+L1407:	mvi	c,1$00$0000b	;; 1407: 0e 40       .@
 	call	rel7bs		;; 1409: cd 42 13    .B.
 	jmp	L1425		;; 140c: c3 25 14    .%.
 
 ; define entry point: adr, sym
-L140f:	mvi	c,047h		;; 140f: 0e 47       .G
+L140f:	mvi	c,1$00$0111b	;; 140f: 0e 47       .G
 	jmp	L1416		;; 1411: c3 16 14    ...
 
 ; chain external: adr, sym
-L1414:	mvi	c,046h		;; 1414: 0e 46       .F
+L1414:	mvi	c,1$00$0110b	;; 1414: 0e 46       .F
 L1416:	call	rel7bs		;; 1416: cd 42 13    .B.
 	call	getval		;; 1419: cd 3e 25    .>%
 	push	h		;; 141c: e5          .
@@ -6302,7 +6302,7 @@ L314c:	lda	L2a3a		;; 314c: 3a 3a 2a    ::*
 	jmp	L314c		;; 3157: c3 4c 31    .L1
 
 ; END of program - REL EOF
-L315a:	mvi	c,09eh	; end file (plus a "0" bit)
+L315a:	mvi	c,1$00$1111$0b	; end file (plus a "0" bit)
 	mvi	e,8		;; 315c: 1e 08       ..
 	call	relbts		;; 315e: cd 8e 32    ..2
 	; pad record with eof chars...
