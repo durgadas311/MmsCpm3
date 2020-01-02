@@ -1927,8 +1927,10 @@ gideBoot:
 	ld	de,DLeds
 	call	BlkMovStk
 	db	3
-	ld	hl,0	; def segment off
+	ld	hl,0	; def segment off, lba, ...
 	ld	(I$2156),hl	; l2156h[0]=27:24, l2156h[1]=23:16
+	ld	(I$2156+2),hl
+	ld	(I$2156+4),hl
 	ld	a,l
 	or	a,11100000b	; LBA mode + std "1" bits
 	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
@@ -1963,16 +1965,16 @@ bgide0:
 	; can't use standard PAM37 boot entry...
 	ld	a,70		; phy drv number (MMS)
 	ld	(D$2034),a
-	ld	hl,00c3h	; "no string"
-	push	hl
-	ld	hl,ErrorDisplay
-	push	hl
-	pop	hl
 	ld	a,(MFlag)
 	and	0ffh-UO_DDU		; Turn on Display Update
 	ld	(MFlag),a		; Restore original front panel mode
 	ld	hl,(UsrClk)
 	ld	(UiVec+1),hl		; Clear timeout vector to just user vector
+	ld	hl,00c3h	; "no string"
+	push	hl
+	ld	hl,ErrorDisplay
+	push	hl
+	pop	hl	; leave "ghost" on stack
 	jp	UsrFWA
 
 bgide9:
@@ -3339,7 +3341,7 @@ inicrt1:
 	jp	inicrt0
 
 crtmsg:	db	ESC,'E',BEL
-	db	'v1.3',CR,LF
+	db	'v1.4',CR,LF
 	db	'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)
