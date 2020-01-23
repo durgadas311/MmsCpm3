@@ -53,6 +53,7 @@ if gide
 GIDE$BA	equ	80h		; GIDE base port
 GIDE$DA	equ	GIDE$BA+8	; GIDE data port
 GIDE$ER	equ	GIDE$BA+9	; GIDE error register
+GIDE$FR	equ	GIDE$BA+9	; GIDE feature register
 GIDE$SC	equ	GIDE$BA+10	; GIDE sector count
 GIDE$SE	equ	GIDE$BA+11	; GIDE sector number
 GIDE$CL	equ	GIDE$BA+12	; GIDE cylinder low
@@ -1931,6 +1932,8 @@ gideBoot:
 	ld	(I$2156),hl	; l2156h[0]=27:24, l2156h[1]=23:16
 	ld	(I$2156+2),hl
 	ld	(I$2156+4),hl
+	xor	a,a
+	out	GIDE$FR
 	ld	a,l
 	or	a,11100000b	; LBA mode + std "1" bits
 	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
@@ -3341,7 +3344,7 @@ inicrt1:
 	jp	inicrt0
 
 crtmsg:	db	ESC,'E',BEL
-	db	'v1.4',CR,LF
+	db	'v1.5',CR,LF
 	db	'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)

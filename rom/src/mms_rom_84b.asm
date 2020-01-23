@@ -1,6 +1,6 @@
 ; Z89/Z90 Monitor EPROM 444-84B, by Magnolia Microsystems
 ; Z89/Z90/H8-Z80 Monitor EPROM 444-84D, June 29, 2019, drm
-VERN	equ	16h	; ROM version
+VERN	equ	017h	; ROM version
 
 false	equ	0
 true	equ	not false
@@ -13,6 +13,7 @@ remex	equ	false
 corvus	equ	false
 xcomp	equ	false
 terminal equ	false
+verify	equ	false
 
 	maclib	z80
 	$*macro
@@ -27,7 +28,8 @@ DEL	equ	127
 if gide
 GIDE$BA	equ	80h		; GIDE base port
 GIDE$DA	equ	GIDE$BA+8	; GIDE data port
-GIDE$ER	equ	GIDE$BA+9	; GIDE error register
+GIDE$ER	equ	GIDE$BA+9	; GIDE error register (read)
+GIDE$FR	equ	GIDE$BA+9	; GIDE feature register (write)
 GIDE$SC	equ	GIDE$BA+10	; GIDE sector count
 GIDE$SE	equ	GIDE$BA+11	; GIDE sector number
 GIDE$CL	equ	GIDE$BA+12	; GIDE cylinder low
@@ -938,6 +940,7 @@ baud2:
 	djnz	baud2
 	mvi	a,00001111b	; all outputs ON
 	out	0ech		; OUT2=1 hides 16C2550 intr enable diff
+if verify
 	; compute checksum, compare
 	lxi	b,rombeg
 	exx
@@ -959,6 +962,9 @@ cksum0:
 	dsbc	d
 	jz	rom$ok
 	lxi	h,erprom
+else
+	jr	rom$ok
+endif
 msg$die:
 	call	msgout
 	di
@@ -2222,6 +2228,8 @@ bgide:
 	push	d
 	; parse a single letter
 	lxi	h,0	; def segment off
+	shld	l2156h+2
+	shld	l2156h+4
 	mov	a,c
 	cpi	0c3h	; JMP means no string present
 	jrz	nostr
@@ -2237,6 +2245,8 @@ bgide:
 	rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
 	mov	h,a	; swap for little endian SHLD/LHLD
 nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
+	xra	a
+	out	GIDE$FR	; needed after power-on?
 	mov	a,l
 	ori	11100000b	; LBA mode + std "1" bits
 	out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
@@ -3456,6 +3466,7 @@ prtver:
 versms:	db	'Version ',TRM
 vers:	db	VERN	; version byte... "1.0"
 
+if verify
 erprom:	db	CR,LF,BEL,'EPROM err',TRM
 
 	rept	1000h-$-4
@@ -3465,6 +3476,11 @@ romend:
 	dw	0
 chksum:
 	dw	04cfbh	; checksum...
+else
+	rept	1000h-$
+	db	0ffh
+	endm
+endif
 
 if	($ <> 1000h)
 	.error "i2732 ROM overrun"
