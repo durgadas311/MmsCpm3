@@ -18,6 +18,7 @@ VERS	EQU   '2 '  ; May 28, 2018 12:29 drm "ldrb320.asm"
 ?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
 
+ctl$F2	EQU	2036H		; last image of ?PORT
 BASE$PORT EQU	2150H		; PORT ADDRESS SAVE BY BOOT PROM
 BLCODE	EQU	2483H		; DEBLOCK CODE
 LSP	EQU	2484H		; LOGICAL SECTORS PER PHYSICAL
@@ -160,11 +161,16 @@ CHK02:	INP	A		; INPUT FROM CONTROL PORT
 DONE:	DI
 	mvi	a,09fh	; 2ms off, blank fp on H8
 	out	?h8pt	; H89 NMI should be innocuous
+	lda	ctl$F2
+	ani	11111101b	; CLK off
+	out	?PORT
+	ani	00100000b	; ORG0 already?
+	jrnz	done2
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
 	OUTIR
-	lxi	h,3000h+256
+done2:	lxi	h,3000h+256
 	lxi	d,loader
 	lbcd	syssiz
 	ldir
@@ -176,7 +182,7 @@ DONE:	DI
 	DB	0000$10$00B
 	DB	0000$11$00B
 	DB	0000$10$00B
-	DB	0010$00$10B	;changes memory if "-FA" also
+	DB	0010$00$00B	;changes memory if "-FA" also
 ?CODE$LEN	EQU	$-?CODE
 
 	ORG	SYSADR-1

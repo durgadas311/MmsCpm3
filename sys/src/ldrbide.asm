@@ -17,6 +17,7 @@ VERS	EQU   '1 '  ; June 27, 2019 05:26 drm "ldrbide.asm"
 
 ?PORT	EQU	0F2H
 
+ctl$F2	EQU	2036H		; last image of ?PORT
 SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
 				; SHOULD BE FOR BOOT LOADER TO PUT PARTITION
 				; ADDRESS IN.
@@ -106,11 +107,16 @@ load:
 DONE:	DI
 	mvi	a,10011111b	; H8 2mS off, display blank
 	out	0f0h	; H89 NMI here should be OK
+	lda	ctl$F2
+	ani	11111101b	; CLK off
+	out	?PORT
+	ani	00100000b	; ORG0 already?
+	jrnz	done2
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
 	OUTIR
-	lxi	h,3000h+256
+done2:	lxi	h,3000h+256
 	lxi	d,loader
 	lbcd	syssiz
 	ldir
@@ -122,7 +128,7 @@ DONE:	DI
 	DB	0000$10$00B
 	DB	0000$11$00B
 	DB	0000$10$00B
-	DB	0010$00$10B	;changes memory if "-FA" also
+	DB	0010$00$00B	;changes memory if "-FA" also
 ?CODE$LEN	EQU	$-?CODE
 
 	; TODO: detect overrun at assembler  time
