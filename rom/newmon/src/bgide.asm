@@ -23,8 +23,9 @@ first:	dw	last-first
 
 	db	'X'	; +10: Boot command letter
 	db	4	; +11: front panel key
-	db	11110011b,11000010b,10001100b	; +12: FP display ("IdE")
-	db	'GIDE',0	; +15: mnemonic string
+	db	80h	; +12: port, 0 if variable
+	db	11110011b,11000010b,10001100b	; +13: FP display ("IdE")
+	db	'GIDE',0	; +16: mnemonic string
 
 init:	ret
 
@@ -94,5 +95,8 @@ bgide0:
 	rept	(($+0ffh) and 0ff00h)-$
 	db	0ffh
 	endm
+if ($ > 1800h)
+	.error	'Module overflow'
+endif
 
 last:	end

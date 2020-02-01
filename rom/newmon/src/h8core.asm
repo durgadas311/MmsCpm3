@@ -26,13 +26,20 @@ R$CONST	equ	01f5ah	; 037.132 R.CONST block...
 CLOCK	equ	01c19h	; 034.031 CLOCK
 
 btovl	equ	1000h		; boot module overlay area (RAM)
+btbase	equ	btovl+2		; base phy drv num
 btinit	equ	btovl+4		; init entry point
 btboot	equ	btovl+7		; boot entry point
-btdisp	equ	btovl+12	; boot front panel mnemonic
-btname	equ	btovl+15	; boot string
+btchr	equ	btovl+10	; device letter
+btkey	equ	btovl+11	; device key
+btport	equ	btovl+12	; device port, 0 if variable
+btdisp	equ	btovl+13	; boot front panel mnemonic
+btname	equ	btovl+16	; boot string
 
 btmods	equ	2000h	; boot modules start in ROM
 bterom	equ	8000h	; end/size of ROM
+
+rptcnt	equ	16
+debounce equ	1
 
 ; Start of ROM code
 	org	00000h
@@ -46,7 +53,7 @@ rst1:	call	intsetup
 	lhld	ticcnt
 	jmp	int1$cont
 if ((high int1$cont) <> 0)
-	.error "Overlapped NOP error"
+	.error 'Overlapped NOP error'
 endif
 
 rst2	equ	$-1	; must be a nop...
@@ -83,6 +90,7 @@ subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
 mtms:	db	'em test',TRM
 
+; TODO: restore Z80 registers...
 intret:
 	pop	psw
 	pop	psw
@@ -100,6 +108,7 @@ int1$cont:
 	out	0f2h
 	jmp	int1$fp
 
+; TODO: save Z80 registers...
 intsetup:
 	xthl
 	push	d
@@ -125,19 +134,35 @@ re$entry:		; re-entry point for errors, etc.
 	mvi	m,0f0h	; !beep, 2mS, MON, !SI
 	lhld	monstk
 	sphl
-	call	belout
+	call	belout	; TODO: beep front panel if appropriate
 	;jmp	start
 start:
 	ei
 	lxi	h,start
 	push	h
+	; reset FP display... this doesn't make a lot of sense...
+	lda	DspMod
+	ani	00000001b
+	cma
+	sta	DsProt
+	;
 	lxi	h,prompt
 	call	msgout
-	call	clrdisp	; temp
 prloop:
-	call	coninx
-	ani	01011111b ; toupper
-	lxi	h,cmdtab
+	; could take one of two paths here,
+	; console or kaypad...
+	call	cmdin
+	ani	11011111b ; toupper
+	jp	cmchr	; from console...
+	; keypad pressed...
+	cpi	8ah	; non-digit (hex req first be '0')
+	jrnc	cmchr
+	mov	b,a
+	lda	DspMod
+	rrc	; CY=alter mode
+	jc	kpalter	; alter mode - numeric values only
+	mov	a,b
+cmchr:	lxi	h,cmdtab
 	mvi	b,numcmd
 cmloop:
 	cmp	m
@@ -150,11 +175,12 @@ cmloop:
 	jr	prloop
 
 docmd:
-	call	conout
-	mov	a,m
+	ora	a
+	cp	conout
+	mov	c,m
 	inx	h
 	mov	h,m
-	mov	l,a
+	mov	l,c
 icall:	pchl
 
 cmdtab:
@@ -180,7 +206,48 @@ cmdtab:
 	dw	cmdab
 	db	'U'	; update entire ROM
 	dw	cmdur
+	; front-panel commands
+	db	80h	; [0]
+	dw	kpubt	; Universal Boot
+	db	81h	; [1]
+	dw	kpdbg
+	db	82h	; [2]
+	dw	kpdbg
+	db	83h	; [3]
+	dw	kpdbg
+	db	84h	; [4]
+	dw	kpdbg
+	db	85h	; [5]
+	dw	kpdbg
+	db	86h	; [6]
+	dw	kpdbg
+	db	87h	; [7]
+	dw	kpdbg
+	db	88h	; [8]
+	dw	kpdbg
+	db	89h	; [9]
+	dw	kpdbg
+	db	8ah	; [A] [+]
+	dw	kpdbg
+	db	8bh	; [B] [-]
+	dw	kpdbg
+	db	8ch	; [C] [*]
+	dw	kpdbg
+	db	8dh	; [D] [/]
+	dw	kpdbg
+	db	8eh	; [E] [#]
+	dw	kpdbg
+	db	8fh	; [F] [.]
+	dw	kpdbg
 numcmd	equ	($-cmdtab)/3
+
+	rept	0137h-$
+	db	0ffh
+	endm
+if	($ <> 0137h)
+	.error 'HDOS entry overrun 0137h'
+endif
+	jmp	0	; initialized by H47 boot module
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PC command (set PC)
@@ -226,15 +293,6 @@ cmdgo0:
 	pop	h
 	jmp	intret
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-	rept	0137h-$
-	db	0ffh
-	endm
-if	($ <> 0137h)
-	.error "HDOS entry overrun 0137h"
-endif
-	jmp	0	; initialized by H47 boot module
-
 
 int2$cont:
 	ori	010h	; disable single-step
@@ -295,9 +353,10 @@ gtdev0:
 	mvi	d,5
 	rz		; Z47
 	cpi	10b
-	mvi	d,3
-	rz		; Z67/MMS77320
-	jmp	error	; fatal error... not defined
+	mvi	d,3	; Z67/MMS77320
+	rz
+	mvi	d,0ffh
+	ret	; NZ
 
 ; determine device for port 078H
 ; return phy drv number in D.
@@ -340,7 +399,7 @@ s501er:
 	lxi	h,s501ms
 	jmp	msgout
 
-s501ms:	db	'SW1 wrong ',TRM
+s501ms:	db	'SW1 wrong',TRM
 
 inport0:
 	ora	a	; NC
@@ -431,14 +490,18 @@ nodig:	; boot by letter... Boot alpha-
 	call	conout
 	call	conout
 	cpi	'B'
-	jrc	gotit	; 'A' is synonym for default
-	push	b
+	jrnc	gotit1
+	; 'A' is synonym for default
+	mov	a,d
+	cpi	0ffh
+	jz	s501er
+	jr	gotit
+gotit1:	push	b
 	mov	c,a
 	lxi	h,bfchr
 	call	bfind
 	pop	b
 	jc	error
-	call	setboot	; temp?
 	lda	btovl+2	; base phy drv num
 	mov	d,a
 gotit:
@@ -550,6 +613,10 @@ init:
 	sta	PrsRAM
 	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
 	shld	MFlag
+	mvi	a,2	; display registers
+	sta	DspMod
+	mvi	a,debounce
+	sta	kpcnt
 	rst	1	; kick-start clock
 	lxi	h,signon
 	call	msgout
@@ -624,24 +691,6 @@ inhexcr:
 	rc
 	call	belout
 	jr	inhexcr
-
-; This loop checks for auto boot while waiting for command input.
-; Theoretically, one could flip the auto-boot dipsw at the MMS: prompt?
-coninx0:
-	call	nulfn	; some patched-out code?
-coninx:
-	in	0edh
-	rrc
-	jrnc	coninx0
-conin:
-	in	0edh
-	rrc
-	jrnc	conin
-	in	0e8h
-	ani	07fh
-	cpi	DEL	; DEL key restarts from anywhere?
-	jz	re$entry
-	ret
 
 belout:
 	mvi	a,BEL
@@ -758,33 +807,15 @@ ci0:	mvi	a,083h
 	out	0ech
 	ret
 
-waitcr:
-	call	conin
-	cpi	CR
-	jrnz	waitcr
-crlf:
-	mvi	a,CR
-	call	conout
-	mvi	a,LF
-	jmp	conout
-
-msgout:
-	mov	a,m
-	ora	a
-	rz
-	call	conout
-	inx	h
-	jr	msgout
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Memory Test command
 cserr:
 	lxi	h,cserms
-	jr	msgout
+	jmp	msgout
 
 cserms:	db	BEL,'Cksum error',TRM
 topms:	db	'Top of Mem: ',TRM
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Memory Test command
 cmdmt:
 	lxi	h,mtms
 	call	msgout
@@ -1019,6 +1050,199 @@ mtestH:
 mtestZ	equ	$
 ;------------------------------------------------
 
+prompt:	db	CR,LF,'H8: ',TRM
+
+; Special entry points expected by HDOS, or maybe Heath CP/M boot.
+	rept	0613h-$
+	db	0ffh
+	endm
+if	($ <> 0613h)
+	.error 'HDOS entry overrun 0613h'
+endif
+	jmp	0	; initialized by H47 boot module
+	db	0
+	jmp	0	; initialized by H47 boot module
+
+kpubt:
+	lda	MFlag
+	ori	00000010b	; disable disp updates
+	sta	MFlag
+	call	clrdisp	; clean slate
+	lxi	b,dDev
+	lxi	d,ALeds
+	call	mov3dsp
+	call	keyin	; get device
+	ani	01111111b
+	cpi	0ch	; cancel
+	jz	kperr
+	sta	BDF
+	mov	c,a
+	lxi	h,bfkey
+	call	bfind
+	jrc	deverr
+	lxi	b,btdisp
+	lxi	d,ALeds
+	call	mov3dsp
+	push	d	; save LEDs pointer
+	; determine if fixed port...
+	lda	btport
+	ora	a
+	jrnz	gotprt
+	lxi	b,dPor
+	call	mov3dsp
+	call	keyin	; get port
+	ani	01111111b
+	cpi	04h	; 0..3 allowed
+	jnc	deverr
+	mov	e,a
+	mvi	d,0
+	lxi	h,ports
+	dad	d
+	mov	a,m
+gotprt:	pop	h	; LEDs pointer
+	sta	cport
+	call	dod	; decode number to HL
+	mov	d,h
+	mov	e,l
+	lxi	b,dUni
+	call	mov3dsp
+	call	keyin	; get unit
+	ani	01111111b
+	sta	AIO$UNI
+	mov	b,a
+	lda	btbase
+	add	b
+	sta	l2034h
+	; now boot...
+	mvi	a,0c3h
+	sta	bootbf	; mark "no string"
+	lxi	sp,bootbf
+	call	btboot	; only returns if error...
+
+kperr:
+deverr:	; TODO: implement
+	lxi	h,MFlag
+	mov	a,m
+	ani	11111110b	; disable "private" clock intr
+	mov	m,a
+	lxi	b,dErr
+	lxi	d,ALeds
+	mvi	l,6
+	call	movLdsp
+	mvi	c,10000000b	; beep on/off bit
+	lxi	h,ticcnt
+	lxi	d,ctl$F0
+bterr0:
+	ldax	d
+	xra	c	; beep on
+	stax	d
+	mov	a,m
+	adi	25	; 50mS
+bterr2:
+	cmp	m
+	jrnz	bterr2
+	ldax	d
+	xra	c	; beep off
+	stax	d
+	mov	a,m
+	adi	-1
+bterr1:	cmp	m
+	jrz	bterr0
+	lda	kpchar
+	cpi	01101111b	; raw pattern for '*' or CANCEL
+	jrnz	bterr1
+	xra	a
+	sta	kpchar
+	lxi	h,MFlag
+	mov	a,m
+	ani	10111101b	; normal mode...
+	mov	m,a
+	; this duplicates some code in re$entry...
+	lhld	monstk
+	sphl
+	lxi	h,start
+	push	h
+	jmp	prloop
+
+; port options for keys 0-3
+ports:	db	078h,07ch,0b8h,0bch
+
+; A=DspMod >> 1, B=key
+kpalter:
+	lhld	ABUSS
+	rrc	; register (else memory)
+	jrc	kpreg
+	call	iob
+	inx	h
+	shld	ABUSS
+	jmp	prloop
+
+; B=key
+kpreg:
+	lda	RegI
+	ora	a
+	jz	kperr	; RegI == 0 (SP) not allowed
+	mov	e,a
+	mvi	d,0
+	lhld	RegPtr
+	dad	d
+	inx	h	; HL=high byte of address
+	stc
+	call	iob
+	dcx	h	; HL=low byte of address
+	call	iob
+	jmp	prloop
+
+; B=key, CY=first digit
+iob:	rarr	c	; save CY => C bit 7
+	lda	Radix
+	ora	a
+	mov	a,b
+	jrz	ioboct
+; iobhex - to avoid conflict with cmd keys A-F, first input must be [0]
+	ani	01111111b
+	jnz	kperr
+	ralr	c	; restore CY
+	mvi	d,2
+iobh0:	cnc	keyin
+	ani	01111111b
+	mov	e,a
+	mov	a,m
+	rlc
+	rlc
+	rlc
+	rlc
+	ani	11110000b
+	ora	e	; also ensure NC for loop
+	mov	m,a
+	dcr	d
+	jrnz	iobh0
+	jr	iob0
+ioboct:
+	ralr	c	; restore CY
+	mvi	d,3
+iobo0:	cnc	keyin
+	ani	01111111b
+	cpi	8
+	jnc	kperr
+	mov	e,a
+	mov	a,m
+	rlc
+	rlc
+	rlc
+	ani	11111000b
+	ora	e	; also ensure NC for loop
+	mov	m,a
+	dcr	d
+	jrnz	iobo0
+iob0:
+	; TODO: blip to ack entry?
+	ret
+
+; temporary: for debugging
+kpdbg:	call	hexdig
+	jmp	prloop
+
 ; returns with interrupts disabled
 h17init:
 	di
@@ -1051,28 +1275,284 @@ h17ini0:
 	pop	d
 	ret
 
-prompt:	db	CR,LF,'H8: ',TRM
+waitcr:
+	call	conin
+	cpi	CR
+	jrnz	waitcr
+crlf:
+	mvi	a,CR
+	call	conout
+	mvi	a,LF
+	jmp	conout
 
-nulfn:
+msgout:
+	mov	a,m
+	ora	a
+	rz
+	call	conout
+	inx	h
+	jr	msgout
+
+; called in the context of a command on console
+conin:	in	0edh
+	rrc
+	jrc	conin0
+	lda	kpchar
+	ora	a
+	jrz	conin
+	; cancel console cmd, leave keypad char for cmdin
+	jmp	start
+
+conin0:	in	0e8h
+	ani	07fh
+	cpi	DEL	; DEL key restarts from anywhere?
+	jz	re$entry
 	ret
 
-; Special entry points expected by HDOS, or maybe Heath CP/M boot.
-	rept	0613h-$
-	db	0ffh
-	endm
-if	($ <> 0613h)
-	.error "HDOS entry overrun 0613h"
-endif
-	jmp	0	; initialized by H47 boot module
-	db	0
-	jmp	0	; initialized by H47 boot module
+; called in the context of command on front-panel
+keyin:	lda	kpchar
+	ora	a
+	jrnz	getkey
+	in	0edh
+	rrc
+	jrnc	keyin
+	; cancel kaypad cmd, leave console char for cmdin
+	; TODO: what modes need reset?
+	jmp	start
 
-; temp: do this the hard way...
-setboot:
-	lhld	btdisp
-	shld	Aleds
-	lda	btdisp+2
-	sta	Aleds+2
+; wait for command - console or keypad
+cmdin:
+	in	0edh
+	rrc
+	jrc	conin0
+	lda	kpchar
+	ora	a
+	jrz	cmdin
+getkey:	push	psw	; A=scan code
+	xra	a
+	sta	kpchar
+	pop	psw
+	xri	11111110b
+	rrc
+	jrnc	gotkey
+	rrc
+	rrc
+	rrc
+	rrc
+gotkey:	ani	00001111b
+	ori	10000000b	; distinguish from console input
+	; TODO: check for CANCEL key?
+	ret
+
+; keypad check at 32mS
+kpchk:	lxi	h,RckA
+	in	0f0h
+	cmp	m	; RckA
+	jrnz	kpchk0
+	ani	00010001b
+	cpi	00010001b
+	rz	; nothing pressed
+	mov	a,m
+	; need to count auto-repeat/debounce
+	inx	h	; kpcnt
+	dcr	m
+	rnz
+	; got a key press...
+	sta	kpchar
+	mvi	m,rptcnt
+	ret
+kpchk0:	mov	m,a	; RckA
+	inx	h	; kpcnt
+	mvi	m,debounce
+	ret
+
+; Update Front-panel Display
+ufd:	mvi	a,00000010b
+	ana	b
+	rnz		; updates disabled
+	mvi	l,LOW DsProt
+	mov	a,m
+	rlc
+	mov	m,a
+	mov	b,a
+	inx	h	; DspMod
+	mov	a,m
+	ani	00000010b
+	lhld	ABUSS
+	jrz	ufd1	; displaying memory
+	; displaying registers
+	call	lra	; locate register address offset (DE)
+	push	h
+	lxi	h,LedRegTbl
+	dad	d
+	mov	a,m
+	inx	h
+	mov	h,m
+	mov	l,a
+	xthl
+	ora	h
+	mov	a,m
+	inx	h
+	mov	h,m
+	mov	l,a
+ufd1:	push	psw
+	xchg
+	lxi	h,ALeds
+	mov	a,d
+	call	dod
+	mov	a,e
+	call	dod
+	pop	psw
+	ldax	d
+	jrz	dod	; if displaying memory
+	; displaying register name
+	pop	b
+	lxi	d,DLeds
+mv3byt:	mvi	l,3
+mvb:	ldax	b
+	stax	d
+	inx	b
+	inx	d
+	dcr	l
+	jrnz	mvb
+	ret
+
+dod:	mov	c,a	; value to display
+	lda	Radix
+	ana	a	; Z if octal (also CY=0)
+	mov	a,c
+	jrnz	dodhex
+	push	d
+	mvi	c,3
+dodr5:	ral
+	ral
+	ral
+	push	psw
+	ani	07h
+	add	LOW doddig
+	mov	e,a
+	mvi	a,HIGH doddig
+	aci	0
+	mov	d,a
+	ldax	d
+	xra	b	; DP on/off
+	and	01111111b	; why???
+	xra	b
+	mov	m,a
+	inx	h
+	mov	a,b	; rlcr b
+	rlc
+	mov	b,a
+	pop	psw
+	dcr	c
+	jrnz	dodr5
+	pop	d
+	ret
+
+dodhex:	push	d
+	mvi	c,2
+deh55:	rlc
+	rlc
+	rlc
+	rlc
+	push	psw
+	ani	0fh
+	add	LOW doddig
+	mov	e,a
+	mvi	a,HIGH doddig
+	aci	0
+	mov	d,a
+	ldax	d
+	xra	b	; DP on/off
+	mov	m,a
+	inx	h
+	mov	a,b	; rlcr b
+	rlc
+	mov	b,a
+	pop	psw
+	dcr	c
+	jrnz	deh55
+	pop	d
+	mvi	a,01101111b	; "o."
+	xra	b	; DP on/off
+	and	01111111b	; why???
+	xra	b
+	mov	m,a
+	inx	h
+	mov	a,b	; rlcr b
+	rlc
+	mov	b,a
+	ret
+
+; octal (base 8) 7-seg translation
+doddig:	db	00000001b	; "0."
+	db	01110011b	; "1."
+	db	01001000b	; "2."
+	db	01100000b	; "3."
+	db	00110010b	; "4."
+	db	00100100b	; "5."
+	db	00000100b	; "6."
+	db	01110001b	; "7."
+	db	00000000b	; "8."
+	db	00100000b	; "9."
+	db	00010000b	; "A."
+	db	00000110b	; "b."
+	db	00001101b	; "C."
+	db	01000010b	; "d."
+	db	00001100b	; "E."
+	db	00011100b	; "F."
+
+dSP:	db	11111111b,10100100b,10011000b	; " SP"
+dPSW:	db	11111111b,10010000b,10011100b	; " AF"
+dBC:	db	11111111b,10000110b,10001101b	; " BC"
+dDE:	db	11111111b,11000010b,10001100b	; " DE"
+dHL:	db	11111111b,10010010b,10001111b	; " HL"
+dIX:	db	11111111b,11110011b,10110110b	; " IX"
+dIY:	db	11111111b,11110011b,11011110b	; " IY"
+dIR:	db	11111111b,11110011b,11010011b	; " IR"
+dPSWp:	db	10010000b,10011100b,10111111b	; "AF'"
+dBCp:	db	10000110b,10001101b,10111111b	; "BC'"
+dDEp:	db	11000010b,10001100b,10111111b	; "DE'"
+dHLp:	db	10010010b,10001111b,10111111b	; "HL'"
+dPC:	db	11111111b,10011000b,11001110b	; " PC"
+
+dDev:	db	11000010b,10001100b,10000011b	; "dEU" (dev)
+dPor:	db	10011000b,11000110b,11011110b	; "Por"
+dUni:	db	10000011b,11010110b,11110111b	; "Uni"
+dErr:	db	10001100b,11011110b,11011110b	; "Error "
+	db	11000110b,11011110b,11111111b
+
+LedRegTbl:
+	dw	dSP	; 0
+	dw	dPSW	; 1
+	dw	dBC	; 2
+	dw	dDE	; 3
+	dw	dHL	; 4
+	dw	dIX	; 5	- TODO
+	dw	dIY	; 6	- TODO
+	dw	dIR	; 7	- TODO
+	dw	dPSWp	; 8	- TODO
+	dw	dBCp	; 9	- TODO
+	dw	dDEp	; 10	- TODO
+	dw	dHLp	; 11	- TODO
+	dw	dPC	; 12	- 5
+
+lra:	lda	RegI
+lrax:	mov	e,a
+	mvi	d,0
+	lhld	RegPtr
+	dad	d
+	ret
+
+mov3dsp:
+	mvi	l,3
+movLdsp:
+md0:	ldax	b
+	stax	d
+	inx	b
+	inx	d
+	dcr	l
+	jrnz	md0
 	ret
 
 clrdisp:
@@ -1085,7 +1565,7 @@ clrdisp:
 	ldir
 	ret
 
-; Front panel display refresh...
+; Front panel display refresh and keypad check
 int1$fp:
 	lxi	h,MFlag
 	mov	a,m
@@ -1107,11 +1587,15 @@ fp3:	ora	c
 	out	0f0h
 	mov	a,m
 	out	0f1h
-	; See if time to update display values
-;	mvi	l,LOW ticcnt
-;	mov	a,m
-;	ani	1fh
-;	cz	ufd
+	; See if time to update display values or check keypad
+	mvi	l,LOW ticcnt
+	mov	a,m
+	push	psw
+	ani	31	; 64mS
+	cz	ufd
+	pop	psw
+	ani	15	; 32mS
+	cz	kpchk
 	jmp	intret
 
 ; match boot module by character (letter)
@@ -1128,8 +1612,11 @@ bfkey:	ldx	a,+11
 bfnum:	mov	a,c
 	subx	+2
 	cmpx	+3
-	rnc	; also NZ
+	jrnc	bfn0 ; might be Z...
 	xra	a
+	ret
+bfn0:	xra	a
+	inr	a
 	ret
 
 bflst:	mov	a,c
@@ -1137,19 +1624,33 @@ bflst:	mov	a,c
 	mvi	a,','
 	cnz	conout
 	inr	c
+	mov	a,b
+	subx	+2
+	cmpx	+3
+	jrnc	bfl2
+	mvi	a,'*'
+	call	conout
+bfl2:
 	pushix
 	pop	h
-	lxi	d,15
+	lxi	d,16
 	dad	d
 	call	msgout
 	lxi	h,bflst
 	xra	a
-	inr	a	; NZ
+	inr	a	; NZ - keep going
 	ret
 
-bfllst:	pushix
+bfllst:	mov	a,b
+	subx	+2
+	cmpx	+3
+	mvi	a,' '
+	jrnc	bfll2
+	mvi	a,'*'
+bfll2:	call	conout
+	pushix
 	pop	h
-	lxi	d,15
+	lxi	d,16
 	dad	d
 	call	msgout
 	mvi	a,TAB
@@ -1179,11 +1680,11 @@ bfll0:	call	conout
 bfll1:	call	crlf
 	lxi	h,bfllst
 	xra	a
-	inr	a	; NZ
+	inr	a	; NZ - keep going
 	ret
 
 ; Find boot module and load into 1000h if necessary.
-; HL=match function, returns Z if found, BC=target, IX=module
+; HL=match function: returns Z if found, BC=target, IX=module
 ; Return CY at end of modules (not found)
 bfind:
 	; first, check if already loaded
@@ -1192,12 +1693,13 @@ bfind:
 	rz
 bfind0:
 	; must map ROM back in, so prevent interruptions...
-	; also, loose memory at SP...
+	; also, we loose memory at SP...
 	di
 	lxiy	0
 	dady	sp
-	lxi	sp,0ffffh
+	lxi	sp,0e000h	; a safe SP?
 	lda	ctl$F2
+	push	psw
 	ani	11011111b	; ORG0 off
 	out	0f2h
 	lxix	btmods	; start of modules...
@@ -1216,9 +1718,9 @@ bf0:	call	icall
 	anax	+1
 	cpi	0ffh
 	jrnz	bf0
-bf1:	stc	; CY = end of list (not found)
-	lda	ctl$F2
+bf1:	pop	psw
 	out	0f2h
+	stc	; CY = end of list (not found)
 	spiy
 	ei
 	ret
@@ -1231,7 +1733,7 @@ bf9:	; match found, now load into place and init
 	lxi	d,btovl
 	ldir
 	; now call init routine... but must restore RAM...
-	lda	ctl$F2
+	pop	psw
 	out	0f2h
 	call	btinit
 	xra	a	; NC
@@ -1273,9 +1775,8 @@ gtdvtb0:
 	mov	h,a
 	mov	a,m
 	cpi	0ffh
-	rz	; no device
 	mov	d,a
-	ret	; NZ
+	ret	; NZ=none, Z=found
 
 defbt:	; default boot table... port F2 bits 01110000b
 	db	33	; -000---- MMS 5" floppy 0
@@ -1291,16 +1792,20 @@ defbt:	; default boot table... port F2 bits 01110000b
 ; List available boot modules
 cmdlb:	lxi	h,lbmsg
 	call	msgout
+	call	gtdfbt
+	mov	b,d
 	lxi	h,bflst
 	mvi	c,0
 	call	bfind0
 	ret
 
 lbmsg:	db	'ist boot modules',CR,LF,0
-hbmsg:	db	'elp boot modules',CR,LF,0
+hbmsg:	db	'elp boot',CR,LF,0
 
 cmdhb:	lxi	h,hbmsg
 	call	msgout
+	call	gtdfbt
+	mov	b,d
 	lxi	h,bfllst
 	call	bfind0
 	ret
@@ -1387,14 +1892,18 @@ endif
 	db	0ffh
 	endm
 if	($ <> 1000h)
-	.error "core ROM overrun"
+	.error 'core ROM overrun'
 endif
 
 ; module overlay area starts here...
+; ensure this does not match any...
+	dw	-1
+	db	0,0
+
 	rept	1800h-$
 	db	0ffh
 	endm
 if	($ <> 1800h)
-	.error "overlay ROM overrun"
+	.error 'overlay ROM overrun'
 endif
 	end
