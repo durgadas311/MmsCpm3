@@ -45,9 +45,10 @@ debounce equ	1
 	org	00000h
 
 rombeg:
-rst0:	jmp	init
+rst0:	nop	; can't be JMP or Heath CP/M thinks we're an H89
+	jmp	init
 
-bootms:	db	'oot ',TRM
+	db	0,0,0,0
 
 rst1:	call	intsetup
 	lhld	ticcnt
@@ -63,8 +64,7 @@ rst2	equ	$-1	; must be a nop...
 
 rst3:	jmp	vrst3
 
-goms:	db	'o ',TRM
-	db	0,0
+	db	0,0,0,0,0
 
 rst4:	jmp	vrst4
 
@@ -83,12 +83,10 @@ rst6:	jmp	vrst6
 
 rst7:	jmp	vrst7
 
+; routines made public (to modules)
 	jmp	hwboot
 	jmp	hxboot
-
-subms:	db	'ubstitute ',TRM
-pcms:	db	'rog Counter ',TRM
-mtms:	db	'em test',TRM
+	jmp	take$A
 
 ; TODO: restore Z80 registers...
 intret:
@@ -304,7 +302,7 @@ int2$cont:
 
 take$5:
 	mvi	a,5	; 5 seconds
-take$A:
+take$A:	; set a timeout for A seconds
 	lxi	h,timeout
 	shld	vrst1+1
 	sta	SEC$CNT
@@ -607,7 +605,7 @@ init:
 	xra	a
 	sta	l2153h
 	mvi	a,00100000b	; ORG0 on, 2mS off...
-	sta	ctl$F2	; 2mS, Org0 OFF
+	sta	ctl$F2	; 2mS off, Org0 on
 	out	0f2h	; enable RAM now...
 	mvi	a,0c9h	; RET
 	sta	PrsRAM
@@ -1062,6 +1060,12 @@ endif
 	jmp	0	; initialized by H47 boot module
 	db	0
 	jmp	0	; initialized by H47 boot module
+
+bootms:	db	'oot ',TRM
+goms:	db	'o ',TRM
+subms:	db	'ubstitute ',TRM
+pcms:	db	'rog Counter ',TRM
+mtms:	db	'em test',TRM
 
 kpubt:
 	lda	MFlag
