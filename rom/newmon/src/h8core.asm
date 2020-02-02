@@ -569,6 +569,8 @@ goboot:
 	call	bfind	; might have already been loaded...
 	pop	d
 	rc
+; D=phy drv base, E=unit
+doboot:	; common boot path for console and keypad
 	call	h17init
 	mov	a,e
 	sta	AIO$UNI	; relative unit num
@@ -1112,17 +1114,13 @@ gotprt:	pop	h	; LEDs pointer
 	call	mov3dsp
 	call	keyin	; get unit
 	ani	01111111b
-	sta	AIO$UNI
-	mov	b,a
+	mov	e,a
 	lda	btbase
-	add	b
-	sta	l2034h
-	; now boot...
+	mov	d,a
 	mvi	a,0c3h
 	sta	bootbf	; mark "no string"
 	lxi	sp,bootbf
-	call	btboot	; only returns if error...
-
+	call	doboot	; only returns if error...
 kperr:
 deverr:	; TODO: implement
 	lxi	h,MFlag
