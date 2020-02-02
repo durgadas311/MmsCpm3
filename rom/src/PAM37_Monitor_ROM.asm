@@ -2648,7 +2648,7 @@ J_091F:	 CALL	ByteToPortOff
 C_0927:	CALL	ByteToPortOff
 	 db	01, 01		; Mux port 1 (trk/sec regs)
 
-	call	0738h		; SECTOR = 1
+	call	AtoPortOff	; SECTOR = 1
 	LD	(BC),A
 	CALL	ByteToPortOff
 	 db	0, 1		; Mux port 0 (cmd-sts/dat regs)
@@ -3344,7 +3344,7 @@ inicrt1:
 	jp	inicrt0
 
 crtmsg:	db	ESC,'E',BEL
-	db	'v1.5',CR,LF
+	db	'v1.6',CR,LF
 	db	'H8 Console initialized!',CR,LF,LF,0
 
 ;	  if  ($ != 0c7ch)
