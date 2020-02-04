@@ -1629,10 +1629,8 @@ bflst:	mov	a,c
 	mov	a,b
 	subx	+2
 	cmpx	+3
-	jrnc	bfl2
 	mvi	a,'*'
-	call	conout
-bfl2:
+	cc	conout
 	pushix
 	pop	h
 	lxi	d,16
@@ -1688,6 +1686,7 @@ bfll1:	call	crlf
 ; Find boot module and load into 1000h if necessary.
 ; HL=match function: returns Z if found, BC=target, IX=module
 ; Return CY at end of modules (not found)
+; Must preserve BC during search loop.
 bfind:
 	; first, check if already loaded
 	lxix	btovl
@@ -1703,6 +1702,7 @@ bfind0:
 	lda	ctl$F2
 	push	psw
 	ani	11011111b	; ORG0 off
+	ori	00001000b	; MEM1 on
 	out	0f2h
 	lxix	btmods	; start of modules...
 bf0:	call	icall
@@ -1745,17 +1745,17 @@ bf9:	; match found, now load into place and init
 
 ; assume < 100
 decout:
-	mvi	b,'0'
+	mvi	d,'0'
 decot0:
 	sui	10
 	jc	decot1
-	inr	b
+	inr	d
 	jmp	decot0
 decot1:
 	adi	10
 	adi	'0'
 	push	psw
-	mov	a,b
+	mov	a,d
 	call	conout
 	pop	psw
 	jmp	conout
