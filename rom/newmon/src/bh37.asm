@@ -18,7 +18,8 @@ first:	dw	last-first
 	db	10010010b,11100000b,11110001b	; +13: FP display ("H37")
 	db	'H37',0	; +16: mnemonic string
 
-init:	ret
+init:	xra	a	; NC
+	ret
 
 boot:
 	lxi	h,intz37

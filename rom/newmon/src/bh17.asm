@@ -26,7 +26,8 @@ first:	dw	last-first
 	db	10010010b,11110011b,11110001b	; +13: FP display ("H17")
 	db	'H17',0	; +16: mnemonic string
 
-init:	ret
+init:	xra	a	; NC
+	ret
 
 boot:	mov	a,d
 	add	e

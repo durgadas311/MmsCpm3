@@ -1,4 +1,6 @@
 ; Boot Module for VDIP1 (USB thumb drive)
+; TODO: make port variable?
+
 	maclib	ram
 	maclib	core
 	maclib	z80
@@ -11,12 +13,16 @@ first:	dw	last-first
 	jmp	boot	; +7: boot entry
 
 	db	'V'	; +10: Boot command letter
-	db	-1	; +11: front panel key
+	db	6	; +11: front panel key
 	db	0b0h	; +12: port, 0 if variable
 	db	10000011b,10100100b,10000110b	; +13: FP display ("USb")
 	db	'VDIP1',0	; +16: mnemonic string
 
-init:	ret
+defbt:	db	'defboot',0	; default boot file
+
+init:
+	xra	a	; NC
+	ret
 
 boot:	ret
 

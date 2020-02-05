@@ -22,6 +22,7 @@ init:
 	rnz
 	mov	a,b
 	sta	cport
+	xra	a	; NC
 	ret
 
 boot:

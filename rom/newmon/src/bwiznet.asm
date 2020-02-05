@@ -112,6 +112,7 @@ init:
 	; TODO: how to throw error...
 	; rc
 	sta	nodeid ; our slave (client) ID
+	xra	a	; NC
 	ret
 
 getwiz1:

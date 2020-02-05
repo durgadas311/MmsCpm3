@@ -1951,8 +1951,8 @@ bf9:	; match found, now load into place and init
 	; now call init routine... but must restore RAM...
 	pop	psw
 	out	0f2h
-	call	btinit
-	xra	a	; NC
+	; NOTE: btinit == cminit
+	call	btinit	; CY indicates error, pass along...
 	spiy
 	ei
 	ret

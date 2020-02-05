@@ -27,7 +27,8 @@ first:	dw	last-first
 	db	11110011b,11000010b,10001100b	; +13: FP display ("IdE")
 	db	'GIDE',0	; +16: mnemonic string
 
-init:	ret
+init:	xra	a	; NC
+	ret
 
 boot:
 	; Partition is passed to bootloader, but we need

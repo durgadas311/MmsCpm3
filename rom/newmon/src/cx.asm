@@ -19,6 +19,7 @@ first:	dw	last-first
 init:
 	lxi	h,inimsg
 	call	msgout
+	xra	a	; NC
 	ret
 
 exec:
