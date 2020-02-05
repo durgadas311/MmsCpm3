@@ -19,6 +19,12 @@ ESC	equ	27
 TRM	equ	0
 DEL	equ	127
 
+; ctrl port F2 bit definitions
+ctl$CLK		equ	00000010b	; enable H89 2mS clock (not used here)
+ctl$MEM1	equ	00001000b	; maps full ROM (if !ORG0)
+ctl$ORG0	equ	00100000b	; maps full RAM
+ctl$IO1		equ	10000000b	; enables EEPROM write
+
 memtest	equ	03000h
 ramboot	equ	0c000h
 ; fudge this... H17 junk
@@ -598,6 +604,8 @@ msg$die:
 ; But, right now, ROM is in 0000-7FFF so must copy
 ; core code and switch to RAM...
 init:
+	mvi	a,ctl$MEM1	; MEM1 = full ROM
+	out	0f2h	; enable full ROM
 	lxi	h,0
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
@@ -611,8 +619,8 @@ init:
 	xra	a
 	sta	l2153h
 	sta	lstcmd
-	mvi	a,00100000b	; ORG0 on, 2mS off...
-	sta	ctl$F2	; 2mS off, Org0 on
+	mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
+	sta	ctl$F2	; 2mS off, ORG0 on
 	out	0f2h	; enable RAM now...
 	mvi	a,0c9h	; RET
 	sta	PrsRAM
@@ -819,12 +827,13 @@ ci0:	mvi	a,083h
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Memory Test command
-cserr:
-	lxi	h,cserms
-	jmp	msgout
 
 cserms:	db	BEL,'Cksum error',TRM
 topms:	db	'Top of Mem: ',TRM
+
+cserr:
+	lxi	h,cserms
+	jmp	msgout
 
 cmdmt:
 	lxi	h,mtms
@@ -874,7 +883,7 @@ cmdmt1:
 	mov	c,a
 	exaf
 	cmp	c
-	jnz	cserr
+	jrnz	cserr
 	di
 	jmp	memtest - (mtest1-mtest)
 
@@ -884,7 +893,7 @@ cmdmt1:
 ;
 mtest0:
 mtest:
-	mvi	a,20h	; ORG0 on (ROM off)
+	mvi	a,ctl$ORG0	; ORG0 on (ROM off)
 	out	0f2h
 mtest1:		; lands at 03000h - retained relocated code
 	exx
@@ -1774,6 +1783,10 @@ fp3:	ora	c
 	pop	psw
 	ani	15	; 32mS
 	cz	kpchk
+	; not really FP related, but no space in low ROM...
+	lda	MFlag
+	rrc		; private int1?
+	cc	vrst1
 	jmp	intret
 
 ; match module by character (letter)
@@ -1901,8 +1914,8 @@ bfind0:
 	lxi	sp,0e000h	; a safe SP?
 	lda	ctl$F2
 	push	psw
-	ani	11011111b	; ORG0 off
-	ori	00001000b	; MEM1 on
+	ani	not ctl$ORG0	; ORG0 off
+	ori	ctl$MEM1	; MEM1 on
 	out	0f2h
 	lxix	btmods	; start of modules...
 bf0:	call	icall
