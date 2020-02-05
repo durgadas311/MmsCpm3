@@ -55,10 +55,11 @@ debounce equ	1
 	org	00000h
 
 rombeg:
-rst0:	nop	; can't be JMP or Heath CP/M thinks we're an H89
+rst0:	di	; can't be JMP or Heath CP/M thinks we're an H89
 	jmp	init
 
-	db	0,0,0,0
+	jmp	getport
+	db	0
 
 rst1:	call	intsetup
 	lhld	ticcnt
@@ -82,9 +83,8 @@ rst4:	jmp	vrst4
 	dw	conout	; pointer, not vector; A=char
 
 rst5:	jmp	vrst5
-delayx:
-	jmp	delay
 
+	jmp	delay
 qmsg:	db	'?',TRM
 
 rst6:	jmp	vrst6

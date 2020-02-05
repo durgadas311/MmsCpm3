@@ -1,4 +1,4 @@
-VERS	EQU   '2 '  ; May 28, 2018 12:29 drm "ldrb320.asm"
+VERS	EQU   '3 '  ; January 30, 2020 19:24 drm "ldrb320.asm"
 
 	MACLIB	Z80
 	$-MACRO

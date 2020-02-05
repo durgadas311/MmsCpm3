@@ -22,7 +22,7 @@ first:	dw	last-first
 
 	db	'B'	; +10: Boot command letter
 	db	0	; +11: front panel key
-	db	0	; +12: port, 0 if variable
+	db	7ch	; +12: port, 0 if variable
 	db	10010010b,11110011b,11110001b	; +13: FP display ("H17")
 	db	'H17',0	; +16: mnemonic string
 
