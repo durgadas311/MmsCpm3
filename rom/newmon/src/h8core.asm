@@ -88,13 +88,25 @@ rst7:	jmp	vrst7
 	jmp	hxboot
 	jmp	take$A
 
-; TODO: restore Z80 registers...
 intret:
 	pop	psw
 	pop	psw
 	pop	b
 	pop	d
 	pop	h
+	popix
+	popiy
+	exx
+	exaf
+	pop	b	; I,R - R cannot be restored
+	mov	a,b
+	stai
+	pop	psw
+	pop	b
+	pop	d
+	pop	h
+	exx
+	exaf
 nulint:
 	ei
 	ret
@@ -108,12 +120,28 @@ int1$cont:
 
 ; TODO: save Z80 registers...
 intsetup:
+	exx
+	exaf
+	xthl
+	push	d
+	push	b
+	push	psw
+	ldar
+	mov	c,a
+	ldai
+	mov	b,a
+	push	b
+	pushiy
+	pushix
+	push	h
+	exx
+	exaf
 	xthl
 	push	d
 	push	b
 	push	psw
 	xchg
-	lxi	h,10
+	lxi	h,nReg-2
 	dad	sp
 	push	h
 	push	d
@@ -143,23 +171,18 @@ start:
 	ani	00000001b
 	cma
 	sta	DsProt
-	;
+	; TODO: avoid prompt if was keypad command...
 	lxi	h,prompt
-	call	msgout
+	lda	lstcmd
+	ora	a
+	cp	msgout
 prloop:
 	; could take one of two paths here,
 	; console or kaypad...
 	call	cmdin
+	sta	lstcmd
 	ani	11011111b ; toupper
-	jp	cmchr	; from console...
-	; keypad pressed...
-	cpi	8ah	; non-digit (hex req first be '0')
-	jrnc	cmchr
-	mov	b,a
-	lda	DspMod
-	rrc	; CY=alter mode
-	jc	kpalter	; alter mode - numeric values only
-	mov	a,b
+	jm	kpcmd	; from keypad...
 cmchr:	lxi	h,cmdtab
 	mvi	b,numcmd
 cmloop:
@@ -172,71 +195,37 @@ cmloop:
 	call	belout
 	jr	prloop
 
-docmd:
-	ora	a
-	cp	conout
-	mov	c,m
-	inx	h
-	mov	h,m
-	mov	l,c
-icall:	pchl
-
 cmdtab:
-	db	'G'
-	dw	cmdgo
-	db	'S'
-	dw	cmdsub
-	db	'P'
-	dw	cmdpc
-	db	'B'
-	dw	cmdboot
-	db	'M'
-	dw	cmdmt
-	db	'T'
-	dw	termod
-	db	'V'
-	dw	prtver
-	db	'L'	; list boot modules
-	dw	cmdlb
-	db	'H'	; long list (help) boot modules
-	dw	cmdhb
-	db	'A'	; add boot module
-	dw	cmdab
-	db	'U'	; update entire ROM
-	dw	cmdur
-	; front-panel commands
-	db	80h	; [0]
-	dw	kpubt	; Universal Boot
-	db	81h	; [1]
-	dw	kpdbg
-	db	82h	; [2]
-	dw	kpdbg
-	db	83h	; [3]
-	dw	kpdbg
-	db	84h	; [4]
-	dw	kpdbg
-	db	85h	; [5]
-	dw	kpdbg
-	db	86h	; [6]
-	dw	kpdbg
-	db	87h	; [7]
-	dw	kpdbg
-	db	88h	; [8]
-	dw	kpdbg
-	db	89h	; [9]
-	dw	kpdbg
-	db	8ah	; [A] [+]
-	dw	kpdbg
-	db	8bh	; [B] [-]
-	dw	kpdbg
-	db	8ch	; [C] [*]
-	dw	kpdbg
-	db	8dh	; [D] [/]
-	dw	kpdbg
-	db	8eh	; [E] [#]
-	dw	kpdbg
-	db	8fh	; [F] [.]
-	dw	kpdbg
+	; console commans
+	db	'D' ! dw cmddmp	; Dump memory
+	db	'G' ! dw cmdgo	; Go
+	db	'S' ! dw cmdsub	; Substitute in memory
+	db	'P' ! dw cmdpc	; Set PC
+	db	'B' ! dw cmdboot; Boot
+	db	'M' ! dw cmdmt	; Memory Test
+	db	'T' ! dw termod	; Terminal Mode
+	db	'V' ! dw prtver	; Version of ROM
+	db	'L' ! dw cmdlb	; List boot modules
+	db	'H' ! dw cmdhb	; long list (Help) boot modules
+	db	'A' ! dw cmdab	; Add boot module
+	db	'U' ! dw cmdur	; Update entire ROM
+	; front-panel commands    key(old)  command/action
+	db	80h ! dw kpubt	; [0]     - Universal Boot
+	db	81h ! dw kppbt	; [1]     - Pri Boot
+	db	82h ! dw kpsbt	; [2]     - Sec Boot
+	db	83h ! dw kprdx	; [3]     - Radix Mode
+	db	84h ! dw kpdbg	; [4]     - Go
+	db	85h ! dw kpdbg	; [5]     - Input
+	db	86h ! dw kpdbg	; [6]     - Output
+	db	87h ! dw kpdbg	; [7]     - Single Step
+	db	88h ! dw kpdbg	; [8]     - Cass Load
+	db	89h ! dw kpdbg	; [9]     - Cass Store
+	db	8ah ! dw kpnxt	; [A] [+] - Next
+	db	8bh ! dw kpprv	; [B] [-] - Prev
+	db	8ch ! dw kpdbg	; [C] [*] - CANCEL, usually
+	db	8dh ! dw kpdbg	; [D] [/] - Display/Alter
+	db	8eh ! dw kpmem	; [E] [#] - Memory Mode
+	db	8fh ! dw kprgm	; [F] [.] - Register Mode
 numcmd	equ	($-cmdtab)/3
 
 	rept	0137h-$
@@ -246,6 +235,15 @@ if	($ <> 0137h)
 	.error 'HDOS entry overrun 0137h'
 endif
 	jmp	0	; initialized by H47 boot module
+
+docmd:
+	ora	a
+	cp	conout
+	mov	c,m
+	inx	h
+	mov	h,m
+	mov	l,c
+icall:	pchl
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PC command (set PC)
@@ -563,7 +561,7 @@ goboot:
 	call	crlf
 	lxi	h,error
 	push	h
-	push	d	; save unit num (E)
+gb0:	push	d	; save unit num (E)
 	mov	c,d
 	lxi	h,bfnum
 	call	bfind	; might have already been loaded...
@@ -606,6 +604,7 @@ init:
 	call	coninit
 	xra	a
 	sta	l2153h
+	sta	lstcmd
 	mvi	a,00100000b	; ORG0 on, 2mS off...
 	sta	ctl$F2	; 2mS off, Org0 on
 	out	0f2h	; enable RAM now...
@@ -638,6 +637,11 @@ init:
 	lxi	h,2
 	dad	sp
 	shld	monstk
+	ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Dump command
+cmddmp:
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1069,6 +1073,18 @@ subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
 mtms:	db	'em test',TRM
 
+; get "alternate" (secondary) boot device...
+galtbt:
+	lxi	d,0
+	in	0f2h
+	ani	01110000b	; default boot selection
+	cpi	00100000b	; if device at 07CH
+	jz	gtdev2		; get 078H device...
+; if device was not 07CH, then use 07CH... ???
+;;	cpi	00110000b	; if device at 078H
+;;	jz	gtdev1		; get 07CH device...
+	jmp	gtdev1		; get 07CH device...
+
 kpubt:
 	lda	MFlag
 	ori	00000010b	; disable disp updates
@@ -1123,6 +1139,7 @@ gotprt:	pop	h	; LEDs pointer
 	call	doboot	; only returns if error...
 kperr:
 deverr:	; TODO: implement
+	ei	; TODO: more required before this?
 	lxi	h,MFlag
 	mov	a,m
 	ani	11111110b	; disable "private" clock intr
@@ -1159,16 +1176,138 @@ bterr1:	cmp	m
 	mov	a,m
 	ani	10111101b	; normal mode...
 	mov	m,a
-	; this duplicates some code in re$entry...
-	lhld	monstk
-	sphl
-	lxi	h,start
-	push	h
-	jmp	prloop
+	; should return to 'start' but avoid extra prompts...
+	jmp	re$entry
 
 ; port options for keys 0-3
 ports:	db	078h,07ch,0b8h,0bch
 
+kppbt:	; primary boot (default boot)
+	call	gtdfbt
+	lxi	b,dPri
+kpbt0:
+	push	d	; phy drv, unit
+	push	b
+	lda	MFlag
+	ori	00000010b	; disable disp updates
+	sta	MFlag
+	call	clrdisp
+	pop	b
+	lxi	d,ALeds
+	call	mov3dsp
+; TODO: fix this
+ mvi a,250
+ call delay
+	pop	d	; phy drv, unit
+	lxi	h,kperr
+	push	h
+	jmp	gb0
+
+kpsbt:	; secondary boot (TODO: what does this mean now?)
+	call	galtbt
+	lxi	b,dSec
+	jr	kpbt0
+
+kprdx:	; choose radix for display
+	lda	MFlag
+	ori	00000010b	; disable disp updates
+	sta	MFlag
+	call	clrdisp
+	lxi	b,dRad
+	lxi	d,ALeds
+	call	mov3dsp
+	lda	Radix
+	ora	a
+	cma		; 00->ff
+	jrz	rdx0
+	xra	a	; else 00
+rdx0:	sta	Radix		; 00       ff
+	ani	00010011b	; 00->00,  ff->13
+	xri	10000001b	; 00->81,  ff->92
+	sta	ALeds+5		; 00->'O', ff->'H'
+	; wait 1S to allow user to see...
+	mvi	a,250		; 500mS
+	call	delay
+	mvi	a,250		; 500mS
+	call	delay
+	lda	MFlag
+	ani	11111101b	; enable disp updates
+	sta	MFlag
+	; TODO: beep?
+	ret
+
+kpnxt:	; next register/memory addr
+	lda	DspMod
+	ani	00000010b	; Z if memory mode
+	lhld	ABUSS
+	lxi	d,RegI
+	inx	h
+	jrz	sae
+	ldax	d
+	adi	2
+	stax	d
+	cpi	nReg
+	rc
+	xra	a
+	stax	d
+	ret
+
+kpprv:	; previous register/memory addr
+	lda	DspMod
+	ani	00000010b	; Z if memory mode
+	lhld	ABUSS
+	lxi	d,RegI
+	dcx	h
+	jrz	sae
+	ldax	d
+	sui	2
+	stax	d
+	rnc
+	mvi	a,nReg-2
+	stax	d
+	ret
+
+sae:	shld	ABUSS
+	ret
+
+kpmem:	; switch to memory mode - enter address
+	xra	a	; also NC
+	sta	DspMod	; display memory...
+	sta	DsProt	; periods all on...
+	lxi	h,ABUSS+1	; little-endian, enter hi byte first
+	call	iob
+	dcx	h	; HL=low byte of address
+	mvi	b,0
+	stc
+	call	iob
+	ret		; back to start... TODO: prevent re-prompt
+
+kprgm:	; switch to register mode
+	mvi	a,2
+	sta	DspMod	; display registers...
+	xra	a
+	sta	DsProt	; periods all on...
+	call	keyin
+	ani	01111111b
+	cpi	(nReg-1)/2	; PC requires spcl
+	jrc	reg0
+	sub	3		; gap in codes?
+	cpi	12		; was 15...
+	jnz	kperr	; TODO: proper handling
+reg0:	rlc	; times 2
+	sta	RegI
+	ret		; back to start... TODO: prevent re-prompt
+
+kpcmd:	; A=keypad command, +80h
+	; keypad pressed...
+	cpi	8ah	; non-digit (hex req first be '0')
+	jnc	cmchr
+	mov	b,a
+	lda	DspMod
+	rrc	; CY=alter mode
+	jrc	kpalter	; alter mode - numeric values only
+	mov	a,b
+	jmp	cmchr
 ; A=DspMod >> 1, B=key
 kpalter:
 	lhld	ABUSS
@@ -1177,7 +1316,7 @@ kpalter:
 	call	iob
 	inx	h
 	shld	ABUSS
-	jmp	prloop
+	ret
 
 ; B=key
 kpreg:
@@ -1193,8 +1332,9 @@ kpreg:
 	call	iob
 	dcx	h	; HL=low byte of address
 	call	iob
-	jmp	prloop
+	ret
 
+; Input Octal(or Hex) byte
 ; B=key, CY=first digit
 iob:	rarr	c	; save CY => C bit 7
 	lda	Radix
@@ -1202,11 +1342,13 @@ iob:	rarr	c	; save CY => C bit 7
 	mov	a,b
 	jrz	ioboct
 ; iobhex - to avoid conflict with cmd keys A-F, first input must be [0]
+; So, hex input requires 3 or 5 + 1 keys.
+	ralr	c	; restore CY
+	cnc	keyin
 	ani	01111111b
 	jnz	kperr
-	ralr	c	; restore CY
 	mvi	d,2
-iobh0:	cnc	keyin
+iobh0:	call	keyin
 	ani	01111111b
 	mov	e,a
 	mov	a,m
@@ -1372,11 +1514,9 @@ kpchk0:	mov	m,a	; RckA
 ufd:	mvi	a,00000010b
 	ana	b
 	rnz		; updates disabled
-	mvi	l,LOW DsProt
-	mov	a,m
-	rlc
-	mov	m,a
-	mov	b,a
+	lxi	h,DsProt
+	rlcr	m
+	mov	b,m
 	inx	h	; DspMod
 	mov	a,m
 	ani	00000010b
@@ -1419,9 +1559,10 @@ mvb:	ldax	b
 	jrnz	mvb
 	ret
 
+; B=dot flag
 dod:	mov	c,a	; value to display
 	lda	Radix
-	ana	a	; Z if octal (also CY=0)
+	ora	a	; Z if octal (also CY=0)
 	mov	a,c
 	jrnz	dodhex
 	push	d
@@ -1431,7 +1572,7 @@ dodr5:	ral
 	ral
 	push	psw
 	ani	07h
-	add	LOW doddig
+	adi	LOW doddig
 	mov	e,a
 	mvi	a,HIGH doddig
 	aci	0
@@ -1459,26 +1600,26 @@ deh55:	rlc
 	rlc
 	push	psw
 	ani	0fh
-	add	LOW doddig
+	adi	LOW doddig
 	mov	e,a
 	mvi	a,HIGH doddig
 	aci	0
 	mov	d,a
 	ldax	d
-	xra	b	; DP on/off
+	xra	b		; DP on/off
+	ani	01111111b	; why???
+	xra	b		; ???
 	mov	m,a
 	inx	h
-	mov	a,b	; rlcr b
-	rlc
-	mov	b,a
+	rlcr	b
 	pop	psw
 	dcr	c
 	jrnz	deh55
 	pop	d
-	mvi	a,01101111b	; "o."
-	xra	b	; DP on/off
-	and	01111111b	; why???
-	xra	b
+	mvi	a,01101111b	; "_"
+	xra	b		; DP on/off
+	ani	01111111b	; why???
+	xra	b		; ???
 	mov	m,a
 	inx	h
 	mov	a,b	; rlcr b
@@ -1523,6 +1664,9 @@ dPor:	db	10011000b,11000110b,11011110b	; "Por"
 dUni:	db	10000011b,11010110b,11110111b	; "Uni"
 dErr:	db	10001100b,11011110b,11011110b	; "Error "
 	db	11000110b,11011110b,11111111b
+dRad:	db	11011110b,10010000b,11000010b	; "rAd"
+dPri:	db	10011000b,11011110b,11011111b	; "Pri"
+dSec:	db	10100100b,10001100b,10001101b	; "SEC"
 
 LedRegTbl:
 	dw	dSP	; 0
@@ -1538,6 +1682,7 @@ LedRegTbl:
 	dw	dDEp	; 10	- TODO
 	dw	dHLp	; 11	- TODO
 	dw	dPC	; 12	- 5
+nReg	equ	$-LedRegTbl	; 2x num registers...
 
 lra:	lda	RegI
 lrax:	mov	e,a
