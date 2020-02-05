@@ -113,7 +113,7 @@ none:	lxi	d,nonmsg
 	jmp	exit
 
 nocfg:
-	lxi	b,cfgerr
+	lxi	d,cfgerr
 	jmp	no1
 
 nocpnt:

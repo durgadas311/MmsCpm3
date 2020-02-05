@@ -2,6 +2,7 @@
 
 ?h8pt	equ	0f0h
 ?port	equ	0f2h
+ctl$F2	equ	2036h
 
 	org	3000h
 boot:	jmp	around
@@ -12,14 +13,19 @@ around:
 	di
 	mvi	a,09fh	; 2ms off, blank fp on H8
 	out	?h8pt	; H89 NMI should be innocuous
-
+	lxi	h,ctl$F2
+	mov	a,m
+	ani	11111101b	; clock off
+	out	?port
+	ani	00100000b	; ORG0 already?
+	jrnz	done2
 	; In case this is a MMS77318, use full un-lock
 	lxi	h,?code		;sequence to move memory-map
 	mvi	b,?code$len	;number of bytes in sequence
 	mvi	c,?port		;I/O port to send sequence
 	outir
 	dcx	h
-	mov	a,m
+done2:	mov	a,m
 	sta	000dh	; for CP/M
 
 	lhld	entry

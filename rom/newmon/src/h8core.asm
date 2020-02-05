@@ -75,7 +75,8 @@ rst2	equ	$-1	; must be a nop...
 
 rst3:	jmp	vrst3
 
-	db	0,0,0,0,0
+	jmp	crlf
+	db	0,0
 
 rst4:	jmp	vrst4
 
