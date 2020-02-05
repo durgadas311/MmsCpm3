@@ -6,7 +6,9 @@ ALL = zout/h8core.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
-	zout/bwiznet.cim
+	zout/bwiznet.cim \
+	zout/ccass.cim
+#	zout/cx.cim
 
 all: h8mon2.rom
 

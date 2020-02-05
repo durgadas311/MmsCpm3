@@ -35,6 +35,10 @@ btport	equ	btovl+12	; device port, 0 if variable
 btdisp	equ	btovl+13	; boot front panel mnemonic
 btname	equ	btovl+16	; boot string
 
+; Anything else valid for commands?
+cminit	equ	btovl+4		; command init entry
+cmexec	equ	btovl+7		; command execute entry
+
 btmods	equ	2000h	; boot modules start in ROM
 bterom	equ	8000h	; end/size of ROM
 
@@ -87,6 +91,7 @@ rst7:	jmp	vrst7
 	jmp	hwboot
 	jmp	hxboot
 	jmp	take$A
+	jmp	msgout
 
 intret:
 	pop	psw
@@ -180,9 +185,9 @@ prloop:
 	; could take one of two paths here,
 	; console or kaypad...
 	call	cmdin
-	sta	lstcmd
 	ani	11011111b ; toupper
-	jm	kpcmd	; from keypad...
+	sta	lstcmd
+	jm	kpcmd	; from keypad... jumps back here...
 cmchr:	lxi	h,cmdtab
 	mvi	b,numcmd
 cmloop:
@@ -192,11 +197,10 @@ cmloop:
 	inx	h
 	inx	h
 	djnz	cmloop
-	call	belout
-	jr	prloop
+	jmp	nocmd
 
 cmdtab:
-	; console commans
+	; console commands
 	db	'D' ! dw cmddmp	; Dump memory
 	db	'G' ! dw cmdgo	; Go
 	db	'S' ! dw cmdsub	; Substitute in memory
@@ -218,8 +222,8 @@ cmdtab:
 	db	85h ! dw kpdbg	; [5]     - Input
 	db	86h ! dw kpdbg	; [6]     - Output
 	db	87h ! dw kpdbg	; [7]     - Single Step
-	db	88h ! dw kpdbg	; [8]     - Cass Load
-	db	89h ! dw kpdbg	; [9]     - Cass Store
+	db	88h ! dw kptap	; [8]     - Cass Load
+	db	89h ! dw kptap	; [9]     - Cass Store
 	db	8ah ! dw kpnxt	; [A] [+] - Next
 	db	8bh ! dw kpprv	; [B] [-] - Prev
 	db	8ch ! dw kpdbg	; [C] [*] - CANCEL, usually
@@ -494,6 +498,7 @@ nodig:	; boot by letter... Boot alpha-
 	jr	gotit
 gotit1:	push	b
 	mov	c,a
+	mvi	b,-1	; boot modules only
 	lxi	h,bfchr
 	call	bfind
 	pop	b
@@ -563,6 +568,7 @@ goboot:
 	push	h
 gb0:	push	d	; save unit num (E)
 	mov	c,d
+	mvi	b,-1	; boot modules only
 	lxi	h,bfnum
 	call	bfind	; might have already been loaded...
 	pop	d
@@ -1054,8 +1060,6 @@ mtestH:
 mtestZ	equ	$
 ;------------------------------------------------
 
-prompt:	db	CR,LF,'H8: ',TRM
-
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 	rept	0613h-$
 	db	0ffh
@@ -1067,11 +1071,28 @@ endif
 	db	0
 	jmp	0	; initialized by H47 boot module
 
+prompt:	db	CR,LF,'H8: ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
 subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
 mtms:	db	'em test',TRM
+
+; command not built-in, check modules.
+; should only be called for console commands.
+; A=cmd key/chr (also in 'lstcmd')
+nocmd:
+	mov	c,a
+	mvi	b,0	; no boot modules
+	lxi	h,bfchr
+	call	bfind
+	jrc	cmerr
+	lda	lstcmd
+	call	conout
+	jmp	cmexec
+
+cmerr:	call	belout
+	jmp	prloop
 
 ; get "alternate" (secondary) boot device...
 galtbt:
@@ -1099,6 +1120,7 @@ kpubt:
 	jz	kperr
 	sta	BDF
 	mov	c,a
+	mvi	b,-1	; boot modules only
 	lxi	h,bfkey
 	call	bfind
 	jrc	deverr
@@ -1207,6 +1229,15 @@ kpsbt:	; secondary boot (TODO: what does this mean now?)
 	call	galtbt
 	lxi	b,dSec
 	jr	kpbt0
+
+kptap:	; cassette load (read) or store (write, save)
+	mvi	b,0	; command only
+	mvi	c,88h	; cassette module key
+	lxi	h,bfkey
+	call	bfind
+	jc	kperr
+	call	cmexec
+	ret
 
 kprdx:	; choose radix for display
 	lda	MFlag
@@ -1745,18 +1776,35 @@ fp3:	ora	c
 	cz	kpchk
 	jmp	intret
 
-; match boot module by character (letter)
-bfchr:	ldx	a,+10
+; match module by character (letter)
+; C=letter, B=00:cmd,ff:boot
+bfchr:	ldx	a,+2	; phy drv or type
+	sui	200	; boot modules < 200
+	sbb	a	; ff=boot, 00=cmd
+	cmp	b	; ZR=match
+	jrnz	bfn0
+	ldx	a,+10
 	cmp	c
 	ret
 
-; match boot module by FP key
-bfkey:	ldx	a,+11
+; match module by FP key
+; C=FP key, B=00:cmd,ff:boot
+bfkey:	ldx	a,+2	; phy drv or type
+	sui	200	; boot modules < 200
+	sbb	a	; ff=boot, 00=cmd
+	cmp	b	; ZR=match
+	jrnz	bfn0
+	ldx	a,+11
 	cmp	c
 	ret
 
 ; match boot module by phy drv number
-bfnum:	mov	a,c
+; C=phy drv, B=type
+; Only for boot modules
+bfnum:	ldx	a,+2	; phy drv or type
+	cpi	200	; boot modules < 200
+	jrnc	bfn0	; skip if >= 200
+	mov	a,c
 	subx	+2
 	cmpx	+3
 	jrnc	bfn0 ; might be Z...
@@ -1766,7 +1814,12 @@ bfn0:	xra	a
 	inr	a
 	ret
 
-bflst:	mov	a,c
+; List only boot modules
+; On first module, C=0
+bflst:	ldx	a,+2	; phy drv or type
+	cpi	200	; boot modules < 200
+	jrnc	bfn0
+	mov	a,c
 	ora	a
 	mvi	a,','
 	cnz	conout
@@ -1782,11 +1835,13 @@ bflst:	mov	a,c
 	dad	d
 	call	msgout
 	lxi	h,bflst
-	xra	a
-	inr	a	; NZ - keep going
-	ret
+	jr	bfn0	; NZ - keep going
 
-bfllst:	mov	a,b
+; List only boot modules
+bfllst:	ldx	a,+2	; phy drv or type
+	cpi	200	; boot modules < 200
+	jrnc	bfn0
+	mov	a,b
 	subx	+2
 	cmpx	+3
 	mvi	a,' '
@@ -1824,8 +1879,8 @@ bfll0:	call	conout
 	call	decout
 bfll1:	call	crlf
 	lxi	h,bfllst
-	xra	a
-	inr	a	; NZ - keep going
+	xra	a	; NZ - keep going
+	inr	a
 	ret
 
 ; Find boot module and load into 1000h if necessary.
