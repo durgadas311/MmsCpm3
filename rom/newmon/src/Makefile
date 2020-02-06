@@ -12,8 +12,8 @@ ALL = zout/h8core.cim \
 
 all: h8mon2.rom
 
-zout/%.cim: %.asm
-	zmac --dri -i -8 -c -s -n $?
+zout/%.cim: %.asm core.lib ram.lib vdip1.lib z80.lib
+	zmac --dri -i -8 -c -s -n $<
 
 h8mon2.rom: $(ALL)
 	dd if=/dev/zero bs=1k count=32 | tr '\0' '\377' >$@
