@@ -15,7 +15,8 @@ GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
 GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
 
 	org	1000h
-first:	dw	last-first
+first:	db	HIGH (last-first)	; +0: num pages
+	db	HIGH first		; +1: ORG page
 	db	70,9	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry

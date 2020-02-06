@@ -14,7 +14,8 @@ R$WNH:	ds	161	;00011110.10111001	036.271	R.WNH
 R$CONST: ds	88	;00011111.01011010	037.132	R.CONST
 
 	org	1000h
-first:	dw	last-first
+first:	db	HIGH (last-first)	; +0: num pages
+	db	HIGH first		; +1: ORG page
 	db	0,3	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry

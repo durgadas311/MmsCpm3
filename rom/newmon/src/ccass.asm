@@ -4,7 +4,8 @@
 	maclib	z80
 
 	org	1000h
-first:	dw	last-first
+first:	db	HIGH (last-first)	; +0: num pages
+	db	HIGH first		; +1: ORG page
 	db	255,0	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry

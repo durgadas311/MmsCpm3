@@ -86,7 +86,8 @@ msg$dat: ds	128
 nvbuf:	ds	512
 
 	org	1000h
-first:	dw	last-first
+first:	db	HIGH (last-first)	; +0: num pages
+	db	HIGH first		; +1: ORG page
 	db	60,1	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry
@@ -99,6 +100,7 @@ first:	dw	last-first
 	db	'WizNet',0	; +16: mnemonic string
 
 init:
+	pushix
 	mvi	a,0c3h
 	lxi	h,wizsr
 	sta	sndrcv
@@ -109,6 +111,7 @@ init:
 	lxi	h,wizcls
 	shld	wizclose	; not a jump
 	call	wizcfg	; configure chip from nvram
+	popix
 	rc
 	sta	nodeid ; our slave (client) ID
 	xra	a	; NC
@@ -310,7 +313,6 @@ wst1:	mov	a,b
 ;	WIZNET boot routine
 ;
 boot:
-	push	d
 	; extract optional string. must do it now, before we
 	; overwrite bootbf.
 	lxi	d,msg$dat	; target for string
@@ -327,7 +329,6 @@ boot:
 	ldir
 nb5:	xra	a
 	stax	d	; NUL term
-	pop	d
 	lda	AIO$UNI	; server id, 0..9
 	sta	server
 	; locate server node id in chip's socket regs.
