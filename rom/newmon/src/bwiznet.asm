@@ -109,8 +109,7 @@ init:
 	lxi	h,wizcls
 	shld	wizclose	; not a jump
 	call	wizcfg	; configure chip from nvram
-	; TODO: how to throw error...
-	; rc
+	rc
 	sta	nodeid ; our slave (client) ID
 	xra	a	; NC
 	ret
