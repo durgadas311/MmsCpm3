@@ -14,7 +14,9 @@ all: h8mon2.rom
 
 zout/%.cim: %.asm core.lib ram.lib vdip1.lib z80.lib
 	zmac --dri -i -8 -c -s -n $<
+	cp $@ ../bin
+	cp zout/$*.lst ../prn
 
 h8mon2.rom: $(ALL)
-	dd if=/dev/zero bs=1k count=32 | tr '\0' '\377' >$@
-	cat $(ALL) | dd of=$@ conv=notrunc
+	cat $(ALL) | ../../../tools/cksum -f -w -l 0x8000 >$@
+	cp	$@ ../bin

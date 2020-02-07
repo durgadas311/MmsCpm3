@@ -1,0 +1,155 @@
+		; Boot Module for GIDE
+			maclib	ram
+**** ram.lib ****
+**** bgide.asm ****
+			maclib	core
+**** core.lib ****
+**** bgide.asm ****
+			maclib	z80
+**** z80.lib ****
+**** bgide.asm ****
+		
+0080          	GIDE$BA	equ	80h		; GIDE base port
+0088          	GIDE$DA	equ	GIDE$BA+8	; GIDE data port
+0089          	GIDE$ER	equ	GIDE$BA+9	; GIDE error register (read)
+0089          	GIDE$FR	equ	GIDE$BA+9	; GIDE feature register (write)
+008A          	GIDE$SC	equ	GIDE$BA+10	; GIDE sector count
+008B          	GIDE$SE	equ	GIDE$BA+11	; GIDE sector number
+008C          	GIDE$CL	equ	GIDE$BA+12	; GIDE cylinder low
+008D          	GIDE$CH	equ	GIDE$BA+13	; GIDE cylinder high
+008E          	GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
+008F          	GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  4609    		db	70,9	; +2,+3: phy drv base, num
+		
+1004  C31510  		jmp	init	; +4: init entry
+1007  C31710  		jmp	boot	; +7: boot entry
+		
+100A  58      		db	'X'	; +10: Boot command letter
+100B  04      		db	4	; +11: front panel key
+100C  80      		db	80h	; +12: port, 0 if variable
+100D  F3C28C  		db	11110011b,11000010b,10001100b	; +13: FP display ("IdE")
+1010  47494445		db	'GIDE',0	; +16: mnemonic string
+      00
+		
+1015  AF      	init:	xra	a	; NC
+1016  C9      		ret
+		
+1017          	boot:
+			; Partition is passed to bootloader, but we need
+			; segment offset before we can start.
+1017  D1      		pop	d	; error return address
+1018  C1      		pop	b	; possible string
+1019  C5      		push	b
+101A  D5      		push	d
+			; parse a single letter
+			; TODO: parse LUN or segment, both optional
+101B  210000  		lxi	h,0	; def segment off
+101E  225821  		shld	l2156h+2
+1021  225A21  		shld	l2156h+4
+1024  79      		mov	a,c
+1025  FEC3    		cpi	0c3h	; JMP means no string present
+1027  280D    		jrz	nostr
+1029  78      		mov	a,b
+102A  B7      		ora	a	; limit to 1 char?
+102B  C0      		rnz
+102C  79      		mov	a,c
+102D  E65F    		ani	5fh
+102F  D641    		sui	'A'	; 000sssss = segment ID
+1031  D8      		rc
+1032  07      		rlc
+1033  07      		rlc
+1034  07      		rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
+1035  67      		mov	h,a	; swap for little endian SHLD/LHLD
+1036  225621  	nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
+1039  AF      		xra	a
+103A  D389    		out	GIDE$FR	; needed after power-on?
+103C  7D      		mov	a,l
+103D  F6E0    		ori	11100000b	; LBA mode + std "1" bits
+103F  D38E    		out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
+1041  7C      		mov	a,h
+1042  D38D    		out	GIDE$CH	; LBA 23:16
+1044  AF      		xra	a
+1045  D38C    		out	GIDE$CL	; LBA 15:8
+1047  D38B    		out	GIDE$SE	; LBA 7:0
+1049  3E0A    		mvi	a,10
+104B  D38A    		out	GIDE$SC	; 10 sectors (standard boot length)
+104D  3E20    		mvi	a,20h	; READ SECTORS
+104F  D38F    		out	GIDE$CS
+1051  218022  		lxi	h,bootbf
+1054  0E88    		mvi	c,GIDE$DA
+1056  1E0A    		mvi	e,10
+1058  0600    		mvi	b,0	; should always be 0 after inir
+105A          	bgide0:
+105A  DB8F    		in	GIDE$CS
+105C  CB7F    		bit	7,a	; busy
+105E  20FA    		jrnz	bgide0
+1060  CB47    		bit	0,a	; error
+1062  C0      		rnz
+1063  CB77    		bit	6,a	; ready
+1065  C8      		rz
+1066  CB5F    		bit	3,a	; DRQ
+1068  28F0    		jrz	bgide0
+106A  EDB2    		inir	; 256 bytes
+106C  EDB2    		inir	; 512 bytes
+106E  1D      		dcr	e
+106F  20E9    		jrnz	bgide0
+			; final status check?
+1071  E1      		pop	h	; adj stack for possible string
+1072  C33B00  		jmp	hwboot
+		
+1075  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+    81	symbols
+   256	bytes
+
+   157	macro calls
+  3759	macro bytes
+     0	invented symbols
