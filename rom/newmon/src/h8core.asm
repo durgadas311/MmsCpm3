@@ -4,8 +4,8 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	true
-beta	equ	false
+alpha	equ	false
+beta	equ	true
 
 	maclib	ram
 	maclib	z80

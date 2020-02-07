@@ -89,6 +89,7 @@ boot2:	; ready to go?
 	; cleanup clocks...
 	di
 	mvi	a,10011111b	; H8 2mS off, display blank
+	sta	ctl$F0
 	out	0f0h
 	; already at ORG0... H89 2mS already off?
 	lhld	entry
@@ -119,7 +120,6 @@ load0:
 	ora	a	; NC
 	ret
 
-rdf:	db	'rdf ',0,0,0,128,CR
 clf:	db	'clf',CR
 defbt:	db	'defboot.sys',0	; default boot file
 opr:	db	'opr ',0	; command segment
