@@ -402,9 +402,10 @@ getport:
 	ret	; let caller decide error handling (NZ)
 
 s501er:	lxi	h,s501ms
-	jmp	msgout
+	call	msgout
+	jmp	re$entry
 
-s501ms:	db	'SW1 wrong',TRM
+s501ms:	db	' SW1 wrong',TRM
 
 delay:
 	push	h
@@ -661,16 +662,12 @@ init:
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Dump command
-cmddmp:
-	ret
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Substitute command
 cmdsub:
 	lxi	h,subms
 	call	msgout
 	lxi	h,l2003h
+	ora	a	; NC
 	mvi	d,CR
 	call	adrin
 	xchg
@@ -731,11 +728,15 @@ conot1:
 
 ; D=term char (e.g. '.' for Substitute)
 ; HL=location to store address
+; CY=first digit in A
 adrin:
 	push	h
-	lxi	h,0
-adrin0:
 	cnc	conin
+	cmp	d	; no input?
+	jz	adrin3
+	lxi	h,0
+	stc
+adrin0:	cnc	conin
 	call	hexchk
 	jrc	adrin1
 	call	conout
@@ -1084,6 +1085,11 @@ endif
 	db	0
 	jmp	0	; initialized by H47 boot module
 
+adrin3:	mov	e,m
+	inx	h
+	mov	d,m
+	ret
+
 ; for cmdmt...
 cserms:	db	BEL,'Cksum error',TRM
 topms:	db	'Top of Mem: ',TRM
@@ -1094,6 +1100,7 @@ goms:	db	'o ',TRM
 subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
 mtms:	db	'em test',TRM
+dmpms:	db	'ump ',TRM
 
 ; command not built-in, check modules.
 ; should only be called for console commands.
@@ -1235,7 +1242,7 @@ kpbt0:
 	call	bfind	; might have already been loaded...
 	jc	kperr
 	call	vfport
-	jc	kperr
+	jc	kperr	; TODO: specific error? SW1 Error?
 	lda	MFlag
 	ori	00000010b	; disable disp updates
 	sta	MFlag
@@ -2036,6 +2043,42 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	70	; -101---- GIDE disk part 0
 	db	60	; -110---- Network
 	db	0ffh	; -111---- none
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Dump command
+cmddmp:
+	lxi	h,dmpms
+	call	msgout
+	lxi	h,l2003h
+	ora	a	; NC
+	mvi	d,CR
+	call	adrin
+	xchg	; HL=adr
+	mvi	b,8	; 8 lines (one half page, 128 bytes)
+dmp0:	push	b
+	call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
+	push	h
+	mvi	b,16
+dmp1:	mov	a,m
+	call	hexout
+	call	spout
+	inx	h
+	djnz	dmp1
+	pop	h
+	mvi	b,16
+dmp2:	mov	a,m
+	cpi	' '
+	jrc	dmp3
+	cpi	'~'+1
+	jrc	dmp4
+dmp3:	mvi	a,'.'
+dmp4:	call	conout
+	inx	h
+	djnz	dmp2
+	pop	b
+	djnz	dmp0
+	shld	l2003h
+	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; List available boot modules
