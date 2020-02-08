@@ -19,11 +19,11 @@ first:	db	HIGH (last-first)	; +0: num pages
 
 init:
 	mvi	c,10b
-	call	getport
-	rnz
+	call	getport	; no return on error
+	jrnz	init0	; not fatal, if caller gets port later
 	mov	a,b
 	sta	cport
-	xra	a	; NC
+init0:	xra	a	; NC
 	ret
 
 boot:

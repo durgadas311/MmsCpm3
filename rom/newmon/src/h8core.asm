@@ -399,25 +399,12 @@ getport:
 	rrc
 	ani	003h
 	cmp	c
-	rz
-	pop	h	; discard return address
-s501er:
-	lxi	h,s501ms
+	ret	; let caller decide error handling (NZ)
+
+s501er:	lxi	h,s501ms
 	jmp	msgout
 
 s501ms:	db	'SW1 wrong',TRM
-
-inport0:
-	ora	a	; NC
-; input from cport+CY
-inportx:
-	push	b
-	lda	cport
-	aci	0
-	mov	c,a
-	inp	a
-	pop	b
-	ret
 
 delay:
 	push	h
@@ -458,13 +445,20 @@ btdig1:
 	jr	btdig0
 
 gotnum:	; Boot N... "N" in D
+	push	d	; save unit num (E)
+	mov	c,d
+	mvi	b,-1	; boot modules only
+	lxi	h,bfnum
+	call	bfind	; might have already been loaded...
+	pop	d
+	jc	error
+	call	vfport
+	jc	s501er
+	; convert phy drv to phy base + unit
 	mov	a,d
-	cpi	5
-	jc	goboot
-	cpi	9
-	jnc	goboot
-	adi	200	; modify 5..8 to not conflict
-	mov	d,a
+	ldx	d,mdbase
+	sub	d
+	mov	e,a
 	jmp	goboot
 
 cmdboot:
@@ -472,8 +466,10 @@ cmdboot:
 	call	msgout	; complete (B)oot
 	mvi	a,0c3h
 	sta	bootbf	; mark "no string"
+	xra	a
+	sta	cport
 	lxi	sp,bootbf
-	call	gtdfbt
+	call	gtdfbt	; DE=phy drv/unit
 	mvi	c,CR	; end input on CR
 	jr	boot0
 bterr:
@@ -481,7 +477,7 @@ bterr:
 boot0:
 	call	conin
 	cmp	c
-	jz	goboot
+	jrz	gotnum	; default boot, by phy drv...
 	mvi	e,0
 	cpi	'0'
 	jrc	nodig
@@ -509,11 +505,27 @@ gotit1:	push	b
 	call	bfind
 	pop	b
 	jc	error
+	call	vfport
+	jc	s501er
 	ldx	d,mdbase	; base phy drv num
 gotit:
 	mvi	a,'-'	; next is optional unit number...
 	call	conout
 	jr	luboot0
+
+; verify port is set
+; IX=boot module (in memory)
+vfport:	ldx	a,mdport
+	ora	a
+	jrnz	vfp0
+	lda	cport	; if btinit did not set, we can't go on
+	ora	a
+	rnz
+	stc
+	ret
+vfp0:	sta	cport
+	xra	a
+	ret
 
 lunerr:
 	call	belout
@@ -567,17 +579,12 @@ btstr1:	; use stack as char array...
 	djnz	btstr1
 ; D=Phys Drive base number, E=Unit number
 ; (or, D=Phys Drive unit, E=0)
+; module must have already been loaded
 goboot:
 	call	crlf
 	lxi	h,error
 	push	h
-gb0:	push	d	; save unit num (E)
-	mov	c,d
-	mvi	b,-1	; boot modules only
-	lxi	h,bfnum
-	call	bfind	; might have already been loaded...
-	pop	d
-	rc
+; IX=boot module (in memory)
 ; D=phy drv base, E=unit
 doboot:	; common boot path for console and keypad
 	call	h17init
@@ -586,7 +593,8 @@ doboot:	; common boot path for console and keypad
 	add	d
 	sta	l2034h	; boot phys drv unit num
 	jmp	btboot
-
+	; btboot effectively returns here on success
+	; (in most cases)
 hwboot:	xra	a
 	sta	MFlag
 hxboot:	lxi	h,CLOCK
@@ -826,9 +834,6 @@ ci0:	mvi	a,083h
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Memory Test command
-
-cserms:	db	BEL,'Cksum error',TRM
-topms:	db	'Top of Mem: ',TRM
 
 cserr:
 	lxi	h,cserms
@@ -1079,6 +1084,10 @@ endif
 	db	0
 	jmp	0	; initialized by H47 boot module
 
+; for cmdmt...
+cserms:	db	BEL,'Cksum error',TRM
+topms:	db	'Top of Mem: ',TRM
+
 prompt:	db	CR,LF,'H8: ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
@@ -1107,7 +1116,7 @@ galtbt:
 	lxi	d,0
 	in	0f2h
 	ani	01110000b	; default boot selection
-	cpi	00100000b	; if device at 07CH
+	cpi	00100000b	; if default at 07CH,
 	jz	gtdev2		; get 078H device...
 ; if device was not 07CH, then use 07CH... ???
 ;;	cpi	00110000b	; if device at 078H
@@ -1216,8 +1225,17 @@ kppbt:	; primary boot (default boot)
 	call	gtdfbt
 	lxi	b,dPri
 kpbt0:
+	xra	a
+	sta	cport
 	push	d	; phy drv, unit
 	push	b
+	mov	c,d
+	mvi	b,-1	; boot modules only
+	lxi	h,bfnum
+	call	bfind	; might have already been loaded...
+	jc	kperr
+	call	vfport
+	jc	kperr
 	lda	MFlag
 	ori	00000010b	; disable disp updates
 	sta	MFlag
@@ -1225,13 +1243,14 @@ kpbt0:
 	pop	b
 	lxi	d,ALeds
 	call	mov3dsp
-; TODO: fix this
- mvi a,250
- call delay
+	; TODO: fix this
+	mvi	a,250	;;
+	call	delay	;;
 	pop	d	; phy drv, unit
+	lxi	sp,bootbf
 	lxi	h,kperr
 	push	h
-	jmp	gb0
+	jmp	doboot
 
 kpsbt:	; secondary boot (TODO: what does this mean now?)
 	call	galtbt
