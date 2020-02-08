@@ -27,11 +27,11 @@ begin:
 	ei
 	call	runout
 	call	sync
-	jrc	error
+	jc	error
 over:	lxi	d,quest
 	call	msgout
 	call	linin
-	jrc	cancel
+	jc	cancel
 	mov	a,c
 	ora	a
 	jrnz	go1	; already CR terminated...
@@ -42,10 +42,11 @@ over:	lxi	d,quest
 	stax	d
 go1:	lxi	h,opr
 	call	vdcmd
-	jrc	nofile
+	jc	nofile
 	lxi	h,imgbuf	; 4k below end of ROM
 loop0:	call	vdrd
 	jrc	rderr
+	call	progress
 	mov	a,h
 	cpi	HIGH imgtop
 	jrnz	loop0
@@ -54,6 +55,7 @@ loop0:	call	vdrd
 	call	vdrd
 	jrnc	rderr
 	call	close
+	lxi	d,imgbuf
 	call	vchksm	; verify checksum
 	jrc	ckerr
 	; now, ready to start flash...
@@ -62,20 +64,40 @@ loop0:	call	vdrd
 	call	linin
 	jrc	cancel
 	; after started, there's no going back...
-	; ...
-	; success (?)
+	di
+	mvi	a,10000000b	; WE, partial ROM
+	out	0f2h
+	lxi	h,imgbuf
+	lxi	d,0	; ROM
+	lxi	b,4096/64	; first 4K
+	call	flash
+	jrc	error
+	mvi	a,10001000b	; WE, enable full ROM
+	out	0f2h
+	lxi	b,(8000h-4096)/64	; rest of ROM
+	call	flash
+	jrc	error
+	lxi	d,0	; ROM
+	call	vchksm
+	jrc	ckerr2
 	lxi	d,done
 	call	msgout
 error:
-	; do something smarter...
+	xra	a
+	out	0f2h
+	; do something smarter...?
 	lxi	d,die
 	call	msgout
 	di
 	hlt
 
+ckerr2:	lxi	d,cserr
+	call	msgout
+	jr	error
+
 ckerr:	lxi	d,cserr
 eloop:	call	msgout
-	jr	over
+	jmp	over
 
 ; file is still open...
 rderr:	call	close
@@ -107,25 +129,25 @@ cancel:	lxi	d,canc
 
 signon:	db	CR,LF,'VFLASH v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
-	db	' - Update ROM from VDIP1',0
+	db	' - Update ROM from VDIP1',CR,LF,0
 clf:	db	'clf',CR
-cserr:	db	CR,LF,BEL,'ROM image checksum error',0
-fierr:	db	CR,LF,BEL,'ROM image read error, or size wrong',0
-nferr:	db	CR,LF,BEL,'ROM image file not found',0
-canc:	db	CR,LF,'ROM flash cancelled',0
-ready:	db	CR,LF,'Press RETURN to start flash: ',0
+cserr:	db	BEL,'ROM image checksum error',CR,LF,0
+fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
+nferr:	db	BEL,'ROM image file not found',CR,LF,0
+canc:	db	'ROM flash cancelled',CR,LF,0
+ready:	db	'Press RETURN to start flash: ',0
 
-quest:	db	CR,LF,'Enter ROM image file: ',0
-done:	db	CR,LF,'ROM update complete',0
-die:	db	CR,LF,'Press RESET',0
+quest:	db	'Enter ROM image file: ',0
+done:	db	'ROM update complete',CR,LF,0
+die:	db	'Press RESET',CR,LF,0
 
 defrom:	db	'h8mon2.rom',0	; default rom image file
 
+; DE=start of ROM image
 vchksm:	lxi	h,0
 	shld	sum
 	shld	sum+2
 	lxi	b,8000h-4
-	lxi	d,imgbuf
 vchk0:	ldax	d
 	call	sum1
 	inx	d
@@ -161,6 +183,12 @@ sum1:	lxi	h,sum
 
 sum:	db	0,0,0,0
 
+linix:	mvi	a,CR
+	mov	m,a	; terminate buffer
+	call	conout
+	mvi	a,LF
+	jr	conout
+
 ; input a filename from console, allow backspace
 ; returns C=num chars
 linin:
@@ -168,8 +196,7 @@ linin:
 	mvi	c,0	; count chars
 lini0	call	conin
 	cpi	CR
-	mvi	m,CR
-	jrz	conout	; echo CR and return
+	jrz	linix
 	cpi	CTLC	; cancel
 	stc
 	rz
@@ -233,25 +260,25 @@ msgout:	ldax	d
 	inx	d
 	jr	msgout
 
-; flash ROM from HL to DE, 64 bytes only.
+; flash ROM from HL to DE, 64 bytes at a time.
 ; DE must be on a 64-byte boundary.
+; BC=num pages to flash
 ; returns CY on error, else HL,DE at next 64 bytes
 ; caller must set WE... and MEM1 as needed.
 flash:
-	di
+	push	b
 	lxi	b,64
 	ldir
 	; -----
-	; wait for write to begin... 150uS...
-	; 2400 cycles at 16MHz...
-	lxi	b,100
-flash1:	dcx	b	; 6
-	mov	a,b	; 4
-	ora	c	; 4
-	jrnz	flash1	; 12 = 26, *100 = 2600
-	; -----
 	dcx	h
 	dcx	d	; last addr written...
+	; wait for write cycle to begin...
+	; TODO: timeout this loop?
+flash2:	ldax	d
+	xra	m
+	ani	10000000b	; bit7 is inverted when busy...
+	jrz	flash2
+	; wait for write cycle to end...
 	; TODO: timeout this loop?
 flash0:	ldax	d
 	xra	m
@@ -260,8 +287,37 @@ flash0:	ldax	d
 	inx	h
 	inx	d
 	; done with page...
-	xra	a	; NC
+	call	progress
+	pop	b
+	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	flash
+	;xra	a	; NC already
 	ret
+
+progress:
+	push	h
+	push	b
+	lxi	h,spinx
+	mov	c,m
+	mov	a,c
+	inr	a
+	ani	00000011b
+	mov	m,a
+	mvi	b,0
+	lxi	h,spin
+	dad	b
+	mov	a,m
+	call	conout
+	mvi	a,BS
+	call	conout
+	pop	b
+	pop	h
+	ret
+
+spinx:	db	0
+spin:	db	'-','\','|','/'
 
 	maclib	vdip1
 
