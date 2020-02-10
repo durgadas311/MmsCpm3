@@ -10,25 +10,38 @@
 0007'         	BEL	equ	7
 0003'         	CTLC	equ	3
 		
-7000'         	imgbuf	equ	7000h
-F000'         	imgtop	equ	imgbuf+8000h
+1000'         	monrom	equ	4096	; length of first contig block in ROM (monitor)
+8000'         	romlen	equ	8000h	; full ROM is 32K
+0000'         	rombeg	equ	0000h	; start of ROM runtime image (in-place)
+8000'         	romend	equ	rombeg+romlen	; end of in-place ROM
+		
+		; buffer used to hold ROM image for flashing.
+		; NOTE: the first monrom bytes will be destroyed during flash.
+7000'         	imgbuf	equ	romend-monrom	; 4K below end of full ROM
+F000'         	imgtop	equ	imgbuf+romlen	; end of imgbuf
+		; The overlap is OK because the first 4K is flashed using
+		; the !ORG0,!MEM1 "legacy" map, and the memory (image buf)
+		; at imgbuf is still accessible. Once that 4K is flash, we
+		; switch to !ORG0,MEM1 "extended" map, and continue flashing.
+		
 201B'         	ticcnt	equ	201bh	; for vdip1.lib
 2009'         	ctl$F0	equ	2009h
 2036'         	ctl$F2	equ	2036h
 		
 			cseg
 0000'         	begin:
-0000' 31BC04  		lxi	sp,stack
+0000' 31BB04  		lxi	sp,stack
 0003' 11EA00  		lxi	d,signon
 0006' CD9B02  		call	msgout
+			; 2mS clock is needed for accessing VDIP1 (timeouts)
 0009' 210920  		lxi	h,ctl$F0
 000C' 7E      		mov	a,m
 000D' F640    		ori	01000000b	; 2mS back on
 000F' 77      		mov	m,a
 0010' D3F0    		out	0f0h
 0012' FB      		ei
-0013' CD5703  		call	runout
-0016' CD3603  		call	sync
+0013' CD5603  		call	runout
+0016' CD3503  		call	sync
 0019' DA9C00  		jc	error
 001C' 11A901  	over:	lxi	d,quest
 001F' CD9B02  		call	msgout
@@ -38,15 +51,15 @@ F000'         	imgtop	equ	imgbuf+8000h
 0029' B7      		ora	a
 002A' 200C    		jrnz	go1	; already CR terminated...
 002C' 21E401  		lxi	h,defrom
-002F' 11BC03  		lxi	d,inbuf
-0032' CDF402  		call	strcpy
+002F' 11BB03  		lxi	d,inbuf
+0032' CDF302  		call	strcpy
 0035' 3E0D    		mvi	a,CR
 0037' 12      		stax	d
-0038' 21B803  	go1:	lxi	h,opr
-003B' CD0803  		call	vdcmd
+0038' 21B703  	go1:	lxi	h,opr
+003B' CD0703  		call	vdcmd
 003E' DAC000  		jc	nofile
 0041' 210070  		lxi	h,imgbuf	; 4k below end of ROM
-0044' CD1A03  	loop0:	call	vdrd
+0044' CD1903  	loop0:	call	vdrd
 0047' 386F    		jrc	rderr
 0049' CDC402  		call	progress
 004C' 7C      		mov	a,h
@@ -54,7 +67,7 @@ F000'         	imgtop	equ	imgbuf+8000h
 004F' 20F3    		jrnz	loop0
 			; one more read, should be error (EOF)
 0051' 210040  		lxi	h,4000h	; a safe place to destroy...
-0054' CD1A03  		call	vdrd
+0054' CD1903  		call	vdrd
 0057' 305F    		jrnc	rderr
 0059' CDC500  		call	close
 005C' 110070  		lxi	d,imgbuf
@@ -66,6 +79,9 @@ F000'         	imgtop	equ	imgbuf+8000h
 006A' CD3102  		call	linin
 006D' 385D    		jrc	cancel
 			; after started, there's no going back...
+			; disable any interruptions, as each page must be
+			; entirely written with strict time constraints
+			; (<<150uS between each byte).
 006F' F3      		di
 0070' 3E80    		mvi	a,10000000b	; WE, partial ROM
 0072' D3F2    		out	0f2h
@@ -110,7 +126,7 @@ F000'         	imgtop	equ	imgbuf+8000h
 00C3' 18ED    		jr	eloop
 		
 00C5' 211201  	close:	lxi	h,clf
-00C8' CD0803  		call	vdcmd
+00C8' CD0703  		call	vdcmd
 00CB' C9      		ret
 		
 		; cancel, before any flash took place...
@@ -250,7 +266,7 @@ F000'         	imgtop	equ	imgbuf+8000h
 		; input a filename from console, allow backspace
 		; returns C=num chars
 0231'         	linin:
-0231' 21BC03  		lxi	h,inbuf
+0231' 21BB03  		lxi	h,inbuf
 0234' 0E00    		mvi	c,0	; count chars
 0236' CD9002  	lini0	call	conin
 0239' FE0D    		cpi	CR
@@ -357,39 +373,37 @@ F000'         	imgtop	equ	imgbuf+8000h
 02C4'         	progress:
 02C4' E5      		push	h
 02C5' C5      		push	b
-02C6' 21E102  		lxi	h,spinx
-02C9' 4E      		mov	c,m
-02CA' 79      		mov	a,c
-02CB' 3C      		inr	a
-02CC' E603    		ani	00000011b
-02CE' 77      		mov	m,a
-02CF' 0600    		mvi	b,0
-02D1' 21E202  		lxi	h,spin
-02D4' 09      		dad	b
-02D5' 7E      		mov	a,m
-02D6' CD8502  		call	conout
-02D9' 3E08    		mvi	a,BS
-02DB' CD8502  		call	conout
-02DE' C1      		pop	b
-02DF' E1      		pop	h
-02E0' C9      		ret
+02C6' 21E002  		lxi	h,spinx
+02C9' 34      		inr	m
+02CA' 7E      		mov	a,m
+02CB' E603    		ani	00000011b
+02CD' 4F      		mov	c,a
+02CE' 0600    		mvi	b,0
+02D0' 21E102  		lxi	h,spin
+02D3' 09      		dad	b
+02D4' 7E      		mov	a,m
+02D5' CD8502  		call	conout
+02D8' 3E08    		mvi	a,BS
+02DA' CD8502  		call	conout
+02DD' C1      		pop	b
+02DE' E1      		pop	h
+02DF' C9      		ret
 		
-02E1' 00      	spinx:	db	0
-02E2' 2D5C7C2F	spin:	db	'-','\','|','/'
+02E0' 00      	spinx:	db	0
+02E1' 2D5C7C2F	spin:	db	'-','\','|','/'
 		
 			maclib	vdip1
 **** vdip1.lib ****
 **** vflash.asm ****
 		
-03B8' 6F707220	opr:	db	'opr '	; is posisiotn for filename...
-03BC'         	inbuf:	ds	128	; file name entry buffer
+03B7' 6F707220	opr:	db	'opr '	; is posisiotn for filename...
+03BB'         	inbuf:	ds	128	; file name entry buffer
 		
-043C'         		ds	128
+043B'         		ds	128
 		stack:	ds	0
 		
-04BC'         	vdbuf:	ds	128	; for vdip1.lib
-053C'         	buf:	ds	128	; file read buffer
-05BC'         		end
+04BB'         	vdbuf:	ds	128	; for vdip1.lib
+053B'         		end
 
 
 
@@ -397,8 +411,8 @@ Statistics:
 
      4	passes
      0	jr promotions
-    90	symbols
-   956	bytes
+    93	symbols
+   955	bytes
 
    145	macro calls
   7486	macro bytes

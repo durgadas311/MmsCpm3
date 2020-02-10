@@ -4,8 +4,8 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	false
-beta	equ	true
+alpha	equ	0
+beta	equ	1
 
 	maclib	ram
 	maclib	z80
@@ -174,7 +174,6 @@ re$entry:		; re-entry point for errors, etc.
 	call	belout	; TODO: beep front panel if appropriate
 	;jmp	start
 start:
-	ei
 	lxi	h,start
 	push	h
 	; reset FP display... this doesn't make a lot of sense...
@@ -182,7 +181,8 @@ start:
 	ani	00000001b
 	cma
 	sta	DsProt
-	; TODO: avoid prompt if was keypad command...
+	ei
+	; avoid prompt if last was keypad command...
 	lxi	h,prompt
 	lda	lstcmd
 	ora	a
@@ -602,11 +602,6 @@ hxboot:	lxi	h,CLOCK
 	shld	vrst1+1
 	jmp	bootbf
 
-msg$die:
-	call	msgout
-	di
-	hlt
-
 ; ROM start point - initialize everything
 ; We know we have at least 64K RAM...
 ; But, right now, ROM is in 0000-7FFF so must copy
@@ -624,20 +619,7 @@ init:
 	lxi	h,re$entry
 	push	h
 	call	coninit
-	xra	a
-	sta	l2153h
-	sta	lstcmd
-	mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
-	sta	ctl$F2	; 2mS off, ORG0 on
-	out	0f2h	; enable RAM now...
-	mvi	a,0c9h	; RET
-	sta	PrsRAM
-	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
-	shld	MFlag
-	mvi	a,2	; display registers
-	sta	DspMod
-	mvi	a,debounce
-	sta	kpcnt
+	call	meminit
 	rst	1	; kick-start clock
 	lxi	h,signon
 	call	msgout
@@ -1088,6 +1070,30 @@ endif
 adrin3:	mov	e,m
 	inx	h
 	mov	d,m
+	ret
+
+; initialize monitor memory at 2000h
+meminit:
+	xra	a
+	sta	l2153h
+	sta	lstcmd
+	sta	RegI
+	sta	DsProt
+	sta	Radix
+	sta	kpchar
+	inr	a	; 1
+	sta	Refind
+	mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
+	sta	ctl$F2	; 2mS off, ORG0 on
+	out	0f2h	; enable RAM now...
+	mvi	a,0c9h	; RET
+	sta	PrsRAM
+	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
+	shld	MFlag	; MFlag, CtlFlg
+	mvi	a,2	; display registers
+	sta	DspMod
+	mvi	a,debounce
+	sta	kpcnt
 	ret
 
 ; for cmdmt...
@@ -2165,20 +2171,21 @@ terms:	db	'erminal Mode',TRM
 prtver:
 	lxi	h,versms
 	call	msgout
+	lxi	h,vernum
+	call	msgout
 	ret
 
-versms:	db	'ersion '
-	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0',0
+versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 signon:	db	'H8 Monitor v'
-	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 if alpha
-	db	'(alpha)'
+	db	'(alpha',alpha+'0',')'
 endif
 if beta
-	db	'(beta)'
+	db	'(beta',beta+'0',')'
 endif
-	db	CR,LF,0
+	db	CR,LF,TRM
 
 	rept	1000h-$
 	db	0ffh

@@ -8,8 +8,20 @@ BS	equ	8
 BEL	equ	7
 CTLC	equ	3
 
-imgbuf	equ	7000h
-imgtop	equ	imgbuf+8000h
+monrom	equ	4096	; length of first contig block in ROM (monitor)
+romlen	equ	8000h	; full ROM is 32K
+rombeg	equ	0000h	; start of ROM runtime image (in-place)
+romend	equ	rombeg+romlen	; end of in-place ROM
+
+; buffer used to hold ROM image for flashing.
+; NOTE: the first monrom bytes will be destroyed during flash.
+imgbuf	equ	romend-monrom	; 4K below end of full ROM
+imgtop	equ	imgbuf+romlen	; end of imgbuf
+; The overlap is OK because the first 4K is flashed using
+; the !ORG0,!MEM1 "legacy" map, and the memory (image buf)
+; at imgbuf is still accessible. Once that 4K is flash, we
+; switch to !ORG0,MEM1 "extended" map, and continue flashing.
+
 ticcnt	equ	201bh	; for vdip1.lib
 ctl$F0	equ	2009h
 ctl$F2	equ	2036h
@@ -19,6 +31,7 @@ begin:
 	lxi	sp,stack
 	lxi	d,signon
 	call	msgout
+	; 2mS clock is needed for accessing VDIP1 (timeouts)
 	lxi	h,ctl$F0
 	mov	a,m
 	ori	01000000b	; 2mS back on
@@ -64,6 +77,9 @@ loop0:	call	vdrd
 	call	linin
 	jrc	cancel
 	; after started, there's no going back...
+	; disable any interruptions, as each page must be
+	; entirely written with strict time constraints
+	; (<<150uS between each byte).
 	di
 	mvi	a,10000000b	; WE, partial ROM
 	out	0f2h
@@ -300,11 +316,10 @@ progress:
 	push	h
 	push	b
 	lxi	h,spinx
-	mov	c,m
-	mov	a,c
-	inr	a
+	inr	m
+	mov	a,m
 	ani	00000011b
-	mov	m,a
+	mov	c,a
 	mvi	b,0
 	lxi	h,spin
 	dad	b
@@ -328,5 +343,4 @@ inbuf:	ds	128	; file name entry buffer
 stack:	ds	0
 
 vdbuf:	ds	128	; for vdip1.lib
-buf:	ds	128	; file read buffer
 	end
