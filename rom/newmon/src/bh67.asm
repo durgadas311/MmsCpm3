@@ -31,8 +31,7 @@ boot:
 	rrc
 	rrc
 	rrc
-	db 0ddh
-	mov h,a	; movxh	a	; 0xx00000 = relative drive num (LUN)
+	sta	cmdbuf+1
 	lda	cport
 	inr	a
 	mov	c,a
@@ -70,9 +69,8 @@ bsasi0:
 ; send SASI read command, get results
 sasi$cmd:
 	di
-	db 0ddh	; undocumented Z80 instruction
-	mov l,e	; movxl	e	; SASI command
-	sixd	cmdbuf
+	mov	a,e
+	sta	cmdbuf
 	mvi	b,0	; wait for "not BUSY" first
 	mvi	e,6	;
 	lxi	h,0	; 0x060000 loop/timeout count

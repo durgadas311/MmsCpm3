@@ -1,5 +1,4 @@
-H8MON = zout/h8core.cim \
-	2716_444-19_H17.rom \
+H8MODS=	2716_444-19_H17.rom \
 	zout/bgide.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
@@ -10,6 +9,9 @@ H8MON = zout/h8core.cim \
 	zout/ccass.cim
 #	zout/cx.cim
 
+H8MON = zout/h8core.cim $(H8MODS)
+H8Z180 = zout/h8z180.cim $(H8MODS)
+
 VERN = $(shell awk -f getver.awk h8core.asm)
 
 all: h8mon2.rom vflash.sys
@@ -18,6 +20,10 @@ zout/%.cim: %.asm core.lib ram.lib vdip1.lib z80.lib
 	zmac --dri -i -8 -c -s -n $<
 	cp $@ ../bin
 	cp zout/$*.lst ../prn
+
+h8mon2z180.rom: $(H8Z180)
+	cat $(H8Z180) | ../../../tools/cksum -f -w -l 0x8000 >$@
+	cp	$@ ../bin
 
 h8mon2.rom: $(H8MON)
 	cat $(H8MON) | ../../../tools/cksum -f -w -l 0x8000 >$@
