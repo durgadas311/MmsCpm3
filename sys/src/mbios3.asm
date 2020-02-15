@@ -1,13 +1,20 @@
-vers equ '5 ' ; Oct 29, 2018  18:11   drm "MBIOS3.ASM"
+vers equ '6 ' ; Feb 15, 2020  16:33   drm "MBIOS3.ASM"
 ;****************************************************************
 ; Main BIOS module for CP/M 3 (CP/M plus),			*
 ;	 Banked memory and Time split-out.			*
 ; Copyright (c) 1983 Magnolia Microsystems			*
 ;****************************************************************
-	maclib Z80
 
 true	equ -1
 false	equ not true
+
+z180	equ	false
+
+if z180
+	maclib z180
+else
+	maclib z80
+endif
 
 cr	equ	13
 lf	equ	10
@@ -19,6 +26,9 @@ RST1	equ	8
 ccp	equ	0100h	; Console Command Processor gets loaded into the TPA
 
 port	equ	0f2h	;interupt control port
+if z180
+itc	equ	34h
+endif
 
 ;  SCB registers
 	extrn @covec,@civec,@aovec,@aivec,@lovec,@ermde
@@ -166,7 +176,14 @@ boot$1:
 	jmp	goccp	; (allowing 16K for "CCP" and reserving page 0)
 
 ; Don't know which bank is selected...
-wboot:	lxi	sp,stack
+wboot:
+if z180
+	in0	a,itc
+	tsti	10000000b	; TRAP bit
+	jnz	trap
+wboot0:
+endif
+	lxi	sp,stack
 	call	reset$pg0	; initialize page zero
 				; leaves bank 1 selected...
 	lda	ccprecs 	; reload CCP
@@ -183,6 +200,53 @@ goccp:	lxi	h,ccp
 	mvi	a,1	;
 	call	?bnksl	;
 	jmp	ccp 	; exit to ccp
+
+if z180
+trap:	pop	h
+	dcx	h
+	tsti	01000000b	; 2nd/3rd opcode flag
+	jrz	trap0
+	dcx	h
+trap0:
+	lxi	sp,stack	; redundant, but need a good stack
+	push	h
+	ani	01111111b	; reset TRAP
+	out0	a,itc
+	lxi	d,trpms
+	mvi	c,9
+	call	bdose
+	pop	h
+	push	h
+	mov	a,h
+	call	hexout
+	pop	h
+	mov	a,l
+	call	hexout
+	call	crlf
+	jmp	wboot0
+
+hexout:	push	psw
+	rlc
+	rlc
+	rlc
+	rlc
+	call	hexot0
+	pop	psw
+hexot0:	ani	0fh
+	adi	90h
+	daa
+	aci	40h
+	daa
+	mov	c,a
+	jmp	conout
+
+crlf:	mvi	c,cr
+	call	conout
+	mvi	c,lf
+	jmp	conout
+
+trpms:	db	cr,lf,'*** TRAP $'
+endif
 
 set$jumps:
 reset$pg0:
@@ -348,7 +412,10 @@ t1cnt	equ	50	;counts 20 milliseconds into 1 second.
 
 signon: db	13,10,7,'CP/M 3.10'
 	dw	vers
-	db	' (c) 1982,1983 DRI and MMS'
+if z180
+	db	' (Z180)'
+endif
+	db	' (c) 1982/3 DRI, MMS'
 	db	13,10,'$'
 
 ramerr: lxi	d,@mmerr
@@ -631,7 +698,7 @@ boot:	lxi	sp,stack
 	sta	bnkflg	;assume X/2-H8 Bank Switch not installed (error)
 ; Initialize all modules and build tables.
 	lxi	h,thread	;thread our way through the modules,
-in0:	mov	e,m		;initializing as we go.
+inz:	mov	e,m		;initializing as we go.
 	inx	h
 	mov	d,m	;next module, or "0000" if we're past the end.
 	inx	h
@@ -688,7 +755,7 @@ in3:	mov	b,a
 	mov	c,a	;B=0 still
 	ldir		;copy modules chrtbl into system table.
 in2:	pop	h
-	jmp	in0
+	jmp	inz
 
 in4:	sub	c	;compute number of devices that will fit.
 	jnz	in3	;continue with initialization of tables
@@ -698,7 +765,7 @@ notchr: 		;HL point to init entry
 	push	d
 	call	icall	;"call" (HL)
 	pop	h
-	jmp	in0
+	jmp	inz
 
 init$done:		;all Disk I/O modules are initialized.
 	mvi	c,11
