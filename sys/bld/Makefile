@@ -20,7 +20,7 @@ M316MODS = -m "33=dds,mdd,mds;34=dds,mdd,mds;35=dds,mdd,mds;36=dds,mdd,mds"
 RDDRVS = -d l:=40
 DSO = -p def,a:
 
-all: c3z17krr.sys c3z37krr.sys c3z67mr.sys c3g37krr.sys
+all: c3z17krr.sys c3z37krr.sys c3z67mr.sys c3g37krr.sys c3z37zrr.sys c3g37zrr.sys
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
@@ -45,6 +45,15 @@ b3z67mr.spr: $(BASE) m320'3.rel m316'3.rel nortc.rel mem318.rel
 	vcpm link "b3z67mr=mbios3,chrio3,m320'3,m316'3,end,lptbl,nortc,mem318,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(M316DRVS) $(M316MODS) $(DSO) $@
 
+# Z67+Z37+Z180MMU+RTC+RAMDISK(todo)
+b3z37zrr.spr: $(BASE) m320'3.rel z37'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3z37zrr=mbios3,chrio3,m320'3,z37'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(DSO) $@
+# GIDE+Z37+Z180MMU+RTC+RAMDISK(todo)
+b3g37zrr.spr: $(BASE) gide'3.rel z37'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3g37zrr=mbios3,chrio3,gide'3,z37'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(DSO) $@
+
 c3%.sys: b3%.spr
 	cp $? bnkbios3.spr
 	cp gc.$*.dat gencpm.dat
@@ -59,6 +68,7 @@ syncdown:
 syncup:
 	rsync -Wurv --existing . ~/git/MmsCpm3/sys/bin/.
 	rsync -Wurv --existing . ~/git/MmsCpm3/sys/prn/.
+	rsync -Wuv gc.*.dat ~/git/MmsCpm3/sys/bld/
 
 # Run from sys/bld dir
 VPATH = ../../dist/bin ../../dist/cmd/bin ../../util/bin ../../help/bin
