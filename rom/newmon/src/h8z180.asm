@@ -7,6 +7,8 @@ true	equ	not false
 alpha	equ	1
 beta	equ	0
 
+use$dma	equ	false
+
 	maclib	ram
 	maclib	z180
 	$*macro
@@ -29,6 +31,17 @@ itc	equ	34h
 mmu$cbr	equ	38h
 mmu$bbr	equ	39h
 mmu$cbar equ	3ah
+sar0l	equ	20h
+sar0h	equ	21h
+sar0b	equ	22h
+dar0l	equ	23h
+dar0h	equ	24h
+dar0b	equ	25h
+bcr0l	equ	26h
+bcr0h	equ	27h
+dstat	equ	30h
+dmode	equ	31h
+dcntl	equ	32h
 
 memtest	equ	03000h
 ramboot	equ	0c000h
@@ -618,21 +631,27 @@ init:
 	in0	a,itc
 	bit	7,a
 	jnz	trap
-	; map in 8K of ROM from 0xf8000 at 0xc000
-init0:	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
+init0:	lxi	h,0ffffh
+	sphl
+	push	h	; save top on stack
+	; map in 8K of ROM from 0xf8000 into 0x4000
+	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
 	out0	a,mmu$cbar
-	mvi	a,0f8h-0ch	; page offset by start
-	out0	a,mmu$cbr
-	lxi	h,0c000h
+	; both CBR and BBR ar "0" - if got here via RESET
+if use$dma
+	; DMA F8000-FA000 into 00000-02000
+	call	dmarom
+else
+	mvi	a,0f8h-04h	; page offset by start
+	out0	a,mmu$bbr
+	lxi	h,04000h
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
 	ldir
 	; restore default map...
 	xra	a	; 00 - reset map to 0000
-	out0	a,mmu$cbr
-	lxi	h,0ffffh
-	sphl
-	push	h	; save top on stack
+	out0	a,mmu$bbr
+endif
 	lxi	h,re$entry
 	push	h
 	call	coninit
@@ -1083,6 +1102,30 @@ endif
 	jmp	0	; initialized by H47 boot module
 	db	0
 	jmp	0	; initialized by H47 boot module
+
+if use$dma
+; copy core ROM into 0000 using DMAC
+dmarom:	xra	a
+	out0	a,dar0l
+	out0	a,dar0h
+	out0	a,dar0b	; dest addr 00000
+	out0	a,bcr0l ; low half of byte count
+	out0	a,sar0l
+	mvi	a,80h
+	out0	a,sar0h
+	mvi	a,0fh
+	out0	a,sar0b	; source addr F8000
+	mvi	a,20h	; hi part of byte count
+	out0	a,bcr0h
+	mvi	a,00000010b	; mem2mem, burst mode
+	out0	a,dmode
+	mvi	a,01100000b	; DE0,/DWE0(!/DWE1) - start ch 0
+	out0	a,dstat
+	mvi	c,dstat
+init1:	tstio	01000000b	; wait for DMAC to idle
+	jrnz	init1
+	ret
+endif
 
 adrin3:	mov	e,m
 	inx	h
