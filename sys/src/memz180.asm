@@ -38,6 +38,7 @@ BNK3$PG	equ	2ch	; 2C000-39FFF
 
 ;  Variables for use by other modules
 	public @nbnk,@compg,@mmerr,@memstr
+	public @tz180,@dz180 ; for ramdisk
 
 ;  Routines for use by other modules
 	public ?bnksl,?bnkck,?xmove,?mvccp,?move
@@ -127,11 +128,13 @@ xmv0:	in0	a,dstat
 	pop	b		; restore register b
 	ret
 
+@tz180:
 table:	db	BNK0$PG
 	db	BNK1$PG
 	db	BNK2$PG
 	db	BNK3$PG
 
+@dz180:
 dmatbl:	dw	BNK0$PG SHL 4
 	dw	BNK1$PG SHL 4
 	dw	BNK2$PG SHL 4

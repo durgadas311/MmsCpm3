@@ -50,14 +50,14 @@ b3z67mr.spr: $(BASE) m320'3.rel m316'3.rel nortc.rel mem318.rel
 mbios3z.asm: mbios3.asm
 	sed -e 's/^z180	equ	false/z180	equ	true/' $^ >$@
 
-# Z67+Z37+Z180MMU+RTC+RAMDISK(todo)
-b3z37zrr.spr: $(BASEZ) m320'3.rel z37'3.rel rtc72421.rel memz180.rel
-	vcpm link "b3z37zrr=mbios3z,chrio3,m320'3,z37'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
-	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(DSO) $@
-# GIDE+Z37+Z180MMU+RTC+RAMDISK(todo)
-b3g37zrr.spr: $(BASEZ) gide'3.rel z37'3.rel rtc72421.rel memz180.rel
-	vcpm link "b3g37zrr=mbios3z,chrio3,gide'3,z37'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
-	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(DSO) $@
+# Z67+Z37+Z180MMU+RTC+RAMDISK
+b3z37zrr.spr: $(BASEZ) m320'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3z37zrr=mbios3z,chrio3,m320'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+# GIDE+Z37+Z180MMU+RTC+RAMDISK
+b3g37zrr.spr: $(BASEZ) gide'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3g37zrr=mbios3z,chrio3,gide'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
 c3%.sys: b3%.spr
 	cp $? bnkbios3.spr
