@@ -52,3 +52,5 @@ ship: vflash.sys h8mon2.rom h8mon2z180.rom ../doc/H8-Monitor-2.pdf
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom
 	rsync -uvW h8mon2z180.rom \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2z180-v$(VERNZ).rom
+	rsync -uvW x.htaccess \
+		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/.htaccess
