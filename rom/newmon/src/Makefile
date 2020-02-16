@@ -13,8 +13,9 @@ H8MON = zout/h8core.cim $(H8MODS)
 H8Z180 = zout/h8z180.cim $(H8MODS)
 
 VERN = $(shell awk -f getver.awk h8core.asm)
+VERNZ = $(shell awk -f getver.awk h8z180.asm)
 
-all: h8mon2.rom vflash.sys
+all: h8mon2.rom h8mon2z180.rom vflash.sys
 
 zout/%.cim: %.asm core.lib ram.lib vdip1.lib z80.lib
 	zmac --dri -i -8 -c -s -n $<
@@ -44,8 +45,10 @@ vflash.sys: vflash.spr
 	mknetboot -x -o $@ $^
 	cp $@ ../bin
 
-ship: vflash.sys h8mon2.rom ../doc/H8-Monitor-2.pdf
+ship: vflash.sys h8mon2.rom h8mon2z180.rom ../doc/H8-Monitor-2.pdf
 	rsync -uvW vflash.sys ../doc/H8-Monitor-2.pdf \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/
 	rsync -uvW h8mon2.rom \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom
+	rsync -uvW h8mon2z180.rom \
+		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2z180-v$(VERNZ).rom
