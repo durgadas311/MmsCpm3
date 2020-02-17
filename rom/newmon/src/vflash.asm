@@ -18,13 +18,16 @@ romend	equ	rombeg+romlen	; end of in-place ROM
 imgbuf	equ	romend-monrom	; 4K below end of full ROM
 imgtop	equ	imgbuf+romlen	; end of imgbuf
 ; The overlap is OK because the first 4K is flashed using
-; the !ORG0,!MEM1 "legacy" map, and the memory (image buf)
+; the not ORG0,not MEM1 "legacy" map, and the memory (image buf)
 ; at imgbuf is still accessible. Once that 4K is flash, we
-; switch to !ORG0,MEM1 "extended" map, and continue flashing.
+; switch to not ORG0,MEM1 "extended" map, and continue flashing.
 
-ticcnt	equ	201bh	; for vdip1.lib
 ctl$F0	equ	2009h
 ctl$F2	equ	2036h
+
+	extrn	strcpy,strcmp
+	extrn	vdcmd,vdrd,sync,runout
+	public	vdbuf
 
 	cseg
 begin:
@@ -333,8 +336,6 @@ progress:
 
 spinx:	db	0
 spin:	db	'-','\','|','/'
-
-	maclib	vdip1
 
 opr:	db	'opr '	; is posisiotn for filename...
 inbuf:	ds	128	; file name entry buffer

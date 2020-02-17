@@ -1,0 +1,382 @@
+                ; Stand-Alone Program to flash the ROM from an image on VDIP1 USB stick
+ 0010 =         VERN	equ	10h
+                	maclib	z80
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 0003 =         CTLC	equ	3
+                
+ 1000 =         monrom	equ	4096	; length of first contig block in ROM (monitor)
+ 8000 =         romlen	equ	8000h	; full ROM is 32K
+ 0000 =         rombeg	equ	0000h	; start of ROM runtime image (in-place)
+ 8000 =         romend	equ	rombeg+romlen	; end of in-place ROM
+                
+                ; buffer used to hold ROM image for flashing.
+                ; NOTE: the first monrom bytes will be destroyed during flash.
+ 7000 =         imgbuf	equ	romend-monrom	; 4K below end of full ROM
+ F000 =         imgtop	equ	imgbuf+romlen	; end of imgbuf
+                ; The overlap is OK because the first 4K is flashed using
+                ; the not ORG0,not MEM1 "legacy" map, and the memory (image buf)
+                ; at imgbuf is still accessible. Once that 4K is flash, we
+                ; switch to not ORG0,MEM1 "extended" map, and continue flashing.
+                
+ 2009 =         ctl$F0	equ	2009h
+ 2036 =         ctl$F2	equ	2036h
+                
+                	extrn	strcpy,strcmp
+                	extrn	vdcmd,vdrd,sync,runout
+                	public	vdbuf
+                
+                	cseg
+                begin:
+ 0000 31E903    	lxi	sp,stack
+ 0003 11EA00    	lxi	d,signon
+ 0006 CD9B02    	call	msgout
+                	; 2mS clock is needed for accessing VDIP1 (timeouts)
+ 0009 210920    	lxi	h,ctl$F0
+ 000C 7E        	mov	a,m
+ 000D F640      	ori	01000000b	; 2mS back on
+ 000F 77        	mov	m,a
+ 0010 D3F0      	out	0f0h
+ 0012 FB        	ei
+ 0013 CD0000    	call	runout
+ 0016 CD0000    	call	sync
+ 0019 DA9C00    	jc	error
+ 001C 11A901    over:	lxi	d,quest
+ 001F CD9B02    	call	msgout
+ 0022 CD3102    	call	linin
+ 0025 DACC00    	jc	cancel
+ 0028 79        	mov	a,c
+ 0029 B7        	ora	a
+                	jrnz	go1	; already CR terminated...
+ 002A+200C      	DB	20H,GO1-$-1
+ 002C 21E401    	lxi	h,defrom
+ 002F 11E902    	lxi	d,inbuf
+ 0032 CD0000    	call	strcpy
+ 0035 3E0D      	mvi	a,CR
+ 0037 12        	stax	d
+ 0038 21E502    go1:	lxi	h,opr
+ 003B CD0000    	call	vdcmd
+ 003E DAC000    	jc	nofile
+ 0041 210070    	lxi	h,imgbuf	; 4k below end of ROM
+ 0044 CD0000    loop0:	call	vdrd
+                	jrc	rderr
+ 0047+386F      	DB	38H,RDERR-$-1
+ 0049 CDC402    	call	progress
+ 004C 7C        	mov	a,h
+ 004D FEF0      	cpi	HIGH imgtop
+                	jrnz	loop0
+ 004F+20F3      	DB	20H,LOOP0-$-1
+                	; one more read, should be error (EOF)
+ 0051 210040    	lxi	h,4000h	; a safe place to destroy...
+ 0054 CD0000    	call	vdrd
+                	jrnc	rderr
+ 0057+305F      	DB	30H,RDERR-$-1
+ 0059 CDC500    	call	close
+ 005C 110070    	lxi	d,imgbuf
+ 005F CDEF01    	call	vchksm	; verify checksum
+                	jrc	ckerr
+ 0062+384B      	DB	38H,CKERR-$-1
+                	; now, ready to start flash...
+ 0064 118B01    	lxi	d,ready
+ 0067 CD9B02    	call	msgout
+ 006A CD3102    	call	linin
+                	jrc	cancel
+ 006D+385D      	DB	38H,CANCEL-$-1
+                	; after started, there's no going back...
+                	; disable any interruptions, as each page must be
+                	; entirely written with strict time constraints
+                	; (<<150uS between each byte).
+ 006F F3        	di
+ 0070 3E80      	mvi	a,10000000b	; WE, partial ROM
+ 0072 D3F2      	out	0f2h
+ 0074 210070    	lxi	h,imgbuf
+ 0077 110000    	lxi	d,0	; ROM
+ 007A 014000    	lxi	b,4096/64	; first 4K
+ 007D CDA402    	call	flash
+                	jrc	error
+ 0080+381A      	DB	38H,ERROR-$-1
+ 0082 3E88      	mvi	a,10001000b	; WE, enable full ROM
+ 0084 D3F2      	out	0f2h
+ 0086 01C001    	lxi	b,(8000h-4096)/64	; rest of ROM
+ 0089 CDA402    	call	flash
+                	jrc	error
+ 008C+380E      	DB	38H,ERROR-$-1
+ 008E 110000    	lxi	d,0	; ROM
+ 0091 CDEF01    	call	vchksm
+                	jrc	ckerr2
+ 0094+3811      	DB	38H,CKERR2-$-1
+ 0096 11C001    	lxi	d,done
+ 0099 CD9B02    	call	msgout
+                error:
+ 009C AF        	xra	a
+ 009D D3F2      	out	0f2h
+                	; do something smarter...?
+ 009F 11D601    	lxi	d,die
+ 00A2 CD9B02    	call	msgout
+ 00A5 F3        	di
+ 00A6 76        	hlt
+                
+ 00A7 111601    ckerr2:	lxi	d,cserr
+ 00AA CD9B02    	call	msgout
+                	jr	error
+ 00AD+18ED      	DB	18H,ERROR-$-1
+                
+ 00AF 111601    ckerr:	lxi	d,cserr
+ 00B2 CD9B02    eloop:	call	msgout
+ 00B5 C31C00    	jmp	over
+                
+                ; file is still open...
+ 00B8 CDC500    rderr:	call	close
+ 00BB 113201    	lxi	d,fierr
+                	jr	eloop
+ 00BE+18F2      	DB	18H,ELOOP-$-1
+                
+ 00C0 115901    nofile:	lxi	d,nferr
+                	jr	eloop
+ 00C3+18ED      	DB	18H,ELOOP-$-1
+                
+ 00C5 211201    close:	lxi	h,clf
+ 00C8 CD0000    	call	vdcmd
+ 00CB C9        	ret
+                
+                ; cancel, before any flash took place...
+                ; safe return to ROM possible?
+ 00CC 117501    cancel:	lxi	d,canc
+ 00CF CD9B02    	call	msgout
+ 00D2 3E0D      	mvi	a,CR
+ 00D4 CD8502    	call	conout
+ 00D7 3E0A      	mvi	a,LF
+ 00D9 CD8502    	call	conout
+ 00DC CD8502    	call	conout
+ 00DF F3        	di
+ 00E0 AF        	xra	a
+ 00E1 D3F2      	out	0f2h
+ 00E3 3EDF      	mvi	a,0dfh	; reset state of FP
+ 00E5 D3F0      	out	0f0h
+ 00E7 C30000    	jmp	0
+                
+ 00EA 0D0A56464Csignon:	db	CR,LF,'VFLASH v'
+ 00F4 312E30    	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+ 00F7 202D205570	db	' - Update ROM from VDIP1',CR,LF,0
+ 0112 636C660D  clf:	db	'clf',CR
+ 0116 07524F4D20cserr:	db	BEL,'ROM image checksum error',CR,LF,0
+ 0132 07524F4D20fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
+ 0159 07524F4D20nferr:	db	BEL,'ROM image file not found',CR,LF,0
+ 0175 524F4D2066canc:	db	'ROM flash cancelled',CR,LF,0
+ 018B 5072657373ready:	db	'Press RETURN to start flash: ',0
+                
+ 01A9 456E746572quest:	db	'Enter ROM image file: ',0
+ 01C0 524F4D2075done:	db	'ROM update complete',CR,LF,0
+ 01D6 5072657373die:	db	'Press RESET',CR,LF,0
+                
+ 01E4 68386D6F6Edefrom:	db	'h8mon2.rom',0	; default rom image file
+                
+                ; DE=start of ROM image
+ 01EF 210000    vchksm:	lxi	h,0
+ 01F2 222302    	shld	sum
+ 01F5 222502    	shld	sum+2
+ 01F8 01FC7F    	lxi	b,8000h-4
+ 01FB 1A        vchk0:	ldax	d
+ 01FC CD1402    	call	sum1
+ 01FF 13        	inx	d
+ 0200 0B        	dcx	b
+ 0201 78        	mov	a,b
+ 0202 B1        	ora	c
+                	jrnz	vchk0
+ 0203+20F6      	DB	20H,VCHK0-$-1
+ 0205 212302    	lxi	h,sum
+ 0208 0604      	mvi	b,4
+ 020A 1A        vchk1:	ldax	d
+ 020B BE        	cmp	m
+ 020C 37        	stc
+ 020D C0        	rnz
+ 020E 13        	inx	d
+ 020F 23        	inx	h
+                	djnz	vchk1
+ 0210+10F8      	DB	10H,VCHK1-$-1
+ 0212 AF        	xra	a	; NC
+ 0213 C9        	ret
+                
+ 0214 212302    sum1:	lxi	h,sum
+ 0217 86        	add	m
+ 0218 77        	mov	m,a
+ 0219 D0        	rnc
+ 021A 23        	inx	h
+ 021B 34        	inr	m
+ 021C C0        	rnz
+ 021D 23        	inx	h
+ 021E 34        	inr	m
+ 021F C0        	rnz
+ 0220 23        	inx	h
+ 0221 34        	inr	m
+ 0222 C9        	ret
+                
+ 0223 00000000  sum:	db	0,0,0,0
+                
+ 0227 3E0D      linix:	mvi	a,CR
+ 0229 77        	mov	m,a	; terminate buffer
+ 022A CD8502    	call	conout
+ 022D 3E0A      	mvi	a,LF
+                	jr	conout
+ 022F+1854      	DB	18H,CONOUT-$-1
+                
+                ; input a filename from console, allow backspace
+                ; returns C=num chars
+                linin:
+ 0231 21E902    	lxi	h,inbuf
+ 0234 0E00      	mvi	c,0	; count chars
+ 0236 CD9002    lini0	call	conin
+ 0239 FE0D      	cpi	CR
+                	jrz	linix
+ 023B+28EA      	DB	28H,LINIX-$-1
+ 023D FE03      	cpi	CTLC	; cancel
+ 023F 37        	stc
+ 0240 C8        	rz
+ 0241 FE08      	cpi	BS
+                	jrz	backup
+ 0243+2829      	DB	28H,BACKUP-$-1
+ 0245 FE2E      	cpi	'.'
+                	jrz	chrok
+ 0247+2816      	DB	28H,CHROK-$-1
+ 0249 FE2D      	cpi	'-'
+                	jrz	chrok
+ 024B+2812      	DB	28H,CHROK-$-1
+ 024D FE30      	cpi	'0'
+                	jrc	chrnak
+ 024F+3816      	DB	38H,CHRNAK-$-1
+ 0251 FE3A      	cpi	'9'+1
+                	jrc	chrok
+ 0253+380A      	DB	38H,CHROK-$-1
+ 0255 E65F      	ani	01011111b	; toupper
+ 0257 FE41      	cpi	'A'
+                	jrc	chrnak
+ 0259+380C      	DB	38H,CHRNAK-$-1
+ 025B FE5B      	cpi	'Z'+1
+                	jrnc	chrnak
+ 025D+3008      	DB	30H,CHRNAK-$-1
+ 025F 77        chrok:	mov	m,a
+ 0260 23        	inx	h
+ 0261 0C        	inr	c
+ 0262 CD8502    	call	conout
+                	; TODO: detect overflow...
+                	jr	lini0
+ 0265+18CF      	DB	18H,LINI0-$-1
+ 0267 3E07      chrnak:	mvi	a,BEL
+ 0269 CD8502    	call	conout
+                	jr	lini0
+ 026C+18C8      	DB	18H,LINI0-$-1
+                backup:
+ 026E 79        	mov	a,c
+ 026F B7        	ora	a
+                	jrz	lini0
+ 0270+28C4      	DB	28H,LINI0-$-1
+ 0272 0D        	dcr	c
+ 0273 2B        	dcx	h
+ 0274 3E08      	mvi	a,BS
+ 0276 CD8502    	call	conout
+ 0279 3E20      	mvi	a,' '
+ 027B CD8502    	call	conout
+ 027E 3E08      	mvi	a,BS
+ 0280 CD8502    	call	conout
+                	jr	lini0
+ 0283+18B1      	DB	18H,LINI0-$-1
+                
+ 0285 F5        conout:	push	psw
+ 0286 DBED      cono0:	in	0edh
+ 0288 E620      	ani	00100000b
+                	jrz	cono0
+ 028A+28FA      	DB	28H,CONO0-$-1
+ 028C F1        	pop	psw
+ 028D D3E8      	out	0e8h
+ 028F C9        	ret
+                
+ 0290 DBED      conin:	in	0edh
+ 0292 E601      	ani	00000001b
+                	jrz	conin
+ 0294+28FA      	DB	28H,CONIN-$-1
+ 0296 DBE8      	in	0e8h
+ 0298 E67F      	ani	01111111b
+ 029A C9        	ret
+                
+ 029B 1A        msgout:	ldax	d
+ 029C B7        	ora	a
+ 029D C8        	rz
+ 029E CD8502    	call	conout
+ 02A1 13        	inx	d
+                	jr	msgout
+ 02A2+18F7      	DB	18H,MSGOUT-$-1
+                
+                ; flash ROM from HL to DE, 64 bytes at a time.
+                ; DE must be on a 64-byte boundary.
+                ; BC=num pages to flash
+                ; returns CY on error, else HL,DE at next 64 bytes
+                ; caller must set WE... and MEM1 as needed.
+                flash:
+ 02A4 C5        	push	b
+ 02A5 014000    	lxi	b,64
+                	ldir
+ 02A8+EDB0      	DB	0EDH,0B0H
+                	; -----
+ 02AA 2B        	dcx	h
+ 02AB 1B        	dcx	d	; last addr written...
+                	; wait for write cycle to begin...
+                	; TODO: timeout this loop?
+ 02AC 1A        flash2:	ldax	d
+ 02AD AE        	xra	m
+ 02AE E680      	ani	10000000b	; bit7 is inverted when busy...
+                	jrz	flash2
+ 02B0+28FA      	DB	28H,FLASH2-$-1
+                	; wait for write cycle to end...
+                	; TODO: timeout this loop?
+ 02B2 1A        flash0:	ldax	d
+ 02B3 AE        	xra	m
+ 02B4 E680      	ani	10000000b	; bit7 is inverted when busy...
+                	jrnz	flash0
+ 02B6+20FA      	DB	20H,FLASH0-$-1
+ 02B8 23        	inx	h
+ 02B9 13        	inx	d
+                	; done with page...
+ 02BA CDC402    	call	progress
+ 02BD C1        	pop	b
+ 02BE 0B        	dcx	b
+ 02BF 78        	mov	a,b
+ 02C0 B1        	ora	c
+                	jrnz	flash
+ 02C1+20E1      	DB	20H,FLASH-$-1
+                	;xra	a	; NC already
+ 02C3 C9        	ret
+                
+                progress:
+ 02C4 E5        	push	h
+ 02C5 C5        	push	b
+ 02C6 21E002    	lxi	h,spinx
+ 02C9 34        	inr	m
+ 02CA 7E        	mov	a,m
+ 02CB E603      	ani	00000011b
+ 02CD 4F        	mov	c,a
+ 02CE 0600      	mvi	b,0
+ 02D0 21E102    	lxi	h,spin
+ 02D3 09        	dad	b
+ 02D4 7E        	mov	a,m
+ 02D5 CD8502    	call	conout
+ 02D8 3E08      	mvi	a,BS
+ 02DA CD8502    	call	conout
+ 02DD C1        	pop	b
+ 02DE E1        	pop	h
+ 02DF C9        	ret
+                
+ 02E0 00        spinx:	db	0
+ 02E1 2D5C7C2F  spin:	db	'-','\','|','/'
+                
+ 02E5 6F707220  opr:	db	'opr '	; is posisiotn for filename...
+ 02E9           inbuf:	ds	128	; file name entry buffer
+                
+ 0369           	ds	128
+ 03E9           stack:	ds	0
+                
+ 03E9           vdbuf:	ds	128	; for vdip1.lib
+ 0469           	end
+

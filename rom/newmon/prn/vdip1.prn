@@ -1,0 +1,195 @@
+                ; util routines for accessing VDIP1
+                ; caller must define 'vdbuf' as input buffer,
+                ; and 'vdip1' as base port.
+                	maclib	z80
+                
+                	public	strcpy,strcmp
+                	public	vdcmd,vdrd,sync,runout
+                	extrn	vdbuf
+                
+ 00D8 =         vdip1	equ	0d8h	; base port
+                
+ 000D =         CR	equ	13
+                
+ 00D9 =         vd$dat	equ	vdip1+1
+ 00DA =         vd$sts	equ	vdip1+2
+                
+ 0004 =         vd$txe	equ	00000100b	; Tx ready
+ 0008 =         vd$rxr	equ	00001000b	; Rx data ready
+                
+ 201B =         ticcnt	equ	201bh
+                
+                	cseg
+                
+ 0000 443A5C3E0Dprompt:	db	'D:\>',CR
+ 0005 7264662000rdf:	db	'rdf ',0,0,0,128,CR
+                
+                ; copy HL to DE, until NUL
+                strcpy:
+ 000E 7E        	mov	a,m
+ 000F 12        	stax	d
+ 0010 B7        	ora	a
+ 0011 C8        	rz
+ 0012 23        	inx	h
+ 0013 13        	inx	d
+                	jr	strcpy
+ 0014+18F8      	DB	18H,STRCPY-$-1
+                
+                ; compare DE to HL, until CR or NUL
+                strcmp:
+ 0016 1A        	ldax	d
+ 0017 BE        	cmp	m
+ 0018 C0        	rnz
+ 0019 B7        	ora	a
+ 001A C8        	rz
+ 001B FE0D      	cpi	CR
+ 001D C8        	rz
+ 001E 23        	inx	h
+ 001F 13        	inx	d
+                	jr	strcmp
+ 0020+18F4      	DB	18H,STRCMP-$-1
+                
+                ; send command, wait for prompt or error
+                ; HL=command string, CR term
+                vdcmd:	
+ 0022 CDC300    	call	vdmsg
+ 0025 CD7700    	call	vdinp
+ 0028 210000    	lxi	h,vdbuf
+ 002B 110000    	lxi	d,prompt
+ 002E CD1600    	call	strcmp
+ 0031 C8        	rz	; OK
+                	; error, always?
+ 0032 37        	stc
+ 0033 C9        	ret
+                
+                ; read record (128 bytes) from file, into HL
+                ; returns CY if error, else HL at "next" addr
+ 0034 E5        vdrd:	push	h
+ 0035 210500    	lxi	h,rdf
+ 0038 CDC300    	call	vdmsg
+ 003B E1        	pop	h
+ 003C CDA900    	call	vdinb
+ 003F E5        	push	h
+ 0040 CD7700    	call	vdinp
+ 0043 210000    	lxi	h,vdbuf
+ 0046 110000    	lxi	d,prompt
+ 0049 CD1600    	call	strcmp
+ 004C E1        	pop	h	; "next" buffer addr
+ 004D C8        	rz
+ 004E 37        	stc
+ 004F C9        	ret
+                
+ 0050 0605      sync:	mvi	b,5
+ 0052 3E45      	mvi	a,'E'
+ 0054 CDB800    	call	vdout
+ 0057 3E0D      	mvi	a,CR
+ 0059 CDB800    	call	vdout
+ 005C CD7700    	call	vdinp	; line to vdbuf
+ 005F D8        	rc
+ 0060 3A0000    	lda	vdbuf
+ 0063 FE45      	cpi	'E'
+                	jrnz	sync0
+ 0065+2006      	DB	20H,SYNC0-$-1
+ 0067 3A0100    	lda	vdbuf+1
+ 006A FE0D      	cpi	CR
+ 006C C8        	rz
+                sync0:	djnz	sync
+ 006D+10E1      	DB	10H,SYNC-$-1
+ 006F 37        	stc
+ 0070 C9        	ret
+                
+                ; get rid of any characters waiting... flush input
+                runout:
+ 0071 CD8500    	call	vdinz	; short timeout...
+ 0074 D8        	rc		; done - nothing more to drain
+                	jr	runout
+ 0075+18FA      	DB	18H,RUNOUT-$-1
+                
+                ;;;;;;;; everything else is private ;;;;;;;;;
+                
+                ; receive chars until CR, into vdbuf
+                ; returns HL->[CR] (if NC)
+ 0077 210000    vdinp:	lxi	h,vdbuf
+ 007A CD8E00    vdi2:	call	vdinc
+ 007D D8        	rc
+ 007E 77        	mov	m,a
+ 007F FE0D      	cpi	CR
+ 0081 C8        	rz
+ 0082 23        	inx	h
+                	jr	vdi2
+ 0083+18F5      	DB	18H,VDI2-$-1
+                
+                ; short-timeout input - for draining
+                vdinz:
+ 0085 060A      	mvi	b,10		; 20mS timeout
+ 0087 E5        	push	h
+ 0088 211B20    	lxi	h,ticcnt	; use 2mS increments
+ 008B 4E        	mov	c,m
+                	jr	vdi0
+ 008C+1807      	DB	18H,VDI0-$-1
+                
+                ; avoid hung situations
+                vdinc:
+ 008E 0606      	mvi	b,6		; 2.5-3 second timeout
+ 0090 E5        	push	h
+ 0091 211C20    	lxi	h,ticcnt+1	; hi byte ticks at 512mS
+ 0094 4E        	mov	c,m		; current tick...
+ 0095 DBDA      vdi0:	in	vd$sts
+ 0097 E608      	ani	vd$rxr
+                	jrnz	vdi1
+ 0099+200A      	DB	20H,VDI1-$-1
+ 009B 7E        	mov	a,m
+ 009C B9        	cmp	c
+                	jrz	vdi0
+ 009D+28F6      	DB	28H,VDI0-$-1
+ 009F 4F        	mov	c,a
+                	djnz	vdi0
+ 00A0+10F3      	DB	10H,VDI0-$-1
+ 00A2 E1        	pop	h
+ 00A3 37        	stc
+ 00A4 C9        	ret
+ 00A5 DBD9      vdi1:	in	vd$dat
+ 00A7 E1        	pop	h
+ 00A8 C9        	ret
+                
+                ; get read data.
+                ; HL=buffer, length always 128
+ 00A9 0680      vdinb:	mvi	b,128
+ 00AB DBDA      vdb0:	in	vd$sts
+ 00AD E608      	ani	vd$rxr
+                	jrz	vdb0
+ 00AF+28FA      	DB	28H,VDB0-$-1
+ 00B1 DBD9      	in	vd$dat
+ 00B3 77        	mov	m,a
+ 00B4 23        	inx	h
+                	djnz	vdb0
+ 00B5+10F4      	DB	10H,VDB0-$-1
+ 00B7 C9        	ret
+                
+                ; send char to VDIP1
+                ; A=char
+ 00B8 F5        vdout:	push	psw
+ 00B9 DBDA      vdo0:	in	vd$sts
+ 00BB E604      	ani	vd$txe
+                	jrz	vdo0
+ 00BD+28FA      	DB	28H,VDO0-$-1
+ 00BF F1        	pop	psw
+ 00C0 D3D9      	out	vd$dat
+ 00C2 C9        	ret
+                
+                ; HL=message, terminated by CR
+                vdmsg:
+ 00C3 DBDA      	in	vd$sts
+ 00C5 E604      	ani	vd$txe
+                	jrz	vdmsg
+ 00C7+28FA      	DB	28H,VDMSG-$-1
+ 00C9 7E        	mov	a,m
+ 00CA D3D9      	out	vd$dat
+ 00CC FE0D      	cpi	CR	; CR
+ 00CE C8        	rz
+ 00CF 23        	inx	h
+                	jr	vdmsg
+ 00D0+18F1      	DB	18H,VDMSG-$-1
+                ; end of library
+ 00D2           	end
+

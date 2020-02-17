@@ -3,6 +3,10 @@
 ; and 'vdip1' as base port.
 	maclib	z80
 
+	public	strcpy,strcmp
+	public	vdcmd,vdrd,sync,runout
+	extrn	vdbuf
+
 vdip1	equ	0d8h	; base port
 
 CR	equ	13
@@ -12,6 +16,10 @@ vd$sts	equ	vdip1+2
 
 vd$txe	equ	00000100b	; Tx ready
 vd$rxr	equ	00001000b	; Rx data ready
+
+ticcnt	equ	201bh
+
+	cseg
 
 prompt:	db	'D:\>',CR
 rdf:	db	'rdf ',0,0,0,128,CR
@@ -92,6 +100,8 @@ runout:
 	rc		; done - nothing more to drain
 	jr	runout
 
+;;;;;;;; everything else is private ;;;;;;;;;
+
 ; receive chars until CR, into vdbuf
 ; returns HL->[CR] (if NC)
 vdinp:	lxi	h,vdbuf
@@ -166,3 +176,4 @@ vdmsg:
 	inx	h
 	jr	vdmsg
 ; end of library
+	end

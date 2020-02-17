@@ -34,14 +34,20 @@ h8mon2.rom: $(H8MON)
 export CPMDrive_D = $(PWD)
 export CPMDefault = d:
 
-%.spr: %.asm
-	zmac --dri -i -8 -c -s -n --rel $<
-	cp zout/$*.rel .
+%.rel: %.asm
+	unix2cpm -s $< $*.mac
+	vcpm rmac "$*.mac" '$$SZLA'
+	cp $*.prn ../prn
+
+%.spr: %.rel
 	vcpm link $@=$*'[os,nr]'
 	cp $@ ../bin
-	cp zout/$*.lst ../prn
 
-vflash.sys: vflash.spr
+vflash.spr: vflash.rel vdip1.rel
+	vcpm link $@=vflash,vdip1'[os,nr]'
+	cp $@ ../bin
+
+%.sys: %.spr
 	mknetboot -x -o $@ $^
 	cp $@ ../bin
 
