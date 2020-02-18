@@ -26,6 +26,9 @@ first:	db	HIGH (last-first)	; +0: num pages
 	db	10000011b,10100100b,10000110b	; +13: FP display ("USb")
 	db	'VDIP1',0	; +16: mnemonic string
 
+sfx:	db	'.sys'
+sfxlen	equ	$-sfx
+
 init:
 	call	runout
 	call	sync
@@ -35,7 +38,6 @@ boot:
 	lxi	h,opr
 	lxi	d,vdbuf
 	call	strcpy
-	push	d	; current end of OPR command string
 	lxi	h,bbuf	; possible string here
 	mov	a,m
 	cpi	0c3h	; JMP means no string
@@ -44,7 +46,24 @@ boot:
 	mov	c,a
 	mvi	b,0
 	inx	h
-	ldir	; DE points past end of name
+xx0:	mov	a,m
+	stax	d
+	cpi	CR
+	jrz	xx1
+	sui	'.'	; 00:(A=='.')
+	sui	1	; CY:==, NC:<>
+	sbb	a	; FF:=='.', 00:<>'.'
+	ora	b	; B=true if any '.' seen
+	mov	b,a
+	inx	h
+	inx	d
+	dcr	c
+	jrnz	xx0
+xx1:	inr	b
+	jrz	boot6	; saw a '.', don't append '.sys'
+	lxi	h,sfx
+	lxi	b,sfxlen
+	ldir
 	jr	boot6
 boot5:	lxi	h,defbt
 	call	strcpy

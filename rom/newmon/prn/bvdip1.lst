@@ -23,8 +23,8 @@
 1001  10      		db	HIGH first		; +1: ORG page
 1002  2901    		db	41,1	; +2,+3: phy drv base, num
 		
-1004  C31610  		jmp	init	; +4: init entry
-1007  C31D10  		jmp	boot	; +7: boot entry
+1004  C31A10  		jmp	init	; +4: init entry
+1007  C32110  		jmp	boot	; +7: boot entry
 		
 100A  56      		db	'V'	; +10: Boot command letter
 100B  06      		db	6	; +11: front panel key
@@ -33,132 +33,151 @@
 1010  56444950		db	'VDIP1',0	; +16: mnemonic string
       3100
 		
-1016          	init:
-1016  CD5911  		call	runout
-1019  CD3811  		call	sync
-101C  C9      		ret	; pass/fail based on CY
+1016  2E737973	sfx:	db	'.sys'
+0004          	sfxlen	equ	$-sfx
 		
-101D          	boot:
-101D  21CE10  		lxi	h,opr
-1020  110023  		lxi	d,vdbuf
-1023  CDF610  		call	strcpy
-1026  D5      		push	d	; current end of OPR command string
-1027  218022  		lxi	h,bbuf	; possible string here
-102A  7E      		mov	a,m
-102B  FEC3    		cpi	0c3h	; JMP means no string
-102D  2808    		jrz	boot5
+101A          	init:
+101A  CD7711  		call	runout
+101D  CD5611  		call	sync
+1020  C9      		ret	; pass/fail based on CY
+		
+1021          	boot:
+1021  21EC10  		lxi	h,opr
+1024  110023  		lxi	d,vdbuf
+1027  CD1411  		call	strcpy
+102A  218022  		lxi	h,bbuf	; possible string here
+102D  7E      		mov	a,m
+102E  FEC3    		cpi	0c3h	; JMP means no string
+1030  2823    		jrz	boot5
 			; else, A=str len
-102F  4F      		mov	c,a
-1030  0600    		mvi	b,0
-1032  23      		inx	h
-1033  EDB0    		ldir	; DE points past end of name
-1035  1806    		jr	boot6
-1037  21C210  	boot5:	lxi	h,defbt
-103A  CDF610  		call	strcpy
-103D  3E0D    	boot6:	mvi	a,CR
-103F  12      		stax	d
-1040  210023  		lxi	h,vdbuf
-1043  CD0A11  		call	vdcmd	; open file
-1046  D8      		rc	; no cleanup at this point
-1047  218023  		lxi	h,vdscr
-104A  CD1C11  		call	vdrd
-104D  3851    		jrc	bootx
+1032  4F      		mov	c,a
+1033  0600    		mvi	b,0
+1035  23      		inx	h
+1036  7E      	xx0:	mov	a,m
+1037  12      		stax	d
+1038  FE0D    		cpi	CR
+103A  280C    		jrz	xx1
+103C  D62E    		sui	'.'	; 00:(A=='.')
+103E  D601    		sui	1	; CY:==, NC:<>
+1040  9F      		sbb	a	; FF:=='.', 00:<>'.'
+1041  B0      		ora	b	; B=true if any '.' seen
+1042  47      		mov	b,a
+1043  23      		inx	h
+1044  13      		inx	d
+1045  0D      		dcr	c
+1046  20EE    		jrnz	xx0
+1048  04      	xx1:	inr	b
+1049  2810    		jrz	boot6	; saw a '.', don't append '.sys'
+104B  211610  		lxi	h,sfx
+104E  010400  		lxi	b,sfxlen
+1051  EDB0    		ldir
+1053  1806    		jr	boot6
+1055  21E010  	boot5:	lxi	h,defbt
+1058  CD1411  		call	strcpy
+105B  3E0D    	boot6:	mvi	a,CR
+105D  12      		stax	d
+105E  210023  		lxi	h,vdbuf
+1061  CD2811  		call	vdcmd	; open file
+1064  D8      		rc	; no cleanup at this point
+1065  218023  		lxi	h,vdscr
+1068  CD3A11  		call	vdrd
+106B  3851    		jrc	bootx
 			; TODO: get load parameters..
-104F  2A8023  		lhld	vdscr
-1052  22D310  		shld	memtop
-1055  2A8223  		lhld	vdscr+2
-1058  22D510  		shld	bnktop
-105B  2A8423  		lhld	vdscr+4
-105E  22D710  		shld	entry
-1061  3A9023  		lda	vdscr+16	; ORG0 flag - don't care?
-1064  32D910  		sta	copy
-1067  218023  		lxi	h,vdscr
-106A  CD1C11  		call	vdrd
-106D  3831    		jrc	bootx
-106F  118023  		lxi	d,vdscr	; load message
-1072  CDDA10  		call	print
-1075  3AD410  		lda	comlen
-1078  B7      		ora	a
-1079  2808    		jrz	boot1
-107B  57      		mov	d,a
-107C  3AD310  		lda	memtop
-107F  CDA710  		call	loadit
-1082  D8      		rc
-1083  3AD610  	boot1:	lda	bnklen
-1086  B7      		ora	a
-1087  2808    		jrz	boot2
-1089  57      		mov	d,a
-108A  3AD510  		lda	bnktop
-108D  CDA710  		call	loadit
-1090  D8      		rc
-1091          	boot2:	; ready to go?
-1091  CDA010  		call	bootx	; close file
+106D  2A8023  		lhld	vdscr
+1070  22F110  		shld	memtop
+1073  2A8223  		lhld	vdscr+2
+1076  22F310  		shld	bnktop
+1079  2A8423  		lhld	vdscr+4
+107C  22F510  		shld	entry
+107F  3A9023  		lda	vdscr+16	; ORG0 flag - don't care?
+1082  32F710  		sta	copy
+1085  218023  		lxi	h,vdscr
+1088  CD3A11  		call	vdrd
+108B  3831    		jrc	bootx
+108D  118023  		lxi	d,vdscr	; load message
+1090  CDF810  		call	print
+1093  3AF210  		lda	comlen
+1096  B7      		ora	a
+1097  2808    		jrz	boot1
+1099  57      		mov	d,a
+109A  3AF110  		lda	memtop
+109D  CDC510  		call	loadit
+10A0  D8      		rc
+10A1  3AF410  	boot1:	lda	bnklen
+10A4  B7      		ora	a
+10A5  2808    		jrz	boot2
+10A7  57      		mov	d,a
+10A8  3AF310  		lda	bnktop
+10AB  CDC510  		call	loadit
+10AE  D8      		rc
+10AF          	boot2:	; ready to go?
+10AF  CDBE10  		call	bootx	; close file
 			; cleanup clocks...
-1094  F3      		di
-1095  3E9F    		mvi	a,10011111b	; H8 2mS off, display blank
-1097  320920  		sta	ctl$F0
-109A  D3F0    		out	0f0h
+10B2  F3      		di
+10B3  3E9F    		mvi	a,10011111b	; H8 2mS off, display blank
+10B5  320920  		sta	ctl$F0
+10B8  D3F0    		out	0f0h
 			; already at ORG0... H89 2mS already off?
-109C  2AD710  		lhld	entry
-109F  E9      		pchl
+10BA  2AF510  		lhld	entry
+10BD  E9      		pchl
 		
-10A0          	bootx:	; exit boot on error, must close file
-10A0  21BE10  		lxi	h,clf
-10A3  CD0A11  		call	vdcmd
-10A6  C9      		ret
+10BE          	bootx:	; exit boot on error, must close file
+10BE  21DC10  		lxi	h,clf
+10C1  CD2811  		call	vdcmd
+10C4  C9      		ret
 		
 		; A=top page (might be 0 for 64K)
 		; D=num pages
-10A7  67      	loadit:	mov	h,a
-10A8  2E00    		mvi	l,0	; HL=top address
-10AA  B7      		ora	a
-10AB  CB12    		ralr	d	; num records
-10AD          	load0:
-10AD  0180FF  		lxi	b,-128
-10B0  09      		dad	b
-10B1  E5      		push	h
-10B2  D5      		push	d
-10B3  CD1C11  		call	vdrd
-10B6  D1      		pop	d
-10B7  E1      		pop	h
-10B8  D8      		rc		; error
-10B9  15      		dcr	d
-10BA  20F1    		jrnz	load0
-10BC  B7      		ora	a	; NC
-10BD  C9      		ret
+10C5  67      	loadit:	mov	h,a
+10C6  2E00    		mvi	l,0	; HL=top address
+10C8  B7      		ora	a
+10C9  CB12    		ralr	d	; num records
+10CB          	load0:
+10CB  0180FF  		lxi	b,-128
+10CE  09      		dad	b
+10CF  E5      		push	h
+10D0  D5      		push	d
+10D1  CD3A11  		call	vdrd
+10D4  D1      		pop	d
+10D5  E1      		pop	h
+10D6  D8      		rc		; error
+10D7  15      		dcr	d
+10D8  20F1    		jrnz	load0
+10DA  B7      		ora	a	; NC
+10DB  C9      		ret
 		
-10BE  636C660D	clf:	db	'clf',CR
-10C2  64656662	defbt:	db	'defboot.sys',0	; default boot file
+10DC  636C660D	clf:	db	'clf',CR
+10E0  64656662	defbt:	db	'defboot.sys',0	; default boot file
       6F6F742E
       73797300
-10CE  6F707220	opr:	db	'opr ',0	; command segment
+10EC  6F707220	opr:	db	'opr ',0	; command segment
       00
 		
-10D3  00      	memtop:	db	0
-10D4  00      	comlen:	db	0
-10D5  00      	bnktop:	db	0
-10D6  00      	bnklen:	db	0
-10D7  0000    	entry:	dw	0
+10F1  00      	memtop:	db	0
+10F2  00      	comlen:	db	0
+10F3  00      	bnktop:	db	0
+10F4  00      	bnklen:	db	0
+10F5  0000    	entry:	dw	0
 		; don't care about cfgtbl?
-10D9  00      	copy:	db	0	; 'C' if ORG0 required
+10F7  00      	copy:	db	0	; 'C' if ORG0 required
 		
 		; BDOS-style print function
 		; DE=message, '$' terminated
-10DA  1A      	print:	ldax	d
-10DB  FE24    		cpi	'$'
-10DD  C8      		rz
-10DE  CDE410  		call	outcon
-10E1  13      		inx	d
-10E2  18F6    		jr	print
+10F8  1A      	print:	ldax	d
+10F9  FE24    		cpi	'$'
+10FB  C8      		rz
+10FC  CD0211  		call	outcon
+10FF  13      		inx	d
+1100  18F6    		jr	print
 		
-10E4  2A2600  	outcon:	lhld	conout
-10E7  E9      		pchl
+1102  2A2600  	outcon:	lhld	conout
+1105  E9      		pchl
 		
 			maclib	vdip1
 **** vdip1.lib ****
 **** bvdip1.asm ****
 		
-11BA  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+11D8  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -168,14 +187,6 @@
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFF
 0000          	if ($ > 1800h)
 		endif
 		
@@ -187,9 +198,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-   116	symbols
+   120	symbols
    512	bytes
 
-   141	macro calls
-  7502	macro bytes
+   120	macro calls
+  3759	macro bytes
      0	invented symbols

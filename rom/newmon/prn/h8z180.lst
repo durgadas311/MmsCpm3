@@ -1,0 +1,5262 @@
+		; H8 Z180-CPU v3.2 Monitor (EEPROM 28C256) Core Code
+0020          	VERN	equ	020h	; ROM version
+		
+0000          	false	equ	0
+FFFF          	true	equ	not false
+		
+0001          	alpha	equ	1
+0000          	beta	equ	0
+		
+0000          	use$dma	equ	false
+		
+			maclib	ram
+**** ram.lib ****
+**** h8z180.asm ****
+			maclib	z180
+**** z180.lib ****
+**** h8z180.asm ****
+			$*macro
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0007          	BEL	equ	7
+0009          	TAB	equ	9
+001B          	ESC	equ	27
+0000          	TRM	equ	0
+007F          	DEL	equ	127
+		
+		; ctrl port F2 bit definitions
+0002          	ctl$CLK		equ	00000010b	; enable H89 2mS clock (not used here)
+0020          	ctl$ORG0	equ	00100000b	; maps full RAM
+0080          	ctl$IO1		equ	10000000b	; enables EEPROM write
+		
+		; Z180 internal registers (I/O ports) - CCR
+0034          	itc	equ	34h
+0038          	mmu$cbr	equ	38h
+0039          	mmu$bbr	equ	39h
+003A          	mmu$cbar equ	3ah
+0020          	sar0l	equ	20h
+0021          	sar0h	equ	21h
+0022          	sar0b	equ	22h
+0023          	dar0l	equ	23h
+0024          	dar0h	equ	24h
+0025          	dar0b	equ	25h
+0026          	bcr0l	equ	26h
+0027          	bcr0h	equ	27h
+0030          	dstat	equ	30h
+0031          	dmode	equ	31h
+0032          	dcntl	equ	32h
+		
+3000          	memtest	equ	03000h
+C000          	ramboot	equ	0c000h
+		; fudge this... H17 junk
+1F5A          	R$CONST	equ	01f5ah	; 037.132 R.CONST block...
+1C19          	CLOCK	equ	01c19h	; 034.031 CLOCK
+		
+		; offsets in a module
+0000          	mdpgs	equ	0	; num pages
+0001          	mdorg	equ	1	; ORG for module (run/load addr)
+0002          	mdbase	equ	2	; base phy drv num
+0003          	mdluns	equ	3	; num LUNs
+0004          	mdinit	equ	4	; init entry point
+0007          	mdboot	equ	7	; boot entry point
+000A          	mdchr	equ	10	; device letter
+000B          	mdkey	equ	11	; device key
+000C          	mdport	equ	12	; device port, 0 if variable
+000D          	mddisp	equ	13	; boot front panel mnemonic
+0010          	mdname	equ	16	; boot string
+		
+		; Where ROM is mapped-in for searching...
+4000          	btmap	equ	4000h
+6000          	btmods	equ	btmap+2000h
+C000          	bterom	equ	btmap+8000h
+		
+0010          	rptcnt	equ	16
+0001          	debounce equ	1
+		
+		; Start of ROM code
+0000          		org	00000h
+		
+0000          	rombeg:
+0000  F3      	rst0:	di	; can't be JMP or Heath CP/M thinks we're an H89
+0001  C36803  		jmp	init
+		
+0004  C30302  		jmp	getport
+0007  00      		db	0
+		
+0008  CD6A00  	rst1:	call	intsetup
+000B  2A1B20  		lhld	ticcnt
+000E  C35E00  		jmp	int1$cont
+0000          	if ((high int1$cont) <> 0)
+		endif
+		
+0010          	rst2	equ	$-1	; must be a nop...
+0011  CD6A00  		call	intsetup
+0014  1A      		ldax	d
+0015  C38901  		jmp	int2$cont
+		
+0018  C32520  	rst3:	jmp	vrst3
+		
+001B  C33609  		jmp	crlf
+001E  0000    		db	0,0
+		
+0020  C32820  	rst4:	jmp	vrst4
+		
+0023  000000  		db	0,0,0	; overlayed by WizNet boot, others
+0026  1504    		dw	conout	; pointer, not vector; A=char
+		
+0028  C32B20  	rst5:	jmp	vrst5
+		
+002B  C32902  		jmp	delay
+002E  3F00    	qmsg:	db	'?',TRM
+		
+0030  C32E20  	rst6:	jmp	vrst6
+		
+0033  00000000		db	0,0,0,0,0	; overlayed by WizNet boot, others
+      00
+		
+0038  C33120  	rst7:	jmp	vrst7
+		
+		; routines made public (to modules)
+003B  C35B03  		jmp	hwboot
+003E  C35F03  		jmp	hxboot
+0041  C39801  		jmp	take$A
+0044  C34009  		jmp	msgout
+		
+0047          	intret:
+0047  F1      		pop	psw
+0048  F1      		pop	psw
+0049  C1      		pop	b
+004A  D1      		pop	d
+004B  E1      		pop	h
+004C          		popix
+004C  DDE1    		DB	0DDH,0E1H
+004E          		popiy
+004E  FDE1    		DB	0FDH,0E1H
+0050          		exx
+0050  D9      		DB	0D9H
+0051          		exaf
+0051  08      		DB	08H
+0052  C1      		pop	b	; I,R - R cannot be restored
+0053  78      		mov	a,b
+0054          		stai
+0054  ED47    		DB	0EDH,47H
+0056  F1      		pop	psw
+0057  C1      		pop	b
+0058  D1      		pop	d
+0059  E1      		pop	h
+005A          		exx
+005A  D9      		DB	0D9H
+005B          		exaf
+005B  08      		DB	08H
+005C          	nulint:
+005C  FB      		ei
+005D  C9      		ret
+		
+005E          	int1$cont:
+005E  23      		inx	h
+005F  221B20  		shld	ticcnt
+0062  3A3620  		lda	ctl$F2
+0065  D3F2    		out	0f2h
+0067  C3CF0A  		jmp	int1$fp
+		
+		; TODO: save Z80 registers...
+006A          	intsetup:
+006A          		exx
+006A  D9      		DB	0D9H
+006B          		exaf
+006B  08      		DB	08H
+006C  E3      		xthl
+006D  D5      		push	d
+006E  C5      		push	b
+006F  F5      		push	psw
+0070          		ldar
+0070  ED5F    		DB	0EDH,5FH
+0072  4F      		mov	c,a
+0073          		ldai
+0073  ED57    		DB	0EDH,57H
+0075  47      		mov	b,a
+0076  C5      		push	b
+0077          		pushiy
+0077  FDE5    		DB	0FDH,0E5H
+0079          		pushix
+0079  DDE5    		DB	0DDH,0E5H
+007B  E5      		push	h
+007C          		exx
+007C  D9      		DB	0D9H
+007D          		exaf
+007D  08      		DB	08H
+007E  E3      		xthl
+007F  D5      		push	d
+0080  C5      		push	b
+0081  F5      		push	psw
+0082  EB      		xchg
+0083  211800  		lxi	h,nReg-2
+0086  39      		dad	sp
+0087  E5      		push	h
+0088  D5      		push	d
+0089  110920  		lxi	d,ctl$F0
+008C  1A      		ldax	d
+008D  2F      		cma
+008E  E630    		ani	030h
+0090  C8      		rz
+0091  210200  		lxi	h,2
+0094  39      		dad	sp
+0095  221D20  		shld	monstk
+0098  C9      		ret
+		
+0099          	re$entry:		; re-entry point for errors, etc.
+0099  210920  		lxi	h,ctl$F0
+009C  36F0    		mvi	m,0f0h	; !beep, 2mS, MON, !SI
+009E  2A1D20  		lhld	monstk
+00A1  F9      		sphl
+00A2  CD1304  		call	belout	; TODO: beep front panel if appropriate
+			;jmp	start
+00A5          	start:
+00A5  21A500  		lxi	h,start
+00A8  E5      		push	h
+			; reset FP display... this doesn't make a lot of sense...
+00A9  3A0720  		lda	DspMod
+00AC  E601    		ani	00000001b
+00AE  2F      		cma
+00AF  320620  		sta	DsProt
+00B2  FB      		ei
+			; avoid prompt if last was keypad command...
+00B3  216C06  		lxi	h,prompt
+00B6  3A5521  		lda	lstcmd
+00B9  B7      		ora	a
+00BA  F44009  		cp	msgout
+00BD          	prloop:
+			; could take one of two paths here,
+			; console or kaypad...
+00BD  CD6F09  		call	cmdin
+00C0  E6DF    		ani	11011111b ; toupper
+00C2  325521  		sta	lstcmd
+00C5  FA7F08  		jm	kpcmd	; from keypad... jumps back here...
+00C8  21D800  	cmchr:	lxi	h,cmdtab
+00CB  061C    		mvi	b,numcmd
+00CD          	cmloop:
+00CD  BE      		cmp	m
+00CE  23      		inx	h
+00CF          		jrz	docmd
+00CF  2869    		DB	28H,docmd-$-1
+00D1  23      		inx	h
+00D2  23      		inx	h
+00D3          		djnz	cmloop
+00D3  10F8    		DB	10H,cmloop-$-1
+00D5  C3A006  		jmp	nocmd
+		
+00D8          	cmdtab:
+			; console commands
+00D8  44      		db	'D' !
+00D9  890C    	 dw cmddmp	; Dump memory
+00DB  47      		db	'G' !
+00DC  6301    	 dw cmdgo	; Go
+00DE  53      		db	'S' !
+00DF  BA03    	 dw cmdsub	; Substitute in memory
+00E1  50      		db	'P' !
+00E2  4301    	 dw cmdpc	; Set PC
+00E4  42      		db	'B' !
+00E5  7E02    	 dw cmdboot; Boot
+00E7  4D      		db	'M' !
+00E8  B804    	 dw cmdmt	; Memory Test
+00EA  54      		db	'T' !
+00EB  0B0D    	 dw termod	; Terminal Mode
+00ED  56      		db	'V' !
+00EE  600D    	 dw prtver	; Version of ROM
+00F0  4C      		db	'L' !
+00F1  C70C    	 dw cmdlb	; List boot modules
+00F3  48      		db	'H' !
+00F4  F80C    	 dw cmdhb	; long list (Help) boot modules
+00F6  41      		db	'A' !
+00F7  090D    	 dw cmdab	; Add boot module
+00F9  55      		db	'U' !
+00FA  0A0D    	 dw cmdur	; Update entire ROM
+			; front-panel commands    key(old)  command/action
+00FC  80      		db	80h !
+00FD  C906    	 dw kpubt	; [0]     - Universal Boot
+00FF  81      		db	81h !
+0100  8707    	 dw kppbt	; [1]     - Pri Boot
+0102  82      		db	82h !
+0103  C707    	 dw kpsbt	; [2]     - Sec Boot
+0105  83      		db	83h !
+0106  E007    	 dw kprdx	; [3]     - Radix Mode
+0108  84      		db	84h !
+0109  F908    	 dw kpdbg	; [4]     - Go
+010B  85      		db	85h !
+010C  F908    	 dw kpdbg	; [5]     - Input
+010E  86      		db	86h !
+010F  F908    	 dw kpdbg	; [6]     - Output
+0111  87      		db	87h !
+0112  F908    	 dw kpdbg	; [7]     - Single Step
+0114  88      		db	88h !
+0115  CF07    	 dw kptap	; [8]     - Cass Load
+0117  89      		db	89h !
+0118  CF07    	 dw kptap	; [9]     - Cass Store
+011A  8A      		db	8ah !
+011B  1908    	 dw kpnxt	; [A] [+] - Next
+011D  8B      		db	8bh !
+011E  3108    	 dw kpprv	; [B] [-] - Prev
+0120  8C      		db	8ch !
+0121  F908    	 dw kpdbg	; [C] [*] - CANCEL, usually
+0123  8D      		db	8dh !
+0124  F908    	 dw kpdbg	; [D] [/] - Display/Alter
+0126  8E      		db	8eh !
+0127  4C08    	 dw kpmem	; [E] [#] - Memory Mode
+0129  8F      		db	8fh !
+012A  6108    	 dw kprgm	; [F] [.] - Register Mode
+001C          	numcmd	equ	($-cmdtab)/3
+		
+			rept	0137h-$
+012C  FF      		db	0ffh
+012D  FF      		db	0ffh
+012E  FF      		db	0ffh
+012F  FF      		db	0ffh
+0130  FF      		db	0ffh
+0131  FF      		db	0ffh
+0132  FF      		db	0ffh
+0133  FF      		db	0ffh
+0134  FF      		db	0ffh
+0135  FF      		db	0ffh
+0136  FF      		db	0ffh
+0000          	if	($ <> 0137h)
+		endif
+0137  C30000  		jmp	0	; initialized by H47 boot module
+		
+013A          	docmd:
+013A  B7      		ora	a
+013B  F41504  		cp	conout
+013E  4E      		mov	c,m
+013F  23      		inx	h
+0140  66      		mov	h,m
+0141  69      		mov	l,c
+0142  E9      	icall:	pchl
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; PC command (set PC)
+0143          	cmdpc:
+0143  218606  		lxi	h,pcms
+0146  CD4009  		call	msgout
+0149  210C00  		lxi	h,12
+014C  39      		dad	sp
+014D  5E      		mov	e,m
+014E  23      		inx	h
+014F  56      		mov	d,m
+0150  EB      		xchg
+0151  CD0304  		call	inhexcr
+0154          		jrc	cmdpc0
+0154  3807    		DB	38H,cmdpc0-$-1
+0156  CD7004  		call	adrnl
+0159  CD0304  		call	inhexcr
+015C  D0      		rnc
+015D          	cmdpc0:
+015D  EB      		xchg
+015E          	cmdpc1:
+015E  160D    		mvi	d,CR
+0160  C32004  		jmp	adrin
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Go command
+0163          	cmdgo:
+0163  217806  		lxi	h,goms
+0166  CD4009  		call	msgout
+0169  210D00  		lxi	h,13
+016C  39      		dad	sp
+016D  CD0304  		call	inhexcr
+0170  DC5E01  		cc	cmdpc1	; read HEX until CR
+0173  CD3609  		call	crlf
+0176  3ED0    		mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
+0178          		jr	cmdgo0
+0178  1808    		DB	18H,cmdgo0-$-1
+017A  F3      		di
+017B  3A0920  		lda	ctl$F0
+017E  EE10    		xri	010h	; toggle single-step
+0180  D3F0    		out	0f0h
+0182          	cmdgo0:
+0182  320920  		sta	ctl$F0
+0185  E1      		pop	h
+0186  C34700  		jmp	intret
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+0189          	int2$cont:
+0189  F610    		ori	010h	; disable single-step
+018B  D3F0    		out	0f0h
+018D  12      		stax	d
+018E  E620    		ani	020h	; MON active?
+0190  C2A500  		jnz	start	; break to monitor code
+0193  C32220  		jmp	vrst2	; else chain to (possible) user code.
+		
+0196          	take$5:
+0196  3E05    		mvi	a,5	; 5 seconds
+0198          	take$A:	; set a timeout for A seconds
+0198  21A801  		lxi	h,timeout
+019B  222020  		shld	vrst1+1
+019E  325221  		sta	SEC$CNT
+01A1  3E01    		mvi	a,1
+01A3  320820  		sta	MFlag
+01A6  FB      		ei
+01A7  C9      		ret
+		
+01A8          	timeout:
+01A8  211B20  		lxi	h,ticcnt
+01AB  AF      		xra	a
+01AC  B6      		ora	m
+01AD  C0      		rnz
+01AE  23      		inx	h
+01AF  7E      		mov	a,m
+01B0  0F      		rrc
+01B1  D8      		rc
+			; every 512 ticks... 1024mS
+01B2  215221  		lxi	h,SEC$CNT
+01B5  35      		dcr	m
+01B6  C0      		rnz
+01B7          	error:
+01B7  2A1D20  		lhld	monstk
+01BA  F9      		sphl
+01BB  212E00  		lxi	h,qmsg
+01BE  CD4009  		call	msgout
+01C1  215C00  		lxi	h,nulint
+01C4  222020  		shld	vrst1+1
+01C7  320820  		sta	MFlag
+01CA  DBF2    		in	0f2h
+01CC  E603    		ani	00000011b
+01CE          		jrnz	error0
+01CE  2002    		DB	20H,error0-$-1
+01D0  D37F    		out	07fh
+01D2          	error0:
+01D2  C39900  		jmp	re$entry
+		
+		; determine device for port 078H
+		; return phy drv number in D.
+01D5          	gtdev1:
+01D5  1600    		mvi	d,0	; Z17
+01D7  DBF2    		in	0f2h
+01D9          	gtdev0:
+01D9  E603    		ani	00000011b	; port 078H device
+01DB  C8      		rz		; Z17 (or Z37)
+01DC  FE01    		cpi	01b
+01DE  1605    		mvi	d,5
+01E0  C8      		rz		; Z47
+01E1  FE02    		cpi	10b
+01E3  1603    		mvi	d,3	; Z67/MMS77320
+01E5  C8      		rz
+01E6  16FF    		mvi	d,0ffh
+01E8  C9      		ret	; NZ
+		
+		; determine device for port 078H
+		; return phy drv number in D.
+01E9          	gtdev2:
+01E9  162E    		mvi	d,46	; Z37
+01EB  DBF2    		in	0f2h
+01ED  0F      		rrc
+01EE  0F      		rrc
+01EF          		jr	gtdev0	; rest are same
+01EF  18E8    		DB	18H,gtdev0-$-1
+		
+		; determine default boot device.
+01F1          	gtdfbt:
+01F1  110000  		lxi	d,0
+01F4  DBF2    		in	0f2h
+01F6  E670    		ani	01110000b	; default boot selection
+01F8  FE20    		cpi	00100000b	; device at 07CH
+01FA          		jrz	gtdev1
+01FA  28D9    		DB	28H,gtdev1-$-1
+01FC  FE30    		cpi	00110000b	; device at 078H
+01FE          		jrz	gtdev2
+01FE  28E9    		DB	28H,gtdev2-$-1
+0200  C3310C  		jmp	gtdvtb		; get MMS device
+		
+		; Check SW501 for installed device.
+		; C = desired port pattern, 00=Z17/Z37, 01=Z47, 10=Z67, 11=undefined
+		; returns base I/O port adr in B.
+0203          	getport:
+0203  067C    		mvi	b,07ch
+0205  DBF2    		in	0f2h
+0207  E603    		ani	003h
+0209  B9      		cmp	c
+020A  C8      		rz
+020B  0678    		mvi	b,078h
+020D  DBF2    		in	0f2h
+020F  0F      		rrc
+0210  0F      		rrc
+0211  E603    		ani	003h
+0213  B9      		cmp	c
+0214  C9      		ret	; let caller decide error handling (NZ)
+		
+0215  211E02  	s501er:	lxi	h,s501ms
+0218  CD4009  		call	msgout
+021B  C39900  		jmp	re$entry
+		
+021E  20535731	s501ms:	db	' SW1 wrong',TRM
+      2077726F
+      6E6700
+		
+0229          	delay:
+0229  E5      		push	h
+022A  211B20  		lxi	h,ticcnt
+022D  86      		add	m
+022E          	delay0:
+022E  BE      		cmp	m
+022F          		jrnz	delay0
+022F  20FD    		DB	20H,delay0-$-1
+0231  E1      		pop	h
+0232  C9      		ret
+		
+0233          	digerr:
+0233  CD1304  		call	belout
+0236          		jr	btdig0
+0236  1806    		DB	18H,btdig0-$-1
+		; Got a digit in boot command, parse it
+0238          	btdig:	; boot by phys drive number, E=0
+0238  CD1504  		call	conout	; echo digit
+023B  E60F    		ani	00fh	; convert to binary
+023D  57      		mov	d,a
+023E          	btdig0:
+023E  CD4909  		call	conin	; get another, until term char (C)
+0241  B9      		cmp	c
+0242          		jrz	gotnum
+0242  281D    		DB	28H,gotnum-$-1
+0244  FE30    		cpi	'0'
+0246          		jrc	digerr
+0246  38EB    		DB	38H,digerr-$-1
+0248  FE3A    		cpi	'9'+1
+024A          		jrnc	digerr
+024A  30E7    		DB	30H,digerr-$-1
+024C  CD1504  		call	conout
+024F  E60F    		ani	00fh
+0251  060A    		mvi	b,10	; add 10 times, i.e. D = (D * 10) + A
+0253          	btdig1:
+0253  82      		add	d
+0254  DAB701  		jc	error
+0257          		djnz	btdig1
+0257  10FA    		DB	10H,btdig1-$-1
+0259  57      		mov	d,a
+025A  FEC8    		cpi	200
+025C  D2B701  		jnc	error
+025F          		jr	btdig0
+025F  18DD    		DB	18H,btdig0-$-1
+		
+0261          	gotnum:	; Boot N... "N" in D
+0261  D5      		push	d	; save unit num (E)
+0262  4A      		mov	c,d
+0263  06FF    		mvi	b,-1	; boot modules only
+0265  21220B  		lxi	h,bfnum
+0268  CDC70B  		call	bfind	; might have already been loaded...
+026B  D1      		pop	d
+026C  DAB701  		jc	error
+026F  CDE402  		call	vfport
+0272  DA1502  		jc	s501er
+			; convert phy drv to phy base + unit
+0275  7A      		mov	a,d
+0276          		ldx	d,mdbase
+0276  DD5602  		DB	0DDH,d*8+46H,mdbase
+0279  92      		sub	d
+027A  5F      		mov	e,a
+027B  C34603  		jmp	goboot
+		
+027E          	cmdboot:
+027E  217306  		lxi	h,bootms
+0281  CD4009  		call	msgout	; complete (B)oot
+0284  3EC3    		mvi	a,0c3h
+0286  328022  		sta	bootbf	; mark "no string"
+0289  AF      		xra	a
+028A  325021  		sta	cport
+028D  318022  		lxi	sp,bootbf
+0290  CDF101  		call	gtdfbt	; DE=phy drv/unit
+0293  0E0D    		mvi	c,CR	; end input on CR
+0295          		jr	boot0
+0295  1803    		DB	18H,boot0-$-1
+0297          	bterr:
+0297  CD1304  		call	belout
+029A          	boot0:
+029A  CD4909  		call	conin
+029D  B9      		cmp	c
+029E          		jrz	gotnum	; default boot, by phy drv...
+029E  28C1    		DB	28H,gotnum-$-1
+02A0  1E00    		mvi	e,0
+02A2  FE30    		cpi	'0'
+02A4          		jrc	nodig
+02A4  3804    		DB	38H,nodig-$-1
+02A6  FE3A    		cpi	'9'+1
+02A8          		jrc	btdig
+02A8  388E    		DB	38H,btdig-$-1
+02AA          	nodig:	; boot by letter... Boot alpha-
+02AA  E65F    		ani	05fh ; toupper
+02AC  FE5B    		cpi	'Z'+1
+02AE          		jrnc	bterr
+02AE  30E7    		DB	30H,bterr-$-1
+02B0  FE41    		cpi	'A'
+02B2          		jrc	bterr
+02B2  38E3    		DB	38H,bterr-$-1
+02B4  CD1504  		call	conout
+02B7  CD1504  		call	conout
+02BA  FE42    		cpi	'B'
+02BC          		jrnc	gotit1
+02BC  3008    		DB	30H,gotit1-$-1
+			; 'A' is synonym for default
+02BE  7A      		mov	a,d
+02BF  FEFF    		cpi	0ffh
+02C1  CA1502  		jz	s501er
+02C4          		jr	gotit
+02C4  1817    		DB	18H,gotit-$-1
+02C6  C5      	gotit1:	push	b
+02C7  4F      		mov	c,a
+02C8  06FF    		mvi	b,-1	; boot modules only
+02CA  21060B  		lxi	h,bfchr
+02CD  CDC70B  		call	bfind
+02D0  C1      		pop	b
+02D1  DAB701  		jc	error
+02D4  CDE402  		call	vfport
+02D7  DA1502  		jc	s501er
+02DA          		ldx	d,mdbase	; base phy drv num
+02DA  DD5602  		DB	0DDH,d*8+46H,mdbase
+02DD          	gotit:
+02DD  3E2D    		mvi	a,'-'	; next is optional unit number...
+02DF  CD1504  		call	conout
+02E2          		jr	luboot0
+02E2  1815    		DB	18H,luboot0-$-1
+		
+		; verify port is set
+		; IX=boot module (in memory)
+02E4          	vfport:	ldx	a,mdport
+02E4  DD7E0C  		DB	0DDH,a*8+46H,mdport
+02E7  B7      		ora	a
+02E8          		jrnz	vfp0
+02E8  2007    		DB	20H,vfp0-$-1
+02EA  3A5021  		lda	cport	; if btinit did not set, we can't go on
+02ED  B7      		ora	a
+02EE  C0      		rnz
+02EF  37      		stc
+02F0  C9      		ret
+02F1  325021  	vfp0:	sta	cport
+02F4  AF      		xra	a
+02F5  C9      		ret
+		
+02F6          	lunerr:
+02F6  CD1304  		call	belout
+02F9          	luboot0:
+02F9  CD4909  		call	conin
+02FC  B9      		cmp	c
+02FD          		jrz	goboot
+02FD  2847    		DB	28H,goboot-$-1
+02FF  FE3A    		cpi	':'
+0301          		jrz	colon
+0301  2827    		DB	28H,colon-$-1
+0303  FE20    		cpi	' '
+0305          		jrz	space
+0305  281E    		DB	28H,space-$-1
+0307  FE30    		cpi	'0'
+0309          		jrc	lunerr
+0309  38EB    		DB	38H,lunerr-$-1
+030B  FE3A    		cpi	'9'+1
+030D          		jrnc	lunerr
+030D  30E7    		DB	30H,lunerr-$-1
+030F  CD1504  		call	conout
+0312  D630    		sui	'0'
+0314  5F      		mov	e,a	; single digit (0..9)
+0315          	luboot1:
+0315  CD4909  		call	conin
+0318  B9      		cmp	c
+0319          		jrz	goboot
+0319  282B    		DB	28H,goboot-$-1
+031B  FE3A    		cpi	':'	; Boot alpha-dig:str
+031D          		jrz	colon
+031D  280B    		DB	28H,colon-$-1
+031F  FE20    		cpi	' '	; cosmetic spaces?
+0321          		jrz	space
+0321  2802    		DB	28H,space-$-1
+0323  3E07    		mvi	a,BEL
+0325          	space:
+0325  CD1504  		call	conout
+0328          		jr	luboot1
+0328  18EB    		DB	18H,luboot1-$-1
+		
+032A          	colon:	; get arbitrary string as last boot param
+032A  0600    		mvi	b,0
+032C  218022  		lxi	h,bootbf
+032F          	btstr0:
+032F  CD1504  		call	conout
+0332  CD4909  		call	conin
+0335  04      		inr	b
+0336  23      		inx	h
+0337  77      		mov	m,a
+0338  B9      		cmp	c
+0339          		jrnz	btstr0
+0339  20F4    		DB	20H,btstr0-$-1
+033B  78      		mov	a,b
+033C  328022  		sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
+033F  AF      		xra	a	; TRM - string terminator
+0340          	btstr1:	; use stack as char array...
+0340  F5      		push	psw
+0341  33      		inx	sp	; undo half of push
+0342  2B      		dcx	h
+0343  7E      		mov	a,m
+0344          		djnz	btstr1
+0344  10FA    		DB	10H,btstr1-$-1
+		; D=Phys Drive base number, E=Unit number
+		; (or, D=Phys Drive unit, E=0)
+		; module must have already been loaded
+0346          	goboot:
+0346  CD3609  		call	crlf
+0349  21B701  		lxi	h,error
+034C  E5      		push	h
+		; IX=boot module (in memory)
+		; D=phy drv base, E=unit
+034D          	doboot:	; common boot path for console and keypad
+034D  CDFF08  		call	h17init
+0350  7B      		mov	a,e
+0351  323121  		sta	AIO$UNI	; relative unit num
+0354  82      		add	d
+0355  323420  		sta	l2034h	; boot phys drv unit num
+0358  C3130C  		jmp	btboot
+			; btboot effectively returns here on success
+			; (in most cases)
+035B  AF      	hwboot:	xra	a
+035C  320820  		sta	MFlag
+035F  21191C  	hxboot:	lxi	h,CLOCK
+0362  222020  		shld	vrst1+1
+0365  C38022  		jmp	bootbf
+		
+		; ROM start point - initialize everything
+		; We know we have at least 64K RAM...
+		; But, right now, ROM is in 0000-7FFF so must copy
+		; core code and switch to RAM...
+		; Might arrive here from a TRAP...
+0368          	init:
+0368          		in0	a,itc
+0368  ED3834  		DB	0EDH, a*8+00H, itc
+036B          		bit	7,a
+036B  CB7F    		DB	0CBH,7*8+a+40H
+036D  C24F0C  		jnz	trap
+0370  21FFFF  	init0:	lxi	h,0ffffh
+0373  F9      		sphl
+0374  E5      		push	h	; save top on stack
+			; map in 8K of ROM from 0xf8000 into 0x4000
+0375  3EC4    		mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
+0377          		out0	a,mmu$cbar
+0377  ED393A  		DB	0EDH, a*8+01H, mmu$cbar
+			; both CBR and BBR ar "0" - if got here via RESET
+0000          	if use$dma
+		else
+037A  3EF4    		mvi	a,0f8h-04h	; page offset by start
+037C          		out0	a,mmu$bbr
+037C  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+037F  210040  		lxi	h,04000h
+0382  110000  		lxi	d,0
+0385  010020  		lxi	b,2000h	; copy everything?
+0388          		ldir
+0388  EDB0    		DB	0EDH,0B0H
+			; restore default map...
+038A  AF      		xra	a	; 00 - reset map to 0000
+038B          		out0	a,mmu$bbr
+038B  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+		endif
+038E  219900  		lxi	h,re$entry
+0391  E5      		push	h
+0392  CD9204  		call	coninit
+0395  CD1E06  		call	meminit
+0398  CF      		rst	1	; kick-start clock
+0399  21750D  		lxi	h,signon
+039C  CD4009  		call	msgout
+			; save registers on stack, for debugger access...
+039F  E3      		xthl
+03A0  D5      		push	d
+03A1  C5      		push	b
+03A2  F5      		push	psw
+03A3  EB      		xchg
+03A4  210A00  		lxi	h,10
+03A7  39      		dad	sp
+03A8  E5      		push	h
+03A9  D5      		push	d
+03AA  110920  		lxi	d,ctl$F0
+03AD  1A      		ldax	d
+03AE  2F      		cma
+03AF  E630    		ani	030h
+03B1  C8      		rz
+03B2  210200  		lxi	h,2
+03B5  39      		dad	sp
+03B6  221D20  		shld	monstk
+03B9  C9      		ret
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Substitute command
+03BA          	cmdsub:
+03BA  217B06  		lxi	h,subms
+03BD  CD4009  		call	msgout
+03C0  210320  		lxi	h,l2003h
+03C3  B7      		ora	a	; NC
+03C4  160D    		mvi	d,CR
+03C6  CD2004  		call	adrin
+03C9  EB      		xchg
+03CA          	cmdsub0:
+03CA  CD7004  		call	adrnl
+03CD  7E      		mov	a,m
+03CE  CD7F04  		call	hexout
+03D1  CD7B04  		call	spout
+03D4          	cmdsub1:
+03D4  CD5D04  		call	hexin
+03D7          		jrnc	cmdsub4
+03D7  3019    		DB	30H,cmdsub4-$-1
+03D9  FE0D    		cpi	CR
+03DB          		jrz	cmdsub2
+03DB  280C    		DB	28H,cmdsub2-$-1
+03DD  FE2D    		cpi	'-'
+03DF          		jrz	cmdsub3
+03DF  280B    		DB	28H,cmdsub3-$-1
+03E1  FE2E    		cpi	'.'
+03E3  C8      		rz
+03E4  CD1304  		call	belout
+03E7          		jr	cmdsub1
+03E7  18EB    		DB	18H,cmdsub1-$-1
+03E9          	cmdsub2:
+03E9  23      		inx	h
+03EA          		jr	cmdsub0
+03EA  18DE    		DB	18H,cmdsub0-$-1
+03EC          	cmdsub3:
+03EC  CD1504  		call	conout
+03EF  2B      		dcx	h
+03F0          		jr	cmdsub0
+03F0  18D8    		DB	18H,cmdsub0-$-1
+03F2          	cmdsub4:
+03F2  3600    		mvi	m,000h
+03F4          	cmdsub5:
+03F4  CD1504  		call	conout
+03F7  CD5404  		call	hexbin
+03FA          		rld
+03FA  ED6F    		DB	0EDH, 6FH
+03FC  CD0304  		call	inhexcr
+03FF          		jrnc	cmdsub2
+03FF  30E8    		DB	30H,cmdsub2-$-1
+0401          		jr	cmdsub5
+0401  18F1    		DB	18H,cmdsub5-$-1
+		
+0403          	inhexcr:
+0403  CD4909  		call	conin
+0406  FE0D    		cpi	CR
+0408  C8      		rz
+0409  CD6004  		call	hexchk
+040C  3F      		cmc
+040D  D8      		rc
+040E  CD1304  		call	belout
+0411          		jr	inhexcr
+0411  18F0    		DB	18H,inhexcr-$-1
+		
+0413          	belout:
+0413  3E07    		mvi	a,BEL
+0415          	conout:
+0415  F5      		push	psw
+0416          	conot1:
+0416  DBED    		in	0edh
+0418  E620    		ani	00100000b
+041A          		jrz	conot1
+041A  28FA    		DB	28H,conot1-$-1
+041C  F1      		pop	psw
+041D  D3E8    		out	0e8h
+041F  C9      		ret
+		
+		; D=term char (e.g. '.' for Substitute)
+		; HL=location to store address
+		; CY=first digit in A
+0420          	adrin:
+0420  E5      		push	h
+0421  D44909  		cnc	conin
+0424  BA      		cmp	d	; no input?
+0425  CA1A06  		jz	adrin3
+0428  210000  		lxi	h,0
+042B  37      		stc
+042C  D44909  	adrin0:	cnc	conin
+042F  CD6004  		call	hexchk
+0432          		jrc	adrin1
+0432  380E    		DB	38H,adrin1-$-1
+0434  CD1504  		call	conout
+0437  CD5404  		call	hexbin
+043A  29      		dad	h
+043B  29      		dad	h
+043C  29      		dad	h
+043D  29      		dad	h
+043E  B5      		ora	l
+043F  6F      		mov	l,a
+0440          		jr	adrin0
+0440  18EA    		DB	18H,adrin0-$-1
+0442          	adrin1:
+0442  BA      		cmp	d
+0443          		jrz	adrin2
+0443  2806    		DB	28H,adrin2-$-1
+0445  CD1304  		call	belout
+0448  B7      		ora	a
+0449          		jr	adrin0
+0449  18E1    		DB	18H,adrin0-$-1
+044B          	adrin2:
+044B  CD1504  		call	conout
+044E  EB      		xchg
+044F  E1      		pop	h
+0450  72      		mov	m,d
+0451  2B      		dcx	h
+0452  73      		mov	m,e
+0453  C9      		ret
+		
+0454          	hexbin:
+0454  D63A    		sui	'9'+1
+0456          		jrnc	hexbi0
+0456  3002    		DB	30H,hexbi0-$-1
+0458  C607    		adi	7
+045A          	hexbi0:
+045A  C603    		adi	3
+045C  C9      		ret
+		
+045D          	hexin:
+045D  CD4909  		call	conin
+0460          	hexchk:
+0460  FE30    		cpi	'0'
+0462  D8      		rc
+0463  FE3A    		cpi	'9'+1
+0465  3F      		cmc
+0466  D0      		rnc
+0467  E65F    		ani	05fh	; toupper
+0469  FE41    		cpi	'A'
+046B  D8      		rc
+046C  FE47    		cpi	'F'+1
+046E  3F      		cmc
+046F  C9      		ret
+		
+0470          	adrnl:
+0470  CD3609  		call	crlf
+0473          	adrout:
+0473  7C      		mov	a,h
+0474  CD7F04  		call	hexout
+0477  7D      		mov	a,l
+0478  CD7F04  		call	hexout
+047B          	spout:
+047B  3E20    		mvi	a,' '
+047D          		jr	conout
+047D  1896    		DB	18H,conout-$-1
+		
+047F          	hexout:
+047F  F5      		push	psw
+0480  07      		rlc
+0481  07      		rlc
+0482  07      		rlc
+0483  07      		rlc
+0484  CD8804  		call	hexdig
+0487  F1      		pop	psw
+0488          	hexdig:
+0488  E60F    		ani	00fh
+048A  C690    		adi	090h
+048C  27      		daa
+048D  CE40    		aci	040h
+048F  27      		daa
+0490          		jr	conout
+0490  1883    		DB	18H,conout-$-1
+		
+0492          	coninit:
+0492  0E0C    		mvi	c,12	; 9600 baud
+0494  DBF2    		in	0f2h
+0496  E680    		ani	10000000b	; 9600/19.2K?
+0498          		jrz	ci0
+0498  2802    		DB	28H,ci0-$-1
+049A  0E06    		mvi	c,6	; 19.2K baud
+049C  3E83    	ci0:	mvi	a,083h
+049E  D3EB    		out	0ebh
+04A0  AF      		xra	a
+04A1  D3E9    		out	0e9h
+04A3  79      		mov	a,c
+04A4  D3E8    		out	0e8h
+04A6  3E03    		mvi	a,003h
+04A8  D3EB    		out	0ebh
+04AA  AF      		xra	a
+04AB  D3E9    		out	0e9h
+04AD  3E0F    		mvi	a,00001111b	; OUT2=1 hides 16C2550 intr enable diff
+04AF  D3EC    		out	0ech
+04B1  C9      		ret
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Memory Test command
+		
+04B2          	cserr:
+04B2  215206  		lxi	h,cserms
+04B5  C34009  		jmp	msgout
+		
+04B8          	cmdmt:
+04B8  219306  		lxi	h,mtms
+04BB  CD4009  		call	msgout
+04BE  CD2F09  		call	waitcr
+04C1  215F06  		lxi	h,topms
+04C4  CD4009  		call	msgout
+04C7  210000  		lxi	h,0
+04CA  39      		dad	sp
+04CB  7C      		mov	a,h
+04CC  3C      		inr	a
+04CD          		jrz	cmdmt0
+04CD  2802    		DB	28H,cmdmt0-$-1
+04CF  D620    		sui	020h
+04D1          	cmdmt0:
+04D1  67      		mov	h,a
+04D2  2E00    		mvi	l,0
+04D4  2B      		dcx	h
+04D5  D630    		sui	'0'
+04D7  5F      		mov	e,a
+04D8  CD7304  		call	adrout
+04DB  CD3609  		call	crlf
+04DE  1600    		mvi	d,000h
+04E0  0E30    		mvi	c,030h
+04E2  0600    		mvi	b,000h
+04E4          		exx
+04E4  D9      		DB	0D9H
+04E5  210F05  		lxi	h,mtest0
+04E8  11FC2F  		lxi	d,memtest - (mtest1-mtest0)
+04EB  01F000  		lxi	b,mtestZ-mtest0
+04EE          		ldir
+04EE  EDB0    		DB	0EDH,0B0H
+04F0  110030  		lxi	d,memtest
+04F3  211305  		lxi	h,mtest1
+04F6  0EEC    		mvi	c,mtestZ-mtest1
+04F8  AF      		xra	a
+04F9          		exaf
+04F9  08      		DB	08H
+04FA  AF      		xra	a
+04FB          	cmdmt1:
+04FB  86      		add	m
+04FC          		exaf
+04FC  08      		DB	08H
+04FD  EB      		xchg
+04FE  86      		add	m
+04FF          		exaf
+04FF  08      		DB	08H
+0500  EB      		xchg
+0501  23      		inx	h
+0502  13      		inx	d
+0503  0D      		dcr	c
+0504          		jrnz	cmdmt1
+0504  20F5    		DB	20H,cmdmt1-$-1
+0506  4F      		mov	c,a
+0507          		exaf
+0507  08      		DB	08H
+0508  B9      		cmp	c
+0509          		jrnz	cserr
+0509  20A7    		DB	20H,cserr-$-1
+050B  F3      		di
+050C  C3FC2F  		jmp	memtest - (mtest1-mtest)
+		
+		;------------------------------------------------
+		; Start of relocated code...
+		; Memory Test routine, position-independent
+		;
+050F          	mtest0:
+050F          	mtest:
+050F  3E20    		mvi	a,ctl$ORG0	; ORG0 on (ROM off)
+0511  D3F2    		out	0f2h
+0513          	mtest1:		; lands at 03000h - retained relocated code
+0513          		exx
+0513  D9      		DB	0D9H
+0514  62      		mov	h,d
+0515  2E00    		mvi	l,0
+0517  78      		mov	a,b
+0518          		exx
+0518  D9      		DB	0D9H
+0519  4F      		mov	c,a
+051A  0602    		mvi	b,2
+051C          	mtest2:
+051C  79      		mov	a,c
+051D  07      		rlc
+051E  07      		rlc
+051F  07      		rlc
+0520  07      		rlc
+0521  4F      		mov	c,a
+0522  E60F    		ani	00fh
+0524  C690    		adi	090h
+0526  27      		daa
+0527  CE40    		aci	040h
+0529  27      		daa
+052A  D3E8    		out	0e8h
+052C          	mtest3:
+052C  DBED    		in	0edh
+052E  E620    		ani	020h
+0530          		jrz	mtest3
+0530  28FA    		DB	28H,mtest3-$-1
+0532  05      		dcr	b
+0533          		jrnz	mtest2
+0533  20E7    		DB	20H,mtest2-$-1
+0535  3E0D    		mvi	a,CR
+0537  D3E8    		out	0e8h
+0539          		exx
+0539  D9      		DB	0D9H
+053A  78      		mov	a,b
+053B          	mtest4:
+053B  77      		mov	m,a
+053C  C601    		adi	1
+053E  27      		daa
+053F  2C      		inr	l
+0540          		jrnz	mtest4
+0540  20F9    		DB	20H,mtest4-$-1
+0542  24      		inr	h
+0543  0D      		dcr	c
+0544          		jrnz	mtest4
+0544  20F5    		DB	20H,mtest4-$-1
+0546  7C      		mov	a,h
+0547  92      		sub	d
+0548  4F      		mov	c,a
+0549  62      		mov	h,d
+054A  2E00    		mvi	l,0
+054C  78      		mov	a,b
+054D          	mtest5:
+054D  BE      		cmp	m
+054E          		jrnz	mtest9
+054E  2046    		DB	20H,mtest9-$-1
+0550  C601    		adi	1
+0552  27      		daa
+0553  2C      		inr	l
+0554          		jrnz	mtest5
+0554  20F7    		DB	20H,mtest5-$-1
+0556  24      		inr	h
+0557  0D      		dcr	c
+0558          		jrnz	mtest5
+0558  20F3    		DB	20H,mtest5-$-1
+055A          		exx
+055A  D9      		DB	0D9H
+055B  210030  		lxi	h,memtest
+055E  110000  		lxi	d,0
+0561  01EC00  		lxi	b,mtestZ-mtest1
+0564          		exx
+0564  D9      		DB	0D9H
+0565  7A      		mov	a,d
+0566  EE30    		xri	030h
+0568  57      		mov	d,a
+0569          		jrz	mtest6
+0569  2803    		DB	28H,mtest6-$-1
+056B  4B      		mov	c,e
+056C          		jr	mtest7
+056C  180A    		DB	18H,mtest7-$-1
+056E          	mtest6:
+056E  0E30    		mvi	c,030h
+0570  3E01    		mvi	a,001h
+0572  80      		add	b
+0573  27      		daa
+0574  47      		mov	b,a
+0575          		exx
+0575  D9      		DB	0D9H
+0576  EB      		xchg
+0577          		exx
+0577  D9      		DB	0D9H
+0578          	mtest7:
+0578          		exx
+0578  D9      		DB	0D9H
+0579          		ldir
+0579  EDB0    		DB	0EDH,0B0H
+057B  7A      		mov	a,d
+057C  E6F0    		ani	0f0h
+057E  67      		mov	h,a
+057F  2E00    		mvi	l,0
+0581  0EEC    		mvi	c,mtestZ-mtest1
+0583  AF      		xra	a
+0584          	mtest8:
+0584  86      		add	m
+0585  23      		inx	h
+0586  0D      		dcr	c
+0587          		jrnz	mtest8
+0587  20FB    		DB	20H,mtest8-$-1
+0589  4F      		mov	c,a
+058A          		exaf
+058A  08      		DB	08H
+058B  B9      		cmp	c
+058C          		jrnz	mtestE
+058C  2049    		DB	20H,mtestE-$-1
+058E          		exaf
+058E  08      		DB	08H
+058F  7A      		mov	a,d
+0590  E6F0    		ani	0f0h
+0592  67      		mov	h,a
+0593  2E00    		mvi	l,0
+0595  E9      		pchl
+0596          	mtest9:
+0596  AE      		xra	m
+0597  57      		mov	d,a
+0598  3E0A    		mvi	a,LF
+059A  D3E8    		out	0e8h
+059C          	mtestA:
+059C  DBED    		in	0edh
+059E  E620    		ani	020h
+05A0          		jrz	mtestA
+05A0  28FA    		DB	28H,mtestA-$-1
+05A2  0E02    		mvi	c,2
+05A4  0604    		mvi	b,4
+05A6          	mtestB:
+05A6  7C      		mov	a,h
+05A7  07      		rlc
+05A8  07      		rlc
+05A9  07      		rlc
+05AA  07      		rlc
+05AB  E60F    		ani	00fh
+05AD  C690    		adi	090h
+05AF  27      		daa
+05B0  CE40    		aci	040h
+05B2  27      		daa
+05B3  D3E8    		out	0e8h
+05B5          	mtestC:
+05B5  DBED    		in	0edh
+05B7  E620    		ani	020h
+05B9          		jrz	mtestC
+05B9  28FA    		DB	28H,mtestC-$-1
+05BB  29      		dad	h
+05BC  29      		dad	h
+05BD  29      		dad	h
+05BE  29      		dad	h
+05BF          		djnz	mtestB
+05BF  10E5    		DB	10H,mtestB-$-1
+05C1  3E20    		mvi	a,' '
+05C3  D3E8    		out	0e8h
+05C5          	mtestD:
+05C5  DBED    		in	0edh
+05C7  E620    		ani	020h
+05C9          		jrz	mtestD
+05C9  28FA    		DB	28H,mtestD-$-1
+05CB  0D      		dcr	c
+05CC  EB      		xchg
+05CD  0602    		mvi	b,002h
+05CF          		jrnz	mtestB
+05CF  20D5    		DB	20H,mtestB-$-1
+05D1  3E2A    		mvi	a,'*'
+05D3  D3E8    		out	0e8h
+05D5          		jr	mtestG
+05D5  1814    		DB	18H,mtestG-$-1
+05D7          	mtestE:
+05D7  DBED    		in	0edh
+05D9  E620    		ani	020h
+05DB          		jrz	mtestE
+05DB  28FA    		DB	28H,mtestE-$-1
+05DD  3E0A    		mvi	a,LF
+05DF  D3E8    		out	0e8h
+05E1          	mtestF:
+05E1  DBED    		in	0edh
+05E3  E620    		ani	020h
+05E5          		jrz	mtestF
+05E5  28FA    		DB	28H,mtestF-$-1
+05E7  3E21    		mvi	a,'!'
+05E9  D3E8    		out	0e8h
+05EB          	mtestG:
+05EB  DBED    		in	0edh
+05ED  E620    		ani	020h
+05EF          		jrz	mtestG
+05EF  28FA    		DB	28H,mtestG-$-1
+05F1  AF      		xra	a
+05F2  06FA    		mvi	b,0fah
+05F4          	mtestH:
+05F4  3D      		dcr	a
+05F5          		jrnz	mtestH
+05F5  20FD    		DB	20H,mtestH-$-1
+05F7          		djnz	mtestH
+05F7  10FB    		DB	10H,mtestH-$-1
+05F9  3E07    		mvi	a,BEL
+05FB  D3E8    		out	0e8h
+05FD          		jr	mtestG
+05FD  18EC    		DB	18H,mtestG-$-1
+		; End of relocated code
+05FF          	mtestZ	equ	$
+		;------------------------------------------------
+		
+		; Special entry points expected by HDOS, or maybe Heath CP/M boot.
+			rept	0613h-$
+05FF  FF      		db	0ffh
+0600  FF      		db	0ffh
+0601  FF      		db	0ffh
+0602  FF      		db	0ffh
+0603  FF      		db	0ffh
+0604  FF      		db	0ffh
+0605  FF      		db	0ffh
+0606  FF      		db	0ffh
+0607  FF      		db	0ffh
+0608  FF      		db	0ffh
+0609  FF      		db	0ffh
+060A  FF      		db	0ffh
+060B  FF      		db	0ffh
+060C  FF      		db	0ffh
+060D  FF      		db	0ffh
+060E  FF      		db	0ffh
+060F  FF      		db	0ffh
+0610  FF      		db	0ffh
+0611  FF      		db	0ffh
+0612  FF      		db	0ffh
+0000          	if	($ <> 0613h)
+		endif
+0613  C30000  		jmp	0	; initialized by H47 boot module
+0616  00      		db	0
+0617  C30000  		jmp	0	; initialized by H47 boot module
+		
+0000          	if use$dma
+		endif
+		
+061A  5E      	adrin3:	mov	e,m
+061B  23      		inx	h
+061C  56      		mov	d,m
+061D  C9      		ret
+		
+		; initialize monitor memory at 2000h
+061E          	meminit:
+061E  AF      		xra	a
+061F  325321  		sta	l2153h
+0622  325521  		sta	lstcmd
+0625  320520  		sta	RegI
+0628  320620  		sta	DsProt
+062B  323920  		sta	Radix
+062E  325421  		sta	kpchar
+0631  3C      		inr	a	; 1
+0632  320A20  		sta	Refind
+0635  3E20    		mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
+0637  323620  		sta	ctl$F2	; 2mS off, ORG0 on
+063A  D3F2    		out	0f2h	; enable RAM now...
+063C  3EC9    		mvi	a,0c9h	; RET
+063E  320420  		sta	PrsRAM
+0641  210050  		lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
+0644  220820  		shld	MFlag	; MFlag, CtlFlg
+0647  3E02    		mvi	a,2	; display registers
+0649  320720  		sta	DspMod
+064C  3E01    		mvi	a,debounce
+064E  321720  		sta	kpcnt
+0651  C9      		ret
+		
+		; for cmdmt...
+0652  07436B73	cserms:	db	BEL,'Cksum error',TRM
+      756D2065
+      72726F72
+      00
+065F  546F7020	topms:	db	'Top of Mem: ',TRM
+      6F66204D
+      656D3A20
+      00
+		
+066C  0D0A4838	prompt:	db	CR,LF,'H8: ',TRM
+      3A2000
+0673  6F6F7420	bootms:	db	'oot ',TRM
+      00
+0678  6F2000  	goms:	db	'o ',TRM
+067B  75627374	subms:	db	'ubstitute ',TRM
+      69747574
+      652000
+0686  726F6720	pcms:	db	'rog Counter ',TRM
+      436F756E
+      74657220
+      00
+0693  656D2074	mtms:	db	'em test',TRM
+      65737400
+069B  756D7020	dmpms:	db	'ump ',TRM
+      00
+		
+		; command not built-in, check modules.
+		; should only be called for console commands.
+		; A=cmd key/chr (also in 'lstcmd')
+06A0          	nocmd:
+06A0  4F      		mov	c,a
+06A1  0600    		mvi	b,0	; no boot modules
+06A3  21060B  		lxi	h,bfchr
+06A6  CDC70B  		call	bfind
+06A9          		jrc	cmerr
+06A9  3809    		DB	38H,cmerr-$-1
+06AB  3A5521  		lda	lstcmd
+06AE  CD1504  		call	conout
+06B1  C3130C  		jmp	cmexec
+		
+06B4  CD1304  	cmerr:	call	belout
+06B7  C3BD00  		jmp	prloop
+		
+		; get "alternate" (secondary) boot device...
+06BA          	galtbt:
+06BA  110000  		lxi	d,0
+06BD  DBF2    		in	0f2h
+06BF  E670    		ani	01110000b	; default boot selection
+06C1  FE20    		cpi	00100000b	; if default at 07CH,
+06C3  CAE901  		jz	gtdev2		; get 078H device...
+		; if device was not 07CH, then use 07CH... ???
+		;;	cpi	00110000b	; if device at 078H
+		;;	jz	gtdev1		; get 07CH device...
+06C6  C3D501  		jmp	gtdev1		; get 07CH device...
+		
+06C9          	kpubt:
+06C9  3A0820  		lda	MFlag
+06CC  F602    		ori	00000010b	; disable disp updates
+06CE  320820  		sta	MFlag
+06D1  CDC10A  		call	clrdisp	; clean slate
+06D4  017A0A  		lxi	b,dDev
+06D7  110B20  		lxi	d,ALeds
+06DA  CDB70A  		call	mov3dsp
+06DD  CD6109  		call	keyin	; get device
+06E0  E67F    		ani	01111111b
+06E2  FE0C    		cpi	0ch	; cancel
+06E4  CA4107  		jz	kperr
+06E7  325121  		sta	BDF
+06EA  4F      		mov	c,a
+06EB  06FF    		mvi	b,-1	; boot modules only
+06ED  21140B  		lxi	h,bfkey
+06F0  CDC70B  		call	bfind
+06F3          		jrc	deverr
+06F3  384C    		DB	38H,deverr-$-1
+06F5  DD      		db	0ddh !
+06F6  44      	 mov b,h	; mov b,IXh ; module address
+06F7  0E0D    		mvi	c,mddisp
+06F9  110B20  		lxi	d,ALeds
+06FC  CDB70A  		call	mov3dsp
+06FF  D5      		push	d	; save LEDs pointer
+			; determine if fixed port...
+0700          		ldx	a,mdport
+0700  DD7E0C  		DB	0DDH,a*8+46H,mdport
+0703  B7      		ora	a
+0704          		jrnz	gotprt
+0704  2018    		DB	20H,gotprt-$-1
+0706  017D0A  		lxi	b,dPor
+0709  CDB70A  		call	mov3dsp
+070C  CD6109  		call	keyin	; get port
+070F  E67F    		ani	01111111b
+0711  FE04    		cpi	04h	; 0..3 allowed
+0713  D24107  		jnc	deverr
+0716  5F      		mov	e,a
+0717  1600    		mvi	d,0
+0719  218307  		lxi	h,ports
+071C  19      		dad	d
+071D  7E      		mov	a,m
+071E  E1      	gotprt:	pop	h	; LEDs pointer
+071F  325021  		sta	cport
+0722  CDEE09  		call	dod	; decode number to HL
+0725  54      		mov	d,h
+0726  5D      		mov	e,l
+0727  01800A  		lxi	b,dUni
+072A  CDB70A  		call	mov3dsp
+072D  CD6109  		call	keyin	; get unit
+0730  E67F    		ani	01111111b
+0732  5F      		mov	e,a
+0733          		ldx	d,mdbase
+0733  DD5602  		DB	0DDH,d*8+46H,mdbase
+0736  3EC3    		mvi	a,0c3h
+0738  328022  		sta	bootbf	; mark "no string"
+073B  318022  		lxi	sp,bootbf
+073E  CD4D03  		call	doboot	; only returns if error...
+0741          	kperr:
+0741          	deverr:	; TODO: implement
+0741  FB      		ei	; TODO: more required before this?
+0742  210820  		lxi	h,MFlag
+0745  7E      		mov	a,m
+0746  E6FE    		ani	11111110b	; disable "private" clock intr
+0748  77      		mov	m,a
+0749  01830A  		lxi	b,dErr
+074C  110B20  		lxi	d,ALeds
+074F  2E06    		mvi	l,6
+0751  CDB90A  		call	movLdsp
+0754  0E80    		mvi	c,10000000b	; beep on/off bit
+0756  211B20  		lxi	h,ticcnt
+0759  110920  		lxi	d,ctl$F0
+075C          	bterr0:
+075C  1A      		ldax	d
+075D  A9      		xra	c	; beep on
+075E  12      		stax	d
+075F  7E      		mov	a,m
+0760  C619    		adi	25	; 50mS
+0762          	bterr2:
+0762  BE      		cmp	m
+0763          		jrnz	bterr2
+0763  20FD    		DB	20H,bterr2-$-1
+0765  1A      		ldax	d
+0766  A9      		xra	c	; beep off
+0767  12      		stax	d
+0768  7E      		mov	a,m
+0769  C6FF    		adi	-1
+076B  BE      	bterr1:	cmp	m
+076C          		jrz	bterr0
+076C  28EE    		DB	28H,bterr0-$-1
+076E  3A5421  		lda	kpchar
+0771  FE6F    		cpi	01101111b	; raw pattern for '*' or CANCEL
+0773          		jrnz	bterr1
+0773  20F6    		DB	20H,bterr1-$-1
+0775  AF      		xra	a
+0776  325421  		sta	kpchar
+0779  210820  		lxi	h,MFlag
+077C  7E      		mov	a,m
+077D  E6BD    		ani	10111101b	; normal mode...
+077F  77      		mov	m,a
+			; should return to 'start' but avoid extra prompts...
+0780  C39900  		jmp	re$entry
+		
+		; port options for keys 0-3
+0783  787CB8BC	ports:	db	078h,07ch,0b8h,0bch
+		
+0787          	kppbt:	; primary boot (default boot)
+0787  CDF101  		call	gtdfbt
+078A  018C0A  		lxi	b,dPri
+078D          	kpbt0:
+078D  AF      		xra	a
+078E  325021  		sta	cport
+0791  D5      		push	d	; phy drv, unit
+0792  C5      		push	b
+0793  4A      		mov	c,d
+0794  06FF    		mvi	b,-1	; boot modules only
+0796  21220B  		lxi	h,bfnum
+0799  CDC70B  		call	bfind	; might have already been loaded...
+079C  DA4107  		jc	kperr
+079F  CDE402  		call	vfport
+07A2  DA4107  		jc	kperr	; TODO: specific error? SW1 Error?
+07A5  3A0820  		lda	MFlag
+07A8  F602    		ori	00000010b	; disable disp updates
+07AA  320820  		sta	MFlag
+07AD  CDC10A  		call	clrdisp
+07B0  C1      		pop	b
+07B1  110B20  		lxi	d,ALeds
+07B4  CDB70A  		call	mov3dsp
+			; TODO: fix this
+07B7  3EFA    		mvi	a,250	;;
+07B9  CD2902  		call	delay	;;
+07BC  D1      		pop	d	; phy drv, unit
+07BD  318022  		lxi	sp,bootbf
+07C0  214107  		lxi	h,kperr
+07C3  E5      		push	h
+07C4  C34D03  		jmp	doboot
+		
+07C7          	kpsbt:	; secondary boot (TODO: what does this mean now?)
+07C7  CDBA06  		call	galtbt
+07CA  018F0A  		lxi	b,dSec
+07CD          		jr	kpbt0
+07CD  18BE    		DB	18H,kpbt0-$-1
+		
+07CF          	kptap:	; cassette load (read) or store (write, save)
+07CF  0600    		mvi	b,0	; command only
+07D1  0E88    		mvi	c,88h	; cassette module key
+07D3  21140B  		lxi	h,bfkey
+07D6  CDC70B  		call	bfind
+07D9  DA4107  		jc	kperr
+07DC  CD130C  		call	cmexec
+07DF  C9      		ret
+		
+07E0          	kprdx:	; choose radix for display
+07E0  3A0820  		lda	MFlag
+07E3  F602    		ori	00000010b	; disable disp updates
+07E5  320820  		sta	MFlag
+07E8  CDC10A  		call	clrdisp
+07EB  01890A  		lxi	b,dRad
+07EE  110B20  		lxi	d,ALeds
+07F1  CDB70A  		call	mov3dsp
+07F4  3A3920  		lda	Radix
+07F7  B7      		ora	a
+07F8  2F      		cma		; 00->ff
+07F9          		jrz	rdx0
+07F9  2801    		DB	28H,rdx0-$-1
+07FB  AF      		xra	a	; else 00
+07FC  323920  	rdx0:	sta	Radix		; 00       ff
+07FF  E613    		ani	00010011b	; 00->00,  ff->13
+0801  EE81    		xri	10000001b	; 00->81,  ff->92
+0803  321020  		sta	ALeds+5		; 00->'O', ff->'H'
+			; wait 1S to allow user to see...
+0806  3EFA    		mvi	a,250		; 500mS
+0808  CD2902  		call	delay
+080B  3EFA    		mvi	a,250		; 500mS
+080D  CD2902  		call	delay
+0810  3A0820  		lda	MFlag
+0813  E6FD    		ani	11111101b	; enable disp updates
+0815  320820  		sta	MFlag
+			; TODO: beep?
+0818  C9      		ret
+		
+0819          	kpnxt:	; next register/memory addr
+0819  3A0720  		lda	DspMod
+081C  E602    		ani	00000010b	; Z if memory mode
+081E  2A1420  		lhld	ABUSS
+0821  110520  		lxi	d,RegI
+0824  23      		inx	h
+0825          		jrz	sae
+0825  2821    		DB	28H,sae-$-1
+0827  1A      		ldax	d
+0828  C602    		adi	2
+082A  12      		stax	d
+082B  FE1A    		cpi	nReg
+082D  D8      		rc
+082E  AF      		xra	a
+082F  12      		stax	d
+0830  C9      		ret
+		
+0831          	kpprv:	; previous register/memory addr
+0831  3A0720  		lda	DspMod
+0834  E602    		ani	00000010b	; Z if memory mode
+0836  2A1420  		lhld	ABUSS
+0839  110520  		lxi	d,RegI
+083C  2B      		dcx	h
+083D          		jrz	sae
+083D  2809    		DB	28H,sae-$-1
+083F  1A      		ldax	d
+0840  D602    		sui	2
+0842  12      		stax	d
+0843  D0      		rnc
+0844  3E18    		mvi	a,nReg-2
+0846  12      		stax	d
+0847  C9      		ret
+		
+0848  221420  	sae:	shld	ABUSS
+084B  C9      		ret
+		
+084C          	kpmem:	; switch to memory mode - enter address
+084C  AF      		xra	a	; also NC
+084D  320720  		sta	DspMod	; display memory...
+0850  320620  		sta	DsProt	; periods all on...
+0853  211520  		lxi	h,ABUSS+1	; little-endian, enter hi byte first
+0856  CDB508  		call	iob
+0859  2B      		dcx	h	; HL=low byte of address
+085A  0600    		mvi	b,0
+085C  37      		stc
+085D  CDB508  		call	iob
+0860  C9      		ret		; back to start... TODO: prevent re-prompt
+		
+0861          	kprgm:	; switch to register mode
+0861  3E02    		mvi	a,2
+0863  320720  		sta	DspMod	; display registers...
+0866  AF      		xra	a
+0867  320620  		sta	DsProt	; periods all on...
+086A  CD6109  		call	keyin
+086D  E67F    		ani	01111111b
+086F  FE0C    		cpi	(nReg-1)/2	; PC requires spcl
+0871          		jrc	reg0
+0871  3807    		DB	38H,reg0-$-1
+0873  D603    		sub	3		; gap in codes?
+0875  FE0C    		cpi	12		; was 15...
+0877  C24107  		jnz	kperr	; TODO: proper handling
+087A  07      	reg0:	rlc	; times 2
+087B  320520  		sta	RegI
+087E  C9      		ret		; back to start... TODO: prevent re-prompt
+		
+087F          	kpcmd:	; A=keypad command, +80h
+			; keypad pressed...
+087F  FE8A    		cpi	8ah	; non-digit (hex req first be '0')
+0881  D2C800  		jnc	cmchr
+0884  47      		mov	b,a
+0885  3A0720  		lda	DspMod
+0888  0F      		rrc	; CY=alter mode
+0889          		jrc	kpalter	; alter mode - numeric values only
+0889  3804    		DB	38H,kpalter-$-1
+088B  78      		mov	a,b
+088C  C3C800  		jmp	cmchr
+		; A=DspMod >> 1, B=key
+088F          	kpalter:
+088F  2A1420  		lhld	ABUSS
+0892  0F      		rrc	; register (else memory)
+0893          		jrc	kpreg
+0893  3808    		DB	38H,kpreg-$-1
+0895  CDB508  		call	iob
+0898  23      		inx	h
+0899  221420  		shld	ABUSS
+089C  C9      		ret
+		
+		; B=key
+089D          	kpreg:
+089D  3A0520  		lda	RegI
+08A0  B7      		ora	a
+08A1  CA4107  		jz	kperr	; RegI == 0 (SP) not allowed
+08A4  5F      		mov	e,a
+08A5  1600    		mvi	d,0
+08A7  2A1D20  		lhld	RegPtr
+08AA  19      		dad	d
+08AB  23      		inx	h	; HL=high byte of address
+08AC  37      		stc
+08AD  CDB508  		call	iob
+08B0  2B      		dcx	h	; HL=low byte of address
+08B1  CDB508  		call	iob
+08B4  C9      		ret
+		
+		; Input Octal(or Hex) byte
+		; B=key, CY=first digit
+08B5          	iob:	rarr	c	; save CY => C bit 7
+08B5  CB19    		DB	0CBH, 18H + c
+08B7  3A3920  		lda	Radix
+08BA  B7      		ora	a
+08BB  78      		mov	a,b
+08BC          		jrz	ioboct
+08BC  2820    		DB	28H,ioboct-$-1
+		; iobhex - to avoid conflict with cmd keys A-F, first input must be [0]
+		; So, hex input requires 3 or 5 + 1 keys.
+08BE          		ralr	c	; restore CY
+08BE  CB11    		DB	0CBH, 10H+c
+08C0  D46109  		cnc	keyin
+08C3  E67F    		ani	01111111b
+08C5  C24107  		jnz	kperr
+08C8  1602    		mvi	d,2
+08CA  CD6109  	iobh0:	call	keyin
+08CD  E67F    		ani	01111111b
+08CF  5F      		mov	e,a
+08D0  7E      		mov	a,m
+08D1  07      		rlc
+08D2  07      		rlc
+08D3  07      		rlc
+08D4  07      		rlc
+08D5  E6F0    		ani	11110000b
+08D7  B3      		ora	e	; also ensure NC for loop
+08D8  77      		mov	m,a
+08D9  15      		dcr	d
+08DA          		jrnz	iobh0
+08DA  20EE    		DB	20H,iobh0-$-1
+08DC          		jr	iob0
+08DC  181A    		DB	18H,iob0-$-1
+08DE          	ioboct:
+08DE          		ralr	c	; restore CY
+08DE  CB11    		DB	0CBH, 10H+c
+08E0  1603    		mvi	d,3
+08E2  D46109  	iobo0:	cnc	keyin
+08E5  E67F    		ani	01111111b
+08E7  FE08    		cpi	8
+08E9  D24107  		jnc	kperr
+08EC  5F      		mov	e,a
+08ED  7E      		mov	a,m
+08EE  07      		rlc
+08EF  07      		rlc
+08F0  07      		rlc
+08F1  E6F8    		ani	11111000b
+08F3  B3      		ora	e	; also ensure NC for loop
+08F4  77      		mov	m,a
+08F5  15      		dcr	d
+08F6          		jrnz	iobo0
+08F6  20EA    		DB	20H,iobo0-$-1
+08F8          	iob0:
+			; TODO: blip to ack entry?
+08F8  C9      		ret
+		
+		; temporary: for debugging
+08F9  CD8804  	kpdbg:	call	hexdig
+08FC  C3BD00  		jmp	prloop
+		
+		; returns with interrupts disabled
+08FF          	h17init:
+08FF  F3      		di
+0900  AF      		xra	a
+0901  D37F    		out	07fh
+0903  D5      		push	d
+0904  210920  		lxi	h,ctl$F0
+0907  36D0    		mvi	m,0d0h	; !beep, 2mS, !mon, !SI
+0909  215A1F  		lxi	h,R$CONST
+090C  114820  		lxi	d,D$CONST
+090F  015800  		lxi	b,88
+0912          		ldir
+0912  EDB0    		DB	0EDH,0B0H
+0914  6B      		mov	l,e
+0915  62      		mov	h,d
+0916  13      		inx	d
+0917  0E1E    		mvi	c,30
+0919  77      		mov	m,a
+091A          		ldir	; fill l20a0h...
+091A  EDB0    		DB	0EDH,0B0H
+091C  3C      		inr	a	; A=1
+091D  211F20  		lxi	h,intvec	; vector area
+0920          	h17ini0:
+0920  36C3    		mvi	m,0c3h
+0922  23      		inx	h
+0923  365C    		mvi	m,LOW (nulint-rst0)
+0925  23      		inx	h
+0926  3600    		mvi	m,HIGH (nulint-rst0)
+0928  23      		inx	h
+0929  87      		add	a	; shift left, count 7
+092A  F22009  		jp	h17ini0
+092D  D1      		pop	d
+092E  C9      		ret
+		
+092F          	waitcr:
+092F  CD4909  		call	conin
+0932  FE0D    		cpi	CR
+0934          		jrnz	waitcr
+0934  20F9    		DB	20H,waitcr-$-1
+0936          	crlf:
+0936  3E0D    		mvi	a,CR
+0938  CD1504  		call	conout
+093B  3E0A    		mvi	a,LF
+093D  C31504  		jmp	conout
+		
+0940          	msgout:
+0940  7E      		mov	a,m
+0941  B7      		ora	a
+0942  C8      		rz
+0943  CD1504  		call	conout
+0946  23      		inx	h
+0947          		jr	msgout
+0947  18F7    		DB	18H,msgout-$-1
+		
+		; called in the context of a command on console
+0949  DBED    	conin:	in	0edh
+094B  0F      		rrc
+094C          		jrc	conin0
+094C  3809    		DB	38H,conin0-$-1
+094E  3A5421  		lda	kpchar
+0951  B7      		ora	a
+0952          		jrz	conin
+0952  28F5    		DB	28H,conin-$-1
+			; cancel console cmd, leave keypad char for cmdin
+0954  C3A500  		jmp	start
+		
+0957  DBE8    	conin0:	in	0e8h
+0959  E67F    		ani	07fh
+095B  FE7F    		cpi	DEL	; DEL key restarts from anywhere?
+095D  CA9900  		jz	re$entry
+0960  C9      		ret
+		
+		; called in the context of command on front-panel
+0961  3A5421  	keyin:	lda	kpchar
+0964  B7      		ora	a
+0965          		jrnz	getkey
+0965  2013    		DB	20H,getkey-$-1
+0967  DBED    		in	0edh
+0969  0F      		rrc
+096A          		jrnc	keyin
+096A  30F5    		DB	30H,keyin-$-1
+			; cancel kaypad cmd, leave console char for cmdin
+			; TODO: what modes need reset?
+096C  C3A500  		jmp	start
+		
+		; wait for command - console or keypad
+096F          	cmdin:
+096F  DBED    		in	0edh
+0971  0F      		rrc
+0972          		jrc	conin0
+0972  38E3    		DB	38H,conin0-$-1
+0974  3A5421  		lda	kpchar
+0977  B7      		ora	a
+0978          		jrz	cmdin
+0978  28F5    		DB	28H,cmdin-$-1
+097A  F5      	getkey:	push	psw	; A=scan code
+097B  AF      		xra	a
+097C  325421  		sta	kpchar
+097F  F1      		pop	psw
+0980  EEFE    		xri	11111110b
+0982  0F      		rrc
+0983          		jrnc	gotkey
+0983  3004    		DB	30H,gotkey-$-1
+0985  0F      		rrc
+0986  0F      		rrc
+0987  0F      		rrc
+0988  0F      		rrc
+0989  E60F    	gotkey:	ani	00001111b
+098B  F680    		ori	10000000b	; distinguish from console input
+			; TODO: check for CANCEL key?
+098D  C9      		ret
+		
+		; keypad check at 32mS
+098E  211620  	kpchk:	lxi	h,RckA
+0991  DBF0    		in	0f0h
+0993  BE      		cmp	m	; RckA
+0994          		jrnz	kpchk0
+0994  200F    		DB	20H,kpchk0-$-1
+0996  E611    		ani	00010001b
+0998  FE11    		cpi	00010001b
+099A  C8      		rz	; nothing pressed
+099B  7E      		mov	a,m
+			; need to count auto-repeat/debounce
+099C  23      		inx	h	; kpcnt
+099D  35      		dcr	m
+099E  C0      		rnz
+			; got a key press...
+099F  325421  		sta	kpchar
+09A2  3610    		mvi	m,rptcnt
+09A4  C9      		ret
+09A5  77      	kpchk0:	mov	m,a	; RckA
+09A6  23      		inx	h	; kpcnt
+09A7  3601    		mvi	m,debounce
+09A9  C9      		ret
+		
+		; Update Front-panel Display
+09AA  3E02    	ufd:	mvi	a,00000010b
+09AC  A0      		ana	b
+09AD  C0      		rnz		; updates disabled
+09AE  210620  		lxi	h,DsProt
+09B1          		rlcr	m
+09B1  CB06    		DB	0CBH, 00H + m
+09B3  46      		mov	b,m
+09B4  23      		inx	h	; DspMod
+09B5  7E      		mov	a,m
+09B6  E602    		ani	00000010b
+09B8  2A1420  		lhld	ABUSS
+09BB          		jrz	ufd1	; displaying memory
+09BB  2812    		DB	28H,ufd1-$-1
+			; displaying registers
+09BD  CDAC0A  		call	lra	; locate register address offset (DE)
+09C0  E5      		push	h
+09C1  21920A  		lxi	h,LedRegTbl
+09C4  19      		dad	d
+09C5  7E      		mov	a,m
+09C6  23      		inx	h
+09C7  66      		mov	h,m
+09C8  6F      		mov	l,a
+09C9  E3      		xthl
+09CA  B4      		ora	h
+09CB  7E      		mov	a,m
+09CC  23      		inx	h
+09CD  66      		mov	h,m
+09CE  6F      		mov	l,a
+09CF  F5      	ufd1:	push	psw
+09D0  EB      		xchg
+09D1  210B20  		lxi	h,ALeds
+09D4  7A      		mov	a,d
+09D5  CDEE09  		call	dod
+09D8  7B      		mov	a,e
+09D9  CDEE09  		call	dod
+09DC  F1      		pop	psw
+09DD  1A      		ldax	d
+09DE          		jrz	dod	; if displaying memory
+09DE  280E    		DB	28H,dod-$-1
+			; displaying register name
+09E0  C1      		pop	b
+09E1  111120  		lxi	d,DLeds
+09E4  2E03    	mv3byt:	mvi	l,3
+09E6  0A      	mvb:	ldax	b
+09E7  12      		stax	d
+09E8  03      		inx	b
+09E9  13      		inx	d
+09EA  2D      		dcr	l
+09EB          		jrnz	mvb
+09EB  20F9    		DB	20H,mvb-$-1
+09ED  C9      		ret
+		
+		; B=dot flag
+09EE  4F      	dod:	mov	c,a	; value to display
+09EF  3A3920  		lda	Radix
+09F2  B7      		ora	a	; Z if octal (also CY=0)
+09F3  79      		mov	a,c
+09F4          		jrnz	dodhex
+09F4  2021    		DB	20H,dodhex-$-1
+09F6  D5      		push	d
+09F7  0E03    		mvi	c,3
+09F9  17      	dodr5:	ral
+09FA  17      		ral
+09FB  17      		ral
+09FC  F5      		push	psw
+09FD  E607    		ani	07h
+09FF  C643    		adi	LOW doddig
+0A01  5F      		mov	e,a
+0A02  3E0A    		mvi	a,HIGH doddig
+0A04  CE00    		aci	0
+0A06  57      		mov	d,a
+0A07  1A      		ldax	d
+0A08  A8      		xra	b	; DP on/off
+0A09  E67F    		and	01111111b	; why???
+0A0B  A8      		xra	b
+0A0C  77      		mov	m,a
+0A0D  23      		inx	h
+0A0E  78      		mov	a,b	; rlcr b
+0A0F  07      		rlc
+0A10  47      		mov	b,a
+0A11  F1      		pop	psw
+0A12  0D      		dcr	c
+0A13          		jrnz	dodr5
+0A13  20E4    		DB	20H,dodr5-$-1
+0A15  D1      		pop	d
+0A16  C9      		ret
+		
+0A17  D5      	dodhex:	push	d
+0A18  0E02    		mvi	c,2
+0A1A  07      	deh55:	rlc
+0A1B  07      		rlc
+0A1C  07      		rlc
+0A1D  07      		rlc
+0A1E  F5      		push	psw
+0A1F  E60F    		ani	0fh
+0A21  C643    		adi	LOW doddig
+0A23  5F      		mov	e,a
+0A24  3E0A    		mvi	a,HIGH doddig
+0A26  CE00    		aci	0
+0A28  57      		mov	d,a
+0A29  1A      		ldax	d
+0A2A  A8      		xra	b		; DP on/off
+0A2B  E67F    		ani	01111111b	; why???
+0A2D  A8      		xra	b		; ???
+0A2E  77      		mov	m,a
+0A2F  23      		inx	h
+0A30          		rlcr	b
+0A30  CB00    		DB	0CBH, 00H + b
+0A32  F1      		pop	psw
+0A33  0D      		dcr	c
+0A34          		jrnz	deh55
+0A34  20E4    		DB	20H,deh55-$-1
+0A36  D1      		pop	d
+0A37  3E6F    		mvi	a,01101111b	; "_"
+0A39  A8      		xra	b		; DP on/off
+0A3A  E67F    		ani	01111111b	; why???
+0A3C  A8      		xra	b		; ???
+0A3D  77      		mov	m,a
+0A3E  23      		inx	h
+0A3F  78      		mov	a,b	; rlcr b
+0A40  07      		rlc
+0A41  47      		mov	b,a
+0A42  C9      		ret
+		
+		; octal (base 8) 7-seg translation
+0A43  01      	doddig:	db	00000001b	; "0."
+0A44  73      		db	01110011b	; "1."
+0A45  48      		db	01001000b	; "2."
+0A46  60      		db	01100000b	; "3."
+0A47  32      		db	00110010b	; "4."
+0A48  24      		db	00100100b	; "5."
+0A49  04      		db	00000100b	; "6."
+0A4A  71      		db	01110001b	; "7."
+0A4B  00      		db	00000000b	; "8."
+0A4C  20      		db	00100000b	; "9."
+0A4D  10      		db	00010000b	; "A."
+0A4E  06      		db	00000110b	; "b."
+0A4F  0D      		db	00001101b	; "C."
+0A50  42      		db	01000010b	; "d."
+0A51  0C      		db	00001100b	; "E."
+0A52  1C      		db	00011100b	; "F."
+		
+0A53  FFA498  	dSP:	db	11111111b,10100100b,10011000b	; " SP"
+0A56  FF909C  	dPSW:	db	11111111b,10010000b,10011100b	; " AF"
+0A59  FF868D  	dBC:	db	11111111b,10000110b,10001101b	; " BC"
+0A5C  FFC28C  	dDE:	db	11111111b,11000010b,10001100b	; " DE"
+0A5F  FF928F  	dHL:	db	11111111b,10010010b,10001111b	; " HL"
+0A62  FFF3B6  	dIX:	db	11111111b,11110011b,10110110b	; " IX"
+0A65  FFF3DE  	dIY:	db	11111111b,11110011b,11011110b	; " IY"
+0A68  FFF3D3  	dIR:	db	11111111b,11110011b,11010011b	; " IR"
+0A6B  909CBF  	dPSWp:	db	10010000b,10011100b,10111111b	; "AF'"
+0A6E  868DBF  	dBCp:	db	10000110b,10001101b,10111111b	; "BC'"
+0A71  C28CBF  	dDEp:	db	11000010b,10001100b,10111111b	; "DE'"
+0A74  928FBF  	dHLp:	db	10010010b,10001111b,10111111b	; "HL'"
+0A77  FF98CE  	dPC:	db	11111111b,10011000b,11001110b	; " PC"
+		
+0A7A  C28C83  	dDev:	db	11000010b,10001100b,10000011b	; "dEU" (dev)
+0A7D  98C6DE  	dPor:	db	10011000b,11000110b,11011110b	; "Por"
+0A80  83D6F7  	dUni:	db	10000011b,11010110b,11110111b	; "Uni"
+0A83  8CDEDE  	dErr:	db	10001100b,11011110b,11011110b	; "Error "
+0A86  C6DEFF  		db	11000110b,11011110b,11111111b
+0A89  DE90C2  	dRad:	db	11011110b,10010000b,11000010b	; "rAd"
+0A8C  98DEDF  	dPri:	db	10011000b,11011110b,11011111b	; "Pri"
+0A8F  A48C8D  	dSec:	db	10100100b,10001100b,10001101b	; "SEC"
+		
+0A92          	LedRegTbl:
+0A92  530A    		dw	dSP	; 0
+0A94  560A    		dw	dPSW	; 1
+0A96  590A    		dw	dBC	; 2
+0A98  5C0A    		dw	dDE	; 3
+0A9A  5F0A    		dw	dHL	; 4
+0A9C  620A    		dw	dIX	; 5	- TODO
+0A9E  650A    		dw	dIY	; 6	- TODO
+0AA0  680A    		dw	dIR	; 7	- TODO
+0AA2  6B0A    		dw	dPSWp	; 8	- TODO
+0AA4  6E0A    		dw	dBCp	; 9	- TODO
+0AA6  710A    		dw	dDEp	; 10	- TODO
+0AA8  740A    		dw	dHLp	; 11	- TODO
+0AAA  770A    		dw	dPC	; 12	- 5
+001A          	nReg	equ	$-LedRegTbl	; 2x num registers...
+		
+0AAC  3A0520  	lra:	lda	RegI
+0AAF  5F      	lrax:	mov	e,a
+0AB0  1600    		mvi	d,0
+0AB2  2A1D20  		lhld	RegPtr
+0AB5  19      		dad	d
+0AB6  C9      		ret
+		
+0AB7          	mov3dsp:
+0AB7  2E03    		mvi	l,3
+0AB9          	movLdsp:
+0AB9  0A      	md0:	ldax	b
+0ABA  12      		stax	d
+0ABB  03      		inx	b
+0ABC  13      		inx	d
+0ABD  2D      		dcr	l
+0ABE          		jrnz	md0
+0ABE  20F9    		DB	20H,md0-$-1
+0AC0  C9      		ret
+		
+0AC1          	clrdisp:
+0AC1  210B20  		lxi	h,fpLeds
+0AC4  5D      		mov	e,l
+0AC5  54      		mov	d,h
+0AC6  010800  		lxi	b,9-1
+0AC9  36FF    		mvi	m,11111111b
+0ACB  13      		inx	d
+0ACC          		ldir
+0ACC  EDB0    		DB	0EDH,0B0H
+0ACE  C9      		ret
+		
+		; Front panel display refresh and keypad check
+0ACF          	int1$fp:
+0ACF  210820  		lxi	h,MFlag
+0AD2  7E      		mov	a,m
+0AD3  47      		mov	b,a
+0AD4  E640    		ani	01000000b	; refresh display?
+0AD6  23      		inx	h	; ctl$F0
+0AD7  7E      		mov	a,m
+0AD8  0E00    		mvi	c,0
+0ADA          		jrnz	fp3
+0ADA  200B    		DB	20H,fp3-$-1
+0ADC  23      		inx	h	; Refind
+0ADD  35      		dcr	m
+0ADE          		jrnz	fp2
+0ADE  2002    		DB	20H,fp2-$-1
+0AE0  3609    		mvi	m,9
+0AE2  5E      	fp2:	mov	e,m	; 1-9
+0AE3  1600    		mvi	d,0
+0AE5  19      		dad	d	; fpLeds[E-1]
+0AE6  4B      		mov	c,e
+0AE7  B1      	fp3:	ora	c
+0AE8  D3F0    		out	0f0h
+0AEA  7E      		mov	a,m
+0AEB  D3F1    		out	0f1h
+			; See if time to update display values or check keypad
+0AED  2E1B    		mvi	l,LOW ticcnt
+0AEF  7E      		mov	a,m
+0AF0  F5      		push	psw
+0AF1  E61F    		ani	31	; 64mS
+0AF3  CCAA09  		cz	ufd
+0AF6  F1      		pop	psw
+0AF7  E60F    		ani	15	; 32mS
+0AF9  CC8E09  		cz	kpchk
+			; not really FP related, but no space in low ROM...
+0AFC  3A0820  		lda	MFlag
+0AFF  0F      		rrc		; private int1?
+0B00  DC1F20  		cc	vrst1
+0B03  C34700  		jmp	intret
+		
+		; match module by character (letter)
+		; C=letter, B=00:cmd,ff:boot
+0B06          	bfchr:	ldx	a,+2	; phy drv or type
+0B06  DD7E02  		DB	0DDH,a*8+46H,+2
+0B09  D6C8    		sui	200	; boot modules < 200
+0B0B  9F      		sbb	a	; ff=boot, 00=cmd
+0B0C  B8      		cmp	b	; ZR=match
+0B0D          		jrnz	bfn0
+0B0D  2025    		DB	20H,bfn0-$-1
+0B0F          		ldx	a,mdchr
+0B0F  DD7E0A  		DB	0DDH,a*8+46H,mdchr
+0B12  B9      		cmp	c
+0B13  C9      		ret
+		
+		; match module by FP key
+		; C=FP key, B=00:cmd,ff:boot
+0B14          	bfkey:	ldx	a,+2	; phy drv or type
+0B14  DD7E02  		DB	0DDH,a*8+46H,+2
+0B17  D6C8    		sui	200	; boot modules < 200
+0B19  9F      		sbb	a	; ff=boot, 00=cmd
+0B1A  B8      		cmp	b	; ZR=match
+0B1B          		jrnz	bfn0
+0B1B  2017    		DB	20H,bfn0-$-1
+0B1D          		ldx	a,mdkey
+0B1D  DD7E0B  		DB	0DDH,a*8+46H,mdkey
+0B20  B9      		cmp	c
+0B21  C9      		ret
+		
+		; match boot module by phy drv number
+		; C=phy drv, B=type
+		; Only for boot modules
+0B22          	bfnum:	ldx	a,mdbase	; phy drv or type
+0B22  DD7E02  		DB	0DDH,a*8+46H,mdbase
+0B25  FEC8    		cpi	200	; boot modules < 200
+0B27          		jrnc	bfn0	; skip if >= 200
+0B27  300B    		DB	30H,bfn0-$-1
+0B29  79      		mov	a,c
+0B2A          		subx	mdbase
+0B2A  DD9602  		DB	0DDH,96H,mdbase
+0B2D          		cmpx	mdluns
+0B2D  DDBE03  		DB	0DDH,0BEH,mdluns
+0B30          		jrnc	bfn0 ; might be Z...
+0B30  3002    		DB	30H,bfn0-$-1
+0B32  AF      		xra	a
+0B33  C9      		ret
+0B34  AF      	bfn0:	xra	a
+0B35  3C      		inr	a
+0B36  C9      		ret
+		
+		; List only boot modules
+		; On first module, C=0
+0B37          	bflst:	ldx	a,mdbase	; phy drv or type
+0B37  DD7E02  		DB	0DDH,a*8+46H,mdbase
+0B3A  FEC8    		cpi	200	; boot modules < 200
+0B3C          		jrnc	bfn0
+0B3C  30F6    		DB	30H,bfn0-$-1
+0B3E  79      		mov	a,c
+0B3F  B7      		ora	a
+0B40  3E2C    		mvi	a,','
+0B42  C41504  		cnz	conout
+0B45  0C      		inr	c
+0B46  78      		mov	a,b
+0B47          		subx	mdbase
+0B47  DD9602  		DB	0DDH,96H,mdbase
+0B4A          		cmpx	mdluns
+0B4A  DDBE03  		DB	0DDH,0BEH,mdluns
+0B4D  3E2A    		mvi	a,'*'
+0B4F  DC1504  		cc	conout
+0B52          		pushix
+0B52  DDE5    		DB	0DDH,0E5H
+0B54  E1      		pop	h
+0B55  111000  		lxi	d,mdname
+0B58  19      		dad	d
+0B59  CD4009  		call	msgout
+0B5C  21370B  		lxi	h,bflst
+0B5F          		jr	bfn0	; NZ - keep going
+0B5F  18D3    		DB	18H,bfn0-$-1
+		
+		; List only boot modules
+0B61          	bfllst:	ldx	a,mdbase	; phy drv or type
+0B61  DD7E02  		DB	0DDH,a*8+46H,mdbase
+0B64  FEC8    		cpi	200	; boot modules < 200
+0B66          		jrnc	bfn0
+0B66  30CC    		DB	30H,bfn0-$-1
+0B68  78      		mov	a,b
+0B69          		subx	mdbase
+0B69  DD9602  		DB	0DDH,96H,mdbase
+0B6C          		cmpx	mdluns
+0B6C  DDBE03  		DB	0DDH,0BEH,mdluns
+0B6F  3E20    		mvi	a,' '
+0B71          		jrnc	bfll2
+0B71  3002    		DB	30H,bfll2-$-1
+0B73  3E2A    		mvi	a,'*'
+0B75  CD1504  	bfll2:	call	conout
+0B78          		pushix
+0B78  DDE5    		DB	0DDH,0E5H
+0B7A  E1      		pop	h
+0B7B  111000  		lxi	d,mdname
+0B7E  19      		dad	d
+0B7F  CD4009  		call	msgout
+0B82  3E09    		mvi	a,TAB
+0B84  CD1504  		call	conout
+0B87          		ldx	a,mdchr
+0B87  DD7E0A  		DB	0DDH,a*8+46H,mdchr
+0B8A  CD1504  		call	conout
+0B8D  3E20    		mvi	a,' '
+0B8F  CD1504  		call	conout
+0B92          		ldx	a,mdkey
+0B92  DD7E0B  		DB	0DDH,a*8+46H,mdkey
+0B95  C630    		adi	'0'
+0B97          		jrnc	bfll0
+0B97  3002    		DB	30H,bfll0-$-1
+0B99  3E2D    		mvi	a,'-'
+0B9B  CD1504  	bfll0:	call	conout
+0B9E  3E20    		mvi	a,' '
+0BA0  CD1504  		call	conout
+0BA3          		ldx	a,mdbase
+0BA3  DD7E02  		DB	0DDH,a*8+46H,mdbase
+0BA6  CD190C  		call	decout
+0BA9          		ldx	a,mdluns
+0BA9  DD7E03  		DB	0DDH,a*8+46H,mdluns
+0BAC  3D      		dcr	a
+0BAD          		jrz	bfll1
+0BAD  280F    		DB	28H,bfll1-$-1
+0BAF  3E2D    		mvi	a,'-'
+0BB1  CD1504  		call	conout
+0BB4          		ldx	a,mdbase
+0BB4  DD7E02  		DB	0DDH,a*8+46H,mdbase
+0BB7          		addx	mdluns
+0BB7  DD8603  		DB	0DDH,86H,mdluns
+0BBA  3D      		dcr	a
+0BBB  CD190C  		call	decout
+0BBE  CD3609  	bfll1:	call	crlf
+0BC1  21610B  		lxi	h,bfllst
+0BC4  AF      		xra	a	; NZ - keep going
+0BC5  3C      		inr	a
+0BC6  C9      		ret
+		
+		; Find boot module and load into 1000h if necessary.
+		; HL=match function: returns Z if found, BC=target, IX=module
+		; Return CY at end of modules (not found)
+		; Return IX=loaded module (run location)
+		; Must preserve BC during search loop.
+0BC7          	bfind:
+			; can't check if it's loaded until we know where it's loaded...
+			; first, check if already loaded
+			;lxix	btovl
+			;call	icall
+			;rz
+0BC7          	bfind0:
+			; must map ROM back in, so prevent interruptions...
+			; also, we loose memory at SP...
+			; map ROM F8000 into 4000
+0BC7  3EF4    		mvi	a,0f8h-04h
+0BC9          		out0	a,mmu$bbr
+0BC9  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+0BCC          		lxix	btmods	; start of modules...
+0BCC  DD21    		DB	0DDH,21H
+0BCE  0060    		DW	btmods
+0BD0  CD4201  	bf0:	call	icall
+0BD3          		jrz	bf9
+0BD3  281E    		DB	28H,bf9-$-1
+0BD5          		ldx	d,mdpgs
+0BD5  DD5600  		DB	0DDH,d*8+46H,mdpgs
+0BD8  1E00    		mvi	e,0
+0BDA          		dadx	d
+0BDA  DD19    		DB	0DDH,d*8+09H
+0BDC          		pushix
+0BDC  DDE5    		DB	0DDH,0E5H
+0BDE  F1      		pop	psw
+0BDF  FEC0    		cpi	HIGH bterom	; end of ROM
+0BE1          		jrnc	bf1
+0BE1  300A    		DB	30H,bf1-$-1
+0BE3          		ldx	a,mdpgs
+0BE3  DD7E00  		DB	0DDH,a*8+46H,mdpgs
+0BE6  B7      		ora	a
+0BE7          		jrz	bf1
+0BE7  2804    		DB	28H,bf1-$-1
+0BE9  FEFF    		cpi	0ffh
+0BEB          		jrnz	bf0
+0BEB  20E3    		DB	20H,bf0-$-1
+0BED          	bf1:
+0BED  AF      		xra	a
+0BEE          		out0	a,mmu$bbr
+0BEE  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+0BF1  37      		stc	; CY = end of list (not found)
+0BF2  C9      		ret
+		
+0BF3          	bf9:	; match found, now load into place and init
+0BF3          		ldx	b,mdpgs
+0BF3  DD4600  		DB	0DDH,b*8+46H,mdpgs
+0BF6          		ldx	d,mdorg
+0BF6  DD5601  		DB	0DDH,d*8+46H,mdorg
+0BF9          		pushix
+0BF9  DDE5    		DB	0DDH,0E5H
+0BFB  E1      		pop	h
+0BFC  1E00    		mvi	e,0
+0BFE  0E00    		mvi	c,0
+0C00  D5      		push	d
+			; TODO: avoid redundant load... and init?
+			; TODO: use DMA to avoid overlap complications?
+0C01          		ldir
+0C01  EDB0    		DB	0EDH,0B0H
+0C03          		popix	; module load addr
+0C03  DDE1    		DB	0DDH,0E1H
+			; now call init routine... but must restore RAM...
+0C05  AF      		xra	a
+0C06          		out0	a,mmu$bbr
+0C06  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+0C09  CD0D0C  		call	btinit	; CY indicates error, pass along...
+0C0C  C9      		ret
+		
+		; IX=module in real memory
+0C0D          	btinit:	pushix
+0C0D  DDE5    		DB	0DDH,0E5H
+0C0F  E1      		pop	h
+0C10  2E04    		mvi	l,mdinit
+0C12  E9      		pchl
+		
+		; IX=module in real memory
+0C13          	cmexec:
+0C13          	btboot:	pushix
+0C13  DDE5    		DB	0DDH,0E5H
+0C15  E1      		pop	h
+0C16  2E07    		mvi	l,mdboot
+0C18  E9      		pchl
+		
+		; assume < 100
+0C19          	decout:
+0C19  1630    		mvi	d,'0'
+0C1B          	decot0:
+0C1B  D60A    		sui	10
+0C1D  DA240C  		jc	decot1
+0C20  14      		inr	d
+0C21  C31B0C  		jmp	decot0
+0C24          	decot1:
+0C24  C60A    		adi	10
+0C26  C630    		adi	'0'
+0C28  F5      		push	psw
+0C29  7A      		mov	a,d
+0C2A  CD1504  		call	conout
+0C2D  F1      		pop	psw
+0C2E  C31504  		jmp	conout
+		
+		; Returns NZ if found, D=phy drv
+0C31          	gtdvtb:
+0C31  DBF2    		in	0f2h
+0C33  E670    		ani	01110000b	; default boot device
+0C35  07      		rlc
+0C36  07      		rlc
+0C37  07      		rlc
+0C38  07      		rlc
+0C39  21470C  		lxi	h,defbt
+0C3C          	gtdvtb0:
+0C3C  85      		add	l
+0C3D  6F      		mov	l,a
+0C3E  3E00    		mvi	a,0
+0C40  8C      		adc	h
+0C41  67      		mov	h,a
+0C42  7E      		mov	a,m
+0C43  FEFF    		cpi	0ffh
+0C45  57      		mov	d,a
+0C46  C9      		ret	; NZ=none, Z=found
+		
+0C47          	defbt:	; default boot table... port F2 bits 01110000b
+0C47  21      		db	33	; -000---- MMS 5" floppy 0
+0C48  1D      		db	29	; -001---- MMS 8" floppy 0
+0C49  FF      		db	0ffh	; -010---- n/a  (port 7CH)
+0C4A  FF      		db	0ffh	; -011---- n/a  (port 78H)
+0C4B  29      		db	41	; -100---- VDIP1
+0C4C  46      		db	70	; -101---- GIDE disk part 0
+0C4D  3C      		db	60	; -110---- Network
+0C4E  FF      		db	0ffh	; -111---- none
+		
+		; TODO: preserve CPU regs for debug/front-panel
+0C4F          	trap:
+0C4F  E1      		pop	h
+0C50  2B      		dcx	h
+0C51          		bit	6,a
+0C51  CB77    		DB	0CBH,6*8+a+40H
+0C53          		jrz	trap0
+0C53  2801    		DB	28H,trap0-$-1
+0C55  2B      		dcx	h
+0C56          	trap0:
+0C56  47      		mov	b,a
+0C57  3EFF    		mvi	a,1111$1111b
+0C59          		out0	a,mmu$cbar
+0C59  ED393A  		DB	0EDH, a*8+01H, mmu$cbar
+0C5C  AF      		xra	a
+0C5D          		out0	a,mmu$cbr
+0C5D  ED3938  		DB	0EDH, a*8+01H, mmu$cbr
+0C60          		out0	a,mmu$bbr
+0C60  ED3939  		DB	0EDH, a*8+01H, mmu$bbr
+0C63  31FFFF  		lxi	sp,0ffffh
+0C66  E5      		push	h
+0C67  78      		mov	a,b
+0C68  E67F    		ani	01111111b	; reset TRAP
+0C6A          		out0	a,itc
+0C6A  ED3934  		DB	0EDH, a*8+01H, itc
+0C6D  217D0C  		lxi	h,trpms
+0C70  CD4009  		call	msgout
+0C73  E1      		pop	h
+0C74  CD7304  		call	adrout
+0C77  CD3609  		call	crlf
+0C7A  C37003  		jmp	init0
+		
+0C7D  0D0A2A2A	trpms:	db	CR,LF,'*** TRAP ',TRM
+      2A205452
+      41502000
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Dump command
+0C89          	cmddmp:
+0C89  219B06  		lxi	h,dmpms
+0C8C  CD4009  		call	msgout
+0C8F  210320  		lxi	h,l2003h
+0C92  B7      		ora	a	; NC
+0C93  160D    		mvi	d,CR
+0C95  CD2004  		call	adrin
+0C98  EB      		xchg	; HL=adr
+0C99  0608    		mvi	b,8	; 8 lines (one half page, 128 bytes)
+0C9B  C5      	dmp0:	push	b
+0C9C  CD7004  		call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
+0C9F  E5      		push	h
+0CA0  0610    		mvi	b,16
+0CA2  7E      	dmp1:	mov	a,m
+0CA3  CD7F04  		call	hexout
+0CA6  CD7B04  		call	spout
+0CA9  23      		inx	h
+0CAA          		djnz	dmp1
+0CAA  10F6    		DB	10H,dmp1-$-1
+0CAC  E1      		pop	h
+0CAD  0610    		mvi	b,16
+0CAF  7E      	dmp2:	mov	a,m
+0CB0  FE20    		cpi	' '
+0CB2          		jrc	dmp3
+0CB2  3804    		DB	38H,dmp3-$-1
+0CB4  FE7F    		cpi	'~'+1
+0CB6          		jrc	dmp4
+0CB6  3802    		DB	38H,dmp4-$-1
+0CB8  3E2E    	dmp3:	mvi	a,'.'
+0CBA  CD1504  	dmp4:	call	conout
+0CBD  23      		inx	h
+0CBE          		djnz	dmp2
+0CBE  10EF    		DB	10H,dmp2-$-1
+0CC0  C1      		pop	b
+0CC1          		djnz	dmp0
+0CC1  10D8    		DB	10H,dmp0-$-1
+0CC3  220320  		shld	l2003h
+0CC6  C9      		ret
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; List available boot modules
+0CC7  21DA0C  	cmdlb:	lxi	h,lbmsg
+0CCA  CD4009  		call	msgout
+0CCD  CDF101  		call	gtdfbt
+0CD0  42      		mov	b,d
+0CD1  21370B  		lxi	h,bflst
+0CD4  0E00    		mvi	c,0
+0CD6  CDC70B  		call	bfind0
+0CD9  C9      		ret
+		
+0CDA  69737420	lbmsg:	db	'ist boot modules',CR,LF,0
+      626F6F74
+      206D6F64
+      756C6573
+      0D0A00
+0CED  656C7020	hbmsg:	db	'elp boot',CR,LF,0
+      626F6F74
+      0D0A00
+		
+0CF8  21ED0C  	cmdhb:	lxi	h,hbmsg
+0CFB  CD4009  		call	msgout
+0CFE  CDF101  		call	gtdfbt
+0D01  42      		mov	b,d
+0D02  21610B  		lxi	h,bfllst
+0D05  CDC70B  		call	bfind0
+0D08  C9      		ret
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Add new boot module
+0D09  C9      	cmdab:	ret
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Update ROM
+0D0A  C9      	cmdur:	ret
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Terminal mode - shuttle I/O between H19 and serial port
+		; since both ports operate at the same speed, don't need
+		; to check ready as often.
+0D0B          	termod:
+0D0B  21530D  		lxi	h,terms
+0D0E  CD4009  		call	msgout
+0D11  CD2F09  		call	waitcr
+0D14          	termfl:
+0D14  DBED    		in	0edh
+0D16  E660    		ani	01100000b
+0D18  FE60    		cpi	01100000b
+0D1A          		jrnz	termfl	; wait for output to flush
+0D1A  20F8    		DB	20H,termfl-$-1
+0D1C  DBEB    		in	0ebh
+0D1E  F680    		ori	10000000b
+0D20  D3EB    		out	0ebh
+0D22  D3DB    		out	0dbh
+0D24  DBE8    		in	0e8h
+0D26  D3D8    		out	0d8h
+0D28  DBE9    		in	0e9h
+0D2A  D3D9    		out	0d9h
+0D2C  DBEB    		in	0ebh
+0D2E  E67F    		ani	01111111b
+0D30  D3EB    		out	0ebh
+0D32  D3DB    		out	0dbh
+0D34  AF      		xra	a
+0D35  D3D9    		out	0d9h
+0D37  DBD8    		in	0d8h
+0D39  3E0F    		mvi	a,00fh
+0D3B  D3DC    		out	0dch
+0D3D          	termlp:
+0D3D  DBDD    		in	0ddh
+0D3F  E601    		ani	00000001b
+0D41          		jrz	terml0
+0D41  2804    		DB	28H,terml0-$-1
+0D43  DBD8    		in	0d8h
+0D45  D3E8    		out	0e8h
+0D47          	terml0:
+0D47  DBED    		in	0edh
+0D49  E601    		ani	00000001b
+0D4B          		jrz	termlp
+0D4B  28F0    		DB	28H,termlp-$-1
+0D4D  DBE8    		in	0e8h
+0D4F  D3D8    		out	0d8h
+0D51          		jr	termlp
+0D51  18EA    		DB	18H,termlp-$-1
+		
+0D53  65726D69	terms:	db	'erminal Mode',TRM
+      6E616C20
+      4D6F6465
+      00
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; Print ROM version command
+0D60          	prtver:
+0D60  216D0D  		lxi	h,versms
+0D63  CD4009  		call	msgout
+0D66  21860D  		lxi	h,vernum
+0D69  CD4009  		call	msgout
+0D6C  C9      		ret
+		
+0D6D  65727369	versms:	db	'ersion ',TRM
+      6F6E2000
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+0D75  4838205A	signon:	db	'H8 Z180 Monitor v'
+      31383020
+      4D6F6E69
+      746F7220
+      76
+0D86  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+0001          	if alpha
+0D89  28616C70		db	'(alpha',alpha+'0',')'
+      68613129
+		endif
+0000          	if beta
+		endif
+0D91  0D0A00  		db	CR,LF,TRM
+		
+			rept	1000h-$
+0D94  FF      		db	0ffh
+0D95  FF      		db	0ffh
+0D96  FF      		db	0ffh
+0D97  FF      		db	0ffh
+0D98  FF      		db	0ffh
+0D99  FF      		db	0ffh
+0D9A  FF      		db	0ffh
+0D9B  FF      		db	0ffh
+0D9C  FF      		db	0ffh
+0D9D  FF      		db	0ffh
+0D9E  FF      		db	0ffh
+0D9F  FF      		db	0ffh
+0DA0  FF      		db	0ffh
+0DA1  FF      		db	0ffh
+0DA2  FF      		db	0ffh
+0DA3  FF      		db	0ffh
+0DA4  FF      		db	0ffh
+0DA5  FF      		db	0ffh
+0DA6  FF      		db	0ffh
+0DA7  FF      		db	0ffh
+0DA8  FF      		db	0ffh
+0DA9  FF      		db	0ffh
+0DAA  FF      		db	0ffh
+0DAB  FF      		db	0ffh
+0DAC  FF      		db	0ffh
+0DAD  FF      		db	0ffh
+0DAE  FF      		db	0ffh
+0DAF  FF      		db	0ffh
+0DB0  FF      		db	0ffh
+0DB1  FF      		db	0ffh
+0DB2  FF      		db	0ffh
+0DB3  FF      		db	0ffh
+0DB4  FF      		db	0ffh
+0DB5  FF      		db	0ffh
+0DB6  FF      		db	0ffh
+0DB7  FF      		db	0ffh
+0DB8  FF      		db	0ffh
+0DB9  FF      		db	0ffh
+0DBA  FF      		db	0ffh
+0DBB  FF      		db	0ffh
+0DBC  FF      		db	0ffh
+0DBD  FF      		db	0ffh
+0DBE  FF      		db	0ffh
+0DBF  FF      		db	0ffh
+0DC0  FF      		db	0ffh
+0DC1  FF      		db	0ffh
+0DC2  FF      		db	0ffh
+0DC3  FF      		db	0ffh
+0DC4  FF      		db	0ffh
+0DC5  FF      		db	0ffh
+0DC6  FF      		db	0ffh
+0DC7  FF      		db	0ffh
+0DC8  FF      		db	0ffh
+0DC9  FF      		db	0ffh
+0DCA  FF      		db	0ffh
+0DCB  FF      		db	0ffh
+0DCC  FF      		db	0ffh
+0DCD  FF      		db	0ffh
+0DCE  FF      		db	0ffh
+0DCF  FF      		db	0ffh
+0DD0  FF      		db	0ffh
+0DD1  FF      		db	0ffh
+0DD2  FF      		db	0ffh
+0DD3  FF      		db	0ffh
+0DD4  FF      		db	0ffh
+0DD5  FF      		db	0ffh
+0DD6  FF      		db	0ffh
+0DD7  FF      		db	0ffh
+0DD8  FF      		db	0ffh
+0DD9  FF      		db	0ffh
+0DDA  FF      		db	0ffh
+0DDB  FF      		db	0ffh
+0DDC  FF      		db	0ffh
+0DDD  FF      		db	0ffh
+0DDE  FF      		db	0ffh
+0DDF  FF      		db	0ffh
+0DE0  FF      		db	0ffh
+0DE1  FF      		db	0ffh
+0DE2  FF      		db	0ffh
+0DE3  FF      		db	0ffh
+0DE4  FF      		db	0ffh
+0DE5  FF      		db	0ffh
+0DE6  FF      		db	0ffh
+0DE7  FF      		db	0ffh
+0DE8  FF      		db	0ffh
+0DE9  FF      		db	0ffh
+0DEA  FF      		db	0ffh
+0DEB  FF      		db	0ffh
+0DEC  FF      		db	0ffh
+0DED  FF      		db	0ffh
+0DEE  FF      		db	0ffh
+0DEF  FF      		db	0ffh
+0DF0  FF      		db	0ffh
+0DF1  FF      		db	0ffh
+0DF2  FF      		db	0ffh
+0DF3  FF      		db	0ffh
+0DF4  FF      		db	0ffh
+0DF5  FF      		db	0ffh
+0DF6  FF      		db	0ffh
+0DF7  FF      		db	0ffh
+0DF8  FF      		db	0ffh
+0DF9  FF      		db	0ffh
+0DFA  FF      		db	0ffh
+0DFB  FF      		db	0ffh
+0DFC  FF      		db	0ffh
+0DFD  FF      		db	0ffh
+0DFE  FF      		db	0ffh
+0DFF  FF      		db	0ffh
+0E00  FF      		db	0ffh
+0E01  FF      		db	0ffh
+0E02  FF      		db	0ffh
+0E03  FF      		db	0ffh
+0E04  FF      		db	0ffh
+0E05  FF      		db	0ffh
+0E06  FF      		db	0ffh
+0E07  FF      		db	0ffh
+0E08  FF      		db	0ffh
+0E09  FF      		db	0ffh
+0E0A  FF      		db	0ffh
+0E0B  FF      		db	0ffh
+0E0C  FF      		db	0ffh
+0E0D  FF      		db	0ffh
+0E0E  FF      		db	0ffh
+0E0F  FF      		db	0ffh
+0E10  FF      		db	0ffh
+0E11  FF      		db	0ffh
+0E12  FF      		db	0ffh
+0E13  FF      		db	0ffh
+0E14  FF      		db	0ffh
+0E15  FF      		db	0ffh
+0E16  FF      		db	0ffh
+0E17  FF      		db	0ffh
+0E18  FF      		db	0ffh
+0E19  FF      		db	0ffh
+0E1A  FF      		db	0ffh
+0E1B  FF      		db	0ffh
+0E1C  FF      		db	0ffh
+0E1D  FF      		db	0ffh
+0E1E  FF      		db	0ffh
+0E1F  FF      		db	0ffh
+0E20  FF      		db	0ffh
+0E21  FF      		db	0ffh
+0E22  FF      		db	0ffh
+0E23  FF      		db	0ffh
+0E24  FF      		db	0ffh
+0E25  FF      		db	0ffh
+0E26  FF      		db	0ffh
+0E27  FF      		db	0ffh
+0E28  FF      		db	0ffh
+0E29  FF      		db	0ffh
+0E2A  FF      		db	0ffh
+0E2B  FF      		db	0ffh
+0E2C  FF      		db	0ffh
+0E2D  FF      		db	0ffh
+0E2E  FF      		db	0ffh
+0E2F  FF      		db	0ffh
+0E30  FF      		db	0ffh
+0E31  FF      		db	0ffh
+0E32  FF      		db	0ffh
+0E33  FF      		db	0ffh
+0E34  FF      		db	0ffh
+0E35  FF      		db	0ffh
+0E36  FF      		db	0ffh
+0E37  FF      		db	0ffh
+0E38  FF      		db	0ffh
+0E39  FF      		db	0ffh
+0E3A  FF      		db	0ffh
+0E3B  FF      		db	0ffh
+0E3C  FF      		db	0ffh
+0E3D  FF      		db	0ffh
+0E3E  FF      		db	0ffh
+0E3F  FF      		db	0ffh
+0E40  FF      		db	0ffh
+0E41  FF      		db	0ffh
+0E42  FF      		db	0ffh
+0E43  FF      		db	0ffh
+0E44  FF      		db	0ffh
+0E45  FF      		db	0ffh
+0E46  FF      		db	0ffh
+0E47  FF      		db	0ffh
+0E48  FF      		db	0ffh
+0E49  FF      		db	0ffh
+0E4A  FF      		db	0ffh
+0E4B  FF      		db	0ffh
+0E4C  FF      		db	0ffh
+0E4D  FF      		db	0ffh
+0E4E  FF      		db	0ffh
+0E4F  FF      		db	0ffh
+0E50  FF      		db	0ffh
+0E51  FF      		db	0ffh
+0E52  FF      		db	0ffh
+0E53  FF      		db	0ffh
+0E54  FF      		db	0ffh
+0E55  FF      		db	0ffh
+0E56  FF      		db	0ffh
+0E57  FF      		db	0ffh
+0E58  FF      		db	0ffh
+0E59  FF      		db	0ffh
+0E5A  FF      		db	0ffh
+0E5B  FF      		db	0ffh
+0E5C  FF      		db	0ffh
+0E5D  FF      		db	0ffh
+0E5E  FF      		db	0ffh
+0E5F  FF      		db	0ffh
+0E60  FF      		db	0ffh
+0E61  FF      		db	0ffh
+0E62  FF      		db	0ffh
+0E63  FF      		db	0ffh
+0E64  FF      		db	0ffh
+0E65  FF      		db	0ffh
+0E66  FF      		db	0ffh
+0E67  FF      		db	0ffh
+0E68  FF      		db	0ffh
+0E69  FF      		db	0ffh
+0E6A  FF      		db	0ffh
+0E6B  FF      		db	0ffh
+0E6C  FF      		db	0ffh
+0E6D  FF      		db	0ffh
+0E6E  FF      		db	0ffh
+0E6F  FF      		db	0ffh
+0E70  FF      		db	0ffh
+0E71  FF      		db	0ffh
+0E72  FF      		db	0ffh
+0E73  FF      		db	0ffh
+0E74  FF      		db	0ffh
+0E75  FF      		db	0ffh
+0E76  FF      		db	0ffh
+0E77  FF      		db	0ffh
+0E78  FF      		db	0ffh
+0E79  FF      		db	0ffh
+0E7A  FF      		db	0ffh
+0E7B  FF      		db	0ffh
+0E7C  FF      		db	0ffh
+0E7D  FF      		db	0ffh
+0E7E  FF      		db	0ffh
+0E7F  FF      		db	0ffh
+0E80  FF      		db	0ffh
+0E81  FF      		db	0ffh
+0E82  FF      		db	0ffh
+0E83  FF      		db	0ffh
+0E84  FF      		db	0ffh
+0E85  FF      		db	0ffh
+0E86  FF      		db	0ffh
+0E87  FF      		db	0ffh
+0E88  FF      		db	0ffh
+0E89  FF      		db	0ffh
+0E8A  FF      		db	0ffh
+0E8B  FF      		db	0ffh
+0E8C  FF      		db	0ffh
+0E8D  FF      		db	0ffh
+0E8E  FF      		db	0ffh
+0E8F  FF      		db	0ffh
+0E90  FF      		db	0ffh
+0E91  FF      		db	0ffh
+0E92  FF      		db	0ffh
+0E93  FF      		db	0ffh
+0E94  FF      		db	0ffh
+0E95  FF      		db	0ffh
+0E96  FF      		db	0ffh
+0E97  FF      		db	0ffh
+0E98  FF      		db	0ffh
+0E99  FF      		db	0ffh
+0E9A  FF      		db	0ffh
+0E9B  FF      		db	0ffh
+0E9C  FF      		db	0ffh
+0E9D  FF      		db	0ffh
+0E9E  FF      		db	0ffh
+0E9F  FF      		db	0ffh
+0EA0  FF      		db	0ffh
+0EA1  FF      		db	0ffh
+0EA2  FF      		db	0ffh
+0EA3  FF      		db	0ffh
+0EA4  FF      		db	0ffh
+0EA5  FF      		db	0ffh
+0EA6  FF      		db	0ffh
+0EA7  FF      		db	0ffh
+0EA8  FF      		db	0ffh
+0EA9  FF      		db	0ffh
+0EAA  FF      		db	0ffh
+0EAB  FF      		db	0ffh
+0EAC  FF      		db	0ffh
+0EAD  FF      		db	0ffh
+0EAE  FF      		db	0ffh
+0EAF  FF      		db	0ffh
+0EB0  FF      		db	0ffh
+0EB1  FF      		db	0ffh
+0EB2  FF      		db	0ffh
+0EB3  FF      		db	0ffh
+0EB4  FF      		db	0ffh
+0EB5  FF      		db	0ffh
+0EB6  FF      		db	0ffh
+0EB7  FF      		db	0ffh
+0EB8  FF      		db	0ffh
+0EB9  FF      		db	0ffh
+0EBA  FF      		db	0ffh
+0EBB  FF      		db	0ffh
+0EBC  FF      		db	0ffh
+0EBD  FF      		db	0ffh
+0EBE  FF      		db	0ffh
+0EBF  FF      		db	0ffh
+0EC0  FF      		db	0ffh
+0EC1  FF      		db	0ffh
+0EC2  FF      		db	0ffh
+0EC3  FF      		db	0ffh
+0EC4  FF      		db	0ffh
+0EC5  FF      		db	0ffh
+0EC6  FF      		db	0ffh
+0EC7  FF      		db	0ffh
+0EC8  FF      		db	0ffh
+0EC9  FF      		db	0ffh
+0ECA  FF      		db	0ffh
+0ECB  FF      		db	0ffh
+0ECC  FF      		db	0ffh
+0ECD  FF      		db	0ffh
+0ECE  FF      		db	0ffh
+0ECF  FF      		db	0ffh
+0ED0  FF      		db	0ffh
+0ED1  FF      		db	0ffh
+0ED2  FF      		db	0ffh
+0ED3  FF      		db	0ffh
+0ED4  FF      		db	0ffh
+0ED5  FF      		db	0ffh
+0ED6  FF      		db	0ffh
+0ED7  FF      		db	0ffh
+0ED8  FF      		db	0ffh
+0ED9  FF      		db	0ffh
+0EDA  FF      		db	0ffh
+0EDB  FF      		db	0ffh
+0EDC  FF      		db	0ffh
+0EDD  FF      		db	0ffh
+0EDE  FF      		db	0ffh
+0EDF  FF      		db	0ffh
+0EE0  FF      		db	0ffh
+0EE1  FF      		db	0ffh
+0EE2  FF      		db	0ffh
+0EE3  FF      		db	0ffh
+0EE4  FF      		db	0ffh
+0EE5  FF      		db	0ffh
+0EE6  FF      		db	0ffh
+0EE7  FF      		db	0ffh
+0EE8  FF      		db	0ffh
+0EE9  FF      		db	0ffh
+0EEA  FF      		db	0ffh
+0EEB  FF      		db	0ffh
+0EEC  FF      		db	0ffh
+0EED  FF      		db	0ffh
+0EEE  FF      		db	0ffh
+0EEF  FF      		db	0ffh
+0EF0  FF      		db	0ffh
+0EF1  FF      		db	0ffh
+0EF2  FF      		db	0ffh
+0EF3  FF      		db	0ffh
+0EF4  FF      		db	0ffh
+0EF5  FF      		db	0ffh
+0EF6  FF      		db	0ffh
+0EF7  FF      		db	0ffh
+0EF8  FF      		db	0ffh
+0EF9  FF      		db	0ffh
+0EFA  FF      		db	0ffh
+0EFB  FF      		db	0ffh
+0EFC  FF      		db	0ffh
+0EFD  FF      		db	0ffh
+0EFE  FF      		db	0ffh
+0EFF  FF      		db	0ffh
+0F00  FF      		db	0ffh
+0F01  FF      		db	0ffh
+0F02  FF      		db	0ffh
+0F03  FF      		db	0ffh
+0F04  FF      		db	0ffh
+0F05  FF      		db	0ffh
+0F06  FF      		db	0ffh
+0F07  FF      		db	0ffh
+0F08  FF      		db	0ffh
+0F09  FF      		db	0ffh
+0F0A  FF      		db	0ffh
+0F0B  FF      		db	0ffh
+0F0C  FF      		db	0ffh
+0F0D  FF      		db	0ffh
+0F0E  FF      		db	0ffh
+0F0F  FF      		db	0ffh
+0F10  FF      		db	0ffh
+0F11  FF      		db	0ffh
+0F12  FF      		db	0ffh
+0F13  FF      		db	0ffh
+0F14  FF      		db	0ffh
+0F15  FF      		db	0ffh
+0F16  FF      		db	0ffh
+0F17  FF      		db	0ffh
+0F18  FF      		db	0ffh
+0F19  FF      		db	0ffh
+0F1A  FF      		db	0ffh
+0F1B  FF      		db	0ffh
+0F1C  FF      		db	0ffh
+0F1D  FF      		db	0ffh
+0F1E  FF      		db	0ffh
+0F1F  FF      		db	0ffh
+0F20  FF      		db	0ffh
+0F21  FF      		db	0ffh
+0F22  FF      		db	0ffh
+0F23  FF      		db	0ffh
+0F24  FF      		db	0ffh
+0F25  FF      		db	0ffh
+0F26  FF      		db	0ffh
+0F27  FF      		db	0ffh
+0F28  FF      		db	0ffh
+0F29  FF      		db	0ffh
+0F2A  FF      		db	0ffh
+0F2B  FF      		db	0ffh
+0F2C  FF      		db	0ffh
+0F2D  FF      		db	0ffh
+0F2E  FF      		db	0ffh
+0F2F  FF      		db	0ffh
+0F30  FF      		db	0ffh
+0F31  FF      		db	0ffh
+0F32  FF      		db	0ffh
+0F33  FF      		db	0ffh
+0F34  FF      		db	0ffh
+0F35  FF      		db	0ffh
+0F36  FF      		db	0ffh
+0F37  FF      		db	0ffh
+0F38  FF      		db	0ffh
+0F39  FF      		db	0ffh
+0F3A  FF      		db	0ffh
+0F3B  FF      		db	0ffh
+0F3C  FF      		db	0ffh
+0F3D  FF      		db	0ffh
+0F3E  FF      		db	0ffh
+0F3F  FF      		db	0ffh
+0F40  FF      		db	0ffh
+0F41  FF      		db	0ffh
+0F42  FF      		db	0ffh
+0F43  FF      		db	0ffh
+0F44  FF      		db	0ffh
+0F45  FF      		db	0ffh
+0F46  FF      		db	0ffh
+0F47  FF      		db	0ffh
+0F48  FF      		db	0ffh
+0F49  FF      		db	0ffh
+0F4A  FF      		db	0ffh
+0F4B  FF      		db	0ffh
+0F4C  FF      		db	0ffh
+0F4D  FF      		db	0ffh
+0F4E  FF      		db	0ffh
+0F4F  FF      		db	0ffh
+0F50  FF      		db	0ffh
+0F51  FF      		db	0ffh
+0F52  FF      		db	0ffh
+0F53  FF      		db	0ffh
+0F54  FF      		db	0ffh
+0F55  FF      		db	0ffh
+0F56  FF      		db	0ffh
+0F57  FF      		db	0ffh
+0F58  FF      		db	0ffh
+0F59  FF      		db	0ffh
+0F5A  FF      		db	0ffh
+0F5B  FF      		db	0ffh
+0F5C  FF      		db	0ffh
+0F5D  FF      		db	0ffh
+0F5E  FF      		db	0ffh
+0F5F  FF      		db	0ffh
+0F60  FF      		db	0ffh
+0F61  FF      		db	0ffh
+0F62  FF      		db	0ffh
+0F63  FF      		db	0ffh
+0F64  FF      		db	0ffh
+0F65  FF      		db	0ffh
+0F66  FF      		db	0ffh
+0F67  FF      		db	0ffh
+0F68  FF      		db	0ffh
+0F69  FF      		db	0ffh
+0F6A  FF      		db	0ffh
+0F6B  FF      		db	0ffh
+0F6C  FF      		db	0ffh
+0F6D  FF      		db	0ffh
+0F6E  FF      		db	0ffh
+0F6F  FF      		db	0ffh
+0F70  FF      		db	0ffh
+0F71  FF      		db	0ffh
+0F72  FF      		db	0ffh
+0F73  FF      		db	0ffh
+0F74  FF      		db	0ffh
+0F75  FF      		db	0ffh
+0F76  FF      		db	0ffh
+0F77  FF      		db	0ffh
+0F78  FF      		db	0ffh
+0F79  FF      		db	0ffh
+0F7A  FF      		db	0ffh
+0F7B  FF      		db	0ffh
+0F7C  FF      		db	0ffh
+0F7D  FF      		db	0ffh
+0F7E  FF      		db	0ffh
+0F7F  FF      		db	0ffh
+0F80  FF      		db	0ffh
+0F81  FF      		db	0ffh
+0F82  FF      		db	0ffh
+0F83  FF      		db	0ffh
+0F84  FF      		db	0ffh
+0F85  FF      		db	0ffh
+0F86  FF      		db	0ffh
+0F87  FF      		db	0ffh
+0F88  FF      		db	0ffh
+0F89  FF      		db	0ffh
+0F8A  FF      		db	0ffh
+0F8B  FF      		db	0ffh
+0F8C  FF      		db	0ffh
+0F8D  FF      		db	0ffh
+0F8E  FF      		db	0ffh
+0F8F  FF      		db	0ffh
+0F90  FF      		db	0ffh
+0F91  FF      		db	0ffh
+0F92  FF      		db	0ffh
+0F93  FF      		db	0ffh
+0F94  FF      		db	0ffh
+0F95  FF      		db	0ffh
+0F96  FF      		db	0ffh
+0F97  FF      		db	0ffh
+0F98  FF      		db	0ffh
+0F99  FF      		db	0ffh
+0F9A  FF      		db	0ffh
+0F9B  FF      		db	0ffh
+0F9C  FF      		db	0ffh
+0F9D  FF      		db	0ffh
+0F9E  FF      		db	0ffh
+0F9F  FF      		db	0ffh
+0FA0  FF      		db	0ffh
+0FA1  FF      		db	0ffh
+0FA2  FF      		db	0ffh
+0FA3  FF      		db	0ffh
+0FA4  FF      		db	0ffh
+0FA5  FF      		db	0ffh
+0FA6  FF      		db	0ffh
+0FA7  FF      		db	0ffh
+0FA8  FF      		db	0ffh
+0FA9  FF      		db	0ffh
+0FAA  FF      		db	0ffh
+0FAB  FF      		db	0ffh
+0FAC  FF      		db	0ffh
+0FAD  FF      		db	0ffh
+0FAE  FF      		db	0ffh
+0FAF  FF      		db	0ffh
+0FB0  FF      		db	0ffh
+0FB1  FF      		db	0ffh
+0FB2  FF      		db	0ffh
+0FB3  FF      		db	0ffh
+0FB4  FF      		db	0ffh
+0FB5  FF      		db	0ffh
+0FB6  FF      		db	0ffh
+0FB7  FF      		db	0ffh
+0FB8  FF      		db	0ffh
+0FB9  FF      		db	0ffh
+0FBA  FF      		db	0ffh
+0FBB  FF      		db	0ffh
+0FBC  FF      		db	0ffh
+0FBD  FF      		db	0ffh
+0FBE  FF      		db	0ffh
+0FBF  FF      		db	0ffh
+0FC0  FF      		db	0ffh
+0FC1  FF      		db	0ffh
+0FC2  FF      		db	0ffh
+0FC3  FF      		db	0ffh
+0FC4  FF      		db	0ffh
+0FC5  FF      		db	0ffh
+0FC6  FF      		db	0ffh
+0FC7  FF      		db	0ffh
+0FC8  FF      		db	0ffh
+0FC9  FF      		db	0ffh
+0FCA  FF      		db	0ffh
+0FCB  FF      		db	0ffh
+0FCC  FF      		db	0ffh
+0FCD  FF      		db	0ffh
+0FCE  FF      		db	0ffh
+0FCF  FF      		db	0ffh
+0FD0  FF      		db	0ffh
+0FD1  FF      		db	0ffh
+0FD2  FF      		db	0ffh
+0FD3  FF      		db	0ffh
+0FD4  FF      		db	0ffh
+0FD5  FF      		db	0ffh
+0FD6  FF      		db	0ffh
+0FD7  FF      		db	0ffh
+0FD8  FF      		db	0ffh
+0FD9  FF      		db	0ffh
+0FDA  FF      		db	0ffh
+0FDB  FF      		db	0ffh
+0FDC  FF      		db	0ffh
+0FDD  FF      		db	0ffh
+0FDE  FF      		db	0ffh
+0FDF  FF      		db	0ffh
+0FE0  FF      		db	0ffh
+0FE1  FF      		db	0ffh
+0FE2  FF      		db	0ffh
+0FE3  FF      		db	0ffh
+0FE4  FF      		db	0ffh
+0FE5  FF      		db	0ffh
+0FE6  FF      		db	0ffh
+0FE7  FF      		db	0ffh
+0FE8  FF      		db	0ffh
+0FE9  FF      		db	0ffh
+0FEA  FF      		db	0ffh
+0FEB  FF      		db	0ffh
+0FEC  FF      		db	0ffh
+0FED  FF      		db	0ffh
+0FEE  FF      		db	0ffh
+0FEF  FF      		db	0ffh
+0FF0  FF      		db	0ffh
+0FF1  FF      		db	0ffh
+0FF2  FF      		db	0ffh
+0FF3  FF      		db	0ffh
+0FF4  FF      		db	0ffh
+0FF5  FF      		db	0ffh
+0FF6  FF      		db	0ffh
+0FF7  FF      		db	0ffh
+0FF8  FF      		db	0ffh
+0FF9  FF      		db	0ffh
+0FFA  FF      		db	0ffh
+0FFB  FF      		db	0ffh
+0FFC  FF      		db	0ffh
+0FFD  FF      		db	0ffh
+0FFE  FF      		db	0ffh
+0FFF  FF      		db	0ffh
+0000          	if	($ <> 1000h)
+		endif
+		
+		; module overlay area starts here...
+		; ensure this does not match any...
+1000  FFFF    		dw	-1
+1002  0000    		db	0,0
+		
+			rept	1800h-$
+1004  FF      		db	0ffh
+1005  FF      		db	0ffh
+1006  FF      		db	0ffh
+1007  FF      		db	0ffh
+1008  FF      		db	0ffh
+1009  FF      		db	0ffh
+100A  FF      		db	0ffh
+100B  FF      		db	0ffh
+100C  FF      		db	0ffh
+100D  FF      		db	0ffh
+100E  FF      		db	0ffh
+100F  FF      		db	0ffh
+1010  FF      		db	0ffh
+1011  FF      		db	0ffh
+1012  FF      		db	0ffh
+1013  FF      		db	0ffh
+1014  FF      		db	0ffh
+1015  FF      		db	0ffh
+1016  FF      		db	0ffh
+1017  FF      		db	0ffh
+1018  FF      		db	0ffh
+1019  FF      		db	0ffh
+101A  FF      		db	0ffh
+101B  FF      		db	0ffh
+101C  FF      		db	0ffh
+101D  FF      		db	0ffh
+101E  FF      		db	0ffh
+101F  FF      		db	0ffh
+1020  FF      		db	0ffh
+1021  FF      		db	0ffh
+1022  FF      		db	0ffh
+1023  FF      		db	0ffh
+1024  FF      		db	0ffh
+1025  FF      		db	0ffh
+1026  FF      		db	0ffh
+1027  FF      		db	0ffh
+1028  FF      		db	0ffh
+1029  FF      		db	0ffh
+102A  FF      		db	0ffh
+102B  FF      		db	0ffh
+102C  FF      		db	0ffh
+102D  FF      		db	0ffh
+102E  FF      		db	0ffh
+102F  FF      		db	0ffh
+1030  FF      		db	0ffh
+1031  FF      		db	0ffh
+1032  FF      		db	0ffh
+1033  FF      		db	0ffh
+1034  FF      		db	0ffh
+1035  FF      		db	0ffh
+1036  FF      		db	0ffh
+1037  FF      		db	0ffh
+1038  FF      		db	0ffh
+1039  FF      		db	0ffh
+103A  FF      		db	0ffh
+103B  FF      		db	0ffh
+103C  FF      		db	0ffh
+103D  FF      		db	0ffh
+103E  FF      		db	0ffh
+103F  FF      		db	0ffh
+1040  FF      		db	0ffh
+1041  FF      		db	0ffh
+1042  FF      		db	0ffh
+1043  FF      		db	0ffh
+1044  FF      		db	0ffh
+1045  FF      		db	0ffh
+1046  FF      		db	0ffh
+1047  FF      		db	0ffh
+1048  FF      		db	0ffh
+1049  FF      		db	0ffh
+104A  FF      		db	0ffh
+104B  FF      		db	0ffh
+104C  FF      		db	0ffh
+104D  FF      		db	0ffh
+104E  FF      		db	0ffh
+104F  FF      		db	0ffh
+1050  FF      		db	0ffh
+1051  FF      		db	0ffh
+1052  FF      		db	0ffh
+1053  FF      		db	0ffh
+1054  FF      		db	0ffh
+1055  FF      		db	0ffh
+1056  FF      		db	0ffh
+1057  FF      		db	0ffh
+1058  FF      		db	0ffh
+1059  FF      		db	0ffh
+105A  FF      		db	0ffh
+105B  FF      		db	0ffh
+105C  FF      		db	0ffh
+105D  FF      		db	0ffh
+105E  FF      		db	0ffh
+105F  FF      		db	0ffh
+1060  FF      		db	0ffh
+1061  FF      		db	0ffh
+1062  FF      		db	0ffh
+1063  FF      		db	0ffh
+1064  FF      		db	0ffh
+1065  FF      		db	0ffh
+1066  FF      		db	0ffh
+1067  FF      		db	0ffh
+1068  FF      		db	0ffh
+1069  FF      		db	0ffh
+106A  FF      		db	0ffh
+106B  FF      		db	0ffh
+106C  FF      		db	0ffh
+106D  FF      		db	0ffh
+106E  FF      		db	0ffh
+106F  FF      		db	0ffh
+1070  FF      		db	0ffh
+1071  FF      		db	0ffh
+1072  FF      		db	0ffh
+1073  FF      		db	0ffh
+1074  FF      		db	0ffh
+1075  FF      		db	0ffh
+1076  FF      		db	0ffh
+1077  FF      		db	0ffh
+1078  FF      		db	0ffh
+1079  FF      		db	0ffh
+107A  FF      		db	0ffh
+107B  FF      		db	0ffh
+107C  FF      		db	0ffh
+107D  FF      		db	0ffh
+107E  FF      		db	0ffh
+107F  FF      		db	0ffh
+1080  FF      		db	0ffh
+1081  FF      		db	0ffh
+1082  FF      		db	0ffh
+1083  FF      		db	0ffh
+1084  FF      		db	0ffh
+1085  FF      		db	0ffh
+1086  FF      		db	0ffh
+1087  FF      		db	0ffh
+1088  FF      		db	0ffh
+1089  FF      		db	0ffh
+108A  FF      		db	0ffh
+108B  FF      		db	0ffh
+108C  FF      		db	0ffh
+108D  FF      		db	0ffh
+108E  FF      		db	0ffh
+108F  FF      		db	0ffh
+1090  FF      		db	0ffh
+1091  FF      		db	0ffh
+1092  FF      		db	0ffh
+1093  FF      		db	0ffh
+1094  FF      		db	0ffh
+1095  FF      		db	0ffh
+1096  FF      		db	0ffh
+1097  FF      		db	0ffh
+1098  FF      		db	0ffh
+1099  FF      		db	0ffh
+109A  FF      		db	0ffh
+109B  FF      		db	0ffh
+109C  FF      		db	0ffh
+109D  FF      		db	0ffh
+109E  FF      		db	0ffh
+109F  FF      		db	0ffh
+10A0  FF      		db	0ffh
+10A1  FF      		db	0ffh
+10A2  FF      		db	0ffh
+10A3  FF      		db	0ffh
+10A4  FF      		db	0ffh
+10A5  FF      		db	0ffh
+10A6  FF      		db	0ffh
+10A7  FF      		db	0ffh
+10A8  FF      		db	0ffh
+10A9  FF      		db	0ffh
+10AA  FF      		db	0ffh
+10AB  FF      		db	0ffh
+10AC  FF      		db	0ffh
+10AD  FF      		db	0ffh
+10AE  FF      		db	0ffh
+10AF  FF      		db	0ffh
+10B0  FF      		db	0ffh
+10B1  FF      		db	0ffh
+10B2  FF      		db	0ffh
+10B3  FF      		db	0ffh
+10B4  FF      		db	0ffh
+10B5  FF      		db	0ffh
+10B6  FF      		db	0ffh
+10B7  FF      		db	0ffh
+10B8  FF      		db	0ffh
+10B9  FF      		db	0ffh
+10BA  FF      		db	0ffh
+10BB  FF      		db	0ffh
+10BC  FF      		db	0ffh
+10BD  FF      		db	0ffh
+10BE  FF      		db	0ffh
+10BF  FF      		db	0ffh
+10C0  FF      		db	0ffh
+10C1  FF      		db	0ffh
+10C2  FF      		db	0ffh
+10C3  FF      		db	0ffh
+10C4  FF      		db	0ffh
+10C5  FF      		db	0ffh
+10C6  FF      		db	0ffh
+10C7  FF      		db	0ffh
+10C8  FF      		db	0ffh
+10C9  FF      		db	0ffh
+10CA  FF      		db	0ffh
+10CB  FF      		db	0ffh
+10CC  FF      		db	0ffh
+10CD  FF      		db	0ffh
+10CE  FF      		db	0ffh
+10CF  FF      		db	0ffh
+10D0  FF      		db	0ffh
+10D1  FF      		db	0ffh
+10D2  FF      		db	0ffh
+10D3  FF      		db	0ffh
+10D4  FF      		db	0ffh
+10D5  FF      		db	0ffh
+10D6  FF      		db	0ffh
+10D7  FF      		db	0ffh
+10D8  FF      		db	0ffh
+10D9  FF      		db	0ffh
+10DA  FF      		db	0ffh
+10DB  FF      		db	0ffh
+10DC  FF      		db	0ffh
+10DD  FF      		db	0ffh
+10DE  FF      		db	0ffh
+10DF  FF      		db	0ffh
+10E0  FF      		db	0ffh
+10E1  FF      		db	0ffh
+10E2  FF      		db	0ffh
+10E3  FF      		db	0ffh
+10E4  FF      		db	0ffh
+10E5  FF      		db	0ffh
+10E6  FF      		db	0ffh
+10E7  FF      		db	0ffh
+10E8  FF      		db	0ffh
+10E9  FF      		db	0ffh
+10EA  FF      		db	0ffh
+10EB  FF      		db	0ffh
+10EC  FF      		db	0ffh
+10ED  FF      		db	0ffh
+10EE  FF      		db	0ffh
+10EF  FF      		db	0ffh
+10F0  FF      		db	0ffh
+10F1  FF      		db	0ffh
+10F2  FF      		db	0ffh
+10F3  FF      		db	0ffh
+10F4  FF      		db	0ffh
+10F5  FF      		db	0ffh
+10F6  FF      		db	0ffh
+10F7  FF      		db	0ffh
+10F8  FF      		db	0ffh
+10F9  FF      		db	0ffh
+10FA  FF      		db	0ffh
+10FB  FF      		db	0ffh
+10FC  FF      		db	0ffh
+10FD  FF      		db	0ffh
+10FE  FF      		db	0ffh
+10FF  FF      		db	0ffh
+1100  FF      		db	0ffh
+1101  FF      		db	0ffh
+1102  FF      		db	0ffh
+1103  FF      		db	0ffh
+1104  FF      		db	0ffh
+1105  FF      		db	0ffh
+1106  FF      		db	0ffh
+1107  FF      		db	0ffh
+1108  FF      		db	0ffh
+1109  FF      		db	0ffh
+110A  FF      		db	0ffh
+110B  FF      		db	0ffh
+110C  FF      		db	0ffh
+110D  FF      		db	0ffh
+110E  FF      		db	0ffh
+110F  FF      		db	0ffh
+1110  FF      		db	0ffh
+1111  FF      		db	0ffh
+1112  FF      		db	0ffh
+1113  FF      		db	0ffh
+1114  FF      		db	0ffh
+1115  FF      		db	0ffh
+1116  FF      		db	0ffh
+1117  FF      		db	0ffh
+1118  FF      		db	0ffh
+1119  FF      		db	0ffh
+111A  FF      		db	0ffh
+111B  FF      		db	0ffh
+111C  FF      		db	0ffh
+111D  FF      		db	0ffh
+111E  FF      		db	0ffh
+111F  FF      		db	0ffh
+1120  FF      		db	0ffh
+1121  FF      		db	0ffh
+1122  FF      		db	0ffh
+1123  FF      		db	0ffh
+1124  FF      		db	0ffh
+1125  FF      		db	0ffh
+1126  FF      		db	0ffh
+1127  FF      		db	0ffh
+1128  FF      		db	0ffh
+1129  FF      		db	0ffh
+112A  FF      		db	0ffh
+112B  FF      		db	0ffh
+112C  FF      		db	0ffh
+112D  FF      		db	0ffh
+112E  FF      		db	0ffh
+112F  FF      		db	0ffh
+1130  FF      		db	0ffh
+1131  FF      		db	0ffh
+1132  FF      		db	0ffh
+1133  FF      		db	0ffh
+1134  FF      		db	0ffh
+1135  FF      		db	0ffh
+1136  FF      		db	0ffh
+1137  FF      		db	0ffh
+1138  FF      		db	0ffh
+1139  FF      		db	0ffh
+113A  FF      		db	0ffh
+113B  FF      		db	0ffh
+113C  FF      		db	0ffh
+113D  FF      		db	0ffh
+113E  FF      		db	0ffh
+113F  FF      		db	0ffh
+1140  FF      		db	0ffh
+1141  FF      		db	0ffh
+1142  FF      		db	0ffh
+1143  FF      		db	0ffh
+1144  FF      		db	0ffh
+1145  FF      		db	0ffh
+1146  FF      		db	0ffh
+1147  FF      		db	0ffh
+1148  FF      		db	0ffh
+1149  FF      		db	0ffh
+114A  FF      		db	0ffh
+114B  FF      		db	0ffh
+114C  FF      		db	0ffh
+114D  FF      		db	0ffh
+114E  FF      		db	0ffh
+114F  FF      		db	0ffh
+1150  FF      		db	0ffh
+1151  FF      		db	0ffh
+1152  FF      		db	0ffh
+1153  FF      		db	0ffh
+1154  FF      		db	0ffh
+1155  FF      		db	0ffh
+1156  FF      		db	0ffh
+1157  FF      		db	0ffh
+1158  FF      		db	0ffh
+1159  FF      		db	0ffh
+115A  FF      		db	0ffh
+115B  FF      		db	0ffh
+115C  FF      		db	0ffh
+115D  FF      		db	0ffh
+115E  FF      		db	0ffh
+115F  FF      		db	0ffh
+1160  FF      		db	0ffh
+1161  FF      		db	0ffh
+1162  FF      		db	0ffh
+1163  FF      		db	0ffh
+1164  FF      		db	0ffh
+1165  FF      		db	0ffh
+1166  FF      		db	0ffh
+1167  FF      		db	0ffh
+1168  FF      		db	0ffh
+1169  FF      		db	0ffh
+116A  FF      		db	0ffh
+116B  FF      		db	0ffh
+116C  FF      		db	0ffh
+116D  FF      		db	0ffh
+116E  FF      		db	0ffh
+116F  FF      		db	0ffh
+1170  FF      		db	0ffh
+1171  FF      		db	0ffh
+1172  FF      		db	0ffh
+1173  FF      		db	0ffh
+1174  FF      		db	0ffh
+1175  FF      		db	0ffh
+1176  FF      		db	0ffh
+1177  FF      		db	0ffh
+1178  FF      		db	0ffh
+1179  FF      		db	0ffh
+117A  FF      		db	0ffh
+117B  FF      		db	0ffh
+117C  FF      		db	0ffh
+117D  FF      		db	0ffh
+117E  FF      		db	0ffh
+117F  FF      		db	0ffh
+1180  FF      		db	0ffh
+1181  FF      		db	0ffh
+1182  FF      		db	0ffh
+1183  FF      		db	0ffh
+1184  FF      		db	0ffh
+1185  FF      		db	0ffh
+1186  FF      		db	0ffh
+1187  FF      		db	0ffh
+1188  FF      		db	0ffh
+1189  FF      		db	0ffh
+118A  FF      		db	0ffh
+118B  FF      		db	0ffh
+118C  FF      		db	0ffh
+118D  FF      		db	0ffh
+118E  FF      		db	0ffh
+118F  FF      		db	0ffh
+1190  FF      		db	0ffh
+1191  FF      		db	0ffh
+1192  FF      		db	0ffh
+1193  FF      		db	0ffh
+1194  FF      		db	0ffh
+1195  FF      		db	0ffh
+1196  FF      		db	0ffh
+1197  FF      		db	0ffh
+1198  FF      		db	0ffh
+1199  FF      		db	0ffh
+119A  FF      		db	0ffh
+119B  FF      		db	0ffh
+119C  FF      		db	0ffh
+119D  FF      		db	0ffh
+119E  FF      		db	0ffh
+119F  FF      		db	0ffh
+11A0  FF      		db	0ffh
+11A1  FF      		db	0ffh
+11A2  FF      		db	0ffh
+11A3  FF      		db	0ffh
+11A4  FF      		db	0ffh
+11A5  FF      		db	0ffh
+11A6  FF      		db	0ffh
+11A7  FF      		db	0ffh
+11A8  FF      		db	0ffh
+11A9  FF      		db	0ffh
+11AA  FF      		db	0ffh
+11AB  FF      		db	0ffh
+11AC  FF      		db	0ffh
+11AD  FF      		db	0ffh
+11AE  FF      		db	0ffh
+11AF  FF      		db	0ffh
+11B0  FF      		db	0ffh
+11B1  FF      		db	0ffh
+11B2  FF      		db	0ffh
+11B3  FF      		db	0ffh
+11B4  FF      		db	0ffh
+11B5  FF      		db	0ffh
+11B6  FF      		db	0ffh
+11B7  FF      		db	0ffh
+11B8  FF      		db	0ffh
+11B9  FF      		db	0ffh
+11BA  FF      		db	0ffh
+11BB  FF      		db	0ffh
+11BC  FF      		db	0ffh
+11BD  FF      		db	0ffh
+11BE  FF      		db	0ffh
+11BF  FF      		db	0ffh
+11C0  FF      		db	0ffh
+11C1  FF      		db	0ffh
+11C2  FF      		db	0ffh
+11C3  FF      		db	0ffh
+11C4  FF      		db	0ffh
+11C5  FF      		db	0ffh
+11C6  FF      		db	0ffh
+11C7  FF      		db	0ffh
+11C8  FF      		db	0ffh
+11C9  FF      		db	0ffh
+11CA  FF      		db	0ffh
+11CB  FF      		db	0ffh
+11CC  FF      		db	0ffh
+11CD  FF      		db	0ffh
+11CE  FF      		db	0ffh
+11CF  FF      		db	0ffh
+11D0  FF      		db	0ffh
+11D1  FF      		db	0ffh
+11D2  FF      		db	0ffh
+11D3  FF      		db	0ffh
+11D4  FF      		db	0ffh
+11D5  FF      		db	0ffh
+11D6  FF      		db	0ffh
+11D7  FF      		db	0ffh
+11D8  FF      		db	0ffh
+11D9  FF      		db	0ffh
+11DA  FF      		db	0ffh
+11DB  FF      		db	0ffh
+11DC  FF      		db	0ffh
+11DD  FF      		db	0ffh
+11DE  FF      		db	0ffh
+11DF  FF      		db	0ffh
+11E0  FF      		db	0ffh
+11E1  FF      		db	0ffh
+11E2  FF      		db	0ffh
+11E3  FF      		db	0ffh
+11E4  FF      		db	0ffh
+11E5  FF      		db	0ffh
+11E6  FF      		db	0ffh
+11E7  FF      		db	0ffh
+11E8  FF      		db	0ffh
+11E9  FF      		db	0ffh
+11EA  FF      		db	0ffh
+11EB  FF      		db	0ffh
+11EC  FF      		db	0ffh
+11ED  FF      		db	0ffh
+11EE  FF      		db	0ffh
+11EF  FF      		db	0ffh
+11F0  FF      		db	0ffh
+11F1  FF      		db	0ffh
+11F2  FF      		db	0ffh
+11F3  FF      		db	0ffh
+11F4  FF      		db	0ffh
+11F5  FF      		db	0ffh
+11F6  FF      		db	0ffh
+11F7  FF      		db	0ffh
+11F8  FF      		db	0ffh
+11F9  FF      		db	0ffh
+11FA  FF      		db	0ffh
+11FB  FF      		db	0ffh
+11FC  FF      		db	0ffh
+11FD  FF      		db	0ffh
+11FE  FF      		db	0ffh
+11FF  FF      		db	0ffh
+1200  FF      		db	0ffh
+1201  FF      		db	0ffh
+1202  FF      		db	0ffh
+1203  FF      		db	0ffh
+1204  FF      		db	0ffh
+1205  FF      		db	0ffh
+1206  FF      		db	0ffh
+1207  FF      		db	0ffh
+1208  FF      		db	0ffh
+1209  FF      		db	0ffh
+120A  FF      		db	0ffh
+120B  FF      		db	0ffh
+120C  FF      		db	0ffh
+120D  FF      		db	0ffh
+120E  FF      		db	0ffh
+120F  FF      		db	0ffh
+1210  FF      		db	0ffh
+1211  FF      		db	0ffh
+1212  FF      		db	0ffh
+1213  FF      		db	0ffh
+1214  FF      		db	0ffh
+1215  FF      		db	0ffh
+1216  FF      		db	0ffh
+1217  FF      		db	0ffh
+1218  FF      		db	0ffh
+1219  FF      		db	0ffh
+121A  FF      		db	0ffh
+121B  FF      		db	0ffh
+121C  FF      		db	0ffh
+121D  FF      		db	0ffh
+121E  FF      		db	0ffh
+121F  FF      		db	0ffh
+1220  FF      		db	0ffh
+1221  FF      		db	0ffh
+1222  FF      		db	0ffh
+1223  FF      		db	0ffh
+1224  FF      		db	0ffh
+1225  FF      		db	0ffh
+1226  FF      		db	0ffh
+1227  FF      		db	0ffh
+1228  FF      		db	0ffh
+1229  FF      		db	0ffh
+122A  FF      		db	0ffh
+122B  FF      		db	0ffh
+122C  FF      		db	0ffh
+122D  FF      		db	0ffh
+122E  FF      		db	0ffh
+122F  FF      		db	0ffh
+1230  FF      		db	0ffh
+1231  FF      		db	0ffh
+1232  FF      		db	0ffh
+1233  FF      		db	0ffh
+1234  FF      		db	0ffh
+1235  FF      		db	0ffh
+1236  FF      		db	0ffh
+1237  FF      		db	0ffh
+1238  FF      		db	0ffh
+1239  FF      		db	0ffh
+123A  FF      		db	0ffh
+123B  FF      		db	0ffh
+123C  FF      		db	0ffh
+123D  FF      		db	0ffh
+123E  FF      		db	0ffh
+123F  FF      		db	0ffh
+1240  FF      		db	0ffh
+1241  FF      		db	0ffh
+1242  FF      		db	0ffh
+1243  FF      		db	0ffh
+1244  FF      		db	0ffh
+1245  FF      		db	0ffh
+1246  FF      		db	0ffh
+1247  FF      		db	0ffh
+1248  FF      		db	0ffh
+1249  FF      		db	0ffh
+124A  FF      		db	0ffh
+124B  FF      		db	0ffh
+124C  FF      		db	0ffh
+124D  FF      		db	0ffh
+124E  FF      		db	0ffh
+124F  FF      		db	0ffh
+1250  FF      		db	0ffh
+1251  FF      		db	0ffh
+1252  FF      		db	0ffh
+1253  FF      		db	0ffh
+1254  FF      		db	0ffh
+1255  FF      		db	0ffh
+1256  FF      		db	0ffh
+1257  FF      		db	0ffh
+1258  FF      		db	0ffh
+1259  FF      		db	0ffh
+125A  FF      		db	0ffh
+125B  FF      		db	0ffh
+125C  FF      		db	0ffh
+125D  FF      		db	0ffh
+125E  FF      		db	0ffh
+125F  FF      		db	0ffh
+1260  FF      		db	0ffh
+1261  FF      		db	0ffh
+1262  FF      		db	0ffh
+1263  FF      		db	0ffh
+1264  FF      		db	0ffh
+1265  FF      		db	0ffh
+1266  FF      		db	0ffh
+1267  FF      		db	0ffh
+1268  FF      		db	0ffh
+1269  FF      		db	0ffh
+126A  FF      		db	0ffh
+126B  FF      		db	0ffh
+126C  FF      		db	0ffh
+126D  FF      		db	0ffh
+126E  FF      		db	0ffh
+126F  FF      		db	0ffh
+1270  FF      		db	0ffh
+1271  FF      		db	0ffh
+1272  FF      		db	0ffh
+1273  FF      		db	0ffh
+1274  FF      		db	0ffh
+1275  FF      		db	0ffh
+1276  FF      		db	0ffh
+1277  FF      		db	0ffh
+1278  FF      		db	0ffh
+1279  FF      		db	0ffh
+127A  FF      		db	0ffh
+127B  FF      		db	0ffh
+127C  FF      		db	0ffh
+127D  FF      		db	0ffh
+127E  FF      		db	0ffh
+127F  FF      		db	0ffh
+1280  FF      		db	0ffh
+1281  FF      		db	0ffh
+1282  FF      		db	0ffh
+1283  FF      		db	0ffh
+1284  FF      		db	0ffh
+1285  FF      		db	0ffh
+1286  FF      		db	0ffh
+1287  FF      		db	0ffh
+1288  FF      		db	0ffh
+1289  FF      		db	0ffh
+128A  FF      		db	0ffh
+128B  FF      		db	0ffh
+128C  FF      		db	0ffh
+128D  FF      		db	0ffh
+128E  FF      		db	0ffh
+128F  FF      		db	0ffh
+1290  FF      		db	0ffh
+1291  FF      		db	0ffh
+1292  FF      		db	0ffh
+1293  FF      		db	0ffh
+1294  FF      		db	0ffh
+1295  FF      		db	0ffh
+1296  FF      		db	0ffh
+1297  FF      		db	0ffh
+1298  FF      		db	0ffh
+1299  FF      		db	0ffh
+129A  FF      		db	0ffh
+129B  FF      		db	0ffh
+129C  FF      		db	0ffh
+129D  FF      		db	0ffh
+129E  FF      		db	0ffh
+129F  FF      		db	0ffh
+12A0  FF      		db	0ffh
+12A1  FF      		db	0ffh
+12A2  FF      		db	0ffh
+12A3  FF      		db	0ffh
+12A4  FF      		db	0ffh
+12A5  FF      		db	0ffh
+12A6  FF      		db	0ffh
+12A7  FF      		db	0ffh
+12A8  FF      		db	0ffh
+12A9  FF      		db	0ffh
+12AA  FF      		db	0ffh
+12AB  FF      		db	0ffh
+12AC  FF      		db	0ffh
+12AD  FF      		db	0ffh
+12AE  FF      		db	0ffh
+12AF  FF      		db	0ffh
+12B0  FF      		db	0ffh
+12B1  FF      		db	0ffh
+12B2  FF      		db	0ffh
+12B3  FF      		db	0ffh
+12B4  FF      		db	0ffh
+12B5  FF      		db	0ffh
+12B6  FF      		db	0ffh
+12B7  FF      		db	0ffh
+12B8  FF      		db	0ffh
+12B9  FF      		db	0ffh
+12BA  FF      		db	0ffh
+12BB  FF      		db	0ffh
+12BC  FF      		db	0ffh
+12BD  FF      		db	0ffh
+12BE  FF      		db	0ffh
+12BF  FF      		db	0ffh
+12C0  FF      		db	0ffh
+12C1  FF      		db	0ffh
+12C2  FF      		db	0ffh
+12C3  FF      		db	0ffh
+12C4  FF      		db	0ffh
+12C5  FF      		db	0ffh
+12C6  FF      		db	0ffh
+12C7  FF      		db	0ffh
+12C8  FF      		db	0ffh
+12C9  FF      		db	0ffh
+12CA  FF      		db	0ffh
+12CB  FF      		db	0ffh
+12CC  FF      		db	0ffh
+12CD  FF      		db	0ffh
+12CE  FF      		db	0ffh
+12CF  FF      		db	0ffh
+12D0  FF      		db	0ffh
+12D1  FF      		db	0ffh
+12D2  FF      		db	0ffh
+12D3  FF      		db	0ffh
+12D4  FF      		db	0ffh
+12D5  FF      		db	0ffh
+12D6  FF      		db	0ffh
+12D7  FF      		db	0ffh
+12D8  FF      		db	0ffh
+12D9  FF      		db	0ffh
+12DA  FF      		db	0ffh
+12DB  FF      		db	0ffh
+12DC  FF      		db	0ffh
+12DD  FF      		db	0ffh
+12DE  FF      		db	0ffh
+12DF  FF      		db	0ffh
+12E0  FF      		db	0ffh
+12E1  FF      		db	0ffh
+12E2  FF      		db	0ffh
+12E3  FF      		db	0ffh
+12E4  FF      		db	0ffh
+12E5  FF      		db	0ffh
+12E6  FF      		db	0ffh
+12E7  FF      		db	0ffh
+12E8  FF      		db	0ffh
+12E9  FF      		db	0ffh
+12EA  FF      		db	0ffh
+12EB  FF      		db	0ffh
+12EC  FF      		db	0ffh
+12ED  FF      		db	0ffh
+12EE  FF      		db	0ffh
+12EF  FF      		db	0ffh
+12F0  FF      		db	0ffh
+12F1  FF      		db	0ffh
+12F2  FF      		db	0ffh
+12F3  FF      		db	0ffh
+12F4  FF      		db	0ffh
+12F5  FF      		db	0ffh
+12F6  FF      		db	0ffh
+12F7  FF      		db	0ffh
+12F8  FF      		db	0ffh
+12F9  FF      		db	0ffh
+12FA  FF      		db	0ffh
+12FB  FF      		db	0ffh
+12FC  FF      		db	0ffh
+12FD  FF      		db	0ffh
+12FE  FF      		db	0ffh
+12FF  FF      		db	0ffh
+1300  FF      		db	0ffh
+1301  FF      		db	0ffh
+1302  FF      		db	0ffh
+1303  FF      		db	0ffh
+1304  FF      		db	0ffh
+1305  FF      		db	0ffh
+1306  FF      		db	0ffh
+1307  FF      		db	0ffh
+1308  FF      		db	0ffh
+1309  FF      		db	0ffh
+130A  FF      		db	0ffh
+130B  FF      		db	0ffh
+130C  FF      		db	0ffh
+130D  FF      		db	0ffh
+130E  FF      		db	0ffh
+130F  FF      		db	0ffh
+1310  FF      		db	0ffh
+1311  FF      		db	0ffh
+1312  FF      		db	0ffh
+1313  FF      		db	0ffh
+1314  FF      		db	0ffh
+1315  FF      		db	0ffh
+1316  FF      		db	0ffh
+1317  FF      		db	0ffh
+1318  FF      		db	0ffh
+1319  FF      		db	0ffh
+131A  FF      		db	0ffh
+131B  FF      		db	0ffh
+131C  FF      		db	0ffh
+131D  FF      		db	0ffh
+131E  FF      		db	0ffh
+131F  FF      		db	0ffh
+1320  FF      		db	0ffh
+1321  FF      		db	0ffh
+1322  FF      		db	0ffh
+1323  FF      		db	0ffh
+1324  FF      		db	0ffh
+1325  FF      		db	0ffh
+1326  FF      		db	0ffh
+1327  FF      		db	0ffh
+1328  FF      		db	0ffh
+1329  FF      		db	0ffh
+132A  FF      		db	0ffh
+132B  FF      		db	0ffh
+132C  FF      		db	0ffh
+132D  FF      		db	0ffh
+132E  FF      		db	0ffh
+132F  FF      		db	0ffh
+1330  FF      		db	0ffh
+1331  FF      		db	0ffh
+1332  FF      		db	0ffh
+1333  FF      		db	0ffh
+1334  FF      		db	0ffh
+1335  FF      		db	0ffh
+1336  FF      		db	0ffh
+1337  FF      		db	0ffh
+1338  FF      		db	0ffh
+1339  FF      		db	0ffh
+133A  FF      		db	0ffh
+133B  FF      		db	0ffh
+133C  FF      		db	0ffh
+133D  FF      		db	0ffh
+133E  FF      		db	0ffh
+133F  FF      		db	0ffh
+1340  FF      		db	0ffh
+1341  FF      		db	0ffh
+1342  FF      		db	0ffh
+1343  FF      		db	0ffh
+1344  FF      		db	0ffh
+1345  FF      		db	0ffh
+1346  FF      		db	0ffh
+1347  FF      		db	0ffh
+1348  FF      		db	0ffh
+1349  FF      		db	0ffh
+134A  FF      		db	0ffh
+134B  FF      		db	0ffh
+134C  FF      		db	0ffh
+134D  FF      		db	0ffh
+134E  FF      		db	0ffh
+134F  FF      		db	0ffh
+1350  FF      		db	0ffh
+1351  FF      		db	0ffh
+1352  FF      		db	0ffh
+1353  FF      		db	0ffh
+1354  FF      		db	0ffh
+1355  FF      		db	0ffh
+1356  FF      		db	0ffh
+1357  FF      		db	0ffh
+1358  FF      		db	0ffh
+1359  FF      		db	0ffh
+135A  FF      		db	0ffh
+135B  FF      		db	0ffh
+135C  FF      		db	0ffh
+135D  FF      		db	0ffh
+135E  FF      		db	0ffh
+135F  FF      		db	0ffh
+1360  FF      		db	0ffh
+1361  FF      		db	0ffh
+1362  FF      		db	0ffh
+1363  FF      		db	0ffh
+1364  FF      		db	0ffh
+1365  FF      		db	0ffh
+1366  FF      		db	0ffh
+1367  FF      		db	0ffh
+1368  FF      		db	0ffh
+1369  FF      		db	0ffh
+136A  FF      		db	0ffh
+136B  FF      		db	0ffh
+136C  FF      		db	0ffh
+136D  FF      		db	0ffh
+136E  FF      		db	0ffh
+136F  FF      		db	0ffh
+1370  FF      		db	0ffh
+1371  FF      		db	0ffh
+1372  FF      		db	0ffh
+1373  FF      		db	0ffh
+1374  FF      		db	0ffh
+1375  FF      		db	0ffh
+1376  FF      		db	0ffh
+1377  FF      		db	0ffh
+1378  FF      		db	0ffh
+1379  FF      		db	0ffh
+137A  FF      		db	0ffh
+137B  FF      		db	0ffh
+137C  FF      		db	0ffh
+137D  FF      		db	0ffh
+137E  FF      		db	0ffh
+137F  FF      		db	0ffh
+1380  FF      		db	0ffh
+1381  FF      		db	0ffh
+1382  FF      		db	0ffh
+1383  FF      		db	0ffh
+1384  FF      		db	0ffh
+1385  FF      		db	0ffh
+1386  FF      		db	0ffh
+1387  FF      		db	0ffh
+1388  FF      		db	0ffh
+1389  FF      		db	0ffh
+138A  FF      		db	0ffh
+138B  FF      		db	0ffh
+138C  FF      		db	0ffh
+138D  FF      		db	0ffh
+138E  FF      		db	0ffh
+138F  FF      		db	0ffh
+1390  FF      		db	0ffh
+1391  FF      		db	0ffh
+1392  FF      		db	0ffh
+1393  FF      		db	0ffh
+1394  FF      		db	0ffh
+1395  FF      		db	0ffh
+1396  FF      		db	0ffh
+1397  FF      		db	0ffh
+1398  FF      		db	0ffh
+1399  FF      		db	0ffh
+139A  FF      		db	0ffh
+139B  FF      		db	0ffh
+139C  FF      		db	0ffh
+139D  FF      		db	0ffh
+139E  FF      		db	0ffh
+139F  FF      		db	0ffh
+13A0  FF      		db	0ffh
+13A1  FF      		db	0ffh
+13A2  FF      		db	0ffh
+13A3  FF      		db	0ffh
+13A4  FF      		db	0ffh
+13A5  FF      		db	0ffh
+13A6  FF      		db	0ffh
+13A7  FF      		db	0ffh
+13A8  FF      		db	0ffh
+13A9  FF      		db	0ffh
+13AA  FF      		db	0ffh
+13AB  FF      		db	0ffh
+13AC  FF      		db	0ffh
+13AD  FF      		db	0ffh
+13AE  FF      		db	0ffh
+13AF  FF      		db	0ffh
+13B0  FF      		db	0ffh
+13B1  FF      		db	0ffh
+13B2  FF      		db	0ffh
+13B3  FF      		db	0ffh
+13B4  FF      		db	0ffh
+13B5  FF      		db	0ffh
+13B6  FF      		db	0ffh
+13B7  FF      		db	0ffh
+13B8  FF      		db	0ffh
+13B9  FF      		db	0ffh
+13BA  FF      		db	0ffh
+13BB  FF      		db	0ffh
+13BC  FF      		db	0ffh
+13BD  FF      		db	0ffh
+13BE  FF      		db	0ffh
+13BF  FF      		db	0ffh
+13C0  FF      		db	0ffh
+13C1  FF      		db	0ffh
+13C2  FF      		db	0ffh
+13C3  FF      		db	0ffh
+13C4  FF      		db	0ffh
+13C5  FF      		db	0ffh
+13C6  FF      		db	0ffh
+13C7  FF      		db	0ffh
+13C8  FF      		db	0ffh
+13C9  FF      		db	0ffh
+13CA  FF      		db	0ffh
+13CB  FF      		db	0ffh
+13CC  FF      		db	0ffh
+13CD  FF      		db	0ffh
+13CE  FF      		db	0ffh
+13CF  FF      		db	0ffh
+13D0  FF      		db	0ffh
+13D1  FF      		db	0ffh
+13D2  FF      		db	0ffh
+13D3  FF      		db	0ffh
+13D4  FF      		db	0ffh
+13D5  FF      		db	0ffh
+13D6  FF      		db	0ffh
+13D7  FF      		db	0ffh
+13D8  FF      		db	0ffh
+13D9  FF      		db	0ffh
+13DA  FF      		db	0ffh
+13DB  FF      		db	0ffh
+13DC  FF      		db	0ffh
+13DD  FF      		db	0ffh
+13DE  FF      		db	0ffh
+13DF  FF      		db	0ffh
+13E0  FF      		db	0ffh
+13E1  FF      		db	0ffh
+13E2  FF      		db	0ffh
+13E3  FF      		db	0ffh
+13E4  FF      		db	0ffh
+13E5  FF      		db	0ffh
+13E6  FF      		db	0ffh
+13E7  FF      		db	0ffh
+13E8  FF      		db	0ffh
+13E9  FF      		db	0ffh
+13EA  FF      		db	0ffh
+13EB  FF      		db	0ffh
+13EC  FF      		db	0ffh
+13ED  FF      		db	0ffh
+13EE  FF      		db	0ffh
+13EF  FF      		db	0ffh
+13F0  FF      		db	0ffh
+13F1  FF      		db	0ffh
+13F2  FF      		db	0ffh
+13F3  FF      		db	0ffh
+13F4  FF      		db	0ffh
+13F5  FF      		db	0ffh
+13F6  FF      		db	0ffh
+13F7  FF      		db	0ffh
+13F8  FF      		db	0ffh
+13F9  FF      		db	0ffh
+13FA  FF      		db	0ffh
+13FB  FF      		db	0ffh
+13FC  FF      		db	0ffh
+13FD  FF      		db	0ffh
+13FE  FF      		db	0ffh
+13FF  FF      		db	0ffh
+1400  FF      		db	0ffh
+1401  FF      		db	0ffh
+1402  FF      		db	0ffh
+1403  FF      		db	0ffh
+1404  FF      		db	0ffh
+1405  FF      		db	0ffh
+1406  FF      		db	0ffh
+1407  FF      		db	0ffh
+1408  FF      		db	0ffh
+1409  FF      		db	0ffh
+140A  FF      		db	0ffh
+140B  FF      		db	0ffh
+140C  FF      		db	0ffh
+140D  FF      		db	0ffh
+140E  FF      		db	0ffh
+140F  FF      		db	0ffh
+1410  FF      		db	0ffh
+1411  FF      		db	0ffh
+1412  FF      		db	0ffh
+1413  FF      		db	0ffh
+1414  FF      		db	0ffh
+1415  FF      		db	0ffh
+1416  FF      		db	0ffh
+1417  FF      		db	0ffh
+1418  FF      		db	0ffh
+1419  FF      		db	0ffh
+141A  FF      		db	0ffh
+141B  FF      		db	0ffh
+141C  FF      		db	0ffh
+141D  FF      		db	0ffh
+141E  FF      		db	0ffh
+141F  FF      		db	0ffh
+1420  FF      		db	0ffh
+1421  FF      		db	0ffh
+1422  FF      		db	0ffh
+1423  FF      		db	0ffh
+1424  FF      		db	0ffh
+1425  FF      		db	0ffh
+1426  FF      		db	0ffh
+1427  FF      		db	0ffh
+1428  FF      		db	0ffh
+1429  FF      		db	0ffh
+142A  FF      		db	0ffh
+142B  FF      		db	0ffh
+142C  FF      		db	0ffh
+142D  FF      		db	0ffh
+142E  FF      		db	0ffh
+142F  FF      		db	0ffh
+1430  FF      		db	0ffh
+1431  FF      		db	0ffh
+1432  FF      		db	0ffh
+1433  FF      		db	0ffh
+1434  FF      		db	0ffh
+1435  FF      		db	0ffh
+1436  FF      		db	0ffh
+1437  FF      		db	0ffh
+1438  FF      		db	0ffh
+1439  FF      		db	0ffh
+143A  FF      		db	0ffh
+143B  FF      		db	0ffh
+143C  FF      		db	0ffh
+143D  FF      		db	0ffh
+143E  FF      		db	0ffh
+143F  FF      		db	0ffh
+1440  FF      		db	0ffh
+1441  FF      		db	0ffh
+1442  FF      		db	0ffh
+1443  FF      		db	0ffh
+1444  FF      		db	0ffh
+1445  FF      		db	0ffh
+1446  FF      		db	0ffh
+1447  FF      		db	0ffh
+1448  FF      		db	0ffh
+1449  FF      		db	0ffh
+144A  FF      		db	0ffh
+144B  FF      		db	0ffh
+144C  FF      		db	0ffh
+144D  FF      		db	0ffh
+144E  FF      		db	0ffh
+144F  FF      		db	0ffh
+1450  FF      		db	0ffh
+1451  FF      		db	0ffh
+1452  FF      		db	0ffh
+1453  FF      		db	0ffh
+1454  FF      		db	0ffh
+1455  FF      		db	0ffh
+1456  FF      		db	0ffh
+1457  FF      		db	0ffh
+1458  FF      		db	0ffh
+1459  FF      		db	0ffh
+145A  FF      		db	0ffh
+145B  FF      		db	0ffh
+145C  FF      		db	0ffh
+145D  FF      		db	0ffh
+145E  FF      		db	0ffh
+145F  FF      		db	0ffh
+1460  FF      		db	0ffh
+1461  FF      		db	0ffh
+1462  FF      		db	0ffh
+1463  FF      		db	0ffh
+1464  FF      		db	0ffh
+1465  FF      		db	0ffh
+1466  FF      		db	0ffh
+1467  FF      		db	0ffh
+1468  FF      		db	0ffh
+1469  FF      		db	0ffh
+146A  FF      		db	0ffh
+146B  FF      		db	0ffh
+146C  FF      		db	0ffh
+146D  FF      		db	0ffh
+146E  FF      		db	0ffh
+146F  FF      		db	0ffh
+1470  FF      		db	0ffh
+1471  FF      		db	0ffh
+1472  FF      		db	0ffh
+1473  FF      		db	0ffh
+1474  FF      		db	0ffh
+1475  FF      		db	0ffh
+1476  FF      		db	0ffh
+1477  FF      		db	0ffh
+1478  FF      		db	0ffh
+1479  FF      		db	0ffh
+147A  FF      		db	0ffh
+147B  FF      		db	0ffh
+147C  FF      		db	0ffh
+147D  FF      		db	0ffh
+147E  FF      		db	0ffh
+147F  FF      		db	0ffh
+1480  FF      		db	0ffh
+1481  FF      		db	0ffh
+1482  FF      		db	0ffh
+1483  FF      		db	0ffh
+1484  FF      		db	0ffh
+1485  FF      		db	0ffh
+1486  FF      		db	0ffh
+1487  FF      		db	0ffh
+1488  FF      		db	0ffh
+1489  FF      		db	0ffh
+148A  FF      		db	0ffh
+148B  FF      		db	0ffh
+148C  FF      		db	0ffh
+148D  FF      		db	0ffh
+148E  FF      		db	0ffh
+148F  FF      		db	0ffh
+1490  FF      		db	0ffh
+1491  FF      		db	0ffh
+1492  FF      		db	0ffh
+1493  FF      		db	0ffh
+1494  FF      		db	0ffh
+1495  FF      		db	0ffh
+1496  FF      		db	0ffh
+1497  FF      		db	0ffh
+1498  FF      		db	0ffh
+1499  FF      		db	0ffh
+149A  FF      		db	0ffh
+149B  FF      		db	0ffh
+149C  FF      		db	0ffh
+149D  FF      		db	0ffh
+149E  FF      		db	0ffh
+149F  FF      		db	0ffh
+14A0  FF      		db	0ffh
+14A1  FF      		db	0ffh
+14A2  FF      		db	0ffh
+14A3  FF      		db	0ffh
+14A4  FF      		db	0ffh
+14A5  FF      		db	0ffh
+14A6  FF      		db	0ffh
+14A7  FF      		db	0ffh
+14A8  FF      		db	0ffh
+14A9  FF      		db	0ffh
+14AA  FF      		db	0ffh
+14AB  FF      		db	0ffh
+14AC  FF      		db	0ffh
+14AD  FF      		db	0ffh
+14AE  FF      		db	0ffh
+14AF  FF      		db	0ffh
+14B0  FF      		db	0ffh
+14B1  FF      		db	0ffh
+14B2  FF      		db	0ffh
+14B3  FF      		db	0ffh
+14B4  FF      		db	0ffh
+14B5  FF      		db	0ffh
+14B6  FF      		db	0ffh
+14B7  FF      		db	0ffh
+14B8  FF      		db	0ffh
+14B9  FF      		db	0ffh
+14BA  FF      		db	0ffh
+14BB  FF      		db	0ffh
+14BC  FF      		db	0ffh
+14BD  FF      		db	0ffh
+14BE  FF      		db	0ffh
+14BF  FF      		db	0ffh
+14C0  FF      		db	0ffh
+14C1  FF      		db	0ffh
+14C2  FF      		db	0ffh
+14C3  FF      		db	0ffh
+14C4  FF      		db	0ffh
+14C5  FF      		db	0ffh
+14C6  FF      		db	0ffh
+14C7  FF      		db	0ffh
+14C8  FF      		db	0ffh
+14C9  FF      		db	0ffh
+14CA  FF      		db	0ffh
+14CB  FF      		db	0ffh
+14CC  FF      		db	0ffh
+14CD  FF      		db	0ffh
+14CE  FF      		db	0ffh
+14CF  FF      		db	0ffh
+14D0  FF      		db	0ffh
+14D1  FF      		db	0ffh
+14D2  FF      		db	0ffh
+14D3  FF      		db	0ffh
+14D4  FF      		db	0ffh
+14D5  FF      		db	0ffh
+14D6  FF      		db	0ffh
+14D7  FF      		db	0ffh
+14D8  FF      		db	0ffh
+14D9  FF      		db	0ffh
+14DA  FF      		db	0ffh
+14DB  FF      		db	0ffh
+14DC  FF      		db	0ffh
+14DD  FF      		db	0ffh
+14DE  FF      		db	0ffh
+14DF  FF      		db	0ffh
+14E0  FF      		db	0ffh
+14E1  FF      		db	0ffh
+14E2  FF      		db	0ffh
+14E3  FF      		db	0ffh
+14E4  FF      		db	0ffh
+14E5  FF      		db	0ffh
+14E6  FF      		db	0ffh
+14E7  FF      		db	0ffh
+14E8  FF      		db	0ffh
+14E9  FF      		db	0ffh
+14EA  FF      		db	0ffh
+14EB  FF      		db	0ffh
+14EC  FF      		db	0ffh
+14ED  FF      		db	0ffh
+14EE  FF      		db	0ffh
+14EF  FF      		db	0ffh
+14F0  FF      		db	0ffh
+14F1  FF      		db	0ffh
+14F2  FF      		db	0ffh
+14F3  FF      		db	0ffh
+14F4  FF      		db	0ffh
+14F5  FF      		db	0ffh
+14F6  FF      		db	0ffh
+14F7  FF      		db	0ffh
+14F8  FF      		db	0ffh
+14F9  FF      		db	0ffh
+14FA  FF      		db	0ffh
+14FB  FF      		db	0ffh
+14FC  FF      		db	0ffh
+14FD  FF      		db	0ffh
+14FE  FF      		db	0ffh
+14FF  FF      		db	0ffh
+1500  FF      		db	0ffh
+1501  FF      		db	0ffh
+1502  FF      		db	0ffh
+1503  FF      		db	0ffh
+1504  FF      		db	0ffh
+1505  FF      		db	0ffh
+1506  FF      		db	0ffh
+1507  FF      		db	0ffh
+1508  FF      		db	0ffh
+1509  FF      		db	0ffh
+150A  FF      		db	0ffh
+150B  FF      		db	0ffh
+150C  FF      		db	0ffh
+150D  FF      		db	0ffh
+150E  FF      		db	0ffh
+150F  FF      		db	0ffh
+1510  FF      		db	0ffh
+1511  FF      		db	0ffh
+1512  FF      		db	0ffh
+1513  FF      		db	0ffh
+1514  FF      		db	0ffh
+1515  FF      		db	0ffh
+1516  FF      		db	0ffh
+1517  FF      		db	0ffh
+1518  FF      		db	0ffh
+1519  FF      		db	0ffh
+151A  FF      		db	0ffh
+151B  FF      		db	0ffh
+151C  FF      		db	0ffh
+151D  FF      		db	0ffh
+151E  FF      		db	0ffh
+151F  FF      		db	0ffh
+1520  FF      		db	0ffh
+1521  FF      		db	0ffh
+1522  FF      		db	0ffh
+1523  FF      		db	0ffh
+1524  FF      		db	0ffh
+1525  FF      		db	0ffh
+1526  FF      		db	0ffh
+1527  FF      		db	0ffh
+1528  FF      		db	0ffh
+1529  FF      		db	0ffh
+152A  FF      		db	0ffh
+152B  FF      		db	0ffh
+152C  FF      		db	0ffh
+152D  FF      		db	0ffh
+152E  FF      		db	0ffh
+152F  FF      		db	0ffh
+1530  FF      		db	0ffh
+1531  FF      		db	0ffh
+1532  FF      		db	0ffh
+1533  FF      		db	0ffh
+1534  FF      		db	0ffh
+1535  FF      		db	0ffh
+1536  FF      		db	0ffh
+1537  FF      		db	0ffh
+1538  FF      		db	0ffh
+1539  FF      		db	0ffh
+153A  FF      		db	0ffh
+153B  FF      		db	0ffh
+153C  FF      		db	0ffh
+153D  FF      		db	0ffh
+153E  FF      		db	0ffh
+153F  FF      		db	0ffh
+1540  FF      		db	0ffh
+1541  FF      		db	0ffh
+1542  FF      		db	0ffh
+1543  FF      		db	0ffh
+1544  FF      		db	0ffh
+1545  FF      		db	0ffh
+1546  FF      		db	0ffh
+1547  FF      		db	0ffh
+1548  FF      		db	0ffh
+1549  FF      		db	0ffh
+154A  FF      		db	0ffh
+154B  FF      		db	0ffh
+154C  FF      		db	0ffh
+154D  FF      		db	0ffh
+154E  FF      		db	0ffh
+154F  FF      		db	0ffh
+1550  FF      		db	0ffh
+1551  FF      		db	0ffh
+1552  FF      		db	0ffh
+1553  FF      		db	0ffh
+1554  FF      		db	0ffh
+1555  FF      		db	0ffh
+1556  FF      		db	0ffh
+1557  FF      		db	0ffh
+1558  FF      		db	0ffh
+1559  FF      		db	0ffh
+155A  FF      		db	0ffh
+155B  FF      		db	0ffh
+155C  FF      		db	0ffh
+155D  FF      		db	0ffh
+155E  FF      		db	0ffh
+155F  FF      		db	0ffh
+1560  FF      		db	0ffh
+1561  FF      		db	0ffh
+1562  FF      		db	0ffh
+1563  FF      		db	0ffh
+1564  FF      		db	0ffh
+1565  FF      		db	0ffh
+1566  FF      		db	0ffh
+1567  FF      		db	0ffh
+1568  FF      		db	0ffh
+1569  FF      		db	0ffh
+156A  FF      		db	0ffh
+156B  FF      		db	0ffh
+156C  FF      		db	0ffh
+156D  FF      		db	0ffh
+156E  FF      		db	0ffh
+156F  FF      		db	0ffh
+1570  FF      		db	0ffh
+1571  FF      		db	0ffh
+1572  FF      		db	0ffh
+1573  FF      		db	0ffh
+1574  FF      		db	0ffh
+1575  FF      		db	0ffh
+1576  FF      		db	0ffh
+1577  FF      		db	0ffh
+1578  FF      		db	0ffh
+1579  FF      		db	0ffh
+157A  FF      		db	0ffh
+157B  FF      		db	0ffh
+157C  FF      		db	0ffh
+157D  FF      		db	0ffh
+157E  FF      		db	0ffh
+157F  FF      		db	0ffh
+1580  FF      		db	0ffh
+1581  FF      		db	0ffh
+1582  FF      		db	0ffh
+1583  FF      		db	0ffh
+1584  FF      		db	0ffh
+1585  FF      		db	0ffh
+1586  FF      		db	0ffh
+1587  FF      		db	0ffh
+1588  FF      		db	0ffh
+1589  FF      		db	0ffh
+158A  FF      		db	0ffh
+158B  FF      		db	0ffh
+158C  FF      		db	0ffh
+158D  FF      		db	0ffh
+158E  FF      		db	0ffh
+158F  FF      		db	0ffh
+1590  FF      		db	0ffh
+1591  FF      		db	0ffh
+1592  FF      		db	0ffh
+1593  FF      		db	0ffh
+1594  FF      		db	0ffh
+1595  FF      		db	0ffh
+1596  FF      		db	0ffh
+1597  FF      		db	0ffh
+1598  FF      		db	0ffh
+1599  FF      		db	0ffh
+159A  FF      		db	0ffh
+159B  FF      		db	0ffh
+159C  FF      		db	0ffh
+159D  FF      		db	0ffh
+159E  FF      		db	0ffh
+159F  FF      		db	0ffh
+15A0  FF      		db	0ffh
+15A1  FF      		db	0ffh
+15A2  FF      		db	0ffh
+15A3  FF      		db	0ffh
+15A4  FF      		db	0ffh
+15A5  FF      		db	0ffh
+15A6  FF      		db	0ffh
+15A7  FF      		db	0ffh
+15A8  FF      		db	0ffh
+15A9  FF      		db	0ffh
+15AA  FF      		db	0ffh
+15AB  FF      		db	0ffh
+15AC  FF      		db	0ffh
+15AD  FF      		db	0ffh
+15AE  FF      		db	0ffh
+15AF  FF      		db	0ffh
+15B0  FF      		db	0ffh
+15B1  FF      		db	0ffh
+15B2  FF      		db	0ffh
+15B3  FF      		db	0ffh
+15B4  FF      		db	0ffh
+15B5  FF      		db	0ffh
+15B6  FF      		db	0ffh
+15B7  FF      		db	0ffh
+15B8  FF      		db	0ffh
+15B9  FF      		db	0ffh
+15BA  FF      		db	0ffh
+15BB  FF      		db	0ffh
+15BC  FF      		db	0ffh
+15BD  FF      		db	0ffh
+15BE  FF      		db	0ffh
+15BF  FF      		db	0ffh
+15C0  FF      		db	0ffh
+15C1  FF      		db	0ffh
+15C2  FF      		db	0ffh
+15C3  FF      		db	0ffh
+15C4  FF      		db	0ffh
+15C5  FF      		db	0ffh
+15C6  FF      		db	0ffh
+15C7  FF      		db	0ffh
+15C8  FF      		db	0ffh
+15C9  FF      		db	0ffh
+15CA  FF      		db	0ffh
+15CB  FF      		db	0ffh
+15CC  FF      		db	0ffh
+15CD  FF      		db	0ffh
+15CE  FF      		db	0ffh
+15CF  FF      		db	0ffh
+15D0  FF      		db	0ffh
+15D1  FF      		db	0ffh
+15D2  FF      		db	0ffh
+15D3  FF      		db	0ffh
+15D4  FF      		db	0ffh
+15D5  FF      		db	0ffh
+15D6  FF      		db	0ffh
+15D7  FF      		db	0ffh
+15D8  FF      		db	0ffh
+15D9  FF      		db	0ffh
+15DA  FF      		db	0ffh
+15DB  FF      		db	0ffh
+15DC  FF      		db	0ffh
+15DD  FF      		db	0ffh
+15DE  FF      		db	0ffh
+15DF  FF      		db	0ffh
+15E0  FF      		db	0ffh
+15E1  FF      		db	0ffh
+15E2  FF      		db	0ffh
+15E3  FF      		db	0ffh
+15E4  FF      		db	0ffh
+15E5  FF      		db	0ffh
+15E6  FF      		db	0ffh
+15E7  FF      		db	0ffh
+15E8  FF      		db	0ffh
+15E9  FF      		db	0ffh
+15EA  FF      		db	0ffh
+15EB  FF      		db	0ffh
+15EC  FF      		db	0ffh
+15ED  FF      		db	0ffh
+15EE  FF      		db	0ffh
+15EF  FF      		db	0ffh
+15F0  FF      		db	0ffh
+15F1  FF      		db	0ffh
+15F2  FF      		db	0ffh
+15F3  FF      		db	0ffh
+15F4  FF      		db	0ffh
+15F5  FF      		db	0ffh
+15F6  FF      		db	0ffh
+15F7  FF      		db	0ffh
+15F8  FF      		db	0ffh
+15F9  FF      		db	0ffh
+15FA  FF      		db	0ffh
+15FB  FF      		db	0ffh
+15FC  FF      		db	0ffh
+15FD  FF      		db	0ffh
+15FE  FF      		db	0ffh
+15FF  FF      		db	0ffh
+1600  FF      		db	0ffh
+1601  FF      		db	0ffh
+1602  FF      		db	0ffh
+1603  FF      		db	0ffh
+1604  FF      		db	0ffh
+1605  FF      		db	0ffh
+1606  FF      		db	0ffh
+1607  FF      		db	0ffh
+1608  FF      		db	0ffh
+1609  FF      		db	0ffh
+160A  FF      		db	0ffh
+160B  FF      		db	0ffh
+160C  FF      		db	0ffh
+160D  FF      		db	0ffh
+160E  FF      		db	0ffh
+160F  FF      		db	0ffh
+1610  FF      		db	0ffh
+1611  FF      		db	0ffh
+1612  FF      		db	0ffh
+1613  FF      		db	0ffh
+1614  FF      		db	0ffh
+1615  FF      		db	0ffh
+1616  FF      		db	0ffh
+1617  FF      		db	0ffh
+1618  FF      		db	0ffh
+1619  FF      		db	0ffh
+161A  FF      		db	0ffh
+161B  FF      		db	0ffh
+161C  FF      		db	0ffh
+161D  FF      		db	0ffh
+161E  FF      		db	0ffh
+161F  FF      		db	0ffh
+1620  FF      		db	0ffh
+1621  FF      		db	0ffh
+1622  FF      		db	0ffh
+1623  FF      		db	0ffh
+1624  FF      		db	0ffh
+1625  FF      		db	0ffh
+1626  FF      		db	0ffh
+1627  FF      		db	0ffh
+1628  FF      		db	0ffh
+1629  FF      		db	0ffh
+162A  FF      		db	0ffh
+162B  FF      		db	0ffh
+162C  FF      		db	0ffh
+162D  FF      		db	0ffh
+162E  FF      		db	0ffh
+162F  FF      		db	0ffh
+1630  FF      		db	0ffh
+1631  FF      		db	0ffh
+1632  FF      		db	0ffh
+1633  FF      		db	0ffh
+1634  FF      		db	0ffh
+1635  FF      		db	0ffh
+1636  FF      		db	0ffh
+1637  FF      		db	0ffh
+1638  FF      		db	0ffh
+1639  FF      		db	0ffh
+163A  FF      		db	0ffh
+163B  FF      		db	0ffh
+163C  FF      		db	0ffh
+163D  FF      		db	0ffh
+163E  FF      		db	0ffh
+163F  FF      		db	0ffh
+1640  FF      		db	0ffh
+1641  FF      		db	0ffh
+1642  FF      		db	0ffh
+1643  FF      		db	0ffh
+1644  FF      		db	0ffh
+1645  FF      		db	0ffh
+1646  FF      		db	0ffh
+1647  FF      		db	0ffh
+1648  FF      		db	0ffh
+1649  FF      		db	0ffh
+164A  FF      		db	0ffh
+164B  FF      		db	0ffh
+164C  FF      		db	0ffh
+164D  FF      		db	0ffh
+164E  FF      		db	0ffh
+164F  FF      		db	0ffh
+1650  FF      		db	0ffh
+1651  FF      		db	0ffh
+1652  FF      		db	0ffh
+1653  FF      		db	0ffh
+1654  FF      		db	0ffh
+1655  FF      		db	0ffh
+1656  FF      		db	0ffh
+1657  FF      		db	0ffh
+1658  FF      		db	0ffh
+1659  FF      		db	0ffh
+165A  FF      		db	0ffh
+165B  FF      		db	0ffh
+165C  FF      		db	0ffh
+165D  FF      		db	0ffh
+165E  FF      		db	0ffh
+165F  FF      		db	0ffh
+1660  FF      		db	0ffh
+1661  FF      		db	0ffh
+1662  FF      		db	0ffh
+1663  FF      		db	0ffh
+1664  FF      		db	0ffh
+1665  FF      		db	0ffh
+1666  FF      		db	0ffh
+1667  FF      		db	0ffh
+1668  FF      		db	0ffh
+1669  FF      		db	0ffh
+166A  FF      		db	0ffh
+166B  FF      		db	0ffh
+166C  FF      		db	0ffh
+166D  FF      		db	0ffh
+166E  FF      		db	0ffh
+166F  FF      		db	0ffh
+1670  FF      		db	0ffh
+1671  FF      		db	0ffh
+1672  FF      		db	0ffh
+1673  FF      		db	0ffh
+1674  FF      		db	0ffh
+1675  FF      		db	0ffh
+1676  FF      		db	0ffh
+1677  FF      		db	0ffh
+1678  FF      		db	0ffh
+1679  FF      		db	0ffh
+167A  FF      		db	0ffh
+167B  FF      		db	0ffh
+167C  FF      		db	0ffh
+167D  FF      		db	0ffh
+167E  FF      		db	0ffh
+167F  FF      		db	0ffh
+1680  FF      		db	0ffh
+1681  FF      		db	0ffh
+1682  FF      		db	0ffh
+1683  FF      		db	0ffh
+1684  FF      		db	0ffh
+1685  FF      		db	0ffh
+1686  FF      		db	0ffh
+1687  FF      		db	0ffh
+1688  FF      		db	0ffh
+1689  FF      		db	0ffh
+168A  FF      		db	0ffh
+168B  FF      		db	0ffh
+168C  FF      		db	0ffh
+168D  FF      		db	0ffh
+168E  FF      		db	0ffh
+168F  FF      		db	0ffh
+1690  FF      		db	0ffh
+1691  FF      		db	0ffh
+1692  FF      		db	0ffh
+1693  FF      		db	0ffh
+1694  FF      		db	0ffh
+1695  FF      		db	0ffh
+1696  FF      		db	0ffh
+1697  FF      		db	0ffh
+1698  FF      		db	0ffh
+1699  FF      		db	0ffh
+169A  FF      		db	0ffh
+169B  FF      		db	0ffh
+169C  FF      		db	0ffh
+169D  FF      		db	0ffh
+169E  FF      		db	0ffh
+169F  FF      		db	0ffh
+16A0  FF      		db	0ffh
+16A1  FF      		db	0ffh
+16A2  FF      		db	0ffh
+16A3  FF      		db	0ffh
+16A4  FF      		db	0ffh
+16A5  FF      		db	0ffh
+16A6  FF      		db	0ffh
+16A7  FF      		db	0ffh
+16A8  FF      		db	0ffh
+16A9  FF      		db	0ffh
+16AA  FF      		db	0ffh
+16AB  FF      		db	0ffh
+16AC  FF      		db	0ffh
+16AD  FF      		db	0ffh
+16AE  FF      		db	0ffh
+16AF  FF      		db	0ffh
+16B0  FF      		db	0ffh
+16B1  FF      		db	0ffh
+16B2  FF      		db	0ffh
+16B3  FF      		db	0ffh
+16B4  FF      		db	0ffh
+16B5  FF      		db	0ffh
+16B6  FF      		db	0ffh
+16B7  FF      		db	0ffh
+16B8  FF      		db	0ffh
+16B9  FF      		db	0ffh
+16BA  FF      		db	0ffh
+16BB  FF      		db	0ffh
+16BC  FF      		db	0ffh
+16BD  FF      		db	0ffh
+16BE  FF      		db	0ffh
+16BF  FF      		db	0ffh
+16C0  FF      		db	0ffh
+16C1  FF      		db	0ffh
+16C2  FF      		db	0ffh
+16C3  FF      		db	0ffh
+16C4  FF      		db	0ffh
+16C5  FF      		db	0ffh
+16C6  FF      		db	0ffh
+16C7  FF      		db	0ffh
+16C8  FF      		db	0ffh
+16C9  FF      		db	0ffh
+16CA  FF      		db	0ffh
+16CB  FF      		db	0ffh
+16CC  FF      		db	0ffh
+16CD  FF      		db	0ffh
+16CE  FF      		db	0ffh
+16CF  FF      		db	0ffh
+16D0  FF      		db	0ffh
+16D1  FF      		db	0ffh
+16D2  FF      		db	0ffh
+16D3  FF      		db	0ffh
+16D4  FF      		db	0ffh
+16D5  FF      		db	0ffh
+16D6  FF      		db	0ffh
+16D7  FF      		db	0ffh
+16D8  FF      		db	0ffh
+16D9  FF      		db	0ffh
+16DA  FF      		db	0ffh
+16DB  FF      		db	0ffh
+16DC  FF      		db	0ffh
+16DD  FF      		db	0ffh
+16DE  FF      		db	0ffh
+16DF  FF      		db	0ffh
+16E0  FF      		db	0ffh
+16E1  FF      		db	0ffh
+16E2  FF      		db	0ffh
+16E3  FF      		db	0ffh
+16E4  FF      		db	0ffh
+16E5  FF      		db	0ffh
+16E6  FF      		db	0ffh
+16E7  FF      		db	0ffh
+16E8  FF      		db	0ffh
+16E9  FF      		db	0ffh
+16EA  FF      		db	0ffh
+16EB  FF      		db	0ffh
+16EC  FF      		db	0ffh
+16ED  FF      		db	0ffh
+16EE  FF      		db	0ffh
+16EF  FF      		db	0ffh
+16F0  FF      		db	0ffh
+16F1  FF      		db	0ffh
+16F2  FF      		db	0ffh
+16F3  FF      		db	0ffh
+16F4  FF      		db	0ffh
+16F5  FF      		db	0ffh
+16F6  FF      		db	0ffh
+16F7  FF      		db	0ffh
+16F8  FF      		db	0ffh
+16F9  FF      		db	0ffh
+16FA  FF      		db	0ffh
+16FB  FF      		db	0ffh
+16FC  FF      		db	0ffh
+16FD  FF      		db	0ffh
+16FE  FF      		db	0ffh
+16FF  FF      		db	0ffh
+1700  FF      		db	0ffh
+1701  FF      		db	0ffh
+1702  FF      		db	0ffh
+1703  FF      		db	0ffh
+1704  FF      		db	0ffh
+1705  FF      		db	0ffh
+1706  FF      		db	0ffh
+1707  FF      		db	0ffh
+1708  FF      		db	0ffh
+1709  FF      		db	0ffh
+170A  FF      		db	0ffh
+170B  FF      		db	0ffh
+170C  FF      		db	0ffh
+170D  FF      		db	0ffh
+170E  FF      		db	0ffh
+170F  FF      		db	0ffh
+1710  FF      		db	0ffh
+1711  FF      		db	0ffh
+1712  FF      		db	0ffh
+1713  FF      		db	0ffh
+1714  FF      		db	0ffh
+1715  FF      		db	0ffh
+1716  FF      		db	0ffh
+1717  FF      		db	0ffh
+1718  FF      		db	0ffh
+1719  FF      		db	0ffh
+171A  FF      		db	0ffh
+171B  FF      		db	0ffh
+171C  FF      		db	0ffh
+171D  FF      		db	0ffh
+171E  FF      		db	0ffh
+171F  FF      		db	0ffh
+1720  FF      		db	0ffh
+1721  FF      		db	0ffh
+1722  FF      		db	0ffh
+1723  FF      		db	0ffh
+1724  FF      		db	0ffh
+1725  FF      		db	0ffh
+1726  FF      		db	0ffh
+1727  FF      		db	0ffh
+1728  FF      		db	0ffh
+1729  FF      		db	0ffh
+172A  FF      		db	0ffh
+172B  FF      		db	0ffh
+172C  FF      		db	0ffh
+172D  FF      		db	0ffh
+172E  FF      		db	0ffh
+172F  FF      		db	0ffh
+1730  FF      		db	0ffh
+1731  FF      		db	0ffh
+1732  FF      		db	0ffh
+1733  FF      		db	0ffh
+1734  FF      		db	0ffh
+1735  FF      		db	0ffh
+1736  FF      		db	0ffh
+1737  FF      		db	0ffh
+1738  FF      		db	0ffh
+1739  FF      		db	0ffh
+173A  FF      		db	0ffh
+173B  FF      		db	0ffh
+173C  FF      		db	0ffh
+173D  FF      		db	0ffh
+173E  FF      		db	0ffh
+173F  FF      		db	0ffh
+1740  FF      		db	0ffh
+1741  FF      		db	0ffh
+1742  FF      		db	0ffh
+1743  FF      		db	0ffh
+1744  FF      		db	0ffh
+1745  FF      		db	0ffh
+1746  FF      		db	0ffh
+1747  FF      		db	0ffh
+1748  FF      		db	0ffh
+1749  FF      		db	0ffh
+174A  FF      		db	0ffh
+174B  FF      		db	0ffh
+174C  FF      		db	0ffh
+174D  FF      		db	0ffh
+174E  FF      		db	0ffh
+174F  FF      		db	0ffh
+1750  FF      		db	0ffh
+1751  FF      		db	0ffh
+1752  FF      		db	0ffh
+1753  FF      		db	0ffh
+1754  FF      		db	0ffh
+1755  FF      		db	0ffh
+1756  FF      		db	0ffh
+1757  FF      		db	0ffh
+1758  FF      		db	0ffh
+1759  FF      		db	0ffh
+175A  FF      		db	0ffh
+175B  FF      		db	0ffh
+175C  FF      		db	0ffh
+175D  FF      		db	0ffh
+175E  FF      		db	0ffh
+175F  FF      		db	0ffh
+1760  FF      		db	0ffh
+1761  FF      		db	0ffh
+1762  FF      		db	0ffh
+1763  FF      		db	0ffh
+1764  FF      		db	0ffh
+1765  FF      		db	0ffh
+1766  FF      		db	0ffh
+1767  FF      		db	0ffh
+1768  FF      		db	0ffh
+1769  FF      		db	0ffh
+176A  FF      		db	0ffh
+176B  FF      		db	0ffh
+176C  FF      		db	0ffh
+176D  FF      		db	0ffh
+176E  FF      		db	0ffh
+176F  FF      		db	0ffh
+1770  FF      		db	0ffh
+1771  FF      		db	0ffh
+1772  FF      		db	0ffh
+1773  FF      		db	0ffh
+1774  FF      		db	0ffh
+1775  FF      		db	0ffh
+1776  FF      		db	0ffh
+1777  FF      		db	0ffh
+1778  FF      		db	0ffh
+1779  FF      		db	0ffh
+177A  FF      		db	0ffh
+177B  FF      		db	0ffh
+177C  FF      		db	0ffh
+177D  FF      		db	0ffh
+177E  FF      		db	0ffh
+177F  FF      		db	0ffh
+1780  FF      		db	0ffh
+1781  FF      		db	0ffh
+1782  FF      		db	0ffh
+1783  FF      		db	0ffh
+1784  FF      		db	0ffh
+1785  FF      		db	0ffh
+1786  FF      		db	0ffh
+1787  FF      		db	0ffh
+1788  FF      		db	0ffh
+1789  FF      		db	0ffh
+178A  FF      		db	0ffh
+178B  FF      		db	0ffh
+178C  FF      		db	0ffh
+178D  FF      		db	0ffh
+178E  FF      		db	0ffh
+178F  FF      		db	0ffh
+1790  FF      		db	0ffh
+1791  FF      		db	0ffh
+1792  FF      		db	0ffh
+1793  FF      		db	0ffh
+1794  FF      		db	0ffh
+1795  FF      		db	0ffh
+1796  FF      		db	0ffh
+1797  FF      		db	0ffh
+1798  FF      		db	0ffh
+1799  FF      		db	0ffh
+179A  FF      		db	0ffh
+179B  FF      		db	0ffh
+179C  FF      		db	0ffh
+179D  FF      		db	0ffh
+179E  FF      		db	0ffh
+179F  FF      		db	0ffh
+17A0  FF      		db	0ffh
+17A1  FF      		db	0ffh
+17A2  FF      		db	0ffh
+17A3  FF      		db	0ffh
+17A4  FF      		db	0ffh
+17A5  FF      		db	0ffh
+17A6  FF      		db	0ffh
+17A7  FF      		db	0ffh
+17A8  FF      		db	0ffh
+17A9  FF      		db	0ffh
+17AA  FF      		db	0ffh
+17AB  FF      		db	0ffh
+17AC  FF      		db	0ffh
+17AD  FF      		db	0ffh
+17AE  FF      		db	0ffh
+17AF  FF      		db	0ffh
+17B0  FF      		db	0ffh
+17B1  FF      		db	0ffh
+17B2  FF      		db	0ffh
+17B3  FF      		db	0ffh
+17B4  FF      		db	0ffh
+17B5  FF      		db	0ffh
+17B6  FF      		db	0ffh
+17B7  FF      		db	0ffh
+17B8  FF      		db	0ffh
+17B9  FF      		db	0ffh
+17BA  FF      		db	0ffh
+17BB  FF      		db	0ffh
+17BC  FF      		db	0ffh
+17BD  FF      		db	0ffh
+17BE  FF      		db	0ffh
+17BF  FF      		db	0ffh
+17C0  FF      		db	0ffh
+17C1  FF      		db	0ffh
+17C2  FF      		db	0ffh
+17C3  FF      		db	0ffh
+17C4  FF      		db	0ffh
+17C5  FF      		db	0ffh
+17C6  FF      		db	0ffh
+17C7  FF      		db	0ffh
+17C8  FF      		db	0ffh
+17C9  FF      		db	0ffh
+17CA  FF      		db	0ffh
+17CB  FF      		db	0ffh
+17CC  FF      		db	0ffh
+17CD  FF      		db	0ffh
+17CE  FF      		db	0ffh
+17CF  FF      		db	0ffh
+17D0  FF      		db	0ffh
+17D1  FF      		db	0ffh
+17D2  FF      		db	0ffh
+17D3  FF      		db	0ffh
+17D4  FF      		db	0ffh
+17D5  FF      		db	0ffh
+17D6  FF      		db	0ffh
+17D7  FF      		db	0ffh
+17D8  FF      		db	0ffh
+17D9  FF      		db	0ffh
+17DA  FF      		db	0ffh
+17DB  FF      		db	0ffh
+17DC  FF      		db	0ffh
+17DD  FF      		db	0ffh
+17DE  FF      		db	0ffh
+17DF  FF      		db	0ffh
+17E0  FF      		db	0ffh
+17E1  FF      		db	0ffh
+17E2  FF      		db	0ffh
+17E3  FF      		db	0ffh
+17E4  FF      		db	0ffh
+17E5  FF      		db	0ffh
+17E6  FF      		db	0ffh
+17E7  FF      		db	0ffh
+17E8  FF      		db	0ffh
+17E9  FF      		db	0ffh
+17EA  FF      		db	0ffh
+17EB  FF      		db	0ffh
+17EC  FF      		db	0ffh
+17ED  FF      		db	0ffh
+17EE  FF      		db	0ffh
+17EF  FF      		db	0ffh
+17F0  FF      		db	0ffh
+17F1  FF      		db	0ffh
+17F2  FF      		db	0ffh
+17F3  FF      		db	0ffh
+17F4  FF      		db	0ffh
+17F5  FF      		db	0ffh
+17F6  FF      		db	0ffh
+17F7  FF      		db	0ffh
+17F8  FF      		db	0ffh
+17F9  FF      		db	0ffh
+17FA  FF      		db	0ffh
+17FB  FF      		db	0ffh
+17FC  FF      		db	0ffh
+17FD  FF      		db	0ffh
+17FE  FF      		db	0ffh
+17FF  FF      		db	0ffh
+0000          	if	($ <> 1800h)
+		endif
+1800          		end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   364	symbols
+  6144	bytes
+
+  3236	macro calls
+  4032	macro bytes
+     0	invented symbols
