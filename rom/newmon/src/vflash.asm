@@ -1,6 +1,6 @@
 ; Stand-Alone Program to flash the ROM from an image on VDIP1 USB stick
-VERN	equ	10h
-	maclib	z80
+VERN	equ	09h
+	maclib	z180
 
 CR	equ	13
 LF	equ	10
@@ -12,6 +12,11 @@ monrom	equ	4096	; length of first contig block in ROM (monitor)
 romlen	equ	8000h	; full ROM is 32K
 rombeg	equ	0000h	; start of ROM runtime image (in-place)
 romend	equ	rombeg+romlen	; end of in-place ROM
+K16	equ	16384	; constant: 16K
+
+mmu$cbr	equ	38h
+mmu$bbr	equ	39h
+mmu$cbar equ	3ah
 
 ; buffer used to hold ROM image for flashing.
 ; NOTE: the first monrom bytes will be destroyed during flash.
@@ -32,8 +37,16 @@ ctl$F2	equ	2036h
 	cseg
 begin:
 	lxi	sp,stack
+	call	cpu$type
+	sta	z180	; 'true' if a Z180
 	lxi	d,signon
 	call	msgout
+	lda	z180
+	ora	a
+	jrz	begin0
+	lxi	d,mz180
+	call	msgout
+begin0:	call	crlf
 	; 2mS clock is needed for accessing VDIP1 (timeouts)
 	lxi	h,ctl$F0
 	mov	a,m
@@ -61,7 +74,7 @@ go1:	lxi	h,opr
 	jc	nofile
 	lxi	h,imgbuf	; 4k below end of ROM
 loop0:	call	vdrd
-	jrc	rderr
+	jc	rderr
 	call	progress
 	mov	a,h
 	cpi	HIGH imgtop
@@ -69,21 +82,58 @@ loop0:	call	vdrd
 	; one more read, should be error (EOF)
 	lxi	h,4000h	; a safe place to destroy...
 	call	vdrd
-	jrnc	rderr
+	jnc	rderr
 	call	close
 	lxi	d,imgbuf
 	call	vchksm	; verify checksum
-	jrc	ckerr
+	jc	ckerr
+	; now validate product codes..
+	lhld	imgbuf+0ffeh
+	lded	0ffeh
+	ora	a
+	dsbc	d
+	mov	a,h
+	ora	l
+	jnz	pcerr
 	; now, ready to start flash...
 	lxi	d,ready
 	call	msgout
 	call	linin
-	jrc	cancel
+	jc	cancel
 	; after started, there's no going back...
 	; disable any interruptions, as each page must be
 	; entirely written with strict time constraints
 	; (<<150uS between each byte).
 	di
+	lda	z180
+	ora	a
+	jrz	z80$flash
+; z180$flash:
+	xra	a	; base page of RAM, where we are now.
+	out0	a,mmu$cbr
+	mvi	a,0f8h	; start page of ROM in padr space.
+	out0	a,mmu$bbr
+	mvi	a,0111$0000b	; bnk at 0000, com1 at 7000
+	out0	a,mmu$cbar
+	; 0000-6FFF is ROM...
+	mvi	a,10100000b	; WE, no legacy ROM
+	out	0f2h
+	lxi	h,imgbuf
+	lxi	d,0	; ROM
+	lxi	b,K16/64	; first 16K
+	call	flash
+	jrc	error
+	; now slide window sash for rest of ROM...
+	mvi	a,1000$0000b	; bnk at 0000, com1 at 8000
+	out0	a,mmu$cbar
+	lxi	b,(8000h-K16)/64	; rest of ROM
+	call	flash
+	jrc	error
+	mvi	a,00100000b	; WE off, no legacy ROM
+	out	0f2h
+	jr	comm$flash
+;
+z80$flash:
 	mvi	a,10000000b	; WE, partial ROM
 	out	0f2h
 	lxi	h,imgbuf
@@ -96,13 +146,28 @@ loop0:	call	vdrd
 	lxi	b,(8000h-4096)/64	; rest of ROM
 	call	flash
 	jrc	error
+	mvi	a,00001000b	; WE off, enable full ROM
+	out	0f2h
+comm$flash:	; full ROM still mapped at 0000...
+	; NOTE: first 32K RAM has been trashed...
+	; no point to restoring it in any way.
+	; if we decide to try and return to monitor,
+	; need to go back to legacy mode and jump 0000.
 	lxi	d,0	; ROM
 	call	vchksm
 	jrc	ckerr2
+	; even though RAM is trashed, allow Z180 to
+	; restore ROM even if we don't jump to it.
+	lda	z180
+	ora	a
+	jrz	comm0
+	xra	a
+	out0	a,mmu$bbr	; switch back to normal
+comm0:
 	lxi	d,done
 	call	msgout
 error:
-	xra	a
+	xra	a	; back to RESET state (WE off)
 	out	0f2h
 	; do something smarter...?
 	lxi	d,die
@@ -117,6 +182,9 @@ ckerr2:	lxi	d,cserr
 ckerr:	lxi	d,cserr
 eloop:	call	msgout
 	jmp	over
+
+pcerr:	lxi	d,perr
+	jr	eloop
 
 ; file is still open...
 rderr:	call	close
@@ -134,11 +202,8 @@ close:	lxi	h,clf
 ; safe return to ROM possible?
 cancel:	lxi	d,canc
 	call	msgout
-	mvi	a,CR
-	call	conout
-	mvi	a,LF
-	call	conout
-	call	conout
+	call	crlf
+	call	conout	; another LF
 	di
 	xra	a
 	out	0f2h
@@ -146,10 +211,22 @@ cancel:	lxi	d,canc
 	out	0f0h
 	jmp	0
 
+; Destroys BC and A...
+; Return A==0 for Z80, A<>0 for Z180
+cpu$type:
+	mvi	a,1
+	mlt	b	; NEG if Z80... 01 -> FF
+	sui	0ffh	; FF (Z80): NC,00; else (Z180): CY,nn
+	sbb	a	; FF: Z180, 00: Z80
+	ret
+
+z180:	db	0
 signon:	db	CR,LF,'VFLASH v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
-	db	' - Update ROM from VDIP1',CR,LF,0
+	db	' - Update ROM from VDIP1',0
+mz180:	db	' (Z180)',0
 clf:	db	'clf',CR
+perr:	db	BEL,'ROM image does not match system',CR,LF,0
 cserr:	db	BEL,'ROM image checksum error',CR,LF,0
 fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
 nferr:	db	BEL,'ROM image file not found',CR,LF,0
@@ -333,6 +410,11 @@ progress:
 	pop	b
 	pop	h
 	ret
+
+crlf:	mvi	a,CR
+	call	conout
+	mvi	a,LF
+	jmp	conout
 
 spinx:	db	0
 spin:	db	'-','\','|','/'

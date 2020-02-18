@@ -2187,9 +2187,10 @@ if beta
 endif
 	db	CR,LF,TRM
 
-	rept	1000h-$
+	rept	1000h-$-2
 	db	0ffh
 	endm
+	dw	0ff80h	; product code for Z80
 if	($ <> 1000h)
 	.error 'core ROM overrun'
 endif
