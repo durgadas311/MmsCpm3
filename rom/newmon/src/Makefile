@@ -17,7 +17,7 @@ VERNZ = $(shell awk -f getver.awk h8z180.asm)
 
 all: h8mon2.rom h8mon2z180.rom vflash.sys
 
-zout/%.cim: %.asm core.lib ram.lib vdip1.lib z80.lib
+zout/%.cim: %.asm core.lib ram.lib z80.lib z180.lib
 	zmac --dri -i -8 -c -s -n $<
 	cp $@ ../bin
 	cp zout/$*.lst ../prn
@@ -31,28 +31,11 @@ h8mon2.rom: $(H8MON)
 	cp	$@ ../bin
 
 # Standalone programs
-export CPMDrive_D = $(PWD)
-export CPMDefault = d:
+%.sys:
+	$(MAKE) -C rmac $@
 
-%.rel: %.asm
-	unix2cpm -s $< $*.mac
-	vcpm rmac "$*.mac" '$$SZLA'
-	cp $*.prn ../prn
-
-%.spr: %.rel
-	vcpm link $@=$*'[os,nr]'
-	cp $@ ../bin
-
-vflash.spr: vflash.rel vdip1.rel
-	vcpm link $@=vflash,vdip1'[os,nr]'
-	cp $@ ../bin
-
-%.sys: %.spr
-	mknetboot -x -o $@ $^
-	cp $@ ../bin
-
-ship: vflash.sys h8mon2.rom h8mon2z180.rom ../doc/H8-Monitor-2.pdf
-	rsync -uvW vflash.sys ../doc/H8-Monitor-2.pdf \
+ship: rmac/vflash.sys h8mon2.rom h8mon2z180.rom ../doc/H8-Monitor-2.pdf
+	rsync -uvW rmac/vflash.sys ../doc/H8-Monitor-2.pdf \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/
 	rsync -uvW h8mon2.rom \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom
