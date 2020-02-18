@@ -25,11 +25,13 @@ begin:
 is$z80:	lxi	d,mz80
 is$comm:
 	call	msgout
-	mvi	a,CR
-	call	conout
-	mvi	a,LF
-	call	conout
-done:	di
+	call	crlf
+done:
+	lxi	d,press
+	call	msgout
+	call	conin
+	call	crlf
+	di
 	xra	a
 	out	0f2h
 	mvi	a,0dfh	; reset state of FP
@@ -62,6 +64,7 @@ signon:	db	CR,LF,'VCPU v'
 mz180:	db	'Z180',0
 mz80:	db	'Z80',0
 mcant:	db	' >>>can''t guess CPU type<<<',0
+press:	db	'Press any key: ',0
 
 dump:	push	psw
 	call	hexout
@@ -75,6 +78,18 @@ dump:	push	psw
 	call	conout
 	pop	psw
 	ret
+
+conin:	in	0edh
+	ani	00000001b
+	jrz	conin
+	in	0e8h
+	ani	01111111b
+	ret
+
+crlf:	mvi	a,CR
+	call	conout
+	mvi	a,LF
+	jr	conout
 
 hexout:	push	psw
 	rlc
