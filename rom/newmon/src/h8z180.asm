@@ -4,10 +4,10 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	1
+alpha	equ	2
 beta	equ	0
 
-use$dma	equ	false
+use$dma	equ	true
 
 	maclib	ram
 	maclib	z180
@@ -1104,19 +1104,25 @@ endif
 	jmp	0	; initialized by H47 boot module
 
 if use$dma
-; copy core ROM into 0000 using DMAC
-dmarom:	xra	a
-	out0	a,dar0l
-	out0	a,dar0h
-	out0	a,dar0b	; dest addr 00000
-	out0	a,bcr0l ; low half of byte count
-	out0	a,sar0l
-	mvi	a,80h
-	out0	a,sar0h
-	mvi	a,0fh
-	out0	a,sar0b	; source addr F8000
-	mvi	a,20h	; hi part of byte count
-	out0	a,bcr0h
+; DMA F8000-FA000 into 00000-02000
+; copy core ROM (8K) into 0000 using DMAC
+dmarom:
+	lxi	h,0f80h	; page addr (256B)
+	lxi	d,0000h	; page addr (256B)
+	lxi	b,2000h	; bytes
+; Generic memcpy using DMAC.
+; HL=src, DE=dst, all units 256B "pages".
+; BC=count, units are bytes
+dmacpy:
+	xra	a
+	out0	a,dar0l	; (256B page boundary)
+	out0	e,dar0h ;
+	out0	d,dar0b	; dest addr
+	out0	a,sar0l	; (256B page boundary)
+	out0	l,sar0h ;
+	out0	h,sar0b	; source addr
+	out0	c,bcr0l	;
+	out0	b,bcr0h	; byte count
 	mvi	a,00000010b	; mem2mem, burst mode
 	out0	a,dmode
 	mvi	a,01100000b	; DE0,/DWE0(!/DWE1) - start ch 0
@@ -2028,14 +2034,26 @@ bf1:
 bf9:	; match found, now load into place and init
 	ldx	b,mdpgs
 	ldx	d,mdorg
-	pushix
-	pop	h
+	pushix		;
+	pop	h	; HL=IX (module in logical addr)
 	mvi	e,0
 	mvi	c,0
 	push	d
+if use$dma
+	mov	a,h	; L should (must) be 00... also E...
+	sui	40h	; remove offset of mapping @ 4000h
+	adi	80h	; low byte of 0f80h ROM page addr
+	mov	l,a
+	mvi	a,0fh	; hi byte of 0f80h ROM page addr
+	aci	0
+	mov	h,a	; HL=ROM phy addr
+	mov	e,d	; shift dest addr into page addr
+	mvi	d,0	; always in low memory?
+	call	dmacpy
+else
 	; TODO: avoid redundant load... and init?
-	; TODO: use DMA to avoid overlap complications?
 	ldir
+endif
 	popix	; module load addr
 	; now call init routine... but must restore RAM...
 	xra	a
