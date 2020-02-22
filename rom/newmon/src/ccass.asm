@@ -47,7 +47,7 @@ cass:
 ; end adr => ABUSS
 ; exec adr => Reg[PC]
 rmem:
-	; setup error exit? tpabt -> (tperrx)...
+	call	beep
 load:	lxi	b,0fe00h
 load0:	call	srs	; scan for record start...
 	; DE=leader (8101h)
@@ -110,7 +110,7 @@ tperr:	mov	m,a	; error code
 ; ABUSS=end of save
 ; Reg[PC]=entry/start execution address
 wmem:
-	; setup error exit? tpabt -> (tperrx)...
+	call	beep
 	mvi	a,00000001b	; TxEn
 	out	tpc
 	mvi	a,SYNc
@@ -157,11 +157,11 @@ wmem2:	mov	a,m
 ; turn off tape and beep
 tft:	xra	a
 	out	tpc
-	lxi	h,ctl$F0
+beep:	lxi	h,ctl$F0
 	mov	a,m
 	ani	01111111b	; beep on
 	mov	m,a
-	mvi	a,255
+	mvi	a,200/2
 	call	delay
 	mov	a,m
 	ori	10000000b	; beep off

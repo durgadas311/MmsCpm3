@@ -224,16 +224,16 @@ cmdtab:
 	db	81h ! dw kppbt	; [1]     - Pri Boot
 	db	82h ! dw kpsbt	; [2]     - Sec Boot
 	db	83h ! dw kprdx	; [3]     - Radix Mode
-	db	84h ! dw kpdbg	; [4]     - Go
-	db	85h ! dw kpdbg	; [5]     - Input
-	db	86h ! dw kpdbg	; [6]     - Output
-	db	87h ! dw kpdbg	; [7]     - Single Step
+	db	84h ! dw kpgo	; [4]     - Go
+	db	85h ! dw kpin	; [5]     - Input
+	db	86h ! dw kpout	; [6]     - Output
+	db	87h ! dw kpsst	; [7]     - Single Step
 	db	88h ! dw kptap	; [8]     - Cass Load
 	db	89h ! dw kptap	; [9]     - Cass Store
 	db	8ah ! dw kpnxt	; [A] [+] - Next
 	db	8bh ! dw kpprv	; [B] [-] - Prev
-	db	8ch ! dw kpdbg	; [C] [*] - CANCEL, usually
-	db	8dh ! dw kpdbg	; [D] [/] - Display/Alter
+	db	8ch ! dw kpabt	; [C] [*] - CANCEL, usually
+	db	8dh ! dw kprw	; [D] [/] - Display/Alter
 	db	8eh ! dw kpmem	; [E] [#] - Memory Mode
 	db	8fh ! dw kprgm	; [F] [.] - Register Mode
 numcmd	equ	($-cmdtab)/3
@@ -1055,6 +1055,38 @@ adrin3:	mov	e,m
 	mov	d,m
 	ret
 
+kpgo:
+	mvi	a,11010000b	; MON off
+	sta	ctl$F0
+	pop	h	; discard ret adr
+	jmp	intret	; execute
+
+kpin:	lhld	ABUSS
+	mov	c,h	; port
+	inp	l	; get value
+	shld	ABUSS
+	ret
+
+kpout:	lhld	ABUSS
+	mov	c,h	; port
+	outp	l	; output value
+kpabt:	ret
+
+kprw:	; switch between display/modify
+	lda	DspMod
+	xri	1
+	sta	DspMod
+	ret
+
+kpsst:	; single-step one instruction
+	di
+	lda	ctl$F0
+	xri	00010000b	; disable SS inhibit
+	out	0f0h
+sst1:	sta	ctl$F0
+	pop	h	; discard ret adr
+	jmp	intret	; execute
+
 ; initialize monitor memory at 2000h
 meminit:
 	xra	a
@@ -1332,7 +1364,7 @@ kpmem:	; switch to memory mode - enter address
 	call	iob
 	dcx	h	; HL=low byte of address
 	mvi	b,0
-	stc
+	ora	a	; CY=0
 	call	iob
 	ret		; back to start... TODO: prevent re-prompt
 
@@ -1367,6 +1399,7 @@ kpalter:
 	lhld	ABUSS
 	rrc	; register (else memory)
 	jrc	kpreg
+	stc
 	call	iob
 	inx	h
 	shld	ABUSS
@@ -1436,10 +1469,6 @@ iobo0:	cnc	keyin
 iob0:
 	; TODO: blip to ack entry?
 	ret
-
-; temporary: for debugging
-kpdbg:	call	hexdig
-	jmp	prloop
 
 ; returns with interrupts disabled
 h17init:
