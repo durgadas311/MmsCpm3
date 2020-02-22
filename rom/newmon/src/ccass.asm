@@ -125,7 +125,8 @@ wmem1:	call	wnb
 	call	wnp
 	lhld	tpadr
 	xchg
-	lhld	ABUSS
+	lhld	ABUSS	; last byte to include
+	inx	h	; +1 for all bytes
 	ora	a
 	dsbc	d	; HL=length of data
 	call	wnp
