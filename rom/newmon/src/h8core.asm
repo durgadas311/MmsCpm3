@@ -7,8 +7,17 @@ true	equ	not false
 alpha	equ	0
 beta	equ	2
 
+z180	equ	false
+
 	maclib	ram
+if z180
+	maclib	z180
+use$dma	equ	true
+pcode	equ	0f180h
+else
 	maclib	z80
+pcode	equ	0ff80h
+endif
 	$*macro
 
 CR	equ	13
@@ -24,6 +33,25 @@ ctl$CLK		equ	00000010b	; enable H89 2mS clock (not used here)
 ctl$MEM1	equ	00001000b	; maps full ROM (if !ORG0)
 ctl$ORG0	equ	00100000b	; maps full RAM
 ctl$IO1		equ	10000000b	; enables EEPROM write
+
+if z180
+; Z180 internal registers (I/O ports) - CCR
+itc	equ	34h
+mmu$cbr	equ	38h
+mmu$bbr	equ	39h
+mmu$cbar equ	3ah
+sar0l	equ	20h
+sar0h	equ	21h
+sar0b	equ	22h
+dar0l	equ	23h
+dar0h	equ	24h
+dar0b	equ	25h
+bcr0l	equ	26h
+bcr0h	equ	27h
+dstat	equ	30h
+dmode	equ	31h
+dcntl	equ	32h
+endif
 
 memtest	equ	03000h
 ramboot	equ	0c000h
@@ -44,8 +72,15 @@ mdport	equ	12	; device port, 0 if variable
 mddisp	equ	13	; boot front panel mnemonic
 mdname	equ	16	; boot string
 
+if z180
+; Where ROM is mapped-in for searching...
+btmap	equ	4000h
+btmods	equ	btmap+2000h
+bterom	equ	btmap+8000h
+else
 btmods	equ	2000h	; boot modules start in ROM
 bterom	equ	8000h	; end/size of ROM
+endif
 
 rptcnt	equ	16
 debounce equ	1
@@ -510,6 +545,7 @@ gotit1:	push	b
 	jc	s501er
 	ldx	d,mdbase	; base phy drv num
 gotit:
+	mvi	e,0
 	mvi	a,'-'	; next is optional unit number...
 	call	conout
 	jr	luboot0
@@ -607,6 +643,33 @@ hxboot:	lxi	h,CLOCK
 ; But, right now, ROM is in 0000-7FFF so must copy
 ; core code and switch to RAM...
 init:
+if z180
+; Might arrive here from a TRAP...
+	in0	a,itc
+	bit	7,a
+	jnz	trap
+init0:	lxi	h,0ffffh
+	sphl
+	push	h	; save top on stack
+	; map in 8K of ROM from 0xf8000 into 0x4000
+	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
+	out0	a,mmu$cbar
+	; both CBR and BBR ar "0" - if got here via RESET
+if use$dma
+	; DMA F8000-FA000 into 00000-02000
+	call	dmarom
+else
+	mvi	a,0f8h-04h	; page offset by start
+	out0	a,mmu$bbr
+	lxi	h,04000h
+	lxi	d,0
+	lxi	b,2000h	; copy everything?
+	ldir
+	; restore default map...
+	xra	a	; 00 - reset map to 0000
+	out0	a,mmu$bbr
+endif
+else
 	mvi	a,ctl$MEM1	; MEM1 = full ROM
 	out	0f2h	; enable full ROM
 	lxi	h,0
@@ -616,6 +679,7 @@ init:
 	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
+endif
 	lxi	h,re$entry
 	push	h
 	call	coninit
@@ -1049,6 +1113,38 @@ endif
 	jmp	0	; initialized by H47 boot module
 	db	0
 	jmp	0	; initialized by H47 boot module
+
+if z180
+if use$dma
+; DMA F8000-FA000 into 00000-02000
+; copy core ROM (8K) into 0000 using DMAC
+dmarom:
+	lxi	h,0f80h	; page addr (256B)
+	lxi	d,0000h	; page addr (256B)
+	lxi	b,2000h	; bytes
+; Generic memcpy using DMAC.
+; HL=src, DE=dst, all units 256B "pages".
+; BC=count, units are bytes
+dmacpy:
+	xra	a
+	out0	a,dar0l	; (256B page boundary)
+	out0	e,dar0h ;
+	out0	d,dar0b	; dest addr
+	out0	a,sar0l	; (256B page boundary)
+	out0	l,sar0h ;
+	out0	h,sar0b	; source addr
+	out0	c,bcr0l	;
+	out0	b,bcr0h	; byte count
+	mvi	a,00000010b	; mem2mem, burst mode
+	out0	a,dmode
+	mvi	a,01100000b	; DE0,/DWE0(!/DWE1) - start ch 0
+	out0	a,dstat
+	mvi	c,dstat
+init1:	tstio	01000000b	; wait for DMAC to idle
+	jrnz	init1
+	ret
+endif
+endif
 
 adrin3:	mov	e,m
 	inx	h
@@ -1951,6 +2047,11 @@ bfind:
 	;call	icall
 	;rz
 bfind0:
+if z180
+	; map ROM F8000 into 4000
+	mvi	a,0f8h-04h
+	out0	a,mmu$bbr
+else
 	; must map ROM back in, so prevent interruptions...
 	; also, we loose memory at SP...
 	di
@@ -1962,13 +2063,15 @@ bfind0:
 	ani	not ctl$ORG0	; ORG0 off
 	ori	ctl$MEM1	; MEM1 on
 	out	0f2h
+endif
 	lxix	btmods	; start of modules...
 bf0:	call	icall
 	jrz	bf9
 	ldx	d,mdpgs
 	mvi	e,0
 	dadx	d
-	db 0ddh ! mov	a,h	; mov a,IX(h)
+	pushix
+	pop	psw	; A=IXh
 	cpi	HIGH bterom	; end of ROM
 	jrnc	bf1
 	ldx	a,mdpgs
@@ -1976,29 +2079,58 @@ bf0:	call	icall
 	jrz	bf1
 	cpi	0ffh
 	jrnz	bf0
-bf1:	pop	psw
+bf1:
+if z180
+	xra	a
+	out0	a,mmu$bbr
+else
+	pop	psw
 	out	0f2h
-	stc	; CY = end of list (not found)
 	spiy
 	ei
+endif
+	stc	; CY = end of list (not found)
 	ret
 
 bf9:	; match found, now load into place and init
 	ldx	b,mdpgs
 	ldx	d,mdorg
-	pushix
-	pop	h
+	pushix		;
+	pop	h	; HL=IX (module in logical addr)
 	mvi	e,0
 	mvi	c,0
 	push	d
+if z180
+if use$dma
+	mov	a,h	; L should (must) be 00... also E...
+	sui	40h	; remove offset of mapping @ 4000h
+	adi	80h	; low byte of 0f80h ROM page addr
+	mov	l,a
+	mvi	a,0fh	; hi byte of 0f80h ROM page addr
+	aci	0
+	mov	h,a	; HL=ROM phy addr
+	mov	e,d	; shift dest addr into page addr
+	mvi	d,0	; always in low memory?
+	call	dmacpy
+else
 	; TODO: avoid redundant load... and init?
 	ldir
+endif
+else
+	; TODO: avoid redundant load... and init?
+	ldir
+endif
 	popix	; module load addr
 	; now call init routine... but must restore RAM...
+if z180
+	xra	a
+	out0	a,mmu$bbr
+else
 	pop	psw
 	out	0f2h
 	spiy
 	ei
+endif
 	call	btinit	; CY indicates error, pass along...
 	ret
 
@@ -2061,6 +2193,36 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	70	; -101---- GIDE disk part 0
 	db	60	; -110---- Network
 	db	0ffh	; -111---- none
+
+if z180
+; TODO: preserve CPU regs for debug/front-panel
+trap:
+	pop	h
+	dcx	h
+	bit	6,a
+	jrz	trap0
+	dcx	h
+trap0:
+	mov	b,a
+	mvi	a,1111$1111b
+	out0	a,mmu$cbar
+	xra	a
+	out0	a,mmu$cbr
+	out0	a,mmu$bbr
+	lxi	sp,0ffffh
+	push	h
+	mov	a,b
+	ani	01111111b	; reset TRAP
+	out0	a,itc
+	lxi	h,trpms
+	call	msgout
+	pop	h
+	call	adrout
+	call	crlf
+	jmp	init0
+
+trpms:	db	CR,LF,'*** TRAP ',TRM
+endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Dump command
@@ -2189,7 +2351,11 @@ prtver:
 
 versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-signon:	db	'H8 Monitor v'
+signon:	db	'H8 '
+if z180
+	db	'Z180 '
+endif
+	db	'Monitor v'
 vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 if alpha
 	db	'(alpha',alpha+'0',')'
@@ -2202,7 +2368,7 @@ endif
 	rept	1000h-$-2
 	db	0ffh
 	endm
-	dw	0ff80h	; product code for Z80
+	dw	pcode	; product code for system
 if	($ <> 1000h)
 	.error 'core ROM overrun'
 endif

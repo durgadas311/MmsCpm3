@@ -22,6 +22,9 @@ zout/%.cim: %.asm core.lib ram.lib z80.lib z180.lib
 	cp $@ ../bin
 	cp zout/$*.lst ../prn
 
+h8z180.asm: h8core.asm
+	sed -e 's/z180	equ	false/z180	equ	true/' $? >$@
+
 h8mon2z180.rom: $(H8Z180)
 	cat $(H8Z180) | ../../../tools/cksum -f -w -l 0x8000 >$@
 	cp	$@ ../bin
