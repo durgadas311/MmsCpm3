@@ -9,13 +9,20 @@
 **** z80.lib ****
 **** ccass.asm ****
 		
+		; ASCII control characters
+0002          	STXc	equ	02h
+0016          	SYNc	equ	16h
+		
+00F8          	tpd	equ	0f8h	; data port
+00F9          	tpc	equ	0f9h	; ctrl/status port
+		
 1000          		org	1000h
-1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1000  02      	first:	db	HIGH (last-first)	; +0: num pages
 1001  10      		db	HIGH first		; +1: ORG page
 1002  FF00    		db	255,0	; +2,+3: phy drv base, num
 		
-1004  C31910  		jmp	init	; +4: init entry
-1007  C32110  		jmp	cass	; +7: action entry
+1004  C31D10  		jmp	init	; +4: init entry
+1007  C32610  		jmp	cass	; +7: action entry
 		
 100A  FF      		db	-1	; +10: Command letter
 100B  88      		db	88h	; +11: front panel key
@@ -25,35 +32,231 @@
       65747465
       00
 		
-1019          	init:
-1019  214410  		lxi	h,inimsg
-101C  CD4400  		call	msgout
-101F  AF      		xra	a	; NC
-1020  C9      		ret
+1019  0000    	crcsum:	dw	0
+101B  0000    	savstk:	dw	0
 		
-1021          	cass:
-1021  3A5521  		lda	lstcmd
-1024  FE88    		cpi	88h	; load key
-1026  2807    		jrz	load
-1028          	save:
-1028  213610  		lxi	h,savmsg
-102B  CD4400  		call	msgout
-102E  C9      		ret
-			;
-102F          	load:
-102F  213D10  		lxi	h,lodmsg
-1032  CD4400  		call	msgout
-1035  C9      		ret
+101D          	init:
+101D  3E4E    		mvi	a,01001110b	; 1 stop, no par, 8 data, 16x
+101F  D3F9    		out	tpc
+1021  AF      		xra	a
+1022  D3F9    		out	tpc	; in case it was not "mode" state...
+1024  AF      		xra	a	; NC
+1025  C9      		ret
 		
-1036  0D0A5361	savmsg:	db	13,10,'Save',0
-      766500
-103D  0D0A4C6F	lodmsg:	db	13,10,'Load',0
-      616400
-1044  0D0A4361	inimsg:	db	13,10,'Cassette',0
-      73736574
-      746500
+1026          	cass:
+1026  ED731B10		sspd	savstk
+102A  3A3B20  		lda	lstcmd
+102D  FE88    		cpi	88h	; load key
+102F  2802    		jrz	rmem
+1031  1858    		jr	wmem
 		
-104F  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+		; "read memory" a.k.a. load from cassette
+		; load start => tpadr
+		; end adr => ABUSS
+		; exec adr => Reg[PC]
+1033          	rmem:
+			; setup error exit? tpabt -> (tperrx)...
+1033  0100FE  	load:	lxi	b,0fe00h
+1036  CDF510  	load0:	call	srs	; scan for record start...
+			; DE=leader (8101h)
+			; HA=byte count
+1039  6F      		mov	l,a	; HL=byte count
+103A  EB      		xchg		; DE=byte count, HL=leader
+103B  0D      		dcr	c
+103C  09      		dad	b
+103D  7C      		mov	a,h
+103E  C5      		push	b
+103F  F5      		push	psw	; A=leader(HI)
+1040  E67F    		ani	7fh
+1042  B5      		ora	l
+1043  3E02    		mvi	a,2	; tape header error
+1045  203A    		jrnz	tperr	; wrong type/seq
+1047  CD1211  		call	rnp	; get PC
+104A  44      		mov	b,h
+104B  4F      		mov	c,a	; BC=PC
+104C  D5      		push	d
+104D  111800  		lxi	d,24	; get PC
+1050  2A1D20  		lhld	RegPtr
+1053  19      		dad	d
+1054  D1      		pop	d
+1055  71      		mov	m,c
+1056  23      		inx	h
+1057  70      		mov	m,b	; save PC in Reg[PC]
+1058  CD1211  		call	rnp	; memory load address
+105B  6F      		mov	l,a	; HL=load addr
+105C  220020  		shld	tpadr
+105F  CD1611  	load1:	call	rnb	; data byte
+1062  77      		mov	m,a
+1063  221420  		shld	ABUSS
+1066  23      		inx	h
+1067  1B      		dcx	d
+1068  7A      		mov	a,d
+1069  B3      		ora	e
+106A  20F3    		jrnz	load1
+106C  CD7610  		call	ctc	; verify checksum
+106F  F1      		pop	psw	; A=leader(HI)
+1070  C1      		pop	b	; BC=0fe00h...
+1071  07      		rlc
+1072  386D    		jrc	tft
+1074  18C0    		jr	load0
+		
+1076  CD1211  	ctc:	call	rnp
+1079  2A1910  		lhld	crcsum
+107C  7C      		mov	a,h
+107D  B5      		ora	l
+107E  C8      		rz
+107F  3E01    		mvi	a,1	; checksum error code
+			;jr	tperr
+1081  77      	tperr:	mov	m,a	; error code
+1082  47      		mov	b,a
+1083  CDE110  		call	tft
+1086  ED7B1B10		lspd	savstk
+108A  C9      		ret
+		
+		; "write memory" a.k.a. save to cassette
+		; tpadr=start of save
+		; ABUSS=end of save
+		; Reg[PC]=entry/start execution address
+108B          	wmem:
+			; setup error exit? tpabt -> (tperrx)...
+108B  3E01    		mvi	a,00000001b	; TxEn
+108D  D3F9    		out	tpc
+108F  3E16    		mvi	a,SYNc
+1091  0620    		mvi	b,32
+1093  CD3B11  	wmem1:	call	wnb
+1096  10FB    		djnz	wmem1
+1098  3E02    		mvi	a,STXc
+109A  CD3B11  		call	wnb
+109D  210000  		lxi	h,0
+10A0  221910  		shld	crcsum
+10A3  210181  		lxi	h,8101h
+10A6  CD3611  		call	wnp
+10A9  2A0020  		lhld	tpadr
+10AC  EB      		xchg
+10AD  2A1420  		lhld	ABUSS
+10B0  B7      		ora	a
+10B1  ED52    		dsbc	d	; HL=length of data
+10B3  CD3611  		call	wnp
+10B6  E5      		push	h
+10B7  D5      		push	d
+10B8  111800  		lxi	d,24	; get PC
+10BB  2A1D20  		lhld	RegPtr
+10BE  19      		dad	d
+10BF  7E      		mov	a,m
+10C0  23      		inx	h
+10C1  66      		mov	h,m
+10C2  6F      		mov	l,a
+10C3  CD3611  		call	wnp
+10C6  E1      		pop	h	; former DE content
+10C7  D1      		pop	d	; former HL content
+10C8  CD3611  		call	wnp
+10CB  7E      	wmem2:	mov	a,m
+10CC  CD3B11  		call	wnb
+10CF  221420  		shld	ABUSS
+10D2  23      		inx	h
+10D3  1B      		dcx	d
+10D4  7A      		mov	a,d
+10D5  B3      		ora	e
+10D6  20F3    		jrnz	wmem2
+10D8  2A1910  		lhld	crcsum
+10DB  CD3611  		call	wnp
+10DE  CD3611  		call	wnp
+		; turn off tape and beep
+10E1  AF      	tft:	xra	a
+10E2  D3F9    		out	tpc
+10E4  210920  		lxi	h,ctl$F0
+10E7  7E      		mov	a,m
+10E8  E67F    		ani	01111111b	; beep on
+10EA  77      		mov	m,a
+10EB  3EFF    		mvi	a,255
+10ED  CD2B00  		call	delay
+10F0  7E      		mov	a,m
+10F1  F680    		ori	10000000b	; beep off
+10F3  77      		mov	m,a
+10F4  C9      		ret
+		
+		; scan for header...
+		; Returns DE=leader, HA=byte count
+10F5  210000  	srs:	lxi	h,0
+10F8  54      		mov	d,h
+10F9  CD1611  	srs2:	call	rnb
+10FC  14      		inr	d
+10FD  FE16    		cpi	SYNc
+10FF  28F8    		jrz	srs2
+1101  FE02    		cpi	STXc
+1103  20F0    		jrnz	srs
+1105  3E0A    		mvi	a,10
+1107  BA      		cmp	d
+1108  30EB    		jrnc	srs
+110A  221910  		shld	crcsum	; zero checksum
+110D  CD1211  		call	rnp	; leader code
+1110  54      		mov	d,h
+1111  5F      		mov	e,a
+			;jr	rnp	; byte count
+		; returns H=first byte, A=second byte
+1112  CD1611  	rnp:	call	rnb
+1115  67      		mov	h,a
+			;jr	rnb
+1116  3E34    	rnb:	mvi	a,00110100b	; Err reset, RTS, RxEn, no DTR
+1118  D3F9    		out	tpc
+111A  CD2511  	rnb1:	call	tpxit
+111D  E602    		ani	00000010b	; RxR
+111F  28F9    		jrz	rnb1
+1121  DBF8    		in	tpd
+1123  1825    		jr	crc
+		
+1125  3A3A20  	tpxit:	lda	kpchar
+1128  FE6F    		cpi	01101111b	; cancel?
+112A  DBF9    		in	tpc
+112C  C0      		rnz
+112D  AF      		xra	a
+112E  323A20  		sta	kpchar
+1131  ED7B1B10		lspd	savstk
+1135  C9      		ret
+		
+		; HL=two bytes to save, big endian
+1136  7C      	wnp:	mov	a,h
+1137  CD3B11  		call	wnb
+113A  7D      		mov	a,l
+			; jr	wnb
+113B  F5      	wnb:	push	psw
+113C  CD2511  	wnb1:	call	tpxit	; check for cancel...
+113F  E601    		ani	00000001b	; TxRdy
+1141  28F9    		jrz	wnb1
+1143  3E11    		mvi	a,00010001b	; TxEn, Err reset
+1145  D3F9    		out	tpc
+1147  F1      		pop	psw
+1148  D3F8    		out	tpd
+			;jr	crc
+		; A=data byte
+114A  C5      	crc:	push	b
+114B  E5      		push	h
+114C  0608    		mvi	b,8
+114E  2A1910  		lhld	crcsum
+1151  07      	crc1:	rlc
+1152  4F      		mov	c,a
+1153  CB25    		slar	l
+1155  CB14    		ralr	h
+1157  7C      		mov	a,h
+1158  17      		ral
+1159  A9      		xra	c
+115A  0F      		rrc
+115B  3008    		jrnc	crc2
+115D  7C      		mov	a,h
+115E  EE80    		xri	80h
+1160  67      		mov	h,a
+1161  7D      		mov	a,l
+1162  EE05    		xri	05h
+1164  6F      		mov	l,a
+1165  79      	crc2:	mov	a,c
+1166  10E9    		djnz	crc1
+			; A was RLCed 8 times, back to original value
+1168  221910  		shld	crcsum
+116B  E1      		pop	h
+116C  C1      		pop	b
+116D  C9      		ret
+		
+116E  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -89,19 +292,11 @@
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FF
+      FFFF
 0000          	if ($ > 1800h)
 		endif
 		
-1100          	last:	end
+1200          	last:	end
 
 
 
@@ -109,9 +304,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-    74	symbols
-   256	bytes
+    98	symbols
+   512	bytes
 
-   180	macro calls
+   200	macro calls
   3759	macro bytes
      0	invented symbols

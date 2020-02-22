@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	1
+beta	equ	2
 
 	maclib	ram
 	maclib	z80
@@ -133,7 +133,7 @@ int1$cont:
 intsetup:
 	exx
 	exaf
-	xthl
+	xthl	; HL=PC (ret adr)
 	push	d
 	push	b
 	push	psw
@@ -144,18 +144,18 @@ intsetup:
 	push	b
 	pushiy
 	pushix
-	push	h
+	push	h	; save PC
 	exx
 	exaf
-	xthl
+	xthl		; HL=PC
 	push	d
 	push	b
 	push	psw
-	xchg
+	xchg		; DE=PC
 	lxi	h,nReg-2
 	dad	sp
 	push	h
-	push	d
+	push	d	; save PC
 	lxi	d,ctl$F0
 	ldax	d
 	cma
@@ -163,7 +163,7 @@ intsetup:
 	rz
 	lxi	h,2
 	dad	sp
-	shld	monstk
+	shld	monstk	; a.k.a. RegPtr
 	ret
 
 re$entry:		; re-entry point for errors, etc.
@@ -624,24 +624,7 @@ init:
 	lxi	h,signon
 	call	msgout
 	; save registers on stack, for debugger access...
-	xthl
-	push	d
-	push	b
-	push	psw
-	xchg
-	lxi	h,10
-	dad	sp
-	push	h
-	push	d
-	lxi	d,ctl$F0
-	ldax	d
-	cma
-	ani	030h
-	rz
-	lxi	h,2
-	dad	sp
-	shld	monstk
-	ret
+	jmp	intsetup
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Substitute command
