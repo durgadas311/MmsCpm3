@@ -787,9 +787,9 @@ adrin2:
 	call	conout
 	xchg
 	pop	h
-	mov	m,d
-	dcx	h
 	mov	m,e
+	inx	h
+	mov	m,d
 	ret
 
 hexbin:
@@ -1146,7 +1146,8 @@ init1:	tstio	01000000b	; wait for DMAC to idle
 endif
 endif
 
-adrin3:	mov	e,m
+adrin3:	pop	h
+	mov	e,m
 	inx	h
 	mov	d,m
 	ret
