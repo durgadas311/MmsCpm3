@@ -295,19 +295,21 @@ icall:	pchl
 cmdpc:
 	lxi	h,pcms
 	call	msgout
-	lxi	h,12
-	dad	sp
+	lhld	RegPtr
+	lxi	d,24	; Reg[PC]
+	dad	d
 	mov	e,m
 	inx	h
 	mov	d,m
-	xchg
+	dcx	h
+	xchg		; HL=PC, DE=adr to store
 	call	inhexcr
-	jrc	cmdpc0
-	call	adrnl
-	call	inhexcr
-	rnc
+	jrc	cmdpc0	; hex digit entered
+	call	adrnl	; show current PC (HL)
+	call	inhexcr	; get another char
+	rnc	; CR entered, don't update value
 cmdpc0:
-	xchg
+	xchg	; HL=adr to store
 cmdpc1:
 	mvi	d,CR
 	jmp	adrin
@@ -318,14 +320,15 @@ cmdpc1:
 cmdgo:
 	lxi	h,goms
 	call	msgout
-	lxi	h,13
-	dad	sp
+	lhld	RegPtr
+	lxi	d,24	; Reg[PC]
+	dad	d	; HL=adr to store
 	call	inhexcr
-	cc	cmdpc1	; read HEX until CR
+	cc	cmdpc1	; read HEX until CR, store in HL
 	call	crlf
 	mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
 	jr	cmdgo0
-	di
+	di	; TODO: dead code? single-step...
 	lda	ctl$F0
 	xri	010h	; toggle single-step
 	out	0f0h
@@ -759,7 +762,7 @@ conot1:
 ; HL=location to store address
 ; CY=first digit in A
 adrin:
-	push	h
+	push	h	; adr to store value
 	cnc	conin
 	cmp	d	; no input?
 	jz	adrin3
@@ -815,6 +818,7 @@ hexchk:
 	cmc
 	ret
 
+; HL = adr to print
 adrnl:
 	call	crlf
 adrout:
