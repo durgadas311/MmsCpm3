@@ -698,7 +698,7 @@ endif
 cmdsub:
 	lxi	h,subms
 	call	msgout
-	lxi	h,l2003h
+	lxi	h,ABUSS
 	ora	a	; NC
 	mvi	d,CR
 	call	adrin
@@ -1206,8 +1206,8 @@ meminit:
 	sta	PrsRAM
 	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
 	shld	MFlag	; MFlag, CtlFlg
-	mvi	a,2	; display registers
-	sta	DspMod
+	lxi	h,0ffffh	; top of memory
+	shld	ABUSS
 	mvi	a,debounce
 	sta	kpcnt
 	ret
@@ -2234,7 +2234,7 @@ endif
 cmddmp:
 	lxi	h,dmpms
 	call	msgout
-	lxi	h,l2003h
+	lxi	h,ABUSS
 	ora	a	; NC
 	mvi	d,CR
 	call	adrin
@@ -2262,7 +2262,7 @@ dmp4:	call	conout
 	djnz	dmp2
 	pop	b
 	djnz	dmp0
-	shld	l2003h
+	shld	ABUSS
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
