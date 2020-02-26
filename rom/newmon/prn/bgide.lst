@@ -20,10 +20,13 @@
 008E          	GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
 008F          	GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
 		
+0046          	drv0	equ	70
+0002          	ndrv	equ	2
+		
 1000          		org	1000h
 1000  01      	first:	db	HIGH (last-first)	; +0: num pages
 1001  10      		db	HIGH first		; +1: ORG page
-1002  4609    		db	70,9	; +2,+3: phy drv base, num
+1002  4602    		db	drv0,ndrv	; +2,+3: phy drv base, num
 		
 1004  C31510  		jmp	init	; +4: init entry
 1007  C31710  		jmp	boot	; +7: boot entry
@@ -41,85 +44,112 @@
 1017          	boot:
 			; Partition is passed to bootloader, but we need
 			; segment offset before we can start.
-1017  D1      		pop	d	; error return address
-1018  C1      		pop	b	; possible string
-1019  C5      		push	b
-101A  D5      		push	d
-			; parse a single letter
-			; TODO: parse LUN or segment, both optional
-101B  210000  		lxi	h,0	; def segment off
-101E  225821  		shld	l2156h+2
-1021  225A21  		shld	l2156h+4
-1024  79      		mov	a,c
-1025  FEC3    		cpi	0c3h	; JMP means no string present
-1027  280D    		jrz	nostr
-1029  78      		mov	a,b
-102A  B7      		ora	a	; limit to 1 char?
-102B  C0      		rnz
-102C  79      		mov	a,c
-102D  E65F    		ani	5fh
-102F  D641    		sui	'A'	; 000sssss = segment ID
-1031  D8      		rc
-1032  07      		rlc
-1033  07      		rlc
-1034  07      		rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
-1035  67      		mov	h,a	; swap for little endian SHLD/LHLD
-1036  225621  	nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
-1039  AF      		xra	a
-103A  D389    		out	GIDE$FR	; needed after power-on?
-103C  7D      		mov	a,l
-103D  F6E0    		ori	11100000b	; LBA mode + std "1" bits
-103F  D38E    		out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
-1041  7C      		mov	a,h
-1042  D38D    		out	GIDE$CH	; LBA 23:16
-1044  AF      		xra	a
-1045  D38C    		out	GIDE$CL	; LBA 15:8
-1047  D38B    		out	GIDE$SE	; LBA 7:0
-1049  3E0A    		mvi	a,10
-104B  D38A    		out	GIDE$SC	; 10 sectors (standard boot length)
-104D  3E20    		mvi	a,20h	; READ SECTORS
-104F  D38F    		out	GIDE$CS
-1051  218022  		lxi	h,bootbf
-1054  0E88    		mvi	c,GIDE$DA
-1056  1E0A    		mvi	e,10
-1058  0600    		mvi	b,0	; should always be 0 after inir
-105A          	bgide0:
-105A  DB8F    		in	GIDE$CS
-105C  CB7F    		bit	7,a	; busy
-105E  20FA    		jrnz	bgide0
-1060  CB47    		bit	0,a	; error
-1062  C0      		rnz
-1063  CB77    		bit	6,a	; ready
-1065  C8      		rz
-1066  CB5F    		bit	3,a	; DRQ
-1068  28F0    		jrz	bgide0
-106A  EDB2    		inir	; 256 bytes
-106C  EDB2    		inir	; 512 bytes
-106E  1D      		dcr	e
-106F  20E9    		jrnz	bgide0
+			; stack: retL, retH, str0, str1, ...
+1017  210200  		lxi	h,2
+101A  39      		dad	sp
+101B  EB      		xchg		; DE=string
+101C  210000  		lxi	h,0	; def seg/lun
+101F  225821  		shld	l2156h+2
+1022  225A21  		shld	l2156h+4
+1025  3A3121  		lda	AIO$UNI	; 0000000d
+1028  07      		rlc
+1029  07      		rlc
+102A  07      		rlc
+102B  07      		rlc		; 000d0000
+102C  6F      		mov	l,a	; no overlap with segment
+102D  3E46    		mvi	a,drv0
+102F  323420  		sta	l2034h	; pre-loader expects 70-78 for partn
+1032  AF      		xra	a
+1033  323121  		sta	AIO$UNI
+1036  1A      		ldax	d
+1037  13      		inx	d
+1038  FEC3    		cpi	0c3h	; JMP means no string present
+103A  2820    		jrz	nostr
+103C  CD9B10  		call	trydig
+103F  300F    		jrnc	gotdig
+1041  CDAD10  		call	tryltr
+1044  D8      		rc
+1045  1A      		ldax	d
+1046  13      		inx	d
+1047  B7      		ora	a
+1048  2812    		jrz	gotit
+104A  CD9B10  		call	trydig
+104D  D8      		rc
+104E  1809    		jr	chkend
+1050  1A      	gotdig:	ldax	d
+1051  13      		inx	d
+1052  B7      		ora	a
+1053  2807    		jrz	gotit
+1055  CDAD10  		call	tryltr
+1058  D8      		rc
+1059  1A      	chkend:	ldax	d
+105A  B7      		ora	a
+105B  C0      		rnz	; max two chars
+105C          	gotit:
+105C  225621  	nostr:	shld	l2156h	; l2156h[0]=DRV|27:24, l2156h[1]=23:16
+105F  AF      		xra	a
+1060  D389    		out	GIDE$FR	; needed after power-on?
+1062  7D      		mov	a,l
+1063  F6E0    		ori	11100000b	; LBA mode + std "1" bits
+1065  D38E    		out	GIDE$DH	; LBA 27:4, drive 0, LBA mode
+1067  7C      		mov	a,h
+1068  D38D    		out	GIDE$CH	; LBA 23:16
+106A  AF      		xra	a
+106B  D38C    		out	GIDE$CL	; LBA 15:8
+106D  D38B    		out	GIDE$SE	; LBA 7:0
+106F  3E0A    		mvi	a,10
+1071  D38A    		out	GIDE$SC	; 10 sectors (standard boot length)
+1073  3E20    		mvi	a,20h	; READ SECTORS
+1075  D38F    		out	GIDE$CS
+1077  218022  		lxi	h,bootbf
+107A  0E88    		mvi	c,GIDE$DA
+107C  1E0A    		mvi	e,10
+107E  0600    		mvi	b,0	; should always be 0 after inir
+1080          	bgide0:
+1080  DB8F    		in	GIDE$CS
+1082  CB7F    		bit	7,a	; busy
+1084  20FA    		jrnz	bgide0
+1086  CB47    		bit	0,a	; error
+1088  C0      		rnz
+1089  CB77    		bit	6,a	; ready
+108B  C8      		rz
+108C  CB5F    		bit	3,a	; DRQ
+108E  28F0    		jrz	bgide0
+1090  EDB2    		inir	; 256 bytes
+1092  EDB2    		inir	; 512 bytes
+1094  1D      		dcr	e
+1095  20E9    		jrnz	bgide0
 			; final status check?
-1071  E1      		pop	h	; adj stack for possible string
-1072  C33B00  		jmp	hwboot
+1097  E1      		pop	h	; adj stack for possible string
+1098  C33B00  		jmp	hwboot
 		
-1075  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
+109B          	trydig:
+109B  FE30    		cpi	'0'	; digit?
+109D  D8      		rc	; error
+109E  FE3A    		cpi	'9'+1	; max 9 partitions
+10A0  3F      		cmc
+10A1  D8      		rc	; error - or letter
+10A2  D630    		sui	'0'
+10A4  323121  		sta	AIO$UNI
+10A7  C646    		adi	drv0
+10A9  323420  		sta	l2034h	; pre-loader expects 70-78 for partn
+10AC  C9      		ret
+		
+10AD          	tryltr:
+10AD  FE41    		cpi	'A'
+10AF  D8      		rc	; error - or digit
+10B0  E65F    		ani	5fh	; toupper
+10B2  D641    		sui	'A'	; 000sssss
+10B4  FE1A    		cpi	26
+10B6  3F      		cmc
+10B7  D8      		rc
+10B8  07      		rlc
+10B9  07      		rlc
+10BA  07      		rlc		; sssss000
+10BB  67      		mov	h,a	; no overlap with DRV
+10BC  C9      		ret
+		
+10BD  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -147,9 +177,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-    81	symbols
+    88	symbols
    256	bytes
 
-   157	macro calls
+    97	macro calls
   3759	macro bytes
      0	invented symbols

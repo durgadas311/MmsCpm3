@@ -254,9 +254,9 @@ ih0:
 	lda	npart		; num entries
 	mov	b,a
 ih1:	push	b
-	lded	segoff+0; E = LBA27:24 (future seg off)
+	lded	segoff+0; E = LBA27:24,DRV (future seg off)
 	;		; D = LBA23:19 is segment offset, carry-in
-	stx	e,+0	; LBA27:24 is fixed
+	stx	e,+0	; LBA27:24,DRV is fixed
 	inxix
 	mvi	b,3
 	mov	a,m
@@ -266,10 +266,10 @@ ih2:
 	mvi	e,0
 	mov	a,m
 	inx	h
-	srlr	a
-	rarr	e
-	srlr	a
-	rarr	e	; carry-out
+	srlr	a	; convert 128B-secnum to 512B-secnum
+	rarr	e	;
+	srlr	a	;
+	rarr	e	; E=carry-out
 	ora	d	; carry-in from previous
 	stx	a,+0
 	inxix

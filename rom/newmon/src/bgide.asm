@@ -14,10 +14,13 @@ GIDE$CH	equ	GIDE$BA+13	; GIDE cylinder high
 GIDE$DH	equ	GIDE$BA+14	; GIDE drive/head
 GIDE$CS	equ	GIDE$BA+15	; GIDE command/status
 
+drv0	equ	70
+ndrv	equ	2
+
 	org	1000h
 first:	db	HIGH (last-first)	; +0: num pages
 	db	HIGH first		; +1: ORG page
-	db	70,9	; +2,+3: phy drv base, num
+	db	drv0,ndrv	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry
 	jmp	boot	; +7: boot entry
@@ -34,30 +37,49 @@ init:	xra	a	; NC
 boot:
 	; Partition is passed to bootloader, but we need
 	; segment offset before we can start.
-	pop	d	; error return address
-	pop	b	; possible string
-	push	b
-	push	d
-	; parse a single letter
-	; TODO: parse LUN or segment, both optional
-	lxi	h,0	; def segment off
+	; stack: retL, retH, str0, str1, ...
+	lxi	h,2
+	dad	sp
+	xchg		; DE=string
+	lxi	h,0	; def seg/lun
 	shld	l2156h+2
 	shld	l2156h+4
-	mov	a,c
+	lda	AIO$UNI	; 0000000d
+	rlc
+	rlc
+	rlc
+	rlc		; 000d0000
+	mov	l,a	; no overlap with segment
+	mvi	a,drv0
+	sta	l2034h	; pre-loader expects 70-78 for partn
+	xra	a
+	sta	AIO$UNI
+	ldax	d
+	inx	d
 	cpi	0c3h	; JMP means no string present
 	jrz	nostr
-	mov	a,b
-	ora	a	; limit to 1 char?
-	rnz
-	mov	a,c
-	ani	5fh
-	sui	'A'	; 000sssss = segment ID
+	call	trydig
+	jrnc	gotdig
+	call	tryltr
 	rc
-	rlc
-	rlc
-	rlc		; sssss000 = segoff: 0000 sssss000 00000000 00000000
-	mov	h,a	; swap for little endian SHLD/LHLD
-nostr:	shld	l2156h	; l2156h[0]=27:24, l2156h[1]=23:16
+	ldax	d
+	inx	d
+	ora	a
+	jrz	gotit
+	call	trydig
+	rc
+	jr	chkend
+gotdig:	ldax	d
+	inx	d
+	ora	a
+	jrz	gotit
+	call	tryltr
+	rc
+chkend:	ldax	d
+	ora	a
+	rnz	; max two chars
+gotit:
+nostr:	shld	l2156h	; l2156h[0]=DRV|27:24, l2156h[1]=23:16
 	xra	a
 	out	GIDE$FR	; needed after power-on?
 	mov	a,l
@@ -93,6 +115,32 @@ bgide0:
 	; final status check?
 	pop	h	; adj stack for possible string
 	jmp	hwboot
+
+trydig:
+	cpi	'0'	; digit?
+	rc	; error
+	cpi	'9'+1	; max 9 partitions
+	cmc
+	rc	; error - or letter
+	sui	'0'
+	sta	AIO$UNI
+	adi	drv0
+	sta	l2034h	; pre-loader expects 70-78 for partn
+	ret
+
+tryltr:
+	cpi	'A'
+	rc	; error - or digit
+	ani	5fh	; toupper
+	sui	'A'	; 000sssss
+	cpi	26
+	cmc
+	rc
+	rlc
+	rlc
+	rlc		; sssss000
+	mov	h,a	; no overlap with DRV
+	ret
 
 	rept	(($+0ffh) and 0ff00h)-$
 	db	0ffh

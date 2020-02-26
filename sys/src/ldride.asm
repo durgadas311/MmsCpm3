@@ -257,12 +257,12 @@ NXTLEN:	dad	d
 	lda	PARTLUN		; num entries
 	mov	b,a
 nxtdef:	push	b
-	lda	SEGOFF+0; LBA27:24 is fixed
+	lda	SEGOFF+0; LBA27:24,DRV is fixed
 	stx	a,+0
 	inxix
 	mvi	b,3
 	lda	SEGOFF+1; LBA23:19 is segment offset
-	mov	d,a	; carry-in
+	mov	d,a	; carry-in, s0000000
 	mov	a,m
 	ani	00011111b	; must clear LUN bits
 	mov	m,a
@@ -270,10 +270,10 @@ nxdef0:
 	mvi	e,0
 	mov	a,m
 	inx	h
-	srlr	a
-	rarr	e
-	srlr	a
-	rarr	e
+	srlr	a	; convert 128B-secnum to 512B-secnum
+	rarr	e	;
+	srlr	a	;
+	rarr	e	;
 	ora	d	; carry-in from previous
 	stx	a,+0
 	inxix
@@ -281,20 +281,6 @@ nxdef0:
 	djnz	nxdef0
 	pop	b
 	djnz	nxtdef
-	; now add in segment offset
-	lxi	h,DDEFTBL
-	inx	h	; LBA+1 is where segment goes
-	lxi	d,4	; length of table entries
-	lda	PARTLUN	; num entries
-	mov	b,a
-	lda	SEGOFF+1
-	mov	c,a
-nxdef1:
-	mov	a,m
-	ora	c	; bits don't conflict
-	mov	m,a
-	dad	d	; jump to next entry
-	djnz	nxdef1
 	; anything else to do?
 	xra	a
 	ret
