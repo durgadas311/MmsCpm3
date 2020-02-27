@@ -1,4 +1,4 @@
-VERS	EQU   '1 '  ; June 27, 2019 05:36 drm "ldride.asm"
+VERS	EQU   '2 '  ; Feb 26, 2020 20:41 drm "ldride.asm"
 ***************************************************
 ;	Loader disk I/O module for MMS CP/M 2.24
 ;	for the GIDE bus interface 
@@ -224,8 +224,7 @@ ERREXT: mvi	a,1
 
 INIT$GIDE:
 	; gather info from bootloader
-	lda	UNITNUM		;FROM BOOT LOADER
-	adi	DRIV0
+	lda	BTDRV		;FROM BOOT LOADER
 	sta	MIXER
 	lhld	SEGOFF		;from ROM
 	shld	nsegmt		;hope it is safe here

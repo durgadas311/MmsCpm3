@@ -52,8 +52,6 @@ boot:
 	mov	l,a	; no overlap with segment
 	mvi	a,drv0
 	sta	l2034h	; pre-loader expects 70-78 for partn
-	xra	a
-	sta	AIO$UNI
 	ldax	d
 	inx	d
 	cpi	0c3h	; JMP means no string present
@@ -123,7 +121,6 @@ trydig:
 	cmc
 	rc	; error - or letter
 	sui	'0'
-	sta	AIO$UNI
 	adi	drv0
 	sta	l2034h	; pre-loader expects 70-78 for partn
 	ret
