@@ -4,13 +4,13 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all:
+all: vflash.sys
 
 %.lib: ../%.lib
-	unix2cpm -s $< $@
+	unix2dos -n $< $@
 
 %.asm: ../%.asm
-	unix2cpm -s $< $@
+	unix2dos -n $< $@
 
 %.rel: %.asm z80.lib z180.lib
 	vcpm rmac "$*.asm" '$$SZ'

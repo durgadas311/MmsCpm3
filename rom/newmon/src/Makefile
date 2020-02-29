@@ -15,7 +15,8 @@ H8Z180 = zout/h8z180.cim $(H8MODS)
 VERN = $(shell awk -f getver.awk h8core.asm)
 VERNZ = $(shell awk -f getver.awk h8z180.asm)
 
-all: h8mon2.rom h8mon2z180.rom vflash.sys
+all: h8mon2.rom h8mon2z180.rom
+sys: vflash.sys
 
 zout/%.cim: %.asm core.lib ram.lib z80.lib z180.lib
 	zmac --dri -i -8 -c -s -n $<
