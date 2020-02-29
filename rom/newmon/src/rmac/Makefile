@@ -4,7 +4,7 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vflash.sys
+all: vflash.sys test512k.sys
 
 %.lib: ../%.lib
 	unix2dos -n $< $@
@@ -22,6 +22,10 @@ all: vflash.sys
 
 vflash.spr: vflash.rel vdip1.rel
 	vcpm link $@=vflash,vdip1'[os,nr]'
+	cp $@ ../../bin
+
+test512k.sys: test512k.spr
+	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 
 %.sys: %.spr
