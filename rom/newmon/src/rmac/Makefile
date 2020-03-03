@@ -4,7 +4,7 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vflash.sys test512k.sys vdump3.sys
+all: vflash.sys test512k.sys vdump3.sys wizcfg.sys
 
 %.lib: ../%.lib
 	unix2dos -n $< $@
@@ -33,6 +33,20 @@ vdump3.sys: vdump3.spr
 	cp $@ ../../bin
 
 test512k.sys: test512k.spr
+	mknetboot -x -b 0x3000 -o $@ $^
+	cp $@ ../../bin
+
+libwiznt.rel:
+	ln -s ../../../../net/bin/libwiznt.rel
+
+libnvram.rel:
+	ln -s ../../../../net/bin/libnvram.rel
+
+wizcfg.spr: wizcfg.rel libwiznt.rel libnvram.rel
+	vcpm link $@=wizcfg,libwiznt,libnvram'[os,nr]'
+	cp $@ ../../bin
+
+wizcfg.sys: wizcfg.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 

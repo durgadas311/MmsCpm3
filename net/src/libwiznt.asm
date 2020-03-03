@@ -1,6 +1,6 @@
 ; Basic WIZNET routines
 
-	public	wizcfg, wizcmd, wizget, wizset, wizclose, setsok, settcp
+	public	wizcfg,wizcfg0,wizcmd,wizget,wizset,wizclose,setsok,settcp
 	public	gkeep,skeep
 
 	; Caller must supply 'nvbuf'
@@ -211,6 +211,7 @@ wizcfg:
 	call	vcksum
 	stc
 	rnz
+wizcfg0:
 	lxix	nvbuf
 	lxi	h,nvbuf+GAR
 	mvi	d,0
