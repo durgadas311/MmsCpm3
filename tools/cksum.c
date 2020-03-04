@@ -8,6 +8,7 @@
 
 static int filter = 0;
 static int wide = 0;
+static int xxxx = 0;
 static int limit = 0;
 static int len = 0;
 
@@ -38,7 +39,7 @@ int main(int argc, char **argv) {
 	long cs = 0;
 	int x;
 	extern char *optarg;
-	while ((x = getopt(argc, argv, "fl:w")) != EOF) {
+	while ((x = getopt(argc, argv, "fl:wx")) != EOF) {
 		switch (x) {
 		case 'f':
 			++filter;
@@ -49,13 +50,18 @@ int main(int argc, char **argv) {
 		case 'w':
 			++wide;
 			break;
+		case 'x':	// skip 0x1000-0x17ff
+			++xxxx;
+			break;
 		}
 	}
 	if (len) {
 		limit = len - (wide ? 4 : 2);
 	}
 	while (read(0, &c, 1) == 1) {
-		cs += (c & 0xff);
+		if (!xxxx || n < 0x1000 || n >= 0x1800) {
+			cs += (c & 0xff);
+		}
 		++n;
 		if (filter) {
 			write(1, &c, 1);

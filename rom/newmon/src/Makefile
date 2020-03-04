@@ -8,9 +8,10 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bwiznet.cim \
 	zout/ccass.cim
 #	zout/cx.cim
+#	zout/csetup.cim # Z80/Z180 differences
 
-H8MON = zout/h8core.cim $(H8MODS)
-H8Z180 = zout/h8z180.cim $(H8MODS)
+H8MON = zout/h8core.cim $(H8MODS) zout/csetup.cim
+H8Z180 = zout/h8z180.cim $(H8MODS) zout/csetup180.cim
 
 VERN = $(shell awk -f getver.awk h8core.asm)
 VERNZ = $(shell awk -f getver.awk h8z180.asm)
@@ -26,12 +27,15 @@ zout/%.cim: %.asm core.lib ram.lib z80.lib z180.lib
 h8z180.asm: h8core.asm
 	sed -e 's/z180	equ	false/z180	equ	true/' $? >$@
 
+csetup180.asm: csetup.asm
+	sed -e 's/z180	equ	false/z180	equ	true/' $? >$@
+
 h8mon2z180.rom: $(H8Z180)
-	cat $(H8Z180) | ../../../tools/cksum -f -w -l 0x8000 >$@
+	cat $(H8Z180) | ../../../tools/cksum -f -w -x -l 0x8000 >$@
 	cp	$@ ../bin
 
 h8mon2.rom: $(H8MON)
-	cat $(H8MON) | ../../../tools/cksum -f -w -l 0x8000 >$@
+	cat $(H8MON) | ../../../tools/cksum -f -w -x -l 0x8000 >$@
 	cp	$@ ../bin
 
 # Standalone programs

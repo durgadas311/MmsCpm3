@@ -95,6 +95,18 @@ loop0:	call	vdrd
 	mov	a,h
 	ora	l
 	jnz	pcerr
+	; see if we should clear setup area
+	lxi	d,clear
+	call	msgout
+	call	linin
+	lda	inbuf
+	ani	01011111b	; toupper
+	cpi	'Y'
+	jrnz	noera
+	sta	era
+	lxi	d,clring
+	call	msgout
+noera:
 	; now, ready to start flash...
 	lxi	d,ready
 	call	msgout
@@ -121,6 +133,19 @@ loop0:	call	vdrd
 	lxi	h,imgbuf
 	lxi	d,0	; ROM
 	lxi	b,K16/64	; first 16K
+	lda	era
+	ora	a
+	jrnz	flsall
+	lxi	b,1000h/64	; first 4K
+	call	flash
+	jrc	error
+	lxi	b,0800h
+	dad	b
+	xchg
+	dad	b
+	xchg
+	lxi	b,(K16-1800h)/64
+flsall:
 	call	flash
 	jrc	error
 	; now slide window sash for rest of ROM...
@@ -221,6 +246,7 @@ cpu$type:
 	ret
 
 z180:	db	0
+era:	db	0	; erase setup?
 signon:	db	CR,LF,'VFLASH v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 	db	' - Update ROM from VDIP1',0
@@ -231,6 +257,8 @@ cserr:	db	BEL,'ROM image checksum error',CR,LF,0
 fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
 nferr:	db	BEL,'ROM image file not found',CR,LF,0
 canc:	db	'ROM flash cancelled',CR,LF,0
+clear:	db	'Clear setup data (Y/N)? ',0
+clring:	db	'Erasing setup data!',CR,LF,0
 ready:	db	'Press RETURN to start flash: ',0
 
 quest:	db	'Enter ROM image file: ',0
@@ -240,17 +268,17 @@ die:	db	'Press RESET',CR,LF,0
 defrom:	db	'h8mon2.rom',0	; default rom image file
 
 ; DE=start of ROM image
+; must skip block 0x1000-0x17ff (relative)
 vchksm:	lxi	h,0
 	shld	sum
 	shld	sum+2
-	lxi	b,8000h-4
-vchk0:	ldax	d
-	call	sum1
-	inx	d
-	dcx	b
-	mov	a,b
-	ora	c
-	jrnz	vchk0
+	lxi	b,1000h
+	call	sum$bc
+	lxi	h,0800h	; skip block
+	dad	d
+	xchg
+	lxi	b,8000h-1800h-4
+	call	sum$bc
 	lxi	h,sum
 	mvi	b,4
 vchk1:	ldax	d
@@ -261,6 +289,15 @@ vchk1:	ldax	d
 	inx	h
 	djnz	vchk1
 	xra	a	; NC
+	ret
+
+sum$bc:	ldax	d
+	call	sum1
+	inx	d
+	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	sum$bc
 	ret
 
 sum1:	lxi	h,sum
@@ -419,7 +456,7 @@ crlf:	mvi	a,CR
 spinx:	db	0
 spin:	db	'-','\','|','/'
 
-opr:	db	'opr '	; is posisiotn for filename...
+opr:	db	'opr '	; in position for filename...
 inbuf:	ds	128	; file name entry buffer
 
 	ds	128

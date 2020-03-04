@@ -36,18 +36,18 @@
                 
                 	cseg
                 begin:
- 0000 319204    	lxi	sp,stack
- 0003 CD5701    	call	cpu$type
- 0006 325F01    	sta	z180	; 'true' if a Z180
- 0009 116001    	lxi	d,signon
- 000C CD3A03    	call	msgout
- 000F 3A5F01    	lda	z180
+ 0000 310405    	lxi	sp,stack
+ 0003 CD8A01    	call	cpu$type
+ 0006 329201    	sta	z180	; 'true' if a Z180
+ 0009 119401    	lxi	d,signon
+ 000C CDAC03    	call	msgout
+ 000F 3A9201    	lda	z180
  0012 B7        	ora	a
                 	jrz	begin0
  0013+2806      	DB	28H,BEGIN0-$-1
- 0015 118601    	lxi	d,mz180
- 0018 CD3A03    	call	msgout
- 001B CD7F03    begin0:	call	crlf
+ 0015 11BA01    	lxi	d,mz180
+ 0018 CDAC03    	call	msgout
+ 001B CDF103    begin0:	call	crlf
                 	; 2mS clock is needed for accessing VDIP1 (timeouts)
  001E 210920    	lxi	h,ctl$F0
  0021 7E        	mov	a,m
@@ -57,27 +57,27 @@
  0027 FB        	ei
  0028 CD0000    	call	runout
  002B CD0000    	call	sync
- 002E DA0B01    	jc	error
- 0031 114802    over:	lxi	d,quest
- 0034 CD3A03    	call	msgout
- 0037 CDD002    	call	linin
- 003A DA4001    	jc	cancel
+ 002E DA3E01    	jc	error
+ 0031 11AB02    over:	lxi	d,quest
+ 0034 CDAC03    	call	msgout
+ 0037 CD4203    	call	linin
+ 003A DA7301    	jc	cancel
  003D 79        	mov	a,c
  003E B7        	ora	a
                 	jrnz	go1	; already CR terminated...
  003F+200C      	DB	20H,GO1-$-1
- 0041 218302    	lxi	h,defrom
- 0044 119203    	lxi	d,inbuf
+ 0041 21E602    	lxi	h,defrom
+ 0044 110404    	lxi	d,inbuf
  0047 CD0000    	call	strcpy
  004A 3E0D      	mvi	a,CR
  004C 12        	stax	d
- 004D 218E03    go1:	lxi	h,opr
+ 004D 210004    go1:	lxi	h,opr
  0050 CD0000    	call	vdcmd
- 0053 DA3401    	jc	nofile
+ 0053 DA6701    	jc	nofile
  0056 210070    	lxi	h,imgbuf	; 4k below end of ROM
  0059 CD0000    loop0:	call	vdrd
- 005C DA2C01    	jc	rderr
- 005F CD6303    	call	progress
+ 005C DA5F01    	jc	rderr
+ 005F CDD503    	call	progress
  0062 7C        	mov	a,h
  0063 FEF0      	cpi	HIGH imgtop
                 	jrnz	loop0
@@ -85,11 +85,11 @@
                 	; one more read, should be error (EOF)
  0067 210040    	lxi	h,4000h	; a safe place to destroy...
  006A CD0000    	call	vdrd
- 006D D22C01    	jnc	rderr
- 0070 CD3901    	call	close
+ 006D D25F01    	jnc	rderr
+ 0070 CD6C01    	call	close
  0073 110070    	lxi	d,imgbuf
- 0076 CD8E02    	call	vchksm	; verify checksum
- 0079 DA1E01    	jc	ckerr
+ 0076 CDF102    	call	vchksm	; verify checksum
+ 0079 DA5101    	jc	ckerr
                 	; now validate product codes..
  007C 2AFE7F    	lhld	imgbuf+0ffeh
                 	lded	0ffeh
@@ -100,303 +100,343 @@
  0084+ED52      	DB	0EDH,D*8+42H
  0086 7C        	mov	a,h
  0087 B5        	ora	l
- 0088 C22701    	jnz	pcerr
+ 0088 C25A01    	jnz	pcerr
+                	; see if we should clear setup area
+ 008B 115E02    	lxi	d,clear
+ 008E CDAC03    	call	msgout
+ 0091 CD4203    	call	linin
+ 0094 3A0404    	lda	inbuf
+ 0097 E65F      	ani	01011111b	; toupper
+ 0099 FE59      	cpi	'Y'
+                	jrnz	noera
+ 009B+2009      	DB	20H,NOERA-$-1
+ 009D 329301    	sta	era
+ 00A0 117702    	lxi	d,clring
+ 00A3 CDAC03    	call	msgout
+                noera:
                 	; now, ready to start flash...
- 008B 112A02    	lxi	d,ready
- 008E CD3A03    	call	msgout
- 0091 CDD002    	call	linin
- 0094 DA4001    	jc	cancel
+ 00A6 118D02    	lxi	d,ready
+ 00A9 CDAC03    	call	msgout
+ 00AC CD4203    	call	linin
+ 00AF DA7301    	jc	cancel
                 	; after started, there's no going back...
                 	; disable any interruptions, as each page must be
                 	; entirely written with strict time constraints
                 	; (<<150uS between each byte).
- 0097 F3        	di
- 0098 3A5F01    	lda	z180
- 009B B7        	ora	a
+ 00B2 F3        	di
+ 00B3 3A9201    	lda	z180
+ 00B6 B7        	ora	a
                 	jrz	z80$flash
- 009C+2833      	DB	28H,Z80$FLASH-$-1
+ 00B7+284B      	DB	28H,Z80$FLASH-$-1
                 ; z180$flash:
- 009E AF        	xra	a	; base page of RAM, where we are now.
+ 00B9 AF        	xra	a	; base page of RAM, where we are now.
                 	out0	a,mmu$cbr
- 009F+ED3938    	DB	0EDH, A*8+01H, MMU$CBR
- 00A2 3EF8      	mvi	a,0f8h	; start page of ROM in padr space.
+ 00BA+ED3938    	DB	0EDH, A*8+01H, MMU$CBR
+ 00BD 3EF8      	mvi	a,0f8h	; start page of ROM in padr space.
                 	out0	a,mmu$bbr
- 00A4+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 00A7 3E70      	mvi	a,0111$0000b	; bnk at 0000, com1 at 7000
+ 00BF+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 00C2 3E70      	mvi	a,0111$0000b	; bnk at 0000, com1 at 7000
                 	out0	a,mmu$cbar
- 00A9+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+ 00C4+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
                 	; 0000-6FFF is ROM...
- 00AC 3EA0      	mvi	a,10100000b	; WE, no legacy ROM
- 00AE D3F2      	out	0f2h
- 00B0 210070    	lxi	h,imgbuf
- 00B3 110000    	lxi	d,0	; ROM
- 00B6 010001    	lxi	b,K16/64	; first 16K
- 00B9 CD4303    	call	flash
+ 00C7 3EA0      	mvi	a,10100000b	; WE, no legacy ROM
+ 00C9 D3F2      	out	0f2h
+ 00CB 210070    	lxi	h,imgbuf
+ 00CE 110000    	lxi	d,0	; ROM
+ 00D1 010001    	lxi	b,K16/64	; first 16K
+ 00D4 3A9301    	lda	era
+ 00D7 B7        	ora	a
+                	jrnz	flsall
+ 00D8+2012      	DB	20H,FLSALL-$-1
+ 00DA 014000    	lxi	b,1000h/64	; first 4K
+ 00DD CDB503    	call	flash
                 	jrc	error
- 00BC+384D      	DB	38H,ERROR-$-1
+ 00E0+385C      	DB	38H,ERROR-$-1
+ 00E2 010008    	lxi	b,0800h
+ 00E5 09        	dad	b
+ 00E6 EB        	xchg
+ 00E7 09        	dad	b
+ 00E8 EB        	xchg
+ 00E9 01A000    	lxi	b,(K16-1800h)/64
+                flsall:
+ 00EC CDB503    	call	flash
+                	jrc	error
+ 00EF+384D      	DB	38H,ERROR-$-1
                 	; now slide window sash for rest of ROM...
- 00BE 3E80      	mvi	a,1000$0000b	; bnk at 0000, com1 at 8000
+ 00F1 3E80      	mvi	a,1000$0000b	; bnk at 0000, com1 at 8000
                 	out0	a,mmu$cbar
- 00C0+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
- 00C3 010001    	lxi	b,(8000h-K16)/64	; rest of ROM
- 00C6 CD4303    	call	flash
+ 00F3+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+ 00F6 010001    	lxi	b,(8000h-K16)/64	; rest of ROM
+ 00F9 CDB503    	call	flash
                 	jrc	error
- 00C9+3840      	DB	38H,ERROR-$-1
- 00CB 3E20      	mvi	a,00100000b	; WE off, no legacy ROM
- 00CD D3F2      	out	0f2h
+ 00FC+3840      	DB	38H,ERROR-$-1
+ 00FE 3E20      	mvi	a,00100000b	; WE off, no legacy ROM
+ 0100 D3F2      	out	0f2h
                 	jr	comm$flash
- 00CF+1822      	DB	18H,COMM$FLASH-$-1
+ 0102+1822      	DB	18H,COMM$FLASH-$-1
                 ;
                 z80$flash:
- 00D1 3E80      	mvi	a,10000000b	; WE, partial ROM
- 00D3 D3F2      	out	0f2h
- 00D5 210070    	lxi	h,imgbuf
- 00D8 110000    	lxi	d,0	; ROM
- 00DB 014000    	lxi	b,4096/64	; first 4K
- 00DE CD4303    	call	flash
+ 0104 3E80      	mvi	a,10000000b	; WE, partial ROM
+ 0106 D3F2      	out	0f2h
+ 0108 210070    	lxi	h,imgbuf
+ 010B 110000    	lxi	d,0	; ROM
+ 010E 014000    	lxi	b,4096/64	; first 4K
+ 0111 CDB503    	call	flash
                 	jrc	error
- 00E1+3828      	DB	38H,ERROR-$-1
- 00E3 3E88      	mvi	a,10001000b	; WE, enable full ROM
- 00E5 D3F2      	out	0f2h
- 00E7 01C001    	lxi	b,(8000h-4096)/64	; rest of ROM
- 00EA CD4303    	call	flash
+ 0114+3828      	DB	38H,ERROR-$-1
+ 0116 3E88      	mvi	a,10001000b	; WE, enable full ROM
+ 0118 D3F2      	out	0f2h
+ 011A 01C001    	lxi	b,(8000h-4096)/64	; rest of ROM
+ 011D CDB503    	call	flash
                 	jrc	error
- 00ED+381C      	DB	38H,ERROR-$-1
- 00EF 3E08      	mvi	a,00001000b	; WE off, enable full ROM
- 00F1 D3F2      	out	0f2h
+ 0120+381C      	DB	38H,ERROR-$-1
+ 0122 3E08      	mvi	a,00001000b	; WE off, enable full ROM
+ 0124 D3F2      	out	0f2h
                 comm$flash:	; full ROM still mapped at 0000...
                 	; NOTE: first 32K RAM has been trashed...
-                	; no point to restoring it in any way.
+                	; no point to restoring it in any way.
                 	; if we decide to try and return to monitor,
                 	; need to go back to legacy mode and jump 0000.
- 00F3 110000    	lxi	d,0	; ROM
- 00F6 CD8E02    	call	vchksm
+ 0126 110000    	lxi	d,0	; ROM
+ 0129 CDF102    	call	vchksm
                 	jrc	ckerr2
- 00F9+381B      	DB	38H,CKERR2-$-1
+ 012C+381B      	DB	38H,CKERR2-$-1
                 	; even though RAM is trashed, allow Z180 to
                 	; restore ROM even if we don't jump to it.
- 00FB 3A5F01    	lda	z180
- 00FE B7        	ora	a
+ 012E 3A9201    	lda	z180
+ 0131 B7        	ora	a
                 	jrz	comm0
- 00FF+2804      	DB	28H,COMM0-$-1
- 0101 AF        	xra	a
+ 0132+2804      	DB	28H,COMM0-$-1
+ 0134 AF        	xra	a
                 	out0	a,mmu$bbr	; switch back to normal
- 0102+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 0135+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
                 comm0:
- 0105 115F02    	lxi	d,done
- 0108 CD3A03    	call	msgout
+ 0138 11C202    	lxi	d,done
+ 013B CDAC03    	call	msgout
                 error:
- 010B AF        	xra	a	; back to RESET state (WE off)
- 010C D3F2      	out	0f2h
+ 013E AF        	xra	a	; back to RESET state (WE off)
+ 013F D3F2      	out	0f2h
                 	; do something smarter...?
- 010E 117502    	lxi	d,die
- 0111 CD3A03    	call	msgout
- 0114 F3        	di
- 0115 76        	hlt
+ 0141 11D802    	lxi	d,die
+ 0144 CDAC03    	call	msgout
+ 0147 F3        	di
+ 0148 76        	hlt
                 
- 0116 11B501    ckerr2:	lxi	d,cserr
- 0119 CD3A03    	call	msgout
+ 0149 11E901    ckerr2:	lxi	d,cserr
+ 014C CDAC03    	call	msgout
                 	jr	error
- 011C+18ED      	DB	18H,ERROR-$-1
+ 014F+18ED      	DB	18H,ERROR-$-1
                 
- 011E 11B501    ckerr:	lxi	d,cserr
- 0121 CD3A03    eloop:	call	msgout
- 0124 C33100    	jmp	over
+ 0151 11E901    ckerr:	lxi	d,cserr
+ 0154 CDAC03    eloop:	call	msgout
+ 0157 C33100    	jmp	over
                 
- 0127 119201    pcerr:	lxi	d,perr
+ 015A 11C601    pcerr:	lxi	d,perr
                 	jr	eloop
- 012A+18F5      	DB	18H,ELOOP-$-1
+ 015D+18F5      	DB	18H,ELOOP-$-1
                 
                 ; file is still open...
- 012C CD3901    rderr:	call	close
- 012F 11D101    	lxi	d,fierr
+ 015F CD6C01    rderr:	call	close
+ 0162 110502    	lxi	d,fierr
                 	jr	eloop
- 0132+18ED      	DB	18H,ELOOP-$-1
+ 0165+18ED      	DB	18H,ELOOP-$-1
                 
- 0134 11F801    nofile:	lxi	d,nferr
+ 0167 112C02    nofile:	lxi	d,nferr
                 	jr	eloop
- 0137+18E8      	DB	18H,ELOOP-$-1
+ 016A+18E8      	DB	18H,ELOOP-$-1
                 
- 0139 218E01    close:	lxi	h,clf
- 013C CD0000    	call	vdcmd
- 013F C9        	ret
+ 016C 21C201    close:	lxi	h,clf
+ 016F CD0000    	call	vdcmd
+ 0172 C9        	ret
                 
                 ; cancel, before any flash took place...
-                ; safe return to ROM possible?
- 0140 111402    cancel:	lxi	d,canc
- 0143 CD3A03    	call	msgout
- 0146 CD7F03    	call	crlf
- 0149 CD2403    	call	conout	; another LF
- 014C F3        	di
- 014D AF        	xra	a
- 014E D3F2      	out	0f2h
- 0150 3EDF      	mvi	a,0dfh	; reset state of FP
- 0152 D3F0      	out	0f0h
- 0154 C30000    	jmp	0
+                ; safe return to ROM possible?
+ 0173 114802    cancel:	lxi	d,canc
+ 0176 CDAC03    	call	msgout
+ 0179 CDF103    	call	crlf
+ 017C CD9603    	call	conout	; another LF
+ 017F F3        	di
+ 0180 AF        	xra	a
+ 0181 D3F2      	out	0f2h
+ 0183 3EDF      	mvi	a,0dfh	; reset state of FP
+ 0185 D3F0      	out	0f0h
+ 0187 C30000    	jmp	0
                 
                 ; Destroys BC and A...
                 ; Return A==0 for Z80, A<>0 for Z180
                 cpu$type:
- 0157 3E01      	mvi	a,1
+ 018A 3E01      	mvi	a,1
                 	mlt	b	; NEG if Z80... 01 -> FF
- 0159+ED4C      	DB	0EDH, B*8+4CH
- 015B D6FF      	sui	0ffh	; FF (Z80): NC,00; else (Z180): CY,nn
- 015D 9F        	sbb	a	; FF: Z180, 00: Z80
- 015E C9        	ret
+ 018C+ED4C      	DB	0EDH, B*8+4CH
+ 018E D6FF      	sui	0ffh	; FF (Z80): NC,00; else (Z180): CY,nn
+ 0190 9F        	sbb	a	; FF: Z180, 00: Z80
+ 0191 C9        	ret
                 
- 015F 00        z180:	db	0
- 0160 0D0A56464Csignon:	db	CR,LF,'VFLASH v'
- 016A 302E39    	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
- 016D 202D205570	db	' - Update ROM from VDIP1',0
- 0186 20285A3138mz180:	db	' (Z180)',0
- 018E 636C660D  clf:	db	'clf',CR
- 0192 07524F4D20perr:	db	BEL,'ROM image does not match system',CR,LF,0
- 01B5 07524F4D20cserr:	db	BEL,'ROM image checksum error',CR,LF,0
- 01D1 07524F4D20fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
- 01F8 07524F4D20nferr:	db	BEL,'ROM image file not found',CR,LF,0
- 0214 524F4D2066canc:	db	'ROM flash cancelled',CR,LF,0
- 022A 5072657373ready:	db	'Press RETURN to start flash: ',0
+ 0192 00        z180:	db	0
+ 0193 00        era:	db	0	; erase setup?
+ 0194 0D0A56464Csignon:	db	CR,LF,'VFLASH v'
+ 019E 302E39    	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+ 01A1 202D205570	db	' - Update ROM from VDIP1',0
+ 01BA 20285A3138mz180:	db	' (Z180)',0
+ 01C2 636C660D  clf:	db	'clf',CR
+ 01C6 07524F4D20perr:	db	BEL,'ROM image does not match system',CR,LF,0
+ 01E9 07524F4D20cserr:	db	BEL,'ROM image checksum error',CR,LF,0
+ 0205 07524F4D20fierr:	db	BEL,'ROM image read error, or size wrong',CR,LF,0
+ 022C 07524F4D20nferr:	db	BEL,'ROM image file not found',CR,LF,0
+ 0248 524F4D2066canc:	db	'ROM flash cancelled',CR,LF,0
+ 025E 436C656172clear:	db	'Clear setup data (Y/N)? ',0
+ 0277 4572617369clring:	db	'Erasing setup data!',CR,LF,0
+ 028D 5072657373ready:	db	'Press RETURN to start flash: ',0
                 
- 0248 456E746572quest:	db	'Enter ROM image file: ',0
- 025F 524F4D2075done:	db	'ROM update complete',CR,LF,0
- 0275 5072657373die:	db	'Press RESET',CR,LF,0
+ 02AB 456E746572quest:	db	'Enter ROM image file: ',0
+ 02C2 524F4D2075done:	db	'ROM update complete',CR,LF,0
+ 02D8 5072657373die:	db	'Press RESET',CR,LF,0
                 
- 0283 68386D6F6Edefrom:	db	'h8mon2.rom',0	; default rom image file
+ 02E6 68386D6F6Edefrom:	db	'h8mon2.rom',0	; default rom image file
                 
                 ; DE=start of ROM image
- 028E 210000    vchksm:	lxi	h,0
- 0291 22C202    	shld	sum
- 0294 22C402    	shld	sum+2
- 0297 01FC7F    	lxi	b,8000h-4
- 029A 1A        vchk0:	ldax	d
- 029B CDB302    	call	sum1
- 029E 13        	inx	d
- 029F 0B        	dcx	b
- 02A0 78        	mov	a,b
- 02A1 B1        	ora	c
-                	jrnz	vchk0
- 02A2+20F6      	DB	20H,VCHK0-$-1
- 02A4 21C202    	lxi	h,sum
- 02A7 0604      	mvi	b,4
- 02A9 1A        vchk1:	ldax	d
- 02AA BE        	cmp	m
- 02AB 37        	stc
- 02AC C0        	rnz
- 02AD 13        	inx	d
- 02AE 23        	inx	h
+                ; must skip block 0x1000-0x17ff (relative)
+ 02F1 210000    vchksm:	lxi	h,0
+ 02F4 223403    	shld	sum
+ 02F7 223603    	shld	sum+2
+ 02FA 010010    	lxi	b,1000h
+ 02FD CD1A03    	call	sum$bc
+ 0300 210008    	lxi	h,0800h	; skip block
+ 0303 19        	dad	d
+ 0304 EB        	xchg
+ 0305 01FC67    	lxi	b,8000h-1800h-4
+ 0308 CD1A03    	call	sum$bc
+ 030B 213403    	lxi	h,sum
+ 030E 0604      	mvi	b,4
+ 0310 1A        vchk1:	ldax	d
+ 0311 BE        	cmp	m
+ 0312 37        	stc
+ 0313 C0        	rnz
+ 0314 13        	inx	d
+ 0315 23        	inx	h
                 	djnz	vchk1
- 02AF+10F8      	DB	10H,VCHK1-$-1
- 02B1 AF        	xra	a	; NC
- 02B2 C9        	ret
+ 0316+10F8      	DB	10H,VCHK1-$-1
+ 0318 AF        	xra	a	; NC
+ 0319 C9        	ret
                 
- 02B3 21C202    sum1:	lxi	h,sum
- 02B6 86        	add	m
- 02B7 77        	mov	m,a
- 02B8 D0        	rnc
- 02B9 23        	inx	h
- 02BA 34        	inr	m
- 02BB C0        	rnz
- 02BC 23        	inx	h
- 02BD 34        	inr	m
- 02BE C0        	rnz
- 02BF 23        	inx	h
- 02C0 34        	inr	m
- 02C1 C9        	ret
+ 031A 1A        sum$bc:	ldax	d
+ 031B CD2503    	call	sum1
+ 031E 13        	inx	d
+ 031F 0B        	dcx	b
+ 0320 78        	mov	a,b
+ 0321 B1        	ora	c
+                	jrnz	sum$bc
+ 0322+20F6      	DB	20H,SUM$BC-$-1
+ 0324 C9        	ret
                 
- 02C2 00000000  sum:	db	0,0,0,0
+ 0325 213403    sum1:	lxi	h,sum
+ 0328 86        	add	m
+ 0329 77        	mov	m,a
+ 032A D0        	rnc
+ 032B 23        	inx	h
+ 032C 34        	inr	m
+ 032D C0        	rnz
+ 032E 23        	inx	h
+ 032F 34        	inr	m
+ 0330 C0        	rnz
+ 0331 23        	inx	h
+ 0332 34        	inr	m
+ 0333 C9        	ret
                 
- 02C6 3E0D      linix:	mvi	a,CR
- 02C8 77        	mov	m,a	; terminate buffer
- 02C9 CD2403    	call	conout
- 02CC 3E0A      	mvi	a,LF
+ 0334 00000000  sum:	db	0,0,0,0
+                
+ 0338 3E0D      linix:	mvi	a,CR
+ 033A 77        	mov	m,a	; terminate buffer
+ 033B CD9603    	call	conout
+ 033E 3E0A      	mvi	a,LF
                 	jr	conout
- 02CE+1854      	DB	18H,CONOUT-$-1
+ 0340+1854      	DB	18H,CONOUT-$-1
                 
                 ; input a filename from console, allow backspace
                 ; returns C=num chars
                 linin:
- 02D0 219203    	lxi	h,inbuf
- 02D3 0E00      	mvi	c,0	; count chars
- 02D5 CD2F03    lini0	call	conin
- 02D8 FE0D      	cpi	CR
+ 0342 210404    	lxi	h,inbuf
+ 0345 0E00      	mvi	c,0	; count chars
+ 0347 CDA103    lini0	call	conin
+ 034A FE0D      	cpi	CR
                 	jrz	linix
- 02DA+28EA      	DB	28H,LINIX-$-1
- 02DC FE03      	cpi	CTLC	; cancel
- 02DE 37        	stc
- 02DF C8        	rz
- 02E0 FE08      	cpi	BS
+ 034C+28EA      	DB	28H,LINIX-$-1
+ 034E FE03      	cpi	CTLC	; cancel
+ 0350 37        	stc
+ 0351 C8        	rz
+ 0352 FE08      	cpi	BS
                 	jrz	backup
- 02E2+2829      	DB	28H,BACKUP-$-1
- 02E4 FE2E      	cpi	'.'
+ 0354+2829      	DB	28H,BACKUP-$-1
+ 0356 FE2E      	cpi	'.'
                 	jrz	chrok
- 02E6+2816      	DB	28H,CHROK-$-1
- 02E8 FE2D      	cpi	'-'
+ 0358+2816      	DB	28H,CHROK-$-1
+ 035A FE2D      	cpi	'-'
                 	jrz	chrok
- 02EA+2812      	DB	28H,CHROK-$-1
- 02EC FE30      	cpi	'0'
-                	jrc	chrnak
- 02EE+3816      	DB	38H,CHRNAK-$-1
- 02F0 FE3A      	cpi	'9'+1
-                	jrc	chrok
- 02F2+380A      	DB	38H,CHROK-$-1
- 02F4 E65F      	ani	01011111b	; toupper
- 02F6 FE41      	cpi	'A'
+ 035C+2812      	DB	28H,CHROK-$-1
+ 035E FE30      	cpi	'0'
                 	jrc	chrnak
- 02F8+380C      	DB	38H,CHRNAK-$-1
- 02FA FE5B      	cpi	'Z'+1
+ 0360+3816      	DB	38H,CHRNAK-$-1
+ 0362 FE3A      	cpi	'9'+1
+                	jrc	chrok
+ 0364+380A      	DB	38H,CHROK-$-1
+ 0366 E65F      	ani	01011111b	; toupper
+ 0368 FE41      	cpi	'A'
+                	jrc	chrnak
+ 036A+380C      	DB	38H,CHRNAK-$-1
+ 036C FE5B      	cpi	'Z'+1
                 	jrnc	chrnak
- 02FC+3008      	DB	30H,CHRNAK-$-1
- 02FE 77        chrok:	mov	m,a
- 02FF 23        	inx	h
- 0300 0C        	inr	c
- 0301 CD2403    	call	conout
-                	; TODO: detect overflow...
+ 036E+3008      	DB	30H,CHRNAK-$-1
+ 0370 77        chrok:	mov	m,a
+ 0371 23        	inx	h
+ 0372 0C        	inr	c
+ 0373 CD9603    	call	conout
+                	; TODO: detect overflow...
                 	jr	lini0
- 0304+18CF      	DB	18H,LINI0-$-1
- 0306 3E07      chrnak:	mvi	a,BEL
- 0308 CD2403    	call	conout
+ 0376+18CF      	DB	18H,LINI0-$-1
+ 0378 3E07      chrnak:	mvi	a,BEL
+ 037A CD9603    	call	conout
                 	jr	lini0
- 030B+18C8      	DB	18H,LINI0-$-1
+ 037D+18C8      	DB	18H,LINI0-$-1
                 backup:
- 030D 79        	mov	a,c
- 030E B7        	ora	a
+ 037F 79        	mov	a,c
+ 0380 B7        	ora	a
                 	jrz	lini0
- 030F+28C4      	DB	28H,LINI0-$-1
- 0311 0D        	dcr	c
- 0312 2B        	dcx	h
- 0313 3E08      	mvi	a,BS
- 0315 CD2403    	call	conout
- 0318 3E20      	mvi	a,' '
- 031A CD2403    	call	conout
- 031D 3E08      	mvi	a,BS
- 031F CD2403    	call	conout
+ 0381+28C4      	DB	28H,LINI0-$-1
+ 0383 0D        	dcr	c
+ 0384 2B        	dcx	h
+ 0385 3E08      	mvi	a,BS
+ 0387 CD9603    	call	conout
+ 038A 3E20      	mvi	a,' '
+ 038C CD9603    	call	conout
+ 038F 3E08      	mvi	a,BS
+ 0391 CD9603    	call	conout
                 	jr	lini0
- 0322+18B1      	DB	18H,LINI0-$-1
+ 0394+18B1      	DB	18H,LINI0-$-1
                 
- 0324 F5        conout:	push	psw
- 0325 DBED      cono0:	in	0edh
- 0327 E620      	ani	00100000b
+ 0396 F5        conout:	push	psw
+ 0397 DBED      cono0:	in	0edh
+ 0399 E620      	ani	00100000b
                 	jrz	cono0
- 0329+28FA      	DB	28H,CONO0-$-1
- 032B F1        	pop	psw
- 032C D3E8      	out	0e8h
- 032E C9        	ret
+ 039B+28FA      	DB	28H,CONO0-$-1
+ 039D F1        	pop	psw
+ 039E D3E8      	out	0e8h
+ 03A0 C9        	ret
                 
- 032F DBED      conin:	in	0edh
- 0331 E601      	ani	00000001b
+ 03A1 DBED      conin:	in	0edh
+ 03A3 E601      	ani	00000001b
                 	jrz	conin
- 0333+28FA      	DB	28H,CONIN-$-1
- 0335 DBE8      	in	0e8h
- 0337 E67F      	ani	01111111b
- 0339 C9        	ret
+ 03A5+28FA      	DB	28H,CONIN-$-1
+ 03A7 DBE8      	in	0e8h
+ 03A9 E67F      	ani	01111111b
+ 03AB C9        	ret
                 
- 033A 1A        msgout:	ldax	d
- 033B B7        	ora	a
- 033C C8        	rz
- 033D CD2403    	call	conout
- 0340 13        	inx	d
+ 03AC 1A        msgout:	ldax	d
+ 03AD B7        	ora	a
+ 03AE C8        	rz
+ 03AF CD9603    	call	conout
+ 03B2 13        	inx	d
                 	jr	msgout
- 0341+18F7      	DB	18H,MSGOUT-$-1
+ 03B3+18F7      	DB	18H,MSGOUT-$-1
                 
                 ; flash ROM from HL to DE, 64 bytes at a time.
                 ; DE must be on a 64-byte boundary.
@@ -404,73 +444,73 @@
                 ; returns CY on error, else HL,DE at next 64 bytes
                 ; caller must set WE... and MEM1 as needed.
                 flash:
- 0343 C5        	push	b
- 0344 014000    	lxi	b,64
-                	ldir
- 0347+EDB0      	DB	0EDH,0B0H
+ 03B5 C5        	push	b
+ 03B6 014000    	lxi	b,64
+                	ldir
+ 03B9+EDB0      	DB	0EDH,0B0H
                 	; -----
- 0349 2B        	dcx	h
- 034A 1B        	dcx	d	; last addr written...
+ 03BB 2B        	dcx	h
+ 03BC 1B        	dcx	d	; last addr written...
                 	; wait for write cycle to begin...
                 	; TODO: timeout this loop?
- 034B 1A        flash2:	ldax	d
- 034C AE        	xra	m
- 034D E680      	ani	10000000b	; bit7 is inverted when busy...
+ 03BD 1A        flash2:	ldax	d
+ 03BE AE        	xra	m
+ 03BF E680      	ani	10000000b	; bit7 is inverted when busy...
                 	jrz	flash2
- 034F+28FA      	DB	28H,FLASH2-$-1
+ 03C1+28FA      	DB	28H,FLASH2-$-1
                 	; wait for write cycle to end...
                 	; TODO: timeout this loop?
- 0351 1A        flash0:	ldax	d
- 0352 AE        	xra	m
- 0353 E680      	ani	10000000b	; bit7 is inverted when busy...
+ 03C3 1A        flash0:	ldax	d
+ 03C4 AE        	xra	m
+ 03C5 E680      	ani	10000000b	; bit7 is inverted when busy...
                 	jrnz	flash0
- 0355+20FA      	DB	20H,FLASH0-$-1
- 0357 23        	inx	h
- 0358 13        	inx	d
+ 03C7+20FA      	DB	20H,FLASH0-$-1
+ 03C9 23        	inx	h
+ 03CA 13        	inx	d
                 	; done with page...
- 0359 CD6303    	call	progress
- 035C C1        	pop	b
- 035D 0B        	dcx	b
- 035E 78        	mov	a,b
- 035F B1        	ora	c
+ 03CB CDD503    	call	progress
+ 03CE C1        	pop	b
+ 03CF 0B        	dcx	b
+ 03D0 78        	mov	a,b
+ 03D1 B1        	ora	c
                 	jrnz	flash
- 0360+20E1      	DB	20H,FLASH-$-1
+ 03D2+20E1      	DB	20H,FLASH-$-1
                 	;xra	a	; NC already
- 0362 C9        	ret
+ 03D4 C9        	ret
                 
                 progress:
- 0363 E5        	push	h
- 0364 C5        	push	b
- 0365 218903    	lxi	h,spinx
- 0368 34        	inr	m
- 0369 7E        	mov	a,m
- 036A E603      	ani	00000011b
- 036C 4F        	mov	c,a
- 036D 0600      	mvi	b,0
- 036F 218A03    	lxi	h,spin
- 0372 09        	dad	b
- 0373 7E        	mov	a,m
- 0374 CD2403    	call	conout
- 0377 3E08      	mvi	a,BS
- 0379 CD2403    	call	conout
- 037C C1        	pop	b
- 037D E1        	pop	h
- 037E C9        	ret
+ 03D5 E5        	push	h
+ 03D6 C5        	push	b
+ 03D7 21FB03    	lxi	h,spinx
+ 03DA 34        	inr	m
+ 03DB 7E        	mov	a,m
+ 03DC E603      	ani	00000011b
+ 03DE 4F        	mov	c,a
+ 03DF 0600      	mvi	b,0
+ 03E1 21FC03    	lxi	h,spin
+ 03E4 09        	dad	b
+ 03E5 7E        	mov	a,m
+ 03E6 CD9603    	call	conout
+ 03E9 3E08      	mvi	a,BS
+ 03EB CD9603    	call	conout
+ 03EE C1        	pop	b
+ 03EF E1        	pop	h
+ 03F0 C9        	ret
                 
- 037F 3E0D      crlf:	mvi	a,CR
- 0381 CD2403    	call	conout
- 0384 3E0A      	mvi	a,LF
- 0386 C32403    	jmp	conout
+ 03F1 3E0D      crlf:	mvi	a,CR
+ 03F3 CD9603    	call	conout
+ 03F6 3E0A      	mvi	a,LF
+ 03F8 C39603    	jmp	conout
                 
- 0389 00        spinx:	db	0
- 038A 2D5C7C2F  spin:	db	'-','\','|','/'
+ 03FB 00        spinx:	db	0
+ 03FC 2D5C7C2F  spin:	db	'-','\','|','/'
                 
- 038E 6F707220  opr:	db	'opr '	; is posisiotn for filename...
- 0392           inbuf:	ds	128	; file name entry buffer
+ 0400 6F707220  opr:	db	'opr '	; in position for filename...
+ 0404           inbuf:	ds	128	; file name entry buffer
                 
- 0412           	ds	128
- 0492           stack:	ds	0
+ 0484           	ds	128
+ 0504           stack:	ds	0
                 
- 0492           vdbuf:	ds	128	; for vdip1.lib
- 0512           	end
-
+ 0504           vdbuf:	ds	128	; for vdip1.lib
+ 0584           	end
+
