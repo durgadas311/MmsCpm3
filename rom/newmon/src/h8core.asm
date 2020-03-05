@@ -509,7 +509,6 @@ cmdboot:
 	xra	a
 	sta	cport
 	lxi	sp,bootbf
-	call	gtdfbt	; DE=phy drv/unit
 	mvi	c,CR	; end input on CR
 	jr	boot0
 bterr:
@@ -517,7 +516,7 @@ bterr:
 boot0:
 	call	conin
 	cmp	c
-	jrz	gotnum	; default boot, by phy drv...
+	jz	dfboot	; default boot, by phy drv...
 	mvi	e,0
 	cpi	'0'
 	jrc	nodig
@@ -532,12 +531,7 @@ nodig:	; boot by letter... Boot alpha-
 	call	conout
 	call	conout
 	cpi	'B'
-	jrnc	gotit1
-	; 'A' is synonym for default
-	mov	a,d
-	cpi	0ffh
-	jz	s501er
-	jr	gotit
+	jc	A$boot	; 'A' is synonym for default
 gotit1:	push	b
 	mov	c,a
 	mvi	b,-1	; boot modules only
@@ -602,27 +596,37 @@ colon:	; get arbitrary string as last boot param
 	mvi	b,0
 	lxi	h,bootbf
 btstr0:
-	call	conout
+	call	conout	; first time, ':'
 	call	conin
 	inr	b
 	inx	h
 	mov	m,a
 	cmp	c
 	jrnz	btstr0
+	mvi	m,0
 	mov	a,b
 	sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
-	xra	a	; TRM - string terminator
-btstr1:	; use stack as char array...
-	push	psw
-	inx	sp	; undo half of push
-	dcx	h
-	mov	a,m
-	djnz	btstr1
 ; D=Phys Drive base number, E=Unit number
 ; (or, D=Phys Drive unit, E=0)
 ; module must have already been loaded
+; NOTE: string might have been placed at bootbf...
 goboot:
-	call	crlf
+	lxi	h,bootbf
+	mov	a,m
+	cpi	0c3h
+	jrz	gboot0
+	mov	c,a	; length
+	mvi	b,0
+	dad	b
+	inx	h	; TRM...
+btstr1:	; use stack as char array...
+	mov	a,m
+	push	psw
+	inx	sp	; undo half of push
+	dcx	h
+	dcr	c
+	jrnz	btstr1
+gboot0:	call	crlf
 	lxi	h,error
 	push	h
 ; IX=boot module (in memory)
@@ -2195,10 +2199,80 @@ gtdvtb0:
 	mvi	a,0
 	adc	h
 	mov	h,a
-	mov	a,m
+	mov	d,m	; might be FF or FE
+	ret
+
+A$boot:
+	call	gtdfbt	; DE=phy drv/unit
+	mov	a,d
 	cpi	0ffh
-	mov	d,a
-	ret	; NZ=none, Z=found
+	jz	s501er
+	cpi	0feh
+	jrnz	findit
+	lxi	h,susave+dpdev
+	mov	a,m
+	inx	h
+	cpi	0ffh
+	jz	s501er	; not setup
+	jmp	gotit1
+findit:
+	push	d
+	push	b
+	mov	c,d
+	mvi	b,-1	; boot modules only
+	lxi	h,bfnum
+	call	bfind
+	pop	b
+	pop	d
+	jc	s501er
+	jmp	gotit
+
+; default boot selected...
+dfboot:
+	call	gtdfbt	; DE=phy drv/unit
+	mov	a,d
+	cpi	0ffh
+	jz	error
+	cpi	0feh
+	jnz	gotnum
+	lxi	h,susave+dpdev
+dfboot0:	; HL=setup data for pri or sec
+	mov	a,m
+	inx	h
+	cpi	0ffh
+	jz	error	; not setup
+	push	h
+	mov	c,a
+	mvi	b,-1	; boot modules only
+	lxi	h,bfchr
+	call	bfind
+	pop	h
+	jc	error	; no module
+	ldx	d,mdbase
+	mov	a,m
+	inx	h
+	cpi	0ffh
+	jrnz	dfbt0
+	xra	a
+dfbt0:	mov	e,a	; DE=phy drv base,unit
+	mov	a,m
+	cpi	0ffh	; no string?
+	jz	goboot
+	push	d
+	lxi	d,bootbf+1	; len in +0...
+	mvi	c,0
+dfbt1:	mov	a,m
+	stax	d
+	inx	h
+	inx	d
+	inr	c
+	ora	a
+	jrnz	dfbt1
+	mov	a,c
+	dcr	a
+	sta	bootbf
+	pop	d
+	jmp	goboot
 
 defbt:	; default boot table... port F2 bits 01110000b
 	db	33	; -000---- MMS 5" floppy 0
