@@ -10,6 +10,7 @@ beta	equ	3
 z180	equ	false
 
 	maclib	ram
+	maclib	setup
 if z180
 	maclib	z180
 use$dma	equ	true
@@ -646,6 +647,7 @@ hxboot:	lxi	h,CLOCK
 ; But, right now, ROM is in 0000-7FFF so must copy
 ; core code and switch to RAM...
 init:
+; TODO: before copying ROM into RAM, preserve RAM for dump
 if z180
 ; Might arrive here from a TRAP...
 	in0	a,itc
@@ -654,6 +656,7 @@ if z180
 init0:	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
+	;call	savram
 	; map in 8K of ROM from 0xf8000 into 0x4000
 	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
 	out0	a,mmu$cbar
@@ -673,16 +676,24 @@ else
 	out0	a,mmu$bbr
 endif
 else
+	lxi	h,0ffffh
+	sphl
+	push	h	; save top on stack
 	mvi	a,ctl$MEM1	; MEM1 = full ROM
 	out	0f2h	; enable full ROM
+	lda	suadr+m512k
+	ora	a
+	cz	savram	; H8-512K installed, save RAM
 	lxi	h,0
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
 	ldir
-	lxi	h,0ffffh
-	sphl
-	push	h	; save top on stack
 endif
+	; save config data
+	lxi	h,suadr
+	lxi	d,susave
+	lxi	b,sumax
+	ldir
 	lxi	h,re$entry
 	push	h
 	call	coninit
@@ -2197,7 +2208,7 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	41	; -100---- VDIP1
 	db	70	; -101---- GIDE disk part 0
 	db	60	; -110---- Network
-	db	0ffh	; -111---- none
+	db	0feh	; -111---- use setup primary
 
 if z180
 ; TODO: preserve CPU regs for debug/front-panel
@@ -2228,6 +2239,9 @@ trap0:
 
 trpms:	db	CR,LF,'*** TRAP ',TRM
 endif
+
+savram:	; TODO: implement this
+	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Dump command
@@ -2278,13 +2292,59 @@ cmdlb:	lxi	h,lbmsg
 
 lbmsg:	db	'ist boot modules',CR,LF,0
 hbmsg:	db	'elp boot',CR,LF,0
+hbmsg2:	db	'Pri: ',0
+hbmsg3:	db	'Sec: ',0
 
+; Help boot command
 cmdhb:	lxi	h,hbmsg
 	call	msgout
 	call	gtdfbt
 	mov	b,d
 	lxi	h,bfllst
 	call	bfind0
+	; Now display primary/secondary configs
+	lxi	h,hbmsg2
+	lxi	d,susave+dpdev
+	in	0f2h
+	ani	01110000b	; default boot device
+	cpi	01110000b	; use setup cfg?
+	mvi	a,'*'
+	jrz	cmdhb6
+	mvi	a,' '
+cmdhb6:	call	cmdhbx
+	lxi	h,hbmsg3
+	lxi	d,susave+dsdev
+	mvi	a,' '	; never the default
+	call	cmdhbx
+	ret
+
+cmdhbx:	call	conout
+	call	msgout
+	ldax	d
+	inx	d
+	cpi	0ffh
+	jrnz	cmdhb0
+	mvi	a,'-'
+cmdhb0:	call	conout
+	mvi	a,' '
+	call	conout
+	ldax	d
+	inx	d
+	adi	'0'	; FF=2F,CY
+	jrnc	cmdhb1
+	mvi	a,'-'
+cmdhb1:	call	conout
+	mvi	a,' '
+	call	conout
+	ldax	d
+	cpi	0ffh
+	jrnz	cmdhb2
+	mvi	a,'-'
+	call	conout
+	jr	cmdhb3
+cmdhb2:	xchg
+	call	msgout
+cmdhb3:	call	crlf
 	ret
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

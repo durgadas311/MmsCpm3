@@ -91,7 +91,7 @@ mkchg:	lxi	d,dochg
 	ora	a
 	jrnz	xxchg
 	lxi	d,last
-	lxi	b,0800h-2
+	lxi	b,sulen
 	call	schksm
 	lhld	sum
 	shld	ssum
@@ -113,16 +113,16 @@ else
 	out	0f2h
 endif
 	lxi	h,last
-	lxi	d,1000h
-	lxi	b,0800h/64
+	lxi	d,suadr
+	lxi	b,susize/64
 	call	flash
 	;jrc	error	; never returned, actually
 	pop	psw
 	push	psw
 	ani	01111111b	; WE off
 	out	0f2h
-	lxi	d,1000h
-	lxi	b,0800h-2
+	lxi	d,suadr
+	lxi	b,sulen
 	call	vchksm
 	lhld	sum
 	xchg
@@ -139,6 +139,11 @@ endif
 	ei
 	lxi	d,saved
 	call	msgout
+	; Update monitor copy
+	lxi	h,last
+	lxi	d,susave
+	lxi	b,sumax
+	ldir
 	ret
 
 ; PSW is on stack...
@@ -164,9 +169,9 @@ else
 	ori	00001000b	; MEM1
 	out	0f2h
 endif
-	lxi	h,1000h
+	lxi	h,suadr
 	lxi	d,last
-	lxi	b,0800h
+	lxi	b,susize
 	ldir
 	pop	psw
 	out	0f2h
@@ -176,7 +181,7 @@ if z180
 endif
 	ei
 	lxi	d,last
-	lxi	b,0800h-2
+	lxi	b,sulen
 	call	vchksm
 	ret	; CY=checksum error
 
@@ -425,10 +430,10 @@ cserr:	lxi	d,csbad
 	mov	e,l
 	mvi	m,0ffh
 	inx	h
-	lxi	b,0800h-1
+	lxi	b,susize-1
 	ldir
 	lxi	h,0
-	shld	last+2	; mdbase
+	shld	last+subase
 	mvi	a,1
 	sta	dirty
 	ret
@@ -601,7 +606,7 @@ signon:	db	'onfig setup v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 	db	CR,LF,0
 
-csbad:	db	'Setup bank checksum error. Clear setup data (y/N)? ',0
+csbad:	db	'Setup bank checksum error. Clear setup data (',0
 nochg:	db	'Setup not changed',CR,LF,0
 dochg:	db	'Save changes (',0
 saved:	db	'Setup data saved',CR,LF,0

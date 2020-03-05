@@ -100,7 +100,6 @@ loop0:	call	vdrd
 	call	msgout
 	call	linin
 	lda	inbuf
-	ani	01011111b	; toupper
 	cpi	'Y'
 	jrnz	noera
 	sta	era
