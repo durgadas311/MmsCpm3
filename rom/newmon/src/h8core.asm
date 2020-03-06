@@ -605,6 +605,7 @@ btstr0:
 	jrnz	btstr0
 	mvi	m,0
 	mov	a,b
+	dcr	a
 	sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
 ; D=Phys Drive base number, E=Unit number
 ; (or, D=Phys Drive unit, E=0)

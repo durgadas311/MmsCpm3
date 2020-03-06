@@ -48,7 +48,7 @@ boot:
 	inx	h
 xx0:	mov	a,m
 	stax	d
-	cpi	CR
+	ora	a
 	jrz	xx1
 	sui	'.'	; 00:(A=='.')
 	sui	1	; CY:==, NC:<>

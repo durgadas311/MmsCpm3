@@ -168,7 +168,16 @@ z80$flash:
 	mvi	a,10001000b	; WE, enable full ROM
 	out	0f2h
 	lxi	b,(8000h-4096)/64	; rest of ROM
-	call	flash
+	lda	era
+	ora	a
+	jrnz	flsal1
+	lxi	b,0800h
+	dad	b
+	xchg
+	dad	b
+	xchg
+	lxi	b,(8000h-1800h)/64	; rest of ROM
+flsal1:	call	flash
 	jrc	error
 	mvi	a,00001000b	; WE off, enable full ROM
 	out	0f2h

@@ -322,6 +322,7 @@ boot:
 	mov	a,m
 	cpi	0c3h	; no string
 	jrz	nb5
+	inr	a	; include len byte
 	mov	c,a
 	; we send N+1 bytes, NUL term
 	sta	msg$siz
