@@ -63,7 +63,7 @@ RECV	equ	40h
 SOKINIT	equ	13h
 ESTABLISHED equ	17h
 
-	org	2280h
+	org	2300h
 server:	ds	1	; SID, dest of send
 nodeid:	ds	1	; our node id
 cursok:	ds	1	; current socket select patn
@@ -73,7 +73,7 @@ msglen:	ds	2
 totlen:	ds	2
 dma:	ds	2
 
-	org	2300h
+	org	2340h
 msgbuf:	ds	0
 msg$fmt: ds	1
 msg$did: ds	1
