@@ -1,0 +1,211 @@
+                ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
+                ; linked with vdip1.rel
+                	extrn	strcpy,strcmp
+                	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
+                	public	vdbuf
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+                
+                	maclib	z80
+                	aseg
+                
+                ; H8x512K MMU constants
+ 0000 =         mmu	equ	0	; base port
+ 0000 =         rd	equ	0
+ 0004 =         wr	equ	4
+ 0000 =         pg0k	equ	0
+ 0001 =         pg16k	equ	1
+ 0002 =         pg32k	equ	2
+ 0003 =         pg48k	equ	3
+ 0080 =         ena	equ	80h
+ 0000 =         rd00k	equ	mmu+rd+pg0k
+ 0001 =         rd16k	equ	mmu+rd+pg16k
+ 0002 =         rd32k	equ	mmu+rd+pg32k
+ 0003 =         rd48k	equ	mmu+rd+pg48k
+ 0004 =         wr00k	equ	mmu+wr+pg0k
+ 0005 =         wr16k	equ	mmu+wr+pg16k
+ 0006 =         wr32k	equ	mmu+wr+pg32k
+ 0007 =         wr48k	equ	mmu+wr+pg48k
+                
+                ; ROM hooks...
+ 0026 =         conop	equ	0026h	; pointer, not vector
+ 2009 =         ctl$F0	equ	2009h
+ 2036 =         ctl$F2	equ	2036h
+                
+                ; e.g. org 3000h...
+                	cseg
+ 0000 F3        begin:	di
+                	; TODO: init VDIP1...
+ 0001 210920    	lxi	h,ctl$F0
+ 0004 7E        	mov	a,m
+ 0005 32FA00    	sta	sav$F0
+ 0008 F640      	ori	01000000b	; 2mS back on
+ 000A 77        	mov	m,a
+ 000B D3F0      	out	0f0h
+ 000D FB        	ei	; TODO: will ROM leave MMU alone?
+ 000E CD0000    	call	runout
+ 0011 CD0000    	call	sync
+ 0014 DACA00    	jc	vderr
+                
+ 0017 210A01    	lxi	h,opw
+ 001A 116001    	lxi	d,vdbuf
+ 001D CD0000    	call	strcpy
+                	; look for optional filename...
+ 0020 218022    	lxi	h,2280h
+ 0023 46        	mov	b,m	; len
+ 0024 23        	inx	h
+ 0025 7E        chkfil:	mov	a,m
+ 0026 23        	inx	h
+ 0027 B7        	ora	a
+                	jrz	nofil
+ 0028+2806      	DB	28H,NOFIL-$-1
+ 002A FE20      	cpi	' '
+                	jrz	gotfil	; already skipped blank...
+ 002C+2805      	DB	28H,GOTFIL-$-1
+                	djnz	chkfil
+ 002E+10F5      	DB	10H,CHKFIL-$-1
+ 0030 210F01    nofil:	lxi	h,def
+                gotfil:
+ 0033 CD0000    	call	strcpy	; does not incl CR
+ 0036 3E0D      	mvi	a,CR
+ 0038 12        	stax	d
+                start:
+ 0039 216001    	lxi	h,vdbuf
+ 003C CD0000    	call	vdcmd
+ 003F DAB900    	jc	nferr
+                	; setup/activate MMU
+ 0042 CD8200    	call	mmu$init
+                	; from here on, must exit via exit
+                
+                	; just map each page into pg48k and dump from there
+ 0045 AF        	xra	a
+ 0046 32F900    	sta	pagex
+                loop0:
+ 0049 CDCF00    	call	map$page
+ 004C 2100C0    	lxi	h,0c000h	; page 48K
+                loop1:
+ 004F EB        	xchg
+ 0050 CDE000    	call	vdwr
+ 0053 EB        	xchg
+ 0054 DA9C00    	jc	error
+ 0057 7C        	mov	a,h
+ 0058 B5        	ora	l
+ 0059 CA6D00    	jz	gotpg
+ 005C 7C        	mov	a,h
+ 005D E60F      	ani	0fh	; at 4K boundary?
+ 005F B5        	ora	l
+ 0060 C24F00    	jnz	loop1
+ 0063 E5        	push	h
+ 0064 3E2E      	mvi	a,'.'
+ 0066 CD7E00    	call	conout
+ 0069 E1        	pop	h
+ 006A C34F00    	jmp	loop1
+                gotpg:
+ 006D 3AF900    	lda	pagex
+ 0070 3C        	inr	a
+ 0071 32F900    	sta	pagex
+ 0074 FE0D      	cpi	13	; done after pages 0-12
+ 0076 D27C00    	jnc	done
+ 0079 C34900    	jmp	loop0
+                done:
+                	jr	exit	; now safe to return directly
+ 007C+1824      	DB	18H,EXIT-$-1
+                
+                conout:
+ 007E 2A2600    	lhld	conop
+ 0081 E9        	pchl
+                
+                ; Create "unity" page mapping, enable MMU
+                mmu$init:
+ 0082 F3        	di
+ 0083 3E00      	mvi	a,0	; page 0
+ 0085 D300      	out	rd00k
+ 0087 D304      	out	wr00k
+ 0089 3C        	inr	a
+ 008A D301      	out	rd16k
+ 008C D305      	out	wr16k
+ 008E 3C        	inr	a
+ 008F D302      	out	rd32k
+ 0091 D306      	out	wr32k
+ 0093 3C        	inr	a
+ 0094 F680      	ori	ena
+ 0096 D303      	out	rd48k
+ 0098 D307      	out	wr48k
+ 009A FB        	ei
+ 009B C9        	ret
+                
+                error:
+ 009C 111C01    	lxi	d,fail
+ 009F CDD700    	call	msgout
+ 00A2 21FB00    exit:	lxi	h,clf
+ 00A5 CD0000    	call	vdcmd
+ 00A8 3AFA00    	lda	sav$F0
+ 00AB 320920    	sta	ctl$F0
+ 00AE D3F0      	out	0f0h
+                mmu$deinit:
+ 00B0 F3        	di
+ 00B1 3E00      	mvi	a,0
+ 00B3 D300      	out	rd00k	; disables MMU, forces 64K
+ 00B5 FB        	ei
+ 00B6 C30000    	jmp	0
+                
+ 00B9 113101    nferr:	lxi	d,operr
+ 00BC CDD700    errout:	call	msgout
+ 00BF 3AFA00    	lda	sav$F0
+ 00C2 320920    	sta	ctl$F0
+ 00C5 D3F0      	out	0f0h
+ 00C7 C30000    	jmp	0
+ 00CA 114801    vderr:	lxi	d,nterr
+                	jr	errout
+ 00CD+18ED      	DB	18H,ERROUT-$-1
+                
+                map$page:
+ 00CF 3AF900    	lda	pagex	; page we're on
+ 00D2 F680      	ori	ena
+ 00D4 D303      	out	rd48k
+ 00D6 C9        	ret
+                
+                ; DE=string, NUL term
+ 00D7 1A        msgout:	ldax	d
+ 00D8 B7        	ora	a
+ 00D9 C8        	rz
+ 00DA CD7E00    	call	conout
+ 00DD 13        	inx	d
+                	jr	msgout
+ 00DE+18F7      	DB	18H,MSGOUT-$-1
+                
+                ; DE=data buffer (dma adr)
+                ; Returns DE=next
+ 00E0 210001    vdwr:	lxi	h,wrf
+ 00E3 CD0000    	call	vdmsg
+ 00E6 010002    	lxi	b,512
+ 00E9 1A        vdwr0:	ldax	d
+ 00EA CD0000    	call	vdout
+ 00ED 13        	inx	d
+ 00EE 0B        	dcx	b
+ 00EF 78        	mov	a,b
+ 00F0 B1        	ora	c
+                	jrnz	vdwr0
+ 00F1+20F6      	DB	20H,VDWR0-$-1
+ 00F3 D5        	push	d
+ 00F4 CD0000    	call	vdend
+ 00F7 D1        	pop	d
+ 00F8 C9        	ret	; CY=error
+                
+ 00F9 00        pagex:	db	0
+ 00FA 00        sav$F0:	db	0
+                
+ 00FB 636C660D00clf:	db	'clf',CR,0
+ 0100 7772662000wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
+ 010A 6F70772000opw:	db	'opw ',0
+ 010F 636F726564def:	db	'coredump.out',0
+                
+ 011C 210D0A2A20fail:	db	'!',CR,LF,'* dump failed *',CR,LF,0
+ 0131 2A2066696Coperr:	db	'* file open failed *',CR,LF,0
+ 0148 2A20564449nterr:	db	'* VDIP1 init failed *',CR,LF,0
+                
+ 0160           vdbuf:	ds	128
+                
+ 01E0           	end
+

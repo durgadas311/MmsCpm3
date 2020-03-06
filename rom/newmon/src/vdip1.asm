@@ -4,7 +4,7 @@
 	maclib	z80
 
 	public	strcpy,strcmp
-	public	vdcmd,vdrd,sync,runout
+	public	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
 	extrn	vdbuf
 
 vdip1	equ	0d8h	; base port
@@ -64,6 +64,7 @@ strcmp:
 ; HL=command string, CR term
 vdcmd:	
 	call	vdmsg
+vdend:
 	call	vdinp
 	lxi	h,vdbuf
 	lxi	d,prompt

@@ -50,6 +50,8 @@ xx0:	mov	a,m
 	stax	d
 	ora	a
 	jrz	xx1
+	cpi	' '	; possible command options follow
+	jrz	xx1
 	sui	'.'	; 00:(A=='.')
 	sui	1	; CY:==, NC:<>
 	sbb	a	; FF:=='.', 00:<>'.'

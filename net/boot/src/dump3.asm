@@ -94,7 +94,7 @@ loop1:
 	ora	l
 	jz	gotpg
 	mov	a,h
-	ani	07h	; 2K boundary?
+	ani	0fh	; at 4K boundary?
 	ora	l
 	jnz	loop1
 	push	h
@@ -106,7 +106,7 @@ gotpg:
 	lda	pagex
 	inr	a
 	sta	pagex
-	cpi	7	; done after 7 pages
+	cpi	13	; done after pages 0-12
 	jnc	done
 	jmp	loop0
 done:
