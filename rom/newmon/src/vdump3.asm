@@ -7,10 +7,15 @@
 CR	equ	13
 LF	equ	10
 
-	maclib	z80
+	maclib	z180
 	aseg
 
-; H8x512K MMU constants
+; Z180 MMU constants - Z180 only
+mmu$cbr	equ	38h
+mmu$bbr	equ	39h
+mmu$cbar equ	3ah
+
+; H8x512K MMU constants - Z80 only
 mmu	equ	0	; base port
 rd	equ	0
 wr	equ	4
@@ -36,7 +41,6 @@ ctl$F2	equ	2036h
 ; e.g. org 3000h...
 	cseg
 begin:	di
-	; TODO: init VDIP1...
 	lxi	h,ctl$F0
 	mov	a,m
 	sta	sav$F0
@@ -47,6 +51,13 @@ begin:	di
 	call	runout
 	call	sync
 	jc	vderr
+	call	cpu$type
+	sta	z180
+	ora	a
+	mvi	a,13	; H8-512K needs 13 pages
+	jrz	beg0
+	mvi	a,15	; covers all of CP/M 3 on Z180
+beg0:	sta	npages
 
 	lxi	h,opw
 	lxi	d,vdbuf
@@ -102,7 +113,8 @@ gotpg:
 	lda	pagex
 	inr	a
 	sta	pagex
-	cpi	13	; done after pages 0-12
+	lxi	h,npages
+	cpi	m	; done after num pages
 	jnc	done
 	jmp	loop0
 done:
@@ -115,7 +127,15 @@ conout:
 ; Create "unity" page mapping, enable MMU
 mmu$init:
 	di
-	mvi	a,0	; page 0
+	lda	z180
+	ora	a
+	jrnz	min0
+	; TODO: Z180 MMU init
+	mvi	a,1100$1100b	; com1 at C000 (bnk disabled)
+	out0	a,mmu$cbar
+	ei
+	ret
+min0:	mvi	a,0	; page 0
 	out	rd00k
 	out	wr00k
 	inr	a
@@ -141,7 +161,15 @@ exit:	lxi	h,clf
 	out	0f0h
 mmu$deinit:
 	di
-	mvi	a,0
+	lda	z180
+	ora	a
+	jrz	mdi0
+	; TODO: Z180 de-init
+	xra	a
+	out0	a,mmu$cbar
+	ei
+	jmp	0
+mdi0:	mvi	a,0
 	out	rd00k	; disables MMU, forces 64K
 	ei
 	jmp	0
@@ -156,8 +184,18 @@ vderr:	lxi	d,nterr
 	jr	errout
 
 map$page:
-	lda	pagex	; page we're on
-	ori	ena
+	lda	z180
+	ora	a
+	lda	pagex	; 16K page we're on
+	jrz	mp0
+	; convert to 4K page adr
+	; offset by C000...
+	add	a
+	add	a
+	sui	0ch	; might be negative
+	out0	a,mmu$cbr
+	ret
+mp0:	ori	ena
 	out	rd48k
 	ret
 
@@ -186,8 +224,17 @@ vdwr0:	ldax	d
 	pop	d
 	ret	; CY=error
 
+cpu$type:
+	mvi	a,1
+	mlt	b
+	sui	0ffh
+	sbb	a
+	ret
+
 pagex:	db	0
 sav$F0:	db	0
+z180:	db	0
+npages:	db	0
 
 clf:	db	'clf',CR,0
 wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
