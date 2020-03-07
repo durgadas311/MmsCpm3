@@ -43,7 +43,7 @@ h8mon2.rom: $(H8MON)
 	$(MAKE) -C rmac $@
 
 ship: rmac/vflash.sys h8mon2.rom h8mon2z180.rom ../doc/H8-Monitor-2.pdf
-	rsync -uvW rmac/vflash.sys ../doc/H8-Monitor-2.pdf \
+	rsync -uvW ../bin/*.sys ../doc/H8-Monitor-2.pdf \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/
 	rsync -uvW h8mon2.rom \
 		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom

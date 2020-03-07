@@ -1,0 +1,135 @@
+                ; Stand-Alone Program to flash the ROM from an image on VDIP1 USB stick
+ 0010 =         VERN	equ	10h
+                	maclib	z180
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 0003 =         CTLC	equ	3
+                
+ 201B =         ticcnt	equ	201bh	; for vdip1.lib
+ 2009 =         ctl$F0	equ	2009h
+ 2036 =         ctl$F2	equ	2036h
+                
+                	cseg
+                begin:
+ 0000 317801    	lxi	sp,stack
+ 0003 115600    	lxi	d,signon
+ 0006 CDEF00    	call	msgout
+ 0009 CD3400    	call	cpu$type
+ 000C B7        	ora	a
+                	jrz	is$z80
+ 000D+2805      	DB	28H,IS$Z80-$-1
+ 000F 117200    	lxi	d,mz180
+                	jr	is$comm
+ 0012+1803      	DB	18H,IS$COMM-$-1
+ 0014 117700    is$z80:	lxi	d,mz80
+                is$comm:
+ 0017 CDEF00    	call	msgout
+ 001A CDCA00    	call	crlf
+                done:
+ 001D 119700    	lxi	d,press
+ 0020 CDEF00    	call	msgout
+ 0023 CDBF00    	call	conin
+ 0026 CDCA00    	call	crlf
+ 0029 F3        	di
+ 002A AF        	xra	a
+ 002B D3F2      	out	0f2h
+ 002D 3EDF      	mvi	a,0dfh	; reset state of FP
+ 002F D3F0      	out	0f0h
+ 0031 C30000    	jmp	0
+                
+                cpu$type:
+ 0034 010505    	lxi	b,0505h	; setup MLT B: 5*5=25 (19h)
+ 0037 3E01      	mvi	a,1	; setup NEG:   1=-1 (0ffh)
+                	mlt	b
+ 0039+ED4C      	DB	0EDH, B*8+4CH
+ 003B CDA700    	call	dump
+ 003E FEFF      	cpi	0ffh
+                	jrz	gz80
+ 0040+280D      	DB	28H,GZ80-$-1
+ 0042 79        	mov	a,c
+ 0043 B0        	ora	b
+ 0044 FE19      	cpi	25
+ 0046 C8        	rz	; A is NZ...
+ 0047 117B00    cant:	lxi	d,mcant
+ 004A CDEF00    	call	msgout
+                	jr	done
+ 004D+18CE      	DB	18H,DONE-$-1
+ 004F 79        gz80:	mov	a,c
+ 0050 B0        	ora	b
+ 0051 D605      	sui	5
+ 0053 C8        	rz
+                	jr	cant
+ 0054+18F1      	DB	18H,CANT-$-1
+                
+ 0056 0D0A564350signon:	db	CR,LF,'VCPU v'
+ 005E 312E30    	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+ 0061 202D204350	db	' - CPU type is: ',0
+ 0072 5A31383000mz180:	db	'Z180',0
+ 0077 5A383000  mz80:	db	'Z80',0
+ 007B 203E3E3E63mcant:	db	' >>>can''t guess CPU type<<<',0
+ 0097 5072657373press:	db	'Press any key: ',0
+                
+ 00A7 F5        dump:	push	psw
+ 00A8 CDD300    	call	hexout
+ 00AB 3E20      	mvi	a,' '
+ 00AD CDE400    	call	conout
+ 00B0 78        	mov	a,b
+ 00B1 CDD300    	call	hexout
+ 00B4 79        	mov	a,c
+ 00B5 CDD300    	call	hexout
+ 00B8 3E20      	mvi	a,' '
+ 00BA CDE400    	call	conout
+ 00BD F1        	pop	psw
+ 00BE C9        	ret
+                
+ 00BF DBED      conin:	in	0edh
+ 00C1 E601      	ani	00000001b
+                	jrz	conin
+ 00C3+28FA      	DB	28H,CONIN-$-1
+ 00C5 DBE8      	in	0e8h
+ 00C7 E67F      	ani	01111111b
+ 00C9 C9        	ret
+                
+ 00CA 3E0D      crlf:	mvi	a,CR
+ 00CC CDE400    	call	conout
+ 00CF 3E0A      	mvi	a,LF
+                	jr	conout
+ 00D1+1811      	DB	18H,CONOUT-$-1
+                
+ 00D3 F5        hexout:	push	psw
+ 00D4 07        	rlc
+ 00D5 07        	rlc
+ 00D6 07        	rlc
+ 00D7 07        	rlc
+ 00D8 CDDC00    	call	hexdig
+ 00DB F1        	pop	psw
+ 00DC E60F      hexdig:	ani	0fh
+ 00DE C690      	adi	90h
+ 00E0 27        	daa
+ 00E1 CE40      	aci	40h
+ 00E3 27        	daa
+                	; jmp	conout
+ 00E4 F5        conout:	push	psw
+ 00E5 DBED      cono0:	in	0edh
+ 00E7 E620      	ani	00100000b
+                	jrz	cono0
+ 00E9+28FA      	DB	28H,CONO0-$-1
+ 00EB F1        	pop	psw
+ 00EC D3E8      	out	0e8h
+ 00EE C9        	ret
+                
+ 00EF 1A        msgout:	ldax	d
+ 00F0 B7        	ora	a
+ 00F1 C8        	rz
+ 00F2 CDE400    	call	conout
+ 00F5 13        	inx	d
+                	jr	msgout
+ 00F6+18F7      	DB	18H,MSGOUT-$-1
+                
+ 00F8           	ds	128
+ 0178           stack:	ds	0
+ 0178           	end
+

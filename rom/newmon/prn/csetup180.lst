@@ -1,0 +1,804 @@
+		; Command module for SETUP
+0001          	VERN	equ	01h
+		
+0000          	false	equ	0
+FFFF          	true	equ	not false
+		
+FFFF          	z180	equ	true
+		
+			maclib	ram
+**** ram.lib ****
+**** csetup180.asm ****
+			maclib	setup
+**** setup.lib ****
+**** csetup180.asm ****
+FFFF          	if z180
+			maclib	z180
+**** z180.lib ****
+**** csetup180.asm ****
+		else
+		endif
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0008          	BS	equ	8
+0003          	CTLC	equ	3
+0007          	BEL	equ	7
+001B          	ESC	equ	27
+		
+FFFF          	if z180
+0038          	mmu$cbr	equ	38h
+0039          	mmu$bbr	equ	39h
+003A          	mmu$cbar equ	3ah
+		endif
+		
+8000          		org	8000h	; out of reach of ROM overlay...
+8000  07      	first:	db	HIGH (last-first)	; +0: num pages
+8001  80      		db	HIGH first		; +1: ORG page
+8002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+8004  C31680  		jmp	init	; +4: init entry
+8007  C31880  		jmp	exec	; +7: action entry
+		
+800A  43      		db	'C'	; +10: Command letter
+800B  FF      		db	-1	; +11: front panel key
+800C  00      		db	0	; +12: port, 0 if variable
+800D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+8010  53657475		db	'Setup',0	; +16: mnemonic string
+      7000
+		
+8016          	init:
+8016  AF      		xra	a	; NC
+8017  C9      		ret
+		
+8018          	exec:
+8018  11DB83  		lxi	d,signon
+801B  CDD281  		call	msgout
+801E  CDE880  		call	get$su	; get a copy of setup data
+8021  DC5182  		cc	cserr	; offer to clear if checksum error
+			; Primary/Default boot options
+8024  117B84  		lxi	d,gpdev
+8027  210487  		lxi	h,last+dpdev
+802A  CDE382  		call	getlet
+802D  119984  		lxi	d,gpuni
+8030  210587  		lxi	h,last+dpuni
+8033  CD5983  		call	getnum
+8036  11B584  		lxi	d,gpstr
+8039  210687  		lxi	h,last+dpstr
+803C  CD9E83  		call	getstr
+			; Secondary boot options
+803F  11D384  		lxi	d,gsdev
+8042  218687  		lxi	h,last+dsdev
+8045  CDE382  		call	getlet
+8048  11EB84  		lxi	d,gsuni
+804B  218787  		lxi	h,last+dsuni
+804E  CD5983  		call	getnum
+8051  110185  		lxi	d,gsstr
+8054  218887  		lxi	h,last+dsstr
+8057  CD9E83  		call	getstr
+			; Add-ons Installed
+0000          	if not z180
+		endif
+			; TODO: more setup?
+805A  3A3185  		lda	dirty
+805D  B7      		ora	a
+805E  C26880  		jnz	mkchg
+8061  111C84  	xxchg:	lxi	d,nochg
+8064  CDD281  		call	msgout
+8067  C9      		ret
+		
+8068  113084  	mkchg:	lxi	d,dochg
+806B  213485  		lxi	h,inbuf
+806E  36FF    		mvi	m,0ffh
+8070  CD8482  		call	getyn
+8073  3A3485  		lda	inbuf
+8076  B7      		ora	a
+8077  20E8    		jrnz	xxchg
+8079  110087  		lxi	d,last
+807C  01FE07  		lxi	b,sulen
+807F  CD3B81  		call	schksm
+8082  2A5E81  		lhld	sum
+8085  226081  		shld	ssum
+8088  F3      		di
+8089  3A3620  		lda	ctl$F2
+808C  F5      		push	psw
+FFFF          	if z180
+808D  0600    		mvi	b,0
+808F  ED0138  		out0	b,mmu$cbr
+8092  06F8    		mvi	b,0f8h
+8094  ED0139  		out0	b,mmu$bbr
+8097  0680    		mvi	b,1000$0000b
+8099  ED013A  		out0	b,mmu$cbar
+809C  F6A0    		ori	10100000b	; WE, no legacy ROM
+809E  D3F2    		out	0f2h
+		else
+		endif
+80A0  210087  		lxi	h,last
+80A3  110010  		lxi	d,suadr
+80A6  012000  		lxi	b,susize/64
+80A9  CD2A82  		call	flash
+			;jrc	error	; never returned, actually
+80AC  F1      		pop	psw
+80AD  F5      		push	psw
+80AE  E67F    		ani	01111111b	; WE off
+80B0  D3F2    		out	0f2h
+80B2  110010  		lxi	d,suadr
+80B5  01FE07  		lxi	b,sulen
+80B8  CD1C81  		call	vchksm
+80BB  2A5E81  		lhld	sum
+80BE  EB      		xchg
+80BF  2A6081  		lhld	ssum
+80C2  B7      		ora	a
+80C3  ED52    		dsbc	d
+80C5  2019    		jrnz	error
+80C7  F1      		pop	psw
+80C8  D3F2    		out	0f2h
+FFFF          	if z180
+80CA  AF      		xra	a
+80CB  D339    		out	mmu$bbr
+		endif
+80CD  FB      		ei
+80CE  113F84  		lxi	d,saved
+80D1  CDD281  		call	msgout
+			; Update monitor copy
+80D4  210087  		lxi	h,last
+80D7  1100F8  		lxi	d,susave
+80DA  010F01  		lxi	b,sumax
+80DD  EDB0    		ldir
+80DF  C9      		ret
+		
+		; PSW is on stack...
+80E0  F1      	error:	pop	psw
+80E1  115284  		lxi	d,failed
+80E4  CDD281  		call	msgout
+80E7  C9      		ret	; what else can we do?
+		
+80E8  F3      	get$su:	di
+80E9  3A3620  		lda	ctl$F2
+80EC  F5      		push	psw
+FFFF          	if z180
+80ED  0600    		mvi	b,0
+80EF  ED0138  		out0	b,mmu$cbr
+80F2  06F8    		mvi	b,0f8h
+80F4  ED0139  		out0	b,mmu$bbr
+80F7  0680    		mvi	b,1000$0000b
+80F9  ED013A  		out0	b,mmu$cbar
+80FC  F6A0    		ori	10100000b	; WE, no legacy ROM
+80FE  D3F2    		out	0f2h
+		else
+		endif
+8100  210010  		lxi	h,suadr
+8103  110087  		lxi	d,last
+8106  010008  		lxi	b,susize
+8109  EDB0    		ldir
+810B  F1      		pop	psw
+810C  D3F2    		out	0f2h
+FFFF          	if z180
+810E  AF      		xra	a
+810F  D339    		out	mmu$bbr
+		endif
+8111  FB      		ei
+8112  110087  		lxi	d,last
+8115  01FE07  		lxi	b,sulen
+8118  CD1C81  		call	vchksm
+811B  C9      		ret	; CY=checksum error
+		
+		; DE=code start, BC=length
+		; Returns CY on error
+811C  210000  	vchksm:	lxi	h,0
+811F  225E81  		shld	sum
+8122  1A      	vchk0:	ldax	d
+8123  CD5581  		call	sum1
+8126  13      		inx	d
+8127  0B      		dcx	b
+8128  78      		mov	a,b
+8129  B1      		ora	c
+812A  20F6    		jrnz	vchk0
+812C  215E81  		lxi	h,sum
+812F  0602    		mvi	b,2
+8131  1A      	vchk2:	ldax	d
+8132  BE      		cmp	m
+8133  37      		stc
+8134  C0      		rnz
+8135  13      		inx	d
+8136  23      		inx	h
+8137  10F8    		djnz	vchk2
+8139  AF      		xra	a	; NC
+813A  C9      		ret
+		
+		; DE=code start, BC=length
+		; Sets checksum after code
+813B  210000  	schksm:	lxi	h,0
+813E  225E81  		shld	sum
+8141  1A      	schk0:	ldax	d
+8142  CD5581  		call	sum1
+8145  13      		inx	d
+8146  0B      		dcx	b
+8147  78      		mov	a,b
+8148  B1      		ora	c
+8149  20F6    		jrnz	schk0
+814B  215E81  		lxi	h,sum
+814E  7E      		mov	a,m
+814F  12      		stax	d
+8150  23      		inx	h
+8151  13      		inx	d
+8152  7E      		mov	a,m
+8153  12      		stax	d
+8154  C9      		ret
+		
+8155  215E81  	sum1:	lxi	h,sum
+8158  86      		add	m
+8159  77      		mov	m,a
+815A  D0      		rnc
+815B  23      		inx	h
+815C  34      		inr	m
+815D  C9      		ret
+		
+815E  0000    	sum:	dw	0
+8160  0000    	ssum:	dw	0
+		
+8162  3E1B    	liniz:	mvi	a,ESC
+8164  323485  		sta	inbuf
+8167  0E01    		mvi	c,1
+8169  C34782  		jmp	crlf
+816C  3600    	linix:	mvi	m,0	; terminate buffer
+816E  C34782  		jmp	crlf
+		
+		; input a filename from console, allow backspace
+		; returns C=num chars
+8171          	linin:
+8171  213485  		lxi	h,inbuf
+8174  0E00    		mvi	c,0	; count chars
+8176  CDC781  	lini0	call	conin
+8179  FE0D    		cpi	CR
+817B  28EF    		jrz	linix
+817D  FE1B    		cpi	ESC
+817F  28E1    		jrz	liniz
+8181  FE03    		cpi	CTLC	; cancel
+8183  37      		stc
+8184  C8      		rz
+8185  FE08    		cpi	BS
+8187  281C    		jrz	backup
+8189  FE20    		cpi	' '
+818B  3811    		jrc	chrnak
+818D  FE7F    		cpi	'~'+1
+818F  300D    		jrnc	chrnak
+8191  77      	chrok:	mov	m,a
+8192  23      		inx	h
+8193  0C      		inr	c
+8194  FA9C81  		jm	chrovf	; 128 chars max
+8197  CDBC81  		call	conout
+			; TODO: detect overflow...
+819A  18DA    		jr	lini0
+819C  2B      	chrovf:	dcx	h
+819D  0D      		dcr	c
+819E  3E07    	chrnak:	mvi	a,BEL
+81A0  CDBC81  		call	conout
+81A3  18D1    		jr	lini0
+81A5          	backup:
+81A5  79      		mov	a,c
+81A6  B7      		ora	a
+81A7  28CD    		jrz	lini0
+81A9  0D      		dcr	c
+81AA  2B      		dcx	h
+81AB  3E08    		mvi	a,BS
+81AD  CDBC81  		call	conout
+81B0  3E20    		mvi	a,' '
+81B2  CDBC81  		call	conout
+81B5  3E08    		mvi	a,BS
+81B7  CDBC81  		call	conout
+81BA  18BA    		jr	lini0
+		
+81BC          	chrout:
+81BC  F5      	conout:	push	psw
+81BD  DBED    	cono0:	in	0edh
+81BF  E620    		ani	00100000b
+81C1  28FA    		jrz	cono0
+81C3  F1      		pop	psw
+81C4  D3E8    		out	0e8h
+81C6  C9      		ret
+		
+81C7  DBED    	conin:	in	0edh
+81C9  E601    		ani	00000001b
+81CB  28FA    		jrz	conin
+81CD  DBE8    		in	0e8h
+81CF  E67F    		ani	01111111b
+81D1  C9      		ret
+		
+81D2  1A      	msgout:	ldax	d
+81D3  B7      		ora	a
+81D4  C8      		rz
+81D5  CDBC81  		call	conout
+81D8  13      		inx	d
+81D9  18F7    		jr	msgout
+		
+		; A=number to print
+		; leading zeroes blanked - must preserve B
+81DB          	decout:
+81DB  C5      		push	b
+81DC  0E00    		mvi	c,0
+81DE  1664    		mvi	d,100
+81E0  CDEF81  		call	divide
+81E3  160A    		mvi	d,10
+81E5  CDEF81  		call	divide
+81E8  C630    		adi	'0'
+81EA  CDBC81  		call	chrout
+81ED  C1      		pop	b
+81EE  C9      		ret
+		
+81EF  1E00    	divide:	mvi	e,0
+81F1  92      	div0:	sub	d
+81F2  1C      		inr	e
+81F3  30FC    		jrnc	div0
+81F5  82      		add	d
+81F6  1D      		dcr	e
+81F7  2005    		jrnz	div1
+81F9  CB41    		bit	0,c
+81FB  2001    		jrnz	div1
+81FD  C9      		ret
+81FE  CBC1    	div1:	setb	0,c
+8200  F5      		push	psw	; remainder
+8201  3E30    		mvi	a,'0'
+8203  83      		add	e
+8204  CDBC81  		call	chrout
+8207  F1      		pop	psw	; remainder
+8208  C9      		ret
+		
+		; Parse a 8-bit (max) decimal number
+		; HL=string, B=count
+		; Returns D=number, CY=error
+8209          	parsnm:
+8209  110000  		lxi	d,0
+820C  7E      	pd0:	mov	a,m
+820D  B7      		ora	a
+820E  C8      		rz
+820F  FE30    		cpi	'0'
+8211  D8      		rc
+8212  FE3A    		cpi	'9'+1
+8214  3F      		cmc
+8215  D8      		rc
+8216  E60F    		ani	0fh
+8218  5F      		mov	e,a
+8219  7A      		mov	a,d
+821A  87      		add	a	; *2
+821B  D8      		rc	
+821C  87      		add	a	; *4
+821D  D8      		rc	
+821E  82      		add	d	; *5
+821F  D8      		rc	
+8220  87      		add	a	; *10
+8221  D8      		rc	
+8222  83      		add	e	;
+8223  D8      		rc
+8224  57      		mov	d,a
+8225  23      		inx	h
+8226  10E4    		djnz	pd0
+8228  B7      		ora	a	; NC
+8229  C9      		ret
+		
+		; flash ROM from HL to DE, 64 bytes at a time.
+		; DE must be on a 64-byte boundary.
+		; BC=num pages to flash
+		; returns CY on error, else HL,DE at next 64 bytes
+		; caller must set WE... and MEM1 as needed.
+822A          	flash:
+822A  C5      		push	b
+822B  014000  		lxi	b,64
+822E  EDB0    		ldir
+			; -----
+8230  2B      		dcx	h
+8231  1B      		dcx	d	; last addr written...
+			; wait for write cycle to begin...
+			; TODO: timeout this loop?
+8232  1A      	flash2:	ldax	d
+8233  AE      		xra	m
+8234  E680    		ani	10000000b	; bit7 is inverted when busy...
+8236  28FA    		jrz	flash2
+			; wait for write cycle to end...
+			; TODO: timeout this loop?
+8238  1A      	flash0:	ldax	d
+8239  AE      		xra	m
+823A  E680    		ani	10000000b	; bit7 is inverted when busy...
+823C  20FA    		jrnz	flash0
+823E  23      		inx	h
+823F  13      		inx	d
+			; done with page...
+			;call	progress	; TODO: progress needed?
+8240  C1      		pop	b
+8241  0B      		dcx	b
+8242  78      		mov	a,b
+8243  B1      		ora	c
+8244  20E4    		jrnz	flash
+			;xra	a	; NC already
+8246  C9      		ret
+		
+8247  3E0D    	crlf:	mvi	a,CR
+8249  CDBC81  		call	conout
+824C  3E0A    		mvi	a,LF
+824E  C3BC81  		jmp	conout
+		
+8251  11EE83  	cserr:	lxi	d,csbad
+8254  CDD281  		call	msgout
+8257  213485  		lxi	h,inbuf
+825A  36FF    		mvi	m,0ffh
+825C  CD8482  		call	getyn
+825F  3A3485  		lda	inbuf
+8262  B7      		ora	a	; NZ=no
+8263  201B    		jrnz	cserr9
+8265  210087  		lxi	h,last
+8268  54      		mov	d,h
+8269  5D      		mov	e,l
+826A  36FF    		mvi	m,0ffh
+826C  23      		inx	h
+826D  01FF07  		lxi	b,susize-1
+8270  EDB0    		ldir
+8272  210000  		lxi	h,0
+8275  220287  		shld	last+subase
+8278  3E01    		mvi	a,1
+827A  323185  		sta	dirty
+827D  C9      		ret
+		
+		; CY preserved if set...
+827E  E1      	nmerr9:	pop	h	; discard saved HL
+827F  D1      		pop	d	; discard saved DE
+8280  E1      	cserr9:	pop	h	; discard our ret adr
+8281  C36180  		jmp	xxchg	; return to monitor
+		
+		; DE=prompt prefix, HL=value location
+		; get a Y/N, Wait for CR, allow BS.
+		; Stores 0ffh for "no", 000h for "yes"
+8284          	getyn:
+8284  CDD281  		call	msgout
+8287  7E      		mov	a,m
+8288  B7      		ora	a
+8289  3E4E    		mvi	a,'N'
+828B  2002    		jrnz	getyn1
+828D  3E59    		mvi	a,'Y'
+828F  CDBC81  	getyn1:	call	conout
+8292  117784  		lxi	d,gpunn
+8295  CDD281  		call	msgout
+8298  CDC781  	getyn2:	call	conin
+829B  FE0D    		cpi	CR
+829D  CA3C83  		jz	getlt1	; same processing
+82A0  E65F    		ani	01011111b	; toupper
+82A2  FE59    		cpi	'Y'
+82A4  280B    		jrz	getyn0
+82A6  FE4E    		cpi	'N'
+82A8  2807    		jrz	getyn0
+82AA  3E07    		mvi	a,BEL
+82AC  CDBC81  		call	conout
+82AF  18E7    		jr	getyn2
+82B1  CDBC81  	getyn0:	call	conout
+82B4  D64E    		sui	'N'	;  0='N',  X='Y'
+82B6  D601    		sui	1	; CY='N', NC='Y'
+82B8  9F      		sbb	a	; FF='N', 00='Y'
+82B9  4F      		mov	c,a
+82BA  CDC781  	getyn5:	call	conin
+82BD  FE0D    		cpi	CR
+82BF  2875    		jrz	getlt3	; same processing
+82C1  FE08    		cpi	BS
+82C3  2807    		jrz	getyn4
+82C5  3E07    		mvi	a,BEL
+82C7  CDBC81  		call	conout
+82CA  18EE    		jr	getyn5
+82CC  CDBC81  	getyn4:	call	conout
+82CF  3E20    		mvi	a,' '
+82D1  CDBC81  		call	conout
+82D4  3E08    		mvi	a,BS
+82D6  CDBC81  		call	conout
+82D9  18BD    		jr	getyn2
+		
+		; DE=prompt prefix, HL=value location
+		; get a single letter, toupper. Wait for CR, allow BS
+		; TODO: allow value meaning "not defined"?
+82DB          	getlete:
+82DB  3E07    		mvi	a,BEL
+82DD  CDBC81  		call	conout
+82E0  CD4782  		call	crlf
+82E3          	getlet:
+82E3  ED533285		sded	curmsg
+82E7  CDD281  		call	msgout
+82EA  7E      		mov	a,m
+82EB  FEFF    		cpi	0ffh
+82ED  2803    		jrz	getlt6
+82EF  CDBC81  		call	conout
+82F2  117784  	getlt6:	lxi	d,gpunn
+82F5  CDD281  		call	msgout
+82F8  CDC781  	getlt2:	call	conin
+82FB  FE0D    		cpi	CR
+82FD  283D    		jrz	getlt1
+82FF  FE1B    		cpi	ESC
+8301  2844    		jrz	getltx
+8303  E65F    		ani	01011111b	; toupper
+8305  FE42    		cpi	'B'	; 'A' means default, makes no sense here
+8307  3837    		jrc	getlt0
+8309  FE5B    		cpi	'Z'+1
+830B  3033    		jrnc	getlt0
+			; wait for CR, honor BS
+830D  4F      		mov	c,a
+830E  CDBC81  		call	conout
+8311  CDC781  	getlt5:	call	conin
+8314  FE0D    		cpi	CR
+8316  281E    		jrz	getlt3
+8318  FE08    		cpi	BS
+831A  280B    		jrz	getlt4
+831C  FE1B    		cpi	ESC
+831E  2827    		jrz	getltx
+8320  3E07    		mvi	a,BEL
+8322  CDBC81  		call	conout
+8325  18EA    		jr	getlt5
+8327  CDBC81  	getlt4:	call	conout
+832A  3E20    		mvi	a,' '
+832C  CDBC81  		call	conout
+832F  3E08    		mvi	a,BS
+8331  CDBC81  		call	conout
+8334  18C2    		jr	getlt2
+8336  71      	getlt3:	mov	m,c
+8337  3E01    		mvi	a,1
+8339  323185  		sta	dirty
+833C  CD4782  	getlt1:	call	crlf
+833F  C9      		ret
+8340  3E07    	getlt0:	mvi	a,BEL
+8342  CDBC81  		call	conout
+8345  18B1    		jr	getlt2
+		
+		; delete setting, re-prompt
+8347  36FF    	getltx:	mvi	m,0ffh
+8349  3E01    		mvi	a,1
+834B  323185  		sta	dirty
+834E  ED5B3285		lded	curmsg
+8352  1887    		jr	getlete
+		
+		; DE=prompt prefix, HL=value location
+8354          	getnume:
+8354  3E07    		mvi	a,BEL
+8356  CDBC81  		call	conout
+8359          	getnum:
+8359  D5      		push	d
+835A  E5      		push	h
+835B  CDD281  		call	msgout
+835E  7E      		mov	a,m
+835F  FEFF    		cpi	0ffh
+8361  2803    		jrz	getnm0
+8363  CDDB81  		call	decout
+8366  117784  	getnm0:	lxi	d,gpunn
+8369  CDD281  		call	msgout
+836C  CD7181  		call	linin
+836F  DA7E82  		jc	nmerr9
+8372  79      		mov	a,c
+8373  B7      		ora	a
+8374  2820    		jrz	getxit
+8376  3A3485  		lda	inbuf
+8379  FE1B    		cpi	ESC	; delete setting
+837B  2813    		jrz	getnmx
+837D  41      		mov	b,c
+837E  213485  		lxi	h,inbuf
+8381  CD0982  		call	parsnm
+8384  7A      		mov	a,d
+8385  E1      		pop	h
+8386  D1      		pop	d
+8387  38CB    		jrc	getnume
+8389  77      		mov	m,a
+838A  3E01    		mvi	a,1
+838C  323185  		sta	dirty
+838F  C9      		ret
+		
+		; delete setting, re-prompt
+8390  E1      	getnmx:	pop	h
+8391  36FF    		mvi	m,0ffh
+8393  D1      		pop	d
+8394  18BE    		jr	getnume
+		
+8396  E1      	getxit:	pop	h
+8397  D1      		pop	d
+8398  C9      		ret
+		
+		; DE=prompt prefix, HL=value location
+8399          	getstre:
+8399  3E07    		mvi	a,BEL
+839B  CDBC81  		call	conout
+839E          	getstr:
+839E  D5      		push	d
+839F  E5      		push	h
+83A0  CDD281  		call	msgout
+83A3  7E      		mov	a,m
+83A4  FEFF    		cpi	0ffh
+83A6  2804    		jrz	getst0
+83A8  EB      		xchg
+83A9  CDD281  		call	msgout
+83AC  117784  	getst0:	lxi	d,gpunn
+83AF  CDD281  		call	msgout
+83B2  CD7181  		call	linin
+83B5  DA7E82  		jc	nmerr9
+83B8  79      		mov	a,c
+83B9  B7      		ora	a
+83BA  28DA    		jrz	getxit
+			; no error checking left?
+83BC  E1      		pop	h
+83BD  D1      		pop	d
+			; TODO: are we guaranteed 'inbuf' is terminated?
+83BE  113485  		lxi	d,inbuf
+83C1  1A      		ldax	d
+83C2  FE1B    		cpi	ESC	; delete setting
+83C4  2809    		jrz	getstx
+83C6  1A      	getst2:	ldax	d
+83C7  B7      		ora	a
+83C8  2809    		jrz	getst1
+83CA  77      		mov	m,a
+83CB  23      		inx	h
+83CC  13      		inx	d
+83CD  18F7    		jr	getst2
+83CF  36FF    	getstx:	mvi	m,0ffh
+83D1  18C6    		jr	getstre
+83D3  3600    	getst1:	mvi	m,0
+83D5  3E01    		mvi	a,1
+83D7  323185  		sta	dirty
+83DA  C9      		ret
+		
+83DB  6F6E6669	signon:	db	'onfig setup v'
+      67207365
+      74757020
+      76
+83E8  302E31  		db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+83EB  0D0A00  		db	CR,LF,0
+		
+83EE  53657475	csbad:	db	'Setup bank checksum error. Clear setup data (',0
+      70206261
+      6E6B2063
+      6865636B
+      73756D20
+      6572726F
+      722E2043
+      6C656172
+      20736574
+      75702064
+      61746120
+      2800
+841C  53657475	nochg:	db	'Setup not changed',CR,LF,0
+      70206E6F
+      74206368
+      616E6765
+      640D0A00
+8430  53617665	dochg:	db	'Save changes (',0
+      20636861
+      6E676573
+      202800
+843F  53657475	saved:	db	'Setup data saved',CR,LF,0
+      70206461
+      74612073
+      61766564
+      0D0A00
+8452  53657475	failed:	db	'Setup flash failed, checksum error',CR,LF,0
+      7020666C
+      61736820
+      6661696C
+      65642C20
+      63686563
+      6B73756D
+      20657272
+      6F720D0A
+      00
+		
+8477  293A2000	gpunn:	db	'): ',0
+847B  5072696D	gpdev:	db	'Primary/Default boot device (',0
+      6172792F
+      44656661
+      756C7420
+      626F6F74
+      20646576
+      69636520
+      2800
+8499  5072696D	gpuni:	db	'Primary/Default boot unit (',0
+      6172792F
+      44656661
+      756C7420
+      626F6F74
+      20756E69
+      74202800
+84B5  5072696D	gpstr:	db	'Primary/Default boot string (',0
+      6172792F
+      44656661
+      756C7420
+      626F6F74
+      20737472
+      696E6720
+      2800
+84D3  5365636F	gsdev:	db	'Secondary boot device (',0
+      6E646172
+      7920626F
+      6F742064
+      65766963
+      65202800
+84EB  5365636F	gsuni:	db	'Secondary boot unit (',0
+      6E646172
+      7920626F
+      6F742075
+      6E697420
+      2800
+8501  5365636F	gsstr:	db	'Secondary boot string (',0
+      6E646172
+      7920626F
+      6F742073
+      7472696E
+      67202800
+8519  48382D35	g512k:	db	'H8-512K RAM installed (',0
+      31324B20
+      52414D20
+      696E7374
+      616C6C65
+      64202800
+		
+8531  00      	dirty:	db	0
+8532  0000    	curmsg:	dw	0
+		
+8534          	inbuf:	ds	128	; input entry buffer
+		
+85B4          		ds	128
+		stack:	ds	0
+		
+8634  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+		
+8700          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   172	symbols
+  1536	bytes
+
+   387	macro calls
+  3984	macro bytes
+     0	invented symbols
