@@ -87,10 +87,13 @@ save0:	push	b
 ; get config from NVRAM...
 nvshow:
 	call	nvgetb	; inits buf if needed
-over:
+	jr	over
+over0:	mvi	a,BEL
+	call	chrout
 ; interate over all possible settings, prompting for new values...
+over:
 	; Node ID
-over0:	lda	nvbuf+PMAGIC
+	lda	nvbuf+PMAGIC
 	call	shid
 	lxi	d,quest3
 	call	msgout
@@ -107,6 +110,10 @@ over0:	lda	nvbuf+PMAGIC
 	sta	nvbuf+PMAGIC
 	mvi	a,1
 	sta	dirty
+	jr	next1
+
+over1:	mvi	a,BEL
+	call	chrout
 next1:	; IP Addr
 	lxi	h,nvbuf+SIPR
 	lxi	d,ipmsg
@@ -122,9 +129,13 @@ next1:	; IP Addr
 	mov	b,c
 	lxix	nvbuf+SIPR
 	call	parsadr
-	jrc	next1	; TODO: error was destructive
+	jrc	over1
 	mvi	a,1
 	sta	dirty
+	jr	next2
+
+over2:	mvi	a,BEL
+	call	chrout
 next2:	;Subnet
 	lxi	h,nvbuf+SUBR
 	lxi	d,ntmsg
@@ -140,9 +151,13 @@ next2:	;Subnet
 	mov	b,c
 	lxix	nvbuf+SUBR
 	call	parsadr
-	jrc	next2	; TODO: error was destructive
+	jrc	over2
 	mvi	a,1
 	sta	dirty
+	jr	next3
+
+over3:	mvi	a,BEL
+	call	chrout
 next3:	; Gateway IP
 	lxi	h,nvbuf+GAR
 	lxi	d,gwmsg
@@ -158,9 +173,13 @@ next3:	; Gateway IP
 	mov	b,c
 	lxix	nvbuf+GAR
 	call	parsadr
-	jrc	next3	; TODO: error was destructive
+	jrc	over3
 	mvi	a,1
 	sta	dirty
+	jr	next4
+
+over4:	mvi	a,BEL
+	call	chrout
 next4:	; MAC address
 	lxi	h,nvbuf+SHAR
 	call	shmac
@@ -175,7 +194,7 @@ next4:	; MAC address
 	mov	b,c
 	lxix	nvbuf+SHAR
 	call	parsmac
-	jrc	next4	; TODO: error was destructive
+	jrc	over4
 	mvi	a,1
 	sta	dirty
 next5:	; now the sockets
@@ -183,6 +202,10 @@ next5:	; now the sockets
 	lxix	nvbuf+32	; start of sockets
 	mvi	a,'0'
 	sta	sokn
+	jr	soklup
+
+over5:	mvi	a,BEL
+	call	chrout
 soklup:	
 	push	b
 	call	showsok
@@ -197,8 +220,10 @@ soklup:
 	lxi	h,cmdlin
 	mov	b,c
 	call	parsok
+	mvi	a,1	; must preserve CY
+	sta	dirty	;
 next6:	pop	b
-	jrc	soklup	; TODO: error was destructive
+	jrc	over5
 	lxi	d,32
 	dadx	d
 	lda	sokn
@@ -235,12 +260,12 @@ abort:	lxi	d,mabrt
 	jmp	0
 
 ; Parse new Socket config
-; IX=socket ptr
+; IX=socket ptr, HL=cmdlin, B=len
 parsok:
 	; parse <srvid> <ipadr> <port>
 	mvi	c,0	; NUL won't ever be seen
 	call	parshx
-	rc
+	rc	; non-destructive error
 	mvix	31h,SnPORT
 	stx	d,SnPORT+1	; server ID
 	call	skipb
@@ -248,13 +273,13 @@ parsok:
 	pushix
 	lxi	d,SnDIPR
 	dadx	d
-	call	parsadr
+	call	parsadr	; non-destructive on error
 	popix
 	rc
 	call	skipb
 	rc
 	call	parsnm
-	rc
+	rc	; non-destructive error
 	stx	d,SnDPORT
 	stx	e,SnDPORT+1
 	; optional keep-alive timeout
@@ -264,7 +289,7 @@ parsok:
 	mov	a,b
 	ora	a
 	cnz	parsnm
-	rc
+	rc	; non-destructive error
 	call	div5
 	mov	a,d
 	ora	a
@@ -483,20 +508,35 @@ skip0:	mov	a,m
 	ret
 
 ; IX=destination
+; parse into temp, for non-destructive error exits
 parsmac:
+	lxiy	temp
 	mvi	c,':'
 pm00:
 	call	parshx
 	rc
+	sty	d,+0
 	jz	pm1	; hit term char
 	; TODO: check for 6 bytes...
-	stx	d,+0
-	ora	a	; NC
+	; now copy into place
+	lxiy	temp
+	ldy	a,+0
+	stx	a,+0
+	ldy	a,+1
+	stx	a,+1
+	ldy	a,+2
+	stx	a,+2
+	ldy	a,+3
+	stx	a,+3
+	ldy	a,+4
+	stx	a,+4
+	ldy	a,+5
+	stx	a,+5
+	ora	a	; NC, no error
 	ret
 pm1:
-	stx	d,+0
-	inxix
-	inx	h
+	inxiy
+	inx	h	; skip ':'
 	djnz	pm00
 	; error if ends here...
 	stc
@@ -544,7 +584,9 @@ nzret:
 	ret
 
 ; IX=destination
+; Parse into temp location, so errors are non-destructive
 parsadr:
+	lxiy	temp
 	mvi	c,'.'
 pa00:
 	mvi	d,0
@@ -572,16 +614,26 @@ pa0:	mov	a,m
 	djnz	pa0
 pa2:
 	; TODO: check for 4 bytes...
-	stx	d,+0
-	ora	a
+	sty	d,+0
+	; now copy value into place
+	lxiy	temp
+	ldy	a,+0
+	stx	a,+0
+	ldy	a,+1
+	stx	a,+1
+	ldy	a,+2
+	stx	a,+2
+	ldy	a,+3
+	stx	a,+3
+	ora	a	; NC, no error
 	ret
 
 pa1:
-	stx	d,+0
-	inxix
-	inx	h
+	sty	d,+0
+	inxiy
+	inx	h	; skip '.'
 	djnz	pa00
-	; error if ends here...
+	; error if ends here... (string ends in '.')
 	stc
 	ret
 
@@ -877,6 +929,8 @@ conin:	in	0edh
 	ds	40
 stack:	ds	0
 
+temp:	db	0,0,0,0,0,0	; space for IP or MAC addr
+	db	0,0,0,0,0,0	; pad for error entry?
 direct:	db	0
 dirty:	db	0
 
