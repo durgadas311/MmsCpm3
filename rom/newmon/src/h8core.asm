@@ -52,6 +52,24 @@ bcr0h	equ	27h
 dstat	equ	30h
 dmode	equ	31h
 dcntl	equ	32h
+else
+; H8-512K MMU
+mmu	equ	0	; base port
+rd	equ	0
+wr	equ	4
+pg0k	equ	0
+pg16k	equ	1
+pg32k	equ	2
+pg48k	equ	3
+ena	equ	80h
+rd00k	equ	mmu+rd+pg0k
+rd16k	equ	mmu+rd+pg16k
+rd32k	equ	mmu+rd+pg32k
+rd48k	equ	mmu+rd+pg48k
+wr00k	equ	mmu+wr+pg0k
+wr16k	equ	mmu+wr+pg16k
+wr32k	equ	mmu+wr+pg32k
+wr48k	equ	mmu+wr+pg48k
 endif
 
 memtest	equ	03000h
@@ -375,14 +393,14 @@ error:
 	lhld	monstk
 	sphl
 	lxi	h,qmsg
-	call	msgout
+	call	msgout	; A=0 on return
 	lxi	h,nulint
 	shld	vrst1+1
-	sta	MFlag
+	sta	MFlag	; A=0 from msgout
 	in	0f2h
 	ani	00000011b
 	jrnz	error0
-	out	07fh
+	out	07fh	; clear H17 ctrl port (A=0)
 error0:
 	jmp	re$entry
 
@@ -611,7 +629,12 @@ btstr0:
 ; (or, D=Phys Drive unit, E=0)
 ; module must have already been loaded
 ; NOTE: string might have been placed at bootbf...
+; SP was set to 'bootbf'...
 goboot:
+	lxiy	error
+	call	crlf
+; IY=error routine
+gbooty:
 	lxi	h,bootbf
 	mov	a,m
 	cpi	0c3h
@@ -627,9 +650,8 @@ btstr1:	; use stack as char array...
 	dcx	h
 	dcr	c
 	jrnz	btstr1
-gboot0:	call	crlf
-	lxi	h,error
-	push	h
+gboot0:
+	pushiy	; error routine
 ; IX=boot module (in memory)
 ; D=phy drv base, E=unit
 doboot:	; common boot path for console and keypad
@@ -661,7 +683,7 @@ if z180
 init0:	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
-	;call	savram
+	call	savram
 	; map in 8K of ROM from 0xf8000 into 0x4000
 	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
 	out0	a,mmu$cbar
@@ -1211,6 +1233,7 @@ meminit:
 	sta	lstcmd
 	sta	RegI
 	sta	DsProt
+	sta	DspMod
 	sta	Radix
 	sta	kpchar
 	inr	a	; 1
@@ -1327,6 +1350,7 @@ deverr:	; TODO: implement
 	lxi	h,MFlag
 	mov	a,m
 	ani	11111110b	; disable "private" clock intr
+	ori	00000010b	; disable disp updates
 	mov	m,a
 	lxi	b,dErr
 	lxi	d,ALeds
@@ -1367,13 +1391,20 @@ bterr1:	cmp	m
 ports:	db	078h,07ch,0b8h,0bch
 
 kppbt:	; primary boot (default boot)
-	call	gtdfbt
+	mvi	a,0c3h
+	sta	bootbf	; mark "no string"
 	lxi	b,dPri
+	call	btdsp
+	call	gtdfbt
+	mov	a,d
+	cpi	0ffh
+	jz	kperr
+	cpi	0feh
+	jrz	kppbt0
 kpbt0:
 	xra	a
 	sta	cport
 	push	d	; phy drv, unit
-	push	b
 	mov	c,d
 	mvi	b,-1	; boot modules only
 	lxi	h,bfnum
@@ -1381,26 +1412,49 @@ kpbt0:
 	jc	kperr
 	call	vfport
 	jc	kperr	; TODO: specific error? SW1 Error?
-	lda	MFlag
-	ori	00000010b	; disable disp updates
-	sta	MFlag
-	call	clrdisp
-	pop	b
-	lxi	d,ALeds
-	call	mov3dsp
-	; TODO: fix this
-	mvi	a,250	;;
-	call	delay	;;
 	pop	d	; phy drv, unit
 	lxi	sp,bootbf
 	lxi	h,kperr
 	push	h
 	jmp	doboot
 
-kpsbt:	; secondary boot (TODO: what does this mean now?)
-	call	galtbt
+kpsbt:	; secondary boot
+	mvi	a,0c3h
+	sta	bootbf	; mark "no string"
 	lxi	b,dSec
+	call	btdsp
+	lxi	h,susave+dsdev
+	call	dfboot0
+	jc	kperr
+	ora	a
+	jrz	kpbt1
+	call	galtbt
 	jr	kpbt0
+
+kppbt0:	lxi	h,susave+dpdev
+	call	dfboot0
+	jc	kperr
+	ora	a
+	jnz	kperr
+kpbt1:	lxiy	kperr
+	lxi	sp,bootbf
+	jmp	gbooty
+
+btdsp:
+	lda	MFlag
+	ori	00000010b	; disable disp updates
+	sta	MFlag
+	push	d
+	push	b
+	call	clrdisp
+	pop	b
+	lxi	d,ALeds
+	call	mov3dsp
+	; TODO: fix this - needs to be visible long enough
+	mvi	a,250	;;
+	call	delay	;;
+	pop	d
+	ret
 
 kptap:	; cassette load (read) or store (write, save)
 	mvi	b,0	; command only
@@ -1594,7 +1648,7 @@ h17init:
 	out	07fh
 	push	d
 	lxi	h,ctl$F0
-	mvi	m,0d0h	; !beep, 2mS, !mon, !SI
+	mvi	m,11010000b	; !beep, 2mS, !mon, !SI
 	lxi	h,R$CONST
 	lxi	d,D$CONST
 	lxi	b,88
@@ -1939,7 +1993,7 @@ fp3:	ora	c
 	mov	a,m
 	push	psw
 	ani	31	; 64mS
-	cz	ufd
+	cz	ufd	; B=MFlag
 	pop	psw
 	ani	15	; 32mS
 	cz	kpchk
@@ -2226,9 +2280,11 @@ findit:
 	pop	b
 	pop	d
 	jc	s501er
+	call	vfport
+	jc	s501er
 	jmp	gotit
 
-; default boot selected...
+; default boot selected from console
 dfboot:
 	call	gtdfbt	; DE=phy drv/unit
 	mov	a,d
@@ -2237,18 +2293,26 @@ dfboot:
 	cpi	0feh
 	jnz	gotnum
 	lxi	h,susave+dpdev
+	call	dfboot0
+	jc	error
+	ora	a
+	jnz	error
+	jmp	goboot
+
 dfboot0:	; HL=setup data for pri or sec
 	mov	a,m
 	inx	h
 	cpi	0ffh
-	jz	error	; not setup
+	rz		; A <> 0: not setup
 	push	h
 	mov	c,a
 	mvi	b,-1	; boot modules only
 	lxi	h,bfchr
 	call	bfind
 	pop	h
-	jc	error	; no module
+	rc		; CY: no module - error
+	call	vfport
+	rc		; CY: SW501 error
 	ldx	d,mdbase
 	mov	a,m
 	inx	h
@@ -2258,7 +2322,7 @@ dfboot0:	; HL=setup data for pri or sec
 dfbt0:	mov	e,a	; DE=phy drv base,unit
 	mov	a,m
 	cpi	0ffh	; no string?
-	jz	goboot
+	jrz	dfbt2
 	push	d
 	lxi	d,bootbf+1	; len in +0...
 	mvi	c,0
@@ -2273,7 +2337,8 @@ dfbt1:	mov	a,m
 	dcr	a
 	sta	bootbf
 	pop	d
-	jmp	goboot
+dfbt2:	xra	a	; A=0: ready to boot
+	ret
 
 defbt:	; default boot table... port F2 bits 01110000b
 	db	33	; -000---- MMS 5" floppy 0
@@ -2315,8 +2380,43 @@ trap0:
 trpms:	db	CR,LF,'*** TRAP ',TRM
 endif
 
-savram:	; TODO: implement this
+if z180
+savram:	; TODO: implement this w/o DMAC?
+	lxi	h,000h	; save from 00000h
+	lxi	d,300h	; save into 30000h
+	lxi	b,16*1024	; save all 16K
+	call	dmacpy
 	ret
+else
+savram:	; interrupts are disabled
+	; init mmu
+	mvi	a,0	; page 0
+	out	rd00k
+	out	wr00k
+	inr	a
+	out	rd16k
+	out	wr16k
+	inr	a
+	out	rd32k
+	out	wr32k
+	inr	a
+	ori	ena
+	out	rd48k
+	out	wr48k
+	; setup pages 8000->00000, c000->30000
+	mvi	a,00h+ena
+	out	rd32k
+	mvi	a,0ch+ena
+	out	wr48k
+	lxi	h,08000h
+	lxi	d,0c000h
+	lxi	b,16*1024
+	ldir
+	; de-init mmu
+	mvi	a,0
+	out	rd00k	; turn off MAP bit, back to normal
+	ret
+endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Dump command
@@ -2491,7 +2591,7 @@ prtver:
 
 versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-signon:	db	'H8 '
+signon:	db	CR,LF,'H8 '
 if z180
 	db	'Z180 '
 endif
