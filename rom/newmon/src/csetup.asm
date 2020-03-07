@@ -19,6 +19,7 @@ LF	equ	10
 BS	equ	8
 CTLC	equ	3
 BEL	equ	7
+ESC	equ	27
 
 if z180
 mmu$cbr	equ	38h
@@ -239,21 +240,23 @@ sum1:	lxi	h,sum
 sum:	dw	0
 ssum:	dw	0
 
-linix:	mvi	a,CR
-	mov	m,a	; terminate buffer
-	call	conout
-	mvi	a,LF
-	jr	conout
+liniz:	mvi	a,ESC
+	sta	inbuf
+	mvi	c,1
+	jmp	crlf
+linix:	mvi	m,0	; terminate buffer
+	jmp	crlf
 
 ; input a filename from console, allow backspace
 ; returns C=num chars
 linin:
 	lxi	h,inbuf
-lin$hl:
 	mvi	c,0	; count chars
 lini0	call	conin
 	cpi	CR
 	jrz	linix
+	cpi	ESC
+	jrz	liniz
 	cpi	CTLC	; cancel
 	stc
 	rz
@@ -350,7 +353,7 @@ div1:	setb	0,c
 parsnm:
 	lxi	d,0
 pd0:	mov	a,m
-	cpi	CR
+	ora	a
 	rz
 	cpi	'0'
 	rc
@@ -491,7 +494,12 @@ getyn4:	call	conout
 ; DE=prompt prefix, HL=value location
 ; get a single letter, toupper. Wait for CR, allow BS
 ; TODO: allow value meaning "not defined"?
+getlete:
+	mvi	a,BEL
+	call	conout
+	call	crlf
 getlet:
+	sded	curmsg
 	call	msgout
 	mov	a,m
 	cpi	0ffh
@@ -502,6 +510,8 @@ getlt6:	lxi	d,gpunn
 getlt2:	call	conin
 	cpi	CR
 	jrz	getlt1
+	cpi	ESC
+	jrz	getltx
 	ani	01011111b	; toupper
 	cpi	'B'	; 'A' means default, makes no sense here
 	jrc	getlt0
@@ -515,6 +525,8 @@ getlt5:	call	conin
 	jrz	getlt3
 	cpi	BS
 	jrz	getlt4
+	cpi	ESC
+	jrz	getltx
 	mvi	a,BEL
 	call	conout
 	jr	getlt5
@@ -532,6 +544,13 @@ getlt1:	call	crlf
 getlt0:	mvi	a,BEL
 	call	conout
 	jr	getlt2
+
+; delete setting, re-prompt
+getltx:	mvi	m,0ffh
+	mvi	a,1
+	sta	dirty
+	lded	curmsg
+	jr	getlete
 
 ; DE=prompt prefix, HL=value location
 getnume:
@@ -552,6 +571,9 @@ getnm0:	lxi	d,gpunn
 	mov	a,c
 	ora	a
 	jrz	getxit
+	lda	inbuf
+	cpi	ESC	; delete setting
+	jrz	getnmx
 	mov	b,c
 	lxi	h,inbuf
 	call	parsnm
@@ -564,11 +586,20 @@ getnm0:	lxi	d,gpunn
 	sta	dirty
 	ret
 
+; delete setting, re-prompt
+getnmx:	pop	h
+	mvi	m,0ffh
+	pop	d
+	jr	getnume
+
 getxit:	pop	h
 	pop	d
 	ret
 
 ; DE=prompt prefix, HL=value location
+getstre:
+	mvi	a,BEL
+	call	conout
 getstr:
 	push	d
 	push	h
@@ -590,13 +621,18 @@ getst0:	lxi	d,gpunn
 	pop	d
 	; TODO: are we guaranteed 'inbuf' is terminated?
 	lxi	d,inbuf
+	ldax	d
+	cpi	ESC	; delete setting
+	jrz	getstx
 getst2:	ldax	d
-	cpi	CR
+	ora	a
 	jrz	getst1
 	mov	m,a
 	inx	h
 	inx	d
 	jr	getst2
+getstx:	mvi	m,0ffh
+	jr	getstre
 getst1:	mvi	m,0
 	mvi	a,1
 	sta	dirty
@@ -622,6 +658,7 @@ gsstr:	db	'Secondary boot string (',0
 g512k:	db	'H8-512K RAM installed (',0
 
 dirty:	db	0
+curmsg:	dw	0
 
 inbuf:	ds	128	; input entry buffer
 
