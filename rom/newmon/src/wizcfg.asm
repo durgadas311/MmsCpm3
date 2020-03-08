@@ -30,6 +30,8 @@ mcmsg:	db	'MAC:      ',0
 ipmsg:	db	'IP Addr:  ',0
 sock:	db	'Socket '
 sokn:	db	       '_: ',0
+ntdev:	db	'Delete Map: ',0
+newdev:	db	'New Device Map ? ',0
 
 quest3:	db	TAB
 quest2:	db	TAB
@@ -215,14 +217,14 @@ soklup:
 	jc	abort
 	mov	a,c
 	ora	a
-	jrz	next6	; NC also
+	jrz	next5b	; NC also
 	; TODO: allow de-config?
 	lxi	h,cmdlin
 	mov	b,c
 	call	parsok
 	mvi	a,1	; must preserve CY
 	sta	dirty	;
-next6:	pop	b
+next5b:	pop	b
 	jrc	over5
 	lxi	d,32
 	dadx	d
@@ -230,8 +232,73 @@ next6:	pop	b
 	inr	a
 	sta	sokn
 	djnz	soklup
+
+	; CP/NET device table
+	; first, see if any maps currently exist
+	lxi	h,nvbuf+NvCFGTBL
+	inx	h
+	inx	h
+	mvi	c,0	; drive A:
+next6c:	mov	a,m
+	cpi	0ffh	; not set
+	jrnz	next6a	; something exists...
+next6b:	inx	h
+	inx	h
+	inr	c
+	mov	a,c
+	cpi	16	; CON:
+	jrz	next6b
+	cpi	18
+	jrc	next6c
+	; end of cfgtbl, now ask about new entries
+next6e:	lxi	d,newdev	; includes '?'
+	call	msgout
+	call	linin	; empty line means done
+	jc	abort
+	mov	a,c
+	ora	a
+	jrz	fini
+	; string format like A:, B:=F:[0], LST:=0[0]
+	lxi	h,cmdlin
+	mov	b,c
+	call	parsex
+	jrnc	next6d
+	mvi	a,BEL
+	call	chrout
+	jr	next6e
+next6d:	mvi	a,1
+	sta	dirty
+	jr	next6e
+
+next6a:	; mapping exists, prompt for delete. HL=map, C=dev
+	lxi	d,ntdev
+	call	msgout
+	call	shwexp
+	lxi	d,quest2
+	cpi	']'
+	jrnz	next6f
+	lxi	d,quest
+next6f:	call	msgout
+	push	h	; save cfgtbl ptr
+	push	b	; save dev idx
+	call	linin
+	pop	b	; restore dev idx
+	pop	h	; restore cfgtbl ptr
+	jc	abort
+	lda	cmdlin
+	cpi	'Y'
+	jrnz	next6b	; next map
+	mvi	a,0ffh
+	mov	m,a
+	inx	h
+	mov	m,a
+	dcx	h
+	mvi	a,1
+	sta	dirty
+	jr	next6b	; next map
+
 ; collected all changes...
-	lda	dirty
+fini:	lda	dirty
 	ora	a
 	jz	nochg
 	; prompt to save changes...
@@ -258,6 +325,175 @@ exit:	jmp	0
 abort:	lxi	d,mabrt
 	call	msgout
 	jmp	0
+
+; HL=map ptr, C=local dev (0-15, 17)
+shwexp:
+	mov	a,c
+	call	shwdev
+	mov	a,m
+	ora	a
+	rp		; local device
+	mvi	a,'='
+	call	chrout
+	mov	a,c
+	cpi	17	; LST:?
+	jrz	shwex1
+	; drive
+	mov	a,m
+	inx	h
+	ani	0fh
+	call	shwdev
+shwex0:	mvi	a,'['
+	call	chrout
+	mov	a,m	; SID
+	dcx	h
+	call	hexout
+	mvi	a,']'
+	jmp	chrout
+shwex1:	mov	a,m
+	inx	h
+	call	hexdig
+	jr	shwex0
+
+; print device name, A:-P: or LST:
+; A=dev id
+shwdev:	cpi	17
+	jrz	shwdv0
+	adi	'A'
+	call	chrout
+shwdv1:	mvi	a,':'
+	jmp	chrout
+shwdv0:	mvi	a,'L'
+	call	chrout
+	mvi	a,'S'
+	call	chrout
+	mvi	a,'T'
+	call	chrout
+	jr	shwdv1
+
+; Parse a device map expression
+; "A:" or "LST:" sets device to LOCAL
+; "A:=B:[0]" or "LST:=0[0]" sets device networked
+; HL=cmdlin
+; B=len
+parsex:
+	call	parsdv
+	rc
+	cpi	'='	; network vs. local?
+	jrz	parsnw
+	; set device local
+	lxi	b,0
+parsx0:	inr	e	; skip extra "entry" at start of cfgtbl
+	mvi	d,0
+	lxi	h,nvbuf+NvCFGTBL
+	dad	d
+	dad	d
+	mov	m,b
+	inx	h
+	mov	m,c
+	xra	a
+	ret
+
+parsnw:
+	mov	a,e
+	cpi	17	; LST:
+	jrz	parsls
+	mov	d,e	; save local drive name
+	call	parsdv
+	rc
+	cpi	'['
+	jrz	parsrv
+	; use SID "00"
+pars00:	mov	b,e	; B=remote dev (0-15)
+	setb	7,b	; dev is networked
+	mvi	c,0	; C=SID (00)
+	mov	e,d	; E=local dev
+	jr	parsx0
+
+parsls:	; have "LST:="
+	mvi	a,'['
+	call	parshx
+	rc
+	push	psw
+	mov	a,e
+	ani	0fh
+	mov	e,a
+	pop	psw
+	jrnz	pars00	; use default SID
+	;jr	parsrv
+parsrv:	; D=local, E=remote drive name
+	push	d	; save local/remote drive name
+	mvi	c,']'
+	call	parshx	; SID
+	pop	b	; B=local, C=remote drive name
+	rc
+	; E=SID, B=local, C=remote
+	mov	d,e	; D=SID (temp)
+	mov	e,b	; E=local
+	mov	b,c	; B=remote drive
+	mov	c,d	; C=SID
+	setb	7,b	; drive is networked
+	jr	parsx0
+
+; Parse device, A:..P: or LST:
+; returns E=0..15,17 or CY if error
+parsdv:
+	mov	a,b	; chars left
+	cpi	2
+	rc
+	mov	a,m
+	sui	'A'
+	rc
+	mov	e,a
+	inx	h
+	mov	a,m
+	dcr	b
+	cpi	':'
+	jrnz	pv1	; LST: or error
+	inx	h
+	dcr	b
+	mov	a,e	; must be 0..15
+	cpi	16
+	cmc
+	rz
+pv2:	mov	a,b
+	ora	a
+	rz	; end of string: NUL
+	mov	a,m	; delimiter
+	inx	h
+	dcr	b
+	ret
+pv1:
+	mov	a,e
+	cpi	'L'-'A'
+	stc
+	rnz
+	mvi	a,'S'
+	call	check1
+	rc
+	mvi	a,'T'
+	call	check1
+	rc
+	mvi	a,':'
+	call	check1
+	rc
+	mvi	e,17
+	jr	pv2
+
+; Tests if A==curr char on cmdlin
+; CY if fail, next char if true
+check1:
+	cmp	m
+	stc
+	rnz
+	mov	a,b
+	ora	a
+	stc
+	rz
+	inx	h
+	dcr	b
+	xra	a
+	ret
 
 ; Parse new Socket config
 ; IX=socket ptr, HL=cmdlin, B=len
@@ -758,6 +994,7 @@ SnTXBUF	equ	31	; TXBUF_SIZE
 
 NvKPALVTR equ	SnRESV8	; where to stash keepalive in NVRAM
 SnKPALVTR equ	47	; Keep alive timeout, 5s units
+NvCFGTBL  equ	288	; location of CP/NET cfgtbl template
 
 ; Socket SR values
 CLOSED	equ	00h
