@@ -25,6 +25,7 @@ CR	equ	13
 LF	equ	10
 BEL	equ	7
 TAB	equ	9
+BS	equ	8
 ESC	equ	27
 TRM	equ	0
 DEL	equ	127
@@ -148,10 +149,11 @@ rst6:	jmp	vrst6
 rst7:	jmp	vrst7
 
 ; routines made public (to modules)
-	jmp	hwboot
-	jmp	hxboot
-	jmp	take$A
-	jmp	msgout
+	jmp	hwboot	; 003b
+	jmp	hxboot	; 003e
+	jmp	take$A	; 0041
+	jmp	msgout	; 0044
+	jmp	linin	; 0047
 
 intret:
 	pop	psw
@@ -183,7 +185,6 @@ int1$cont:
 	out	0f2h
 	jmp	int1$fp
 
-; TODO: save Z80 registers...
 intsetup:
 	exx
 	exaf
@@ -611,19 +612,10 @@ space:
 	jr	luboot1
 
 colon:	; get arbitrary string as last boot param
-	mvi	b,0
-	lxi	h,bootbf
-btstr0:
-	call	conout	; first time, ':'
-	call	conin
-	inr	b
-	inx	h
-	mov	m,a
-	cmp	c
-	jrnz	btstr0
-	mvi	m,0
-	mov	a,b
-	dcr	a
+	call	conout	; echo ':'
+	lxi	h,bootbf+1
+	call	linin
+	mov	a,b	; excludes TRM
 	sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
 ; D=Phys Drive base number, E=Unit number
 ; (or, D=Phys Drive unit, E=0)
@@ -634,6 +626,9 @@ goboot:
 	lxiy	error
 	call	crlf
 ; IY=error routine
+; Move string to stack, if present.
+; Stack space is 292 bytes, be certain not to overrun.
+; Since len value is 127 max + TRM, should be OK.
 gbooty:
 	lxi	h,bootbf
 	mov	a,m
@@ -641,15 +636,16 @@ gbooty:
 	jrz	gboot0
 	mov	c,a	; length
 	mvi	b,0
-	dad	b
-	inx	h	; TRM...
-btstr1:	; use stack as char array...
-	mov	a,m
-	push	psw
-	inx	sp	; undo half of push
-	dcx	h
-	dcr	c
-	jrnz	btstr1
+	inx	h	; first byte of string...
+	xchg
+	lxi	h,0
+	dad	sp	; get curr SP
+	inx	b	; incl. TRM
+	ora	a
+	dsbc	b
+	sphl		; set new SP
+	xchg
+	ldir
 gboot0:
 	pushiy	; error routine
 ; IX=boot module (in memory)
@@ -674,7 +670,6 @@ hxboot:	lxi	h,CLOCK
 ; But, right now, ROM is in 0000-7FFF so must copy
 ; core code and switch to RAM...
 init:
-; TODO: before copying ROM into RAM, preserve RAM for dump
 if z180
 ; Might arrive here from a TRAP...
 	in0	a,itc
@@ -1345,7 +1340,7 @@ gotprt:	pop	h	; LEDs pointer
 	lxi	sp,bootbf
 	call	doboot	; only returns if error...
 kperr:
-deverr:	; TODO: implement
+deverr:
 	ei	; TODO: more required before this?
 	lxi	h,MFlag
 	mov	a,m
@@ -1450,8 +1445,8 @@ btdsp:
 	pop	b
 	lxi	d,ALeds
 	call	mov3dsp
-	; TODO: fix this - needs to be visible long enough
-	mvi	a,250	;;
+	; TODO: fix this - is there a better way?
+	mvi	a,250	;; make it briefly visible
 	call	delay	;;
 	pop	d
 	ret
@@ -2352,6 +2347,7 @@ defbt:	; default boot table... port F2 bits 01110000b
 
 if z180
 ; TODO: preserve CPU regs for debug/front-panel
+; (by the time we reach intsetup, everything is trashed)
 trap:
 	pop	h
 	dcx	h
@@ -2417,6 +2413,48 @@ savram:	; interrupts are disabled
 	out	rd00k	; turn off MAP bit, back to normal
 	ret
 endif
+
+linix:	mvi	m,0	; terminate buffer
+	ret
+
+; input a line from console, allow backspace
+; HL=buffer (size 128)
+; returns B=num chars, 128 max (never is 0c3h)
+linin:
+	mvi	b,0	; count chars
+lini0	call	conin	; handles DEL (cancel)
+	cpi	CR
+	jrz	linix
+	cpi	BS
+	jrz	backup
+	cpi	' '
+	jrc	chrnak
+	cpi	'~'+1
+	jrnc	chrnak
+chrok:	mov	m,a
+	inx	h
+	inr	b
+	jm	chrovf	; 128 chars max
+	call	conout
+	jr	lini0
+chrovf:	dcx	h
+	dcr	b
+chrnak:	mvi	a,BEL
+	call	conout
+	jr	lini0
+backup:
+	mov	a,b
+	ora	a
+	jrz	lini0
+	dcr	b
+	dcx	h
+	mvi	a,BS
+	call	conout
+	mvi	a,' '
+	call	conout
+	mvi	a,BS
+	call	conout
+	jr	lini0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Dump command

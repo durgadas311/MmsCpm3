@@ -28,6 +28,7 @@ FF80          	pcode	equ	0ff80h
 000A          	LF	equ	10
 0007          	BEL	equ	7
 0009          	TAB	equ	9
+0008          	BS	equ	8
 001B          	ESC	equ	27
 0000          	TRM	equ	0
 007F          	DEL	equ	127
@@ -92,19 +93,19 @@ C000          	ramboot	equ	0c000h
 		
 0000          	rombeg:
 0000  F3      	rst0:	di	; can't be JMP or Heath CP/M thinks we're an H89
-0001  C37A03  		jmp	init
+0001  C37403  		jmp	init
 		
 0004  C30A02  		jmp	getport
 0007  00      		db	0
 		
-0008  CD6A00  	rst1:	call	intsetup
+0008  CD6D00  	rst1:	call	intsetup
 000B  2A1B20  		lhld	ticcnt
-000E  C35E00  		jmp	int1$cont
+000E  C36100  		jmp	int1$cont
 0000          	if ((high int1$cont) <> 0)
 		endif
 		
 0010          	rst2	equ	$-1	; must be a nop...
-0011  CD6A00  		call	intsetup
+0011  CD6D00  		call	intsetup
 0014  1A      		ldax	d
 0015  C39001  		jmp	int2$cont
 		
@@ -116,7 +117,7 @@ C000          	ramboot	equ	0c000h
 0020  C32820  	rst4:	jmp	vrst4
 		
 0023  000000  		db	0,0,0	; overlayed by WizNet boot, others
-0026  0F04    		dw	conout	; pointer, not vector; A=char
+0026  0904    		dw	conout	; pointer, not vector; A=char
 		
 0028  C32B20  	rst5:	jmp	vrst5
 		
@@ -131,199 +132,196 @@ C000          	ramboot	equ	0c000h
 0038  C33120  	rst7:	jmp	vrst7
 		
 		; routines made public (to modules)
-003B  C36D03  		jmp	hwboot
-003E  C37103  		jmp	hxboot
-0041  C39F01  		jmp	take$A
-0044  C3B409  		jmp	msgout
+003B  C36703  		jmp	hwboot	; 003b
+003E  C36B03  		jmp	hxboot	; 003e
+0041  C39F01  		jmp	take$A	; 0041
+0044  C3B409  		jmp	msgout	; 0044
+0047  C3910D  		jmp	linin	; 0047
 		
-0047          	intret:
-0047  F1      		pop	psw
-0048  F1      		pop	psw
-0049  C1      		pop	b
-004A  D1      		pop	d
-004B  E1      		pop	h
-004C          		popix
-004C  DDE1    		DB	0DDH,0E1H
-004E          		popiy
-004E  FDE1    		DB	0FDH,0E1H
-0050          		exx
-0050  D9      		DB	0D9H
-0051          		exaf
-0051  08      		DB	08H
-0052  C1      		pop	b	; I,R - R cannot be restored
-0053  78      		mov	a,b
-0054          		stai
-0054  ED47    		DB	0EDH,47H
-0056  F1      		pop	psw
-0057  C1      		pop	b
-0058  D1      		pop	d
-0059  E1      		pop	h
-005A          		exx
-005A  D9      		DB	0D9H
-005B          		exaf
-005B  08      		DB	08H
-005C          	nulint:
-005C  FB      		ei
-005D  C9      		ret
+004A          	intret:
+004A  F1      		pop	psw
+004B  F1      		pop	psw
+004C  C1      		pop	b
+004D  D1      		pop	d
+004E  E1      		pop	h
+004F          		popix
+004F  DDE1    		DB	0DDH,0E1H
+0051          		popiy
+0051  FDE1    		DB	0FDH,0E1H
+0053          		exx
+0053  D9      		DB	0D9H
+0054          		exaf
+0054  08      		DB	08H
+0055  C1      		pop	b	; I,R - R cannot be restored
+0056  78      		mov	a,b
+0057          		stai
+0057  ED47    		DB	0EDH,47H
+0059  F1      		pop	psw
+005A  C1      		pop	b
+005B  D1      		pop	d
+005C  E1      		pop	h
+005D          		exx
+005D  D9      		DB	0D9H
+005E          		exaf
+005E  08      		DB	08H
+005F          	nulint:
+005F  FB      		ei
+0060  C9      		ret
 		
-005E          	int1$cont:
-005E  23      		inx	h
-005F  221B20  		shld	ticcnt
-0062  3A3620  		lda	ctl$F2
-0065  D3F2    		out	0f2h
-0067  C3430B  		jmp	int1$fp
+0061          	int1$cont:
+0061  23      		inx	h
+0062  221B20  		shld	ticcnt
+0065  3A3620  		lda	ctl$F2
+0068  D3F2    		out	0f2h
+006A  C3430B  		jmp	int1$fp
 		
-		; TODO: save Z80 registers...
-006A          	intsetup:
-006A          		exx
-006A  D9      		DB	0D9H
-006B          		exaf
-006B  08      		DB	08H
-006C  E3      		xthl	; HL=PC (ret adr)
-006D  D5      		push	d
-006E  C5      		push	b
-006F  F5      		push	psw
-0070          		ldar
-0070  ED5F    		DB	0EDH,5FH
-0072  4F      		mov	c,a
-0073          		ldai
-0073  ED57    		DB	0EDH,57H
-0075  47      		mov	b,a
-0076  C5      		push	b
-0077          		pushiy
-0077  FDE5    		DB	0FDH,0E5H
-0079          		pushix
-0079  DDE5    		DB	0DDH,0E5H
-007B  E5      		push	h	; save PC
-007C          		exx
-007C  D9      		DB	0D9H
-007D          		exaf
-007D  08      		DB	08H
-007E  E3      		xthl		; HL=PC
-007F  D5      		push	d
-0080  C5      		push	b
-0081  F5      		push	psw
-0082  EB      		xchg		; DE=PC
-0083  211800  		lxi	h,nReg-2
-0086  39      		dad	sp
-0087  E5      		push	h
-0088  D5      		push	d	; save PC
-0089  110920  		lxi	d,ctl$F0
-008C  1A      		ldax	d
-008D  2F      		cma
-008E  E630    		ani	030h
-0090  C8      		rz
-0091  210200  		lxi	h,2
-0094  39      		dad	sp
-0095  221D20  		shld	monstk	; a.k.a. RegPtr
-0098  C9      		ret
+006D          	intsetup:
+006D          		exx
+006D  D9      		DB	0D9H
+006E          		exaf
+006E  08      		DB	08H
+006F  E3      		xthl	; HL=PC (ret adr)
+0070  D5      		push	d
+0071  C5      		push	b
+0072  F5      		push	psw
+0073          		ldar
+0073  ED5F    		DB	0EDH,5FH
+0075  4F      		mov	c,a
+0076          		ldai
+0076  ED57    		DB	0EDH,57H
+0078  47      		mov	b,a
+0079  C5      		push	b
+007A          		pushiy
+007A  FDE5    		DB	0FDH,0E5H
+007C          		pushix
+007C  DDE5    		DB	0DDH,0E5H
+007E  E5      		push	h	; save PC
+007F          		exx
+007F  D9      		DB	0D9H
+0080          		exaf
+0080  08      		DB	08H
+0081  E3      		xthl		; HL=PC
+0082  D5      		push	d
+0083  C5      		push	b
+0084  F5      		push	psw
+0085  EB      		xchg		; DE=PC
+0086  211800  		lxi	h,nReg-2
+0089  39      		dad	sp
+008A  E5      		push	h
+008B  D5      		push	d	; save PC
+008C  110920  		lxi	d,ctl$F0
+008F  1A      		ldax	d
+0090  2F      		cma
+0091  E630    		ani	030h
+0093  C8      		rz
+0094  210200  		lxi	h,2
+0097  39      		dad	sp
+0098  221D20  		shld	monstk	; a.k.a. RegPtr
+009B  C9      		ret
 		
-0099          	re$entry:		; re-entry point for errors, etc.
-0099  210920  		lxi	h,ctl$F0
-009C  36F0    		mvi	m,0f0h	; !beep, 2mS, MON, !SI
-009E  2A1D20  		lhld	monstk
-00A1  F9      		sphl
-00A2  CD0D04  		call	belout	; TODO: beep front panel if appropriate
+009C          	re$entry:		; re-entry point for errors, etc.
+009C  210920  		lxi	h,ctl$F0
+009F  36F0    		mvi	m,0f0h	; !beep, 2mS, MON, !SI
+00A1  2A1D20  		lhld	monstk
+00A4  F9      		sphl
+00A5  CD0704  		call	belout	; TODO: beep front panel if appropriate
 			;jmp	start
-00A5          	start:
-00A5  21A500  		lxi	h,start
-00A8  E5      		push	h
+00A8          	start:
+00A8  21A800  		lxi	h,start
+00AB  E5      		push	h
 			; reset FP display... this doesn't make a lot of sense...
-00A9  3A0720  		lda	DspMod
-00AC  E601    		ani	00000001b
-00AE  2F      		cma
-00AF  320620  		sta	DsProt
-00B2  FB      		ei
+00AC  3A0720  		lda	DspMod
+00AF  E601    		ani	00000001b
+00B1  2F      		cma
+00B2  320620  		sta	DsProt
+00B5  FB      		ei
 			; avoid prompt if last was keypad command...
-00B3  21A306  		lxi	h,prompt
-00B6  3A3B20  		lda	lstcmd
-00B9  B7      		ora	a
-00BA  F4B409  		cp	msgout
-00BD          	prloop:
+00B6  21A306  		lxi	h,prompt
+00B9  3A3B20  		lda	lstcmd
+00BC  B7      		ora	a
+00BD  F4B409  		cp	msgout
+00C0          	prloop:
 			; could take one of two paths here,
 			; console or kaypad...
-00BD  CDE309  		call	cmdin
-00C0  E6DF    		ani	11011111b ; toupper
-00C2  323B20  		sta	lstcmd
-00C5  FAF808  		jm	kpcmd	; from keypad... jumps back here...
-00C8  21D800  	cmchr:	lxi	h,cmdtab
-00CB  061C    		mvi	b,numcmd
-00CD          	cmloop:
-00CD  BE      		cmp	m
-00CE  23      		inx	h
-00CF          		jrz	docmd
-00CF  2869    		DB	28H,docmd-$-1
+00C0  CDE309  		call	cmdin
+00C3  E6DF    		ani	11011111b ; toupper
+00C5  323B20  		sta	lstcmd
+00C8  FAF808  		jm	kpcmd	; from keypad... jumps back here...
+00CB  21DB00  	cmchr:	lxi	h,cmdtab
+00CE  061C    		mvi	b,numcmd
+00D0          	cmloop:
+00D0  BE      		cmp	m
 00D1  23      		inx	h
-00D2  23      		inx	h
-00D3          		djnz	cmloop
-00D3  10F8    		DB	10H,cmloop-$-1
-00D5  C3D706  		jmp	nocmd
+00D2          		jrz	docmd
+00D2  2866    		DB	28H,docmd-$-1
+00D4  23      		inx	h
+00D5  23      		inx	h
+00D6          		djnz	cmloop
+00D6  10F8    		DB	10H,cmloop-$-1
+00D8  C3D706  		jmp	nocmd
 		
-00D8          	cmdtab:
+00DB          	cmdtab:
 			; console commands
-00D8  44      		db	'D' !
-00D9  8E0D    	 dw cmddmp	; Dump memory
-00DB  47      		db	'G' !
-00DC  6701    	 dw cmdgo	; Go
-00DE  53      		db	'S' !
-00DF  B403    	 dw cmdsub	; Substitute in memory
-00E1  50      		db	'P' !
-00E2  4301    	 dw cmdpc	; Set PC
-00E4  42      		db	'B' !
-00E5  8502    	 dw cmdboot; Boot
-00E7  4D      		db	'M' !
-00E8  B204    	 dw cmdmt	; Memory Test
-00EA  54      		db	'T' !
-00EB  760E    	 dw termod	; Terminal Mode
-00ED  56      		db	'V' !
-00EE  CB0E    	 dw prtver	; Version of ROM
-00F0  4C      		db	'L' !
-00F1  CC0D    	 dw cmdlb	; List boot modules
-00F3  48      		db	'H' !
-00F4  090E    	 dw cmdhb	; long list (Help) boot modules
-00F6  41      		db	'A' !
-00F7  740E    	 dw cmdab	; Add boot module
-00F9  55      		db	'U' !
-00FA  750E    	 dw cmdur	; Update entire ROM
+00DB  44      		db	'D' !
+00DC  D10D    	 dw cmddmp	; Dump memory
+00DE  47      		db	'G' !
+00DF  6701    	 dw cmdgo	; Go
+00E1  53      		db	'S' !
+00E2  AE03    	 dw cmdsub	; Substitute in memory
+00E4  50      		db	'P' !
+00E5  4301    	 dw cmdpc	; Set PC
+00E7  42      		db	'B' !
+00E8  8502    	 dw cmdboot; Boot
+00EA  4D      		db	'M' !
+00EB  AC04    	 dw cmdmt	; Memory Test
+00ED  54      		db	'T' !
+00EE  B90E    	 dw termod	; Terminal Mode
+00F0  56      		db	'V' !
+00F1  0E0F    	 dw prtver	; Version of ROM
+00F3  4C      		db	'L' !
+00F4  0F0E    	 dw cmdlb	; List boot modules
+00F6  48      		db	'H' !
+00F7  4C0E    	 dw cmdhb	; long list (Help) boot modules
+00F9  41      		db	'A' !
+00FA  B70E    	 dw cmdab	; Add boot module
+00FC  55      		db	'U' !
+00FD  B80E    	 dw cmdur	; Update entire ROM
 			; front-panel commands    key(old)  command/action
-00FC  80      		db	80h !
-00FD  0007    	 dw kpubt	; [0]     - Universal Boot
-00FF  81      		db	81h !
-0100  C007    	 dw kppbt	; [1]     - Pri Boot
-0102  82      		db	82h !
-0103  FA07    	 dw kpsbt	; [2]     - Sec Boot
-0105  83      		db	83h !
-0106  5908    	 dw kprdx	; [3]     - Radix Mode
-0108  84      		db	84h !
-0109  1F06    	 dw kpgo	; [4]     - Go
-010B  85      		db	85h !
-010C  2806    	 dw kpin	; [5]     - Input
-010E  86      		db	86h !
-010F  3206    	 dw kpout	; [6]     - Output
-0111  87      		db	87h !
-0112  4206    	 dw kpsst	; [7]     - Single Step
-0114  88      		db	88h !
-0115  4808    	 dw kptap	; [8]     - Cass Load
-0117  89      		db	89h !
-0118  4808    	 dw kptap	; [9]     - Cass Store
-011A  8A      		db	8ah !
-011B  9208    	 dw kpnxt	; [A] [+] - Next
-011D  8B      		db	8bh !
-011E  AA08    	 dw kpprv	; [B] [-] - Prev
-0120  8C      		db	8ch !
-0121  3806    	 dw kpabt	; [C] [*] - CANCEL, usually
-0123  8D      		db	8dh !
-0124  3906    	 dw kprw	; [D] [/] - Display/Alter
-0126  8E      		db	8eh !
-0127  C508    	 dw kpmem	; [E] [#] - Memory Mode
-0129  8F      		db	8fh !
-012A  DA08    	 dw kprgm	; [F] [.] - Register Mode
+00FF  80      		db	80h !
+0100  0007    	 dw kpubt	; [0]     - Universal Boot
+0102  81      		db	81h !
+0103  C007    	 dw kppbt	; [1]     - Pri Boot
+0105  82      		db	82h !
+0106  FA07    	 dw kpsbt	; [2]     - Sec Boot
+0108  83      		db	83h !
+0109  5908    	 dw kprdx	; [3]     - Radix Mode
+010B  84      		db	84h !
+010C  1F06    	 dw kpgo	; [4]     - Go
+010E  85      		db	85h !
+010F  2806    	 dw kpin	; [5]     - Input
+0111  86      		db	86h !
+0112  3206    	 dw kpout	; [6]     - Output
+0114  87      		db	87h !
+0115  4206    	 dw kpsst	; [7]     - Single Step
+0117  88      		db	88h !
+0118  4808    	 dw kptap	; [8]     - Cass Load
+011A  89      		db	89h !
+011B  4808    	 dw kptap	; [9]     - Cass Store
+011D  8A      		db	8ah !
+011E  9208    	 dw kpnxt	; [A] [+] - Next
+0120  8B      		db	8bh !
+0121  AA08    	 dw kpprv	; [B] [-] - Prev
+0123  8C      		db	8ch !
+0124  3806    	 dw kpabt	; [C] [*] - CANCEL, usually
+0126  8D      		db	8dh !
+0127  3906    	 dw kprw	; [D] [/] - Display/Alter
+0129  8E      		db	8eh !
+012A  C508    	 dw kpmem	; [E] [#] - Memory Mode
+012C  8F      		db	8fh !
+012D  DA08    	 dw kprgm	; [F] [.] - Register Mode
 001C          	numcmd	equ	($-cmdtab)/3
 		
 			rept	0137h-$
-012C  FF      		db	0ffh
-012D  FF      		db	0ffh
-012E  FF      		db	0ffh
 012F  FF      		db	0ffh
 0130  FF      		db	0ffh
 0131  FF      		db	0ffh
@@ -338,7 +336,7 @@ C000          	ramboot	equ	0c000h
 		
 013A          	docmd:
 013A  B7      		ora	a
-013B  F40F04  		cp	conout
+013B  F40904  		cp	conout
 013E  4E      		mov	c,m
 013F  23      		inx	h
 0140  66      		mov	h,m
@@ -358,17 +356,17 @@ C000          	ramboot	equ	0c000h
 0152  56      		mov	d,m
 0153  2B      		dcx	h
 0154  EB      		xchg		; HL=PC, DE=adr to store
-0155  CDFD03  		call	inhexcr
+0155  CDF703  		call	inhexcr
 0158          		jrc	cmdpc0	; hex digit entered
 0158  3807    		DB	38H,cmdpc0-$-1
-015A  CD6A04  		call	adrnl	; show current PC (HL)
-015D  CDFD03  		call	inhexcr	; get another char
+015A  CD6404  		call	adrnl	; show current PC (HL)
+015D  CDF703  		call	inhexcr	; get another char
 0160  D0      		rnc	; CR entered, don't update value
 0161          	cmdpc0:
 0161  EB      		xchg	; HL=adr to store
 0162          	cmdpc1:
 0162  160D    		mvi	d,CR
-0164  C31A04  		jmp	adrin
+0164  C31404  		jmp	adrin
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -379,7 +377,7 @@ C000          	ramboot	equ	0c000h
 016D  2A1D20  		lhld	RegPtr
 0170  111800  		lxi	d,24	; Reg[PC]
 0173  19      		dad	d	; HL=adr to store
-0174  CDFD03  		call	inhexcr
+0174  CDF703  		call	inhexcr
 0177  DC6201  		cc	cmdpc1	; read HEX until CR, store in HL
 017A  CDAA09  		call	crlf
 017D  3ED0    		mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
@@ -392,7 +390,7 @@ C000          	ramboot	equ	0c000h
 0189          	cmdgo0:
 0189  320920  		sta	ctl$F0
 018C  E1      		pop	h
-018D  C34700  		jmp	intret
+018D  C34A00  		jmp	intret
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 0190          	int2$cont:
@@ -400,7 +398,7 @@ C000          	ramboot	equ	0c000h
 0192  D3F0    		out	0f0h
 0194  12      		stax	d
 0195  E620    		ani	020h	; MON active?
-0197  C2A500  		jnz	start	; break to monitor code
+0197  C2A800  		jnz	start	; break to monitor code
 019A  C32220  		jmp	vrst2	; else chain to (possible) user code.
 		
 019D          	take$5:
@@ -432,7 +430,7 @@ C000          	ramboot	equ	0c000h
 01C1  F9      		sphl
 01C2  212E00  		lxi	h,qmsg
 01C5  CDB409  		call	msgout	; A=0 on return
-01C8  215C00  		lxi	h,nulint
+01C8  215F00  		lxi	h,nulint
 01CB  222020  		shld	vrst1+1
 01CE  320820  		sta	MFlag	; A=0 from msgout
 01D1  DBF2    		in	0f2h
@@ -441,7 +439,7 @@ C000          	ramboot	equ	0c000h
 01D5  2002    		DB	20H,error0-$-1
 01D7  D37F    		out	07fh	; clear H17 ctrl port (A=0)
 01D9          	error0:
-01D9  C39900  		jmp	re$entry
+01D9  C39C00  		jmp	re$entry
 		
 		; determine device for port 078H
 		; return phy drv number in D.
@@ -502,7 +500,7 @@ C000          	ramboot	equ	0c000h
 		
 021C  212502  	s501er:	lxi	h,s501ms
 021F  CDB409  		call	msgout
-0222  C39900  		jmp	re$entry
+0222  C39C00  		jmp	re$entry
 		
 0225  20535731	s501ms:	db	' SW1 wrong',TRM
       2077726F
@@ -520,12 +518,12 @@ C000          	ramboot	equ	0c000h
 0239  C9      		ret
 		
 023A          	digerr:
-023A  CD0D04  		call	belout
+023A  CD0704  		call	belout
 023D          		jr	btdig0
 023D  1806    		DB	18H,btdig0-$-1
 		; Got a digit in boot command, parse it
 023F          	btdig:	; boot by phys drive number, E=0
-023F  CD0F04  		call	conout	; echo digit
+023F  CD0904  		call	conout	; echo digit
 0242  E60F    		ani	00fh	; convert to binary
 0244  57      		mov	d,a
 0245          	btdig0:
@@ -539,7 +537,7 @@ C000          	ramboot	equ	0c000h
 024F  FE3A    		cpi	'9'+1
 0251          		jrnc	digerr
 0251  30E7    		DB	30H,digerr-$-1
-0253  CD0F04  		call	conout
+0253  CD0904  		call	conout
 0256  E60F    		ani	00fh
 0258  060A    		mvi	b,10	; add 10 times, i.e. D = (D * 10) + A
 025A          	btdig1:
@@ -569,7 +567,7 @@ C000          	ramboot	equ	0c000h
 027D  DD5602  		DB	0DDH,d*8+46H,mdbase
 0280  92      		sub	d
 0281  5F      		mov	e,a
-0282  C34203  		jmp	goboot
+0282  C33703  		jmp	goboot
 		
 0285          	cmdboot:
 0285  21AA06  		lxi	h,bootms
@@ -583,7 +581,7 @@ C000          	ramboot	equ	0c000h
 0299          		jr	boot0
 0299  1803    		DB	18H,boot0-$-1
 029B          	bterr:
-029B  CD0D04  		call	belout
+029B  CD0704  		call	belout
 029E          	boot0:
 029E  CDBD09  		call	conin
 02A1  B9      		cmp	c
@@ -603,8 +601,8 @@ C000          	ramboot	equ	0c000h
 02B5  FE41    		cpi	'A'
 02B7          		jrc	bterr
 02B7  38E2    		DB	38H,bterr-$-1
-02B9  CD0F04  		call	conout
-02BC  CD0F04  		call	conout
+02B9  CD0904  		call	conout
+02BC  CD0904  		call	conout
 02BF  FE42    		cpi	'B'
 02C1  DACB0C  		jc	A$boot	; 'A' is synonym for default
 02C4  C5      	gotit1:	push	b
@@ -621,7 +619,7 @@ C000          	ramboot	equ	0c000h
 02DB          	gotit:
 02DB  1E00    		mvi	e,0
 02DD  3E2D    		mvi	a,'-'	; next is optional unit number...
-02DF  CD0F04  		call	conout
+02DF  CD0904  		call	conout
 02E2          		jr	luboot0
 02E2  1815    		DB	18H,luboot0-$-1
 		
@@ -642,12 +640,12 @@ C000          	ramboot	equ	0c000h
 02F5  C9      		ret
 		
 02F6          	lunerr:
-02F6  CD0D04  		call	belout
+02F6  CD0704  		call	belout
 02F9          	luboot0:
 02F9  CDBD09  		call	conin
 02FC  B9      		cmp	c
 02FD          		jrz	goboot
-02FD  2843    		DB	28H,goboot-$-1
+02FD  2838    		DB	28H,goboot-$-1
 02FF  FE3A    		cpi	':'
 0301          		jrz	colon
 0301  2827    		DB	28H,colon-$-1
@@ -660,14 +658,14 @@ C000          	ramboot	equ	0c000h
 030B  FE3A    		cpi	'9'+1
 030D          		jrnc	lunerr
 030D  30E7    		DB	30H,lunerr-$-1
-030F  CD0F04  		call	conout
+030F  CD0904  		call	conout
 0312  D630    		sui	'0'
 0314  5F      		mov	e,a	; single digit (0..9)
 0315          	luboot1:
 0315  CDBD09  		call	conin
 0318  B9      		cmp	c
 0319          		jrz	goboot
-0319  2827    		DB	28H,goboot-$-1
+0319  281C    		DB	28H,goboot-$-1
 031B  FE3A    		cpi	':'	; Boot alpha-dig:str
 031D          		jrz	colon
 031D  280B    		DB	28H,colon-$-1
@@ -676,591 +674,591 @@ C000          	ramboot	equ	0c000h
 0321  2802    		DB	28H,space-$-1
 0323  3E07    		mvi	a,BEL
 0325          	space:
-0325  CD0F04  		call	conout
+0325  CD0904  		call	conout
 0328          		jr	luboot1
 0328  18EB    		DB	18H,luboot1-$-1
 		
 032A          	colon:	; get arbitrary string as last boot param
-032A  0600    		mvi	b,0
-032C  218022  		lxi	h,bootbf
-032F          	btstr0:
-032F  CD0F04  		call	conout	; first time, ':'
-0332  CDBD09  		call	conin
-0335  04      		inr	b
-0336  23      		inx	h
-0337  77      		mov	m,a
-0338  B9      		cmp	c
-0339          		jrnz	btstr0
-0339  20F4    		DB	20H,btstr0-$-1
-033B  3600    		mvi	m,0
-033D  78      		mov	a,b
-033E  3D      		dcr	a
-033F  328022  		sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
+032A  CD0904  		call	conout	; echo ':'
+032D  218122  		lxi	h,bootbf+1
+0330  CD910D  		call	linin
+0333  78      		mov	a,b	; excludes TRM
+0334  328022  		sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
 		; D=Phys Drive base number, E=Unit number
 		; (or, D=Phys Drive unit, E=0)
 		; module must have already been loaded
 		; NOTE: string might have been placed at bootbf...
 		; SP was set to 'bootbf'...
-0342          	goboot:
-0342          		lxiy	error
-0342  FD21    		DB	0FDH,21H
-0344  BE01    		DW	error
-0346  CDAA09  		call	crlf
+0337          	goboot:
+0337          		lxiy	error
+0337  FD21    		DB	0FDH,21H
+0339  BE01    		DW	error
+033B  CDAA09  		call	crlf
 		; IY=error routine
-0349          	gbooty:
-0349  218022  		lxi	h,bootbf
-034C  7E      		mov	a,m
-034D  FEC3    		cpi	0c3h
-034F          		jrz	gboot0
-034F  280C    		DB	28H,gboot0-$-1
-0351  4F      		mov	c,a	; length
-0352  0600    		mvi	b,0
-0354  09      		dad	b
-0355  23      		inx	h	; TRM...
-0356          	btstr1:	; use stack as char array...
-0356  7E      		mov	a,m
-0357  F5      		push	psw
-0358  33      		inx	sp	; undo half of push
-0359  2B      		dcx	h
-035A  0D      		dcr	c
-035B          		jrnz	btstr1
-035B  20F9    		DB	20H,btstr1-$-1
-035D          	gboot0:
-035D          		pushiy	; error routine
-035D  FDE5    		DB	0FDH,0E5H
+		; Move string to stack, if present.
+		; Stack space is 292 bytes, be certain not to overrun.
+		; Since len value is 127 max + TRM, should be OK.
+033E          	gbooty:
+033E  218022  		lxi	h,bootbf
+0341  7E      		mov	a,m
+0342  FEC3    		cpi	0c3h
+0344          		jrz	gboot0
+0344  2811    		DB	28H,gboot0-$-1
+0346  4F      		mov	c,a	; length
+0347  0600    		mvi	b,0
+0349  23      		inx	h	; first byte of string...
+034A  EB      		xchg
+034B  210000  		lxi	h,0
+034E  39      		dad	sp	; get curr SP
+034F  03      		inx	b	; incl. TRM
+0350  B7      		ora	a
+0351          		dsbc	b
+0351  ED42    		DB	0EDH,b*8+42H
+0353  F9      		sphl		; set new SP
+0354  EB      		xchg
+0355          		ldir
+0355  EDB0    		DB	0EDH,0B0H
+0357          	gboot0:
+0357          		pushiy	; error routine
+0357  FDE5    		DB	0FDH,0E5H
 		; IX=boot module (in memory)
 		; D=phy drv base, E=unit
-035F          	doboot:	; common boot path for console and keypad
-035F  CD7309  		call	h17init
-0362  7B      		mov	a,e
-0363  323121  		sta	AIO$UNI	; relative unit num
-0366  82      		add	d
-0367  323420  		sta	l2034h	; boot phys drv unit num
-036A  C39A0C  		jmp	btboot
+0359          	doboot:	; common boot path for console and keypad
+0359  CD7309  		call	h17init
+035C  7B      		mov	a,e
+035D  323121  		sta	AIO$UNI	; relative unit num
+0360  82      		add	d
+0361  323420  		sta	l2034h	; boot phys drv unit num
+0364  C39A0C  		jmp	btboot
 			; btboot effectively returns here on success
 			; (in most cases)
-036D  AF      	hwboot:	xra	a
-036E  320820  		sta	MFlag
-0371  21191C  	hxboot:	lxi	h,CLOCK
-0374  222020  		shld	vrst1+1
-0377  C38022  		jmp	bootbf
+0367  AF      	hwboot:	xra	a
+0368  320820  		sta	MFlag
+036B  21191C  	hxboot:	lxi	h,CLOCK
+036E  222020  		shld	vrst1+1
+0371  C38022  		jmp	bootbf
 		
 		; ROM start point - initialize everything
 		; We know we have at least 64K RAM...
 		; But, right now, ROM is in 0000-7FFF so must copy
 		; core code and switch to RAM...
-037A          	init:
-		; TODO: before copying ROM into RAM, preserve RAM for dump
+0374          	init:
 0000          	if z180
 		else
-037A  21FFFF  		lxi	h,0ffffh
-037D  F9      		sphl
-037E  E5      		push	h	; save top on stack
-037F  3E08    		mvi	a,ctl$MEM1	; MEM1 = full ROM
-0381  D3F2    		out	0f2h	; enable full ROM
-0383  3A0811  		lda	suadr+m512k
-0386  B7      		ora	a
-0387  CC5F0D  		cz	savram	; H8-512K installed, save RAM
-038A  210000  		lxi	h,0
-038D  110000  		lxi	d,0
-0390  010020  		lxi	b,2000h	; copy everything?
-0393          		ldir
-0393  EDB0    		DB	0EDH,0B0H
+0374  21FFFF  		lxi	h,0ffffh
+0377  F9      		sphl
+0378  E5      		push	h	; save top on stack
+0379  3E08    		mvi	a,ctl$MEM1	; MEM1 = full ROM
+037B  D3F2    		out	0f2h	; enable full ROM
+037D  3A0811  		lda	suadr+m512k
+0380  B7      		ora	a
+0381  CC5F0D  		cz	savram	; H8-512K installed, save RAM
+0384  210000  		lxi	h,0
+0387  110000  		lxi	d,0
+038A  010020  		lxi	b,2000h	; copy everything?
+038D          		ldir
+038D  EDB0    		DB	0EDH,0B0H
 		endif
 			; save config data
-0395  210010  		lxi	h,suadr
-0398  1100F8  		lxi	d,susave
-039B  010F01  		lxi	b,sumax
-039E          		ldir
-039E  EDB0    		DB	0EDH,0B0H
-03A0  219900  		lxi	h,re$entry
-03A3  E5      		push	h
-03A4  CD8C04  		call	coninit
-03A7  CD5106  		call	meminit
-03AA  CF      		rst	1	; kick-start clock
-03AB  21E00E  		lxi	h,signon
-03AE  CDB409  		call	msgout
+038F  210010  		lxi	h,suadr
+0392  1100F8  		lxi	d,susave
+0395  010F01  		lxi	b,sumax
+0398          		ldir
+0398  EDB0    		DB	0EDH,0B0H
+039A  219C00  		lxi	h,re$entry
+039D  E5      		push	h
+039E  CD8604  		call	coninit
+03A1  CD5106  		call	meminit
+03A4  CF      		rst	1	; kick-start clock
+03A5  21230F  		lxi	h,signon
+03A8  CDB409  		call	msgout
 			; save registers on stack, for debugger access...
-03B1  C36A00  		jmp	intsetup
+03AB  C36D00  		jmp	intsetup
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Substitute command
-03B4          	cmdsub:
-03B4  21B206  		lxi	h,subms
-03B7  CDB409  		call	msgout
-03BA  211420  		lxi	h,ABUSS
-03BD  B7      		ora	a	; NC
-03BE  160D    		mvi	d,CR
-03C0  CD1A04  		call	adrin
-03C3  EB      		xchg
-03C4          	cmdsub0:
-03C4  CD6A04  		call	adrnl
-03C7  7E      		mov	a,m
-03C8  CD7904  		call	hexout
-03CB  CD7504  		call	spout
-03CE          	cmdsub1:
-03CE  CD5704  		call	hexin
-03D1          		jrnc	cmdsub4
-03D1  3019    		DB	30H,cmdsub4-$-1
-03D3  FE0D    		cpi	CR
-03D5          		jrz	cmdsub2
-03D5  280C    		DB	28H,cmdsub2-$-1
-03D7  FE2D    		cpi	'-'
-03D9          		jrz	cmdsub3
-03D9  280B    		DB	28H,cmdsub3-$-1
-03DB  FE2E    		cpi	'.'
-03DD  C8      		rz
-03DE  CD0D04  		call	belout
-03E1          		jr	cmdsub1
-03E1  18EB    		DB	18H,cmdsub1-$-1
-03E3          	cmdsub2:
-03E3  23      		inx	h
+03AE          	cmdsub:
+03AE  21B206  		lxi	h,subms
+03B1  CDB409  		call	msgout
+03B4  211420  		lxi	h,ABUSS
+03B7  B7      		ora	a	; NC
+03B8  160D    		mvi	d,CR
+03BA  CD1404  		call	adrin
+03BD  EB      		xchg
+03BE          	cmdsub0:
+03BE  CD6404  		call	adrnl
+03C1  7E      		mov	a,m
+03C2  CD7304  		call	hexout
+03C5  CD6F04  		call	spout
+03C8          	cmdsub1:
+03C8  CD5104  		call	hexin
+03CB          		jrnc	cmdsub4
+03CB  3019    		DB	30H,cmdsub4-$-1
+03CD  FE0D    		cpi	CR
+03CF          		jrz	cmdsub2
+03CF  280C    		DB	28H,cmdsub2-$-1
+03D1  FE2D    		cpi	'-'
+03D3          		jrz	cmdsub3
+03D3  280B    		DB	28H,cmdsub3-$-1
+03D5  FE2E    		cpi	'.'
+03D7  C8      		rz
+03D8  CD0704  		call	belout
+03DB          		jr	cmdsub1
+03DB  18EB    		DB	18H,cmdsub1-$-1
+03DD          	cmdsub2:
+03DD  23      		inx	h
+03DE          		jr	cmdsub0
+03DE  18DE    		DB	18H,cmdsub0-$-1
+03E0          	cmdsub3:
+03E0  CD0904  		call	conout
+03E3  2B      		dcx	h
 03E4          		jr	cmdsub0
-03E4  18DE    		DB	18H,cmdsub0-$-1
-03E6          	cmdsub3:
-03E6  CD0F04  		call	conout
-03E9  2B      		dcx	h
-03EA          		jr	cmdsub0
-03EA  18D8    		DB	18H,cmdsub0-$-1
-03EC          	cmdsub4:
-03EC  3600    		mvi	m,000h
-03EE          	cmdsub5:
-03EE  CD0F04  		call	conout
-03F1  CD4E04  		call	hexbin
-03F4          		rld
-03F4  ED6F    		DB	0EDH, 6FH
-03F6  CDFD03  		call	inhexcr
-03F9          		jrnc	cmdsub2
-03F9  30E8    		DB	30H,cmdsub2-$-1
-03FB          		jr	cmdsub5
-03FB  18F1    		DB	18H,cmdsub5-$-1
+03E4  18D8    		DB	18H,cmdsub0-$-1
+03E6          	cmdsub4:
+03E6  3600    		mvi	m,000h
+03E8          	cmdsub5:
+03E8  CD0904  		call	conout
+03EB  CD4804  		call	hexbin
+03EE          		rld
+03EE  ED6F    		DB	0EDH, 6FH
+03F0  CDF703  		call	inhexcr
+03F3          		jrnc	cmdsub2
+03F3  30E8    		DB	30H,cmdsub2-$-1
+03F5          		jr	cmdsub5
+03F5  18F1    		DB	18H,cmdsub5-$-1
 		
-03FD          	inhexcr:
-03FD  CDBD09  		call	conin
-0400  FE0D    		cpi	CR
-0402  C8      		rz
-0403  CD5A04  		call	hexchk
-0406  3F      		cmc
-0407  D8      		rc
-0408  CD0D04  		call	belout
-040B          		jr	inhexcr
-040B  18F0    		DB	18H,inhexcr-$-1
+03F7          	inhexcr:
+03F7  CDBD09  		call	conin
+03FA  FE0D    		cpi	CR
+03FC  C8      		rz
+03FD  CD5404  		call	hexchk
+0400  3F      		cmc
+0401  D8      		rc
+0402  CD0704  		call	belout
+0405          		jr	inhexcr
+0405  18F0    		DB	18H,inhexcr-$-1
 		
-040D          	belout:
-040D  3E07    		mvi	a,BEL
-040F          	conout:
-040F  F5      		push	psw
-0410          	conot1:
-0410  DBED    		in	0edh
-0412  E620    		ani	00100000b
-0414          		jrz	conot1
-0414  28FA    		DB	28H,conot1-$-1
-0416  F1      		pop	psw
-0417  D3E8    		out	0e8h
-0419  C9      		ret
+0407          	belout:
+0407  3E07    		mvi	a,BEL
+0409          	conout:
+0409  F5      		push	psw
+040A          	conot1:
+040A  DBED    		in	0edh
+040C  E620    		ani	00100000b
+040E          		jrz	conot1
+040E  28FA    		DB	28H,conot1-$-1
+0410  F1      		pop	psw
+0411  D3E8    		out	0e8h
+0413  C9      		ret
 		
 		; D=term char (e.g. '.' for Substitute)
 		; HL=location to store address
 		; CY=first digit in A
-041A          	adrin:
-041A  E5      		push	h	; adr to store value
-041B  D4BD09  		cnc	conin
-041E  BA      		cmp	d	; no input?
-041F  CA1A06  		jz	adrin3
-0422  210000  		lxi	h,0
-0425  37      		stc
-0426  D4BD09  	adrin0:	cnc	conin
-0429  CD5A04  		call	hexchk
-042C          		jrc	adrin1
-042C  380E    		DB	38H,adrin1-$-1
-042E  CD0F04  		call	conout
-0431  CD4E04  		call	hexbin
-0434  29      		dad	h
-0435  29      		dad	h
-0436  29      		dad	h
-0437  29      		dad	h
-0438  B5      		ora	l
-0439  6F      		mov	l,a
-043A          		jr	adrin0
-043A  18EA    		DB	18H,adrin0-$-1
-043C          	adrin1:
-043C  BA      		cmp	d
-043D          		jrz	adrin2
-043D  2806    		DB	28H,adrin2-$-1
-043F  CD0D04  		call	belout
-0442  B7      		ora	a
-0443          		jr	adrin0
-0443  18E1    		DB	18H,adrin0-$-1
-0445          	adrin2:
-0445  CD0F04  		call	conout
-0448  EB      		xchg
-0449  E1      		pop	h
-044A  73      		mov	m,e
-044B  23      		inx	h
-044C  72      		mov	m,d
-044D  C9      		ret
+0414          	adrin:
+0414  E5      		push	h	; adr to store value
+0415  D4BD09  		cnc	conin
+0418  BA      		cmp	d	; no input?
+0419  CA1A06  		jz	adrin3
+041C  210000  		lxi	h,0
+041F  37      		stc
+0420  D4BD09  	adrin0:	cnc	conin
+0423  CD5404  		call	hexchk
+0426          		jrc	adrin1
+0426  380E    		DB	38H,adrin1-$-1
+0428  CD0904  		call	conout
+042B  CD4804  		call	hexbin
+042E  29      		dad	h
+042F  29      		dad	h
+0430  29      		dad	h
+0431  29      		dad	h
+0432  B5      		ora	l
+0433  6F      		mov	l,a
+0434          		jr	adrin0
+0434  18EA    		DB	18H,adrin0-$-1
+0436          	adrin1:
+0436  BA      		cmp	d
+0437          		jrz	adrin2
+0437  2806    		DB	28H,adrin2-$-1
+0439  CD0704  		call	belout
+043C  B7      		ora	a
+043D          		jr	adrin0
+043D  18E1    		DB	18H,adrin0-$-1
+043F          	adrin2:
+043F  CD0904  		call	conout
+0442  EB      		xchg
+0443  E1      		pop	h
+0444  73      		mov	m,e
+0445  23      		inx	h
+0446  72      		mov	m,d
+0447  C9      		ret
 		
-044E          	hexbin:
-044E  D63A    		sui	'9'+1
-0450          		jrnc	hexbi0
-0450  3002    		DB	30H,hexbi0-$-1
-0452  C607    		adi	7
-0454          	hexbi0:
-0454  C603    		adi	3
-0456  C9      		ret
+0448          	hexbin:
+0448  D63A    		sui	'9'+1
+044A          		jrnc	hexbi0
+044A  3002    		DB	30H,hexbi0-$-1
+044C  C607    		adi	7
+044E          	hexbi0:
+044E  C603    		adi	3
+0450  C9      		ret
 		
-0457          	hexin:
-0457  CDBD09  		call	conin
-045A          	hexchk:
-045A  FE30    		cpi	'0'
-045C  D8      		rc
-045D  FE3A    		cpi	'9'+1
-045F  3F      		cmc
-0460  D0      		rnc
-0461  E65F    		ani	05fh	; toupper
-0463  FE41    		cpi	'A'
-0465  D8      		rc
-0466  FE47    		cpi	'F'+1
-0468  3F      		cmc
-0469  C9      		ret
+0451          	hexin:
+0451  CDBD09  		call	conin
+0454          	hexchk:
+0454  FE30    		cpi	'0'
+0456  D8      		rc
+0457  FE3A    		cpi	'9'+1
+0459  3F      		cmc
+045A  D0      		rnc
+045B  E65F    		ani	05fh	; toupper
+045D  FE41    		cpi	'A'
+045F  D8      		rc
+0460  FE47    		cpi	'F'+1
+0462  3F      		cmc
+0463  C9      		ret
 		
 		; HL = adr to print
-046A          	adrnl:
-046A  CDAA09  		call	crlf
-046D          	adrout:
-046D  7C      		mov	a,h
-046E  CD7904  		call	hexout
-0471  7D      		mov	a,l
-0472  CD7904  		call	hexout
-0475          	spout:
-0475  3E20    		mvi	a,' '
-0477          		jr	conout
-0477  1896    		DB	18H,conout-$-1
+0464          	adrnl:
+0464  CDAA09  		call	crlf
+0467          	adrout:
+0467  7C      		mov	a,h
+0468  CD7304  		call	hexout
+046B  7D      		mov	a,l
+046C  CD7304  		call	hexout
+046F          	spout:
+046F  3E20    		mvi	a,' '
+0471          		jr	conout
+0471  1896    		DB	18H,conout-$-1
 		
-0479          	hexout:
-0479  F5      		push	psw
-047A  07      		rlc
-047B  07      		rlc
-047C  07      		rlc
-047D  07      		rlc
-047E  CD8204  		call	hexdig
-0481  F1      		pop	psw
-0482          	hexdig:
-0482  E60F    		ani	00fh
-0484  C690    		adi	090h
-0486  27      		daa
-0487  CE40    		aci	040h
-0489  27      		daa
-048A          		jr	conout
-048A  1883    		DB	18H,conout-$-1
+0473          	hexout:
+0473  F5      		push	psw
+0474  07      		rlc
+0475  07      		rlc
+0476  07      		rlc
+0477  07      		rlc
+0478  CD7C04  		call	hexdig
+047B  F1      		pop	psw
+047C          	hexdig:
+047C  E60F    		ani	00fh
+047E  C690    		adi	090h
+0480  27      		daa
+0481  CE40    		aci	040h
+0483  27      		daa
+0484          		jr	conout
+0484  1883    		DB	18H,conout-$-1
 		
-048C          	coninit:
-048C  0E0C    		mvi	c,12	; 9600 baud
-048E  DBF2    		in	0f2h
-0490  E680    		ani	10000000b	; 9600/19.2K?
-0492          		jrz	ci0
-0492  2802    		DB	28H,ci0-$-1
-0494  0E06    		mvi	c,6	; 19.2K baud
-0496  3E83    	ci0:	mvi	a,083h
-0498  D3EB    		out	0ebh
-049A  AF      		xra	a
-049B  D3E9    		out	0e9h
-049D  79      		mov	a,c
-049E  D3E8    		out	0e8h
-04A0  3E03    		mvi	a,003h
-04A2  D3EB    		out	0ebh
-04A4  AF      		xra	a
-04A5  D3E9    		out	0e9h
-04A7  3E0F    		mvi	a,00001111b	; OUT2=1 hides 16C2550 intr enable diff
-04A9  D3EC    		out	0ech
-04AB  C9      		ret
+0486          	coninit:
+0486  0E0C    		mvi	c,12	; 9600 baud
+0488  DBF2    		in	0f2h
+048A  E680    		ani	10000000b	; 9600/19.2K?
+048C          		jrz	ci0
+048C  2802    		DB	28H,ci0-$-1
+048E  0E06    		mvi	c,6	; 19.2K baud
+0490  3E83    	ci0:	mvi	a,083h
+0492  D3EB    		out	0ebh
+0494  AF      		xra	a
+0495  D3E9    		out	0e9h
+0497  79      		mov	a,c
+0498  D3E8    		out	0e8h
+049A  3E03    		mvi	a,003h
+049C  D3EB    		out	0ebh
+049E  AF      		xra	a
+049F  D3E9    		out	0e9h
+04A1  3E0F    		mvi	a,00001111b	; OUT2=1 hides 16C2550 intr enable diff
+04A3  D3EC    		out	0ech
+04A5  C9      		ret
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Memory Test command
 		
-04AC          	cserr:
-04AC  218906  		lxi	h,cserms
-04AF  C3B409  		jmp	msgout
+04A6          	cserr:
+04A6  218906  		lxi	h,cserms
+04A9  C3B409  		jmp	msgout
 		
-04B2          	cmdmt:
-04B2  21CA06  		lxi	h,mtms
-04B5  CDB409  		call	msgout
-04B8  CDA309  		call	waitcr
-04BB  219606  		lxi	h,topms
-04BE  CDB409  		call	msgout
-04C1  210000  		lxi	h,0
-04C4  39      		dad	sp
-04C5  7C      		mov	a,h
-04C6  3C      		inr	a
-04C7          		jrz	cmdmt0
-04C7  2802    		DB	28H,cmdmt0-$-1
-04C9  D620    		sui	020h
-04CB          	cmdmt0:
-04CB  67      		mov	h,a
-04CC  2E00    		mvi	l,0
-04CE  2B      		dcx	h
-04CF  D630    		sui	'0'
-04D1  5F      		mov	e,a
-04D2  CD6D04  		call	adrout
-04D5  CDAA09  		call	crlf
-04D8  1600    		mvi	d,000h
-04DA  0E30    		mvi	c,030h
-04DC  0600    		mvi	b,000h
-04DE          		exx
-04DE  D9      		DB	0D9H
-04DF  210905  		lxi	h,mtest0
-04E2  11FC2F  		lxi	d,memtest - (mtest1-mtest0)
-04E5  01F000  		lxi	b,mtestZ-mtest0
-04E8          		ldir
-04E8  EDB0    		DB	0EDH,0B0H
-04EA  110030  		lxi	d,memtest
-04ED  210D05  		lxi	h,mtest1
-04F0  0EEC    		mvi	c,mtestZ-mtest1
-04F2  AF      		xra	a
+04AC          	cmdmt:
+04AC  21CA06  		lxi	h,mtms
+04AF  CDB409  		call	msgout
+04B2  CDA309  		call	waitcr
+04B5  219606  		lxi	h,topms
+04B8  CDB409  		call	msgout
+04BB  210000  		lxi	h,0
+04BE  39      		dad	sp
+04BF  7C      		mov	a,h
+04C0  3C      		inr	a
+04C1          		jrz	cmdmt0
+04C1  2802    		DB	28H,cmdmt0-$-1
+04C3  D620    		sui	020h
+04C5          	cmdmt0:
+04C5  67      		mov	h,a
+04C6  2E00    		mvi	l,0
+04C8  2B      		dcx	h
+04C9  D630    		sui	'0'
+04CB  5F      		mov	e,a
+04CC  CD6704  		call	adrout
+04CF  CDAA09  		call	crlf
+04D2  1600    		mvi	d,000h
+04D4  0E30    		mvi	c,030h
+04D6  0600    		mvi	b,000h
+04D8          		exx
+04D8  D9      		DB	0D9H
+04D9  210305  		lxi	h,mtest0
+04DC  11FC2F  		lxi	d,memtest - (mtest1-mtest0)
+04DF  01F000  		lxi	b,mtestZ-mtest0
+04E2          		ldir
+04E2  EDB0    		DB	0EDH,0B0H
+04E4  110030  		lxi	d,memtest
+04E7  210705  		lxi	h,mtest1
+04EA  0EEC    		mvi	c,mtestZ-mtest1
+04EC  AF      		xra	a
+04ED          		exaf
+04ED  08      		DB	08H
+04EE  AF      		xra	a
+04EF          	cmdmt1:
+04EF  86      		add	m
+04F0          		exaf
+04F0  08      		DB	08H
+04F1  EB      		xchg
+04F2  86      		add	m
 04F3          		exaf
 04F3  08      		DB	08H
-04F4  AF      		xra	a
-04F5          	cmdmt1:
-04F5  86      		add	m
-04F6          		exaf
-04F6  08      		DB	08H
-04F7  EB      		xchg
-04F8  86      		add	m
-04F9          		exaf
-04F9  08      		DB	08H
-04FA  EB      		xchg
-04FB  23      		inx	h
-04FC  13      		inx	d
-04FD  0D      		dcr	c
-04FE          		jrnz	cmdmt1
-04FE  20F5    		DB	20H,cmdmt1-$-1
-0500  4F      		mov	c,a
-0501          		exaf
-0501  08      		DB	08H
-0502  B9      		cmp	c
-0503          		jrnz	cserr
-0503  20A7    		DB	20H,cserr-$-1
-0505  F3      		di
-0506  C3FC2F  		jmp	memtest - (mtest1-mtest)
+04F4  EB      		xchg
+04F5  23      		inx	h
+04F6  13      		inx	d
+04F7  0D      		dcr	c
+04F8          		jrnz	cmdmt1
+04F8  20F5    		DB	20H,cmdmt1-$-1
+04FA  4F      		mov	c,a
+04FB          		exaf
+04FB  08      		DB	08H
+04FC  B9      		cmp	c
+04FD          		jrnz	cserr
+04FD  20A7    		DB	20H,cserr-$-1
+04FF  F3      		di
+0500  C3FC2F  		jmp	memtest - (mtest1-mtest)
 		
 		;------------------------------------------------
 		; Start of relocated code...
 		; Memory Test routine, position-independent
 		;
-0509          	mtest0:
-0509          	mtest:
-0509  3E20    		mvi	a,ctl$ORG0	; ORG0 on (ROM off)
-050B  D3F2    		out	0f2h
-050D          	mtest1:		; lands at 03000h - retained relocated code
-050D          		exx
-050D  D9      		DB	0D9H
-050E  62      		mov	h,d
-050F  2E00    		mvi	l,0
-0511  78      		mov	a,b
-0512          		exx
-0512  D9      		DB	0D9H
-0513  4F      		mov	c,a
-0514  0602    		mvi	b,2
-0516          	mtest2:
-0516  79      		mov	a,c
-0517  07      		rlc
-0518  07      		rlc
-0519  07      		rlc
-051A  07      		rlc
-051B  4F      		mov	c,a
-051C  E60F    		ani	00fh
-051E  C690    		adi	090h
-0520  27      		daa
-0521  CE40    		aci	040h
-0523  27      		daa
-0524  D3E8    		out	0e8h
-0526          	mtest3:
-0526  DBED    		in	0edh
-0528  E620    		ani	020h
-052A          		jrz	mtest3
-052A  28FA    		DB	28H,mtest3-$-1
-052C  05      		dcr	b
-052D          		jrnz	mtest2
-052D  20E7    		DB	20H,mtest2-$-1
-052F  3E0D    		mvi	a,CR
-0531  D3E8    		out	0e8h
-0533          		exx
-0533  D9      		DB	0D9H
-0534  78      		mov	a,b
-0535          	mtest4:
-0535  77      		mov	m,a
-0536  C601    		adi	1
-0538  27      		daa
-0539  2C      		inr	l
-053A          		jrnz	mtest4
-053A  20F9    		DB	20H,mtest4-$-1
-053C  24      		inr	h
-053D  0D      		dcr	c
-053E          		jrnz	mtest4
-053E  20F5    		DB	20H,mtest4-$-1
-0540  7C      		mov	a,h
-0541  92      		sub	d
-0542  4F      		mov	c,a
-0543  62      		mov	h,d
-0544  2E00    		mvi	l,0
-0546  78      		mov	a,b
-0547          	mtest5:
-0547  BE      		cmp	m
-0548          		jrnz	mtest9
-0548  2046    		DB	20H,mtest9-$-1
-054A  C601    		adi	1
-054C  27      		daa
-054D  2C      		inr	l
-054E          		jrnz	mtest5
-054E  20F7    		DB	20H,mtest5-$-1
-0550  24      		inr	h
-0551  0D      		dcr	c
-0552          		jrnz	mtest5
-0552  20F3    		DB	20H,mtest5-$-1
-0554          		exx
-0554  D9      		DB	0D9H
-0555  210030  		lxi	h,memtest
-0558  110000  		lxi	d,0
-055B  01EC00  		lxi	b,mtestZ-mtest1
-055E          		exx
-055E  D9      		DB	0D9H
-055F  7A      		mov	a,d
-0560  EE30    		xri	030h
-0562  57      		mov	d,a
-0563          		jrz	mtest6
-0563  2803    		DB	28H,mtest6-$-1
-0565  4B      		mov	c,e
-0566          		jr	mtest7
-0566  180A    		DB	18H,mtest7-$-1
-0568          	mtest6:
-0568  0E30    		mvi	c,030h
-056A  3E01    		mvi	a,001h
-056C  80      		add	b
-056D  27      		daa
-056E  47      		mov	b,a
-056F          		exx
-056F  D9      		DB	0D9H
-0570  EB      		xchg
-0571          		exx
-0571  D9      		DB	0D9H
-0572          	mtest7:
-0572          		exx
-0572  D9      		DB	0D9H
-0573          		ldir
-0573  EDB0    		DB	0EDH,0B0H
-0575  7A      		mov	a,d
-0576  E6F0    		ani	0f0h
-0578  67      		mov	h,a
-0579  2E00    		mvi	l,0
-057B  0EEC    		mvi	c,mtestZ-mtest1
-057D  AF      		xra	a
-057E          	mtest8:
-057E  86      		add	m
-057F  23      		inx	h
-0580  0D      		dcr	c
-0581          		jrnz	mtest8
-0581  20FB    		DB	20H,mtest8-$-1
-0583  4F      		mov	c,a
-0584          		exaf
-0584  08      		DB	08H
-0585  B9      		cmp	c
-0586          		jrnz	mtestE
-0586  2049    		DB	20H,mtestE-$-1
-0588          		exaf
-0588  08      		DB	08H
-0589  7A      		mov	a,d
-058A  E6F0    		ani	0f0h
-058C  67      		mov	h,a
-058D  2E00    		mvi	l,0
-058F  E9      		pchl
-0590          	mtest9:
-0590  AE      		xra	m
-0591  57      		mov	d,a
-0592  3E0A    		mvi	a,LF
-0594  D3E8    		out	0e8h
-0596          	mtestA:
-0596  DBED    		in	0edh
-0598  E620    		ani	020h
-059A          		jrz	mtestA
-059A  28FA    		DB	28H,mtestA-$-1
-059C  0E02    		mvi	c,2
-059E  0604    		mvi	b,4
-05A0          	mtestB:
-05A0  7C      		mov	a,h
-05A1  07      		rlc
-05A2  07      		rlc
-05A3  07      		rlc
-05A4  07      		rlc
-05A5  E60F    		ani	00fh
-05A7  C690    		adi	090h
-05A9  27      		daa
-05AA  CE40    		aci	040h
-05AC  27      		daa
-05AD  D3E8    		out	0e8h
-05AF          	mtestC:
-05AF  DBED    		in	0edh
-05B1  E620    		ani	020h
-05B3          		jrz	mtestC
-05B3  28FA    		DB	28H,mtestC-$-1
-05B5  29      		dad	h
-05B6  29      		dad	h
-05B7  29      		dad	h
-05B8  29      		dad	h
-05B9          		djnz	mtestB
-05B9  10E5    		DB	10H,mtestB-$-1
-05BB  3E20    		mvi	a,' '
-05BD  D3E8    		out	0e8h
-05BF          	mtestD:
-05BF  DBED    		in	0edh
-05C1  E620    		ani	020h
-05C3          		jrz	mtestD
-05C3  28FA    		DB	28H,mtestD-$-1
-05C5  0D      		dcr	c
-05C6  EB      		xchg
-05C7  0602    		mvi	b,002h
-05C9          		jrnz	mtestB
-05C9  20D5    		DB	20H,mtestB-$-1
-05CB  3E2A    		mvi	a,'*'
-05CD  D3E8    		out	0e8h
-05CF          		jr	mtestG
-05CF  1814    		DB	18H,mtestG-$-1
-05D1          	mtestE:
-05D1  DBED    		in	0edh
-05D3  E620    		ani	020h
-05D5          		jrz	mtestE
-05D5  28FA    		DB	28H,mtestE-$-1
-05D7  3E0A    		mvi	a,LF
-05D9  D3E8    		out	0e8h
-05DB          	mtestF:
-05DB  DBED    		in	0edh
-05DD  E620    		ani	020h
-05DF          		jrz	mtestF
-05DF  28FA    		DB	28H,mtestF-$-1
-05E1  3E21    		mvi	a,'!'
-05E3  D3E8    		out	0e8h
-05E5          	mtestG:
-05E5  DBED    		in	0edh
-05E7  E620    		ani	020h
-05E9          		jrz	mtestG
-05E9  28FA    		DB	28H,mtestG-$-1
-05EB  AF      		xra	a
-05EC  06FA    		mvi	b,0fah
-05EE          	mtestH:
-05EE  3D      		dcr	a
-05EF          		jrnz	mtestH
-05EF  20FD    		DB	20H,mtestH-$-1
-05F1          		djnz	mtestH
-05F1  10FB    		DB	10H,mtestH-$-1
-05F3  3E07    		mvi	a,BEL
-05F5  D3E8    		out	0e8h
-05F7          		jr	mtestG
-05F7  18EC    		DB	18H,mtestG-$-1
+0503          	mtest0:
+0503          	mtest:
+0503  3E20    		mvi	a,ctl$ORG0	; ORG0 on (ROM off)
+0505  D3F2    		out	0f2h
+0507          	mtest1:		; lands at 03000h - retained relocated code
+0507          		exx
+0507  D9      		DB	0D9H
+0508  62      		mov	h,d
+0509  2E00    		mvi	l,0
+050B  78      		mov	a,b
+050C          		exx
+050C  D9      		DB	0D9H
+050D  4F      		mov	c,a
+050E  0602    		mvi	b,2
+0510          	mtest2:
+0510  79      		mov	a,c
+0511  07      		rlc
+0512  07      		rlc
+0513  07      		rlc
+0514  07      		rlc
+0515  4F      		mov	c,a
+0516  E60F    		ani	00fh
+0518  C690    		adi	090h
+051A  27      		daa
+051B  CE40    		aci	040h
+051D  27      		daa
+051E  D3E8    		out	0e8h
+0520          	mtest3:
+0520  DBED    		in	0edh
+0522  E620    		ani	020h
+0524          		jrz	mtest3
+0524  28FA    		DB	28H,mtest3-$-1
+0526  05      		dcr	b
+0527          		jrnz	mtest2
+0527  20E7    		DB	20H,mtest2-$-1
+0529  3E0D    		mvi	a,CR
+052B  D3E8    		out	0e8h
+052D          		exx
+052D  D9      		DB	0D9H
+052E  78      		mov	a,b
+052F          	mtest4:
+052F  77      		mov	m,a
+0530  C601    		adi	1
+0532  27      		daa
+0533  2C      		inr	l
+0534          		jrnz	mtest4
+0534  20F9    		DB	20H,mtest4-$-1
+0536  24      		inr	h
+0537  0D      		dcr	c
+0538          		jrnz	mtest4
+0538  20F5    		DB	20H,mtest4-$-1
+053A  7C      		mov	a,h
+053B  92      		sub	d
+053C  4F      		mov	c,a
+053D  62      		mov	h,d
+053E  2E00    		mvi	l,0
+0540  78      		mov	a,b
+0541          	mtest5:
+0541  BE      		cmp	m
+0542          		jrnz	mtest9
+0542  2046    		DB	20H,mtest9-$-1
+0544  C601    		adi	1
+0546  27      		daa
+0547  2C      		inr	l
+0548          		jrnz	mtest5
+0548  20F7    		DB	20H,mtest5-$-1
+054A  24      		inr	h
+054B  0D      		dcr	c
+054C          		jrnz	mtest5
+054C  20F3    		DB	20H,mtest5-$-1
+054E          		exx
+054E  D9      		DB	0D9H
+054F  210030  		lxi	h,memtest
+0552  110000  		lxi	d,0
+0555  01EC00  		lxi	b,mtestZ-mtest1
+0558          		exx
+0558  D9      		DB	0D9H
+0559  7A      		mov	a,d
+055A  EE30    		xri	030h
+055C  57      		mov	d,a
+055D          		jrz	mtest6
+055D  2803    		DB	28H,mtest6-$-1
+055F  4B      		mov	c,e
+0560          		jr	mtest7
+0560  180A    		DB	18H,mtest7-$-1
+0562          	mtest6:
+0562  0E30    		mvi	c,030h
+0564  3E01    		mvi	a,001h
+0566  80      		add	b
+0567  27      		daa
+0568  47      		mov	b,a
+0569          		exx
+0569  D9      		DB	0D9H
+056A  EB      		xchg
+056B          		exx
+056B  D9      		DB	0D9H
+056C          	mtest7:
+056C          		exx
+056C  D9      		DB	0D9H
+056D          		ldir
+056D  EDB0    		DB	0EDH,0B0H
+056F  7A      		mov	a,d
+0570  E6F0    		ani	0f0h
+0572  67      		mov	h,a
+0573  2E00    		mvi	l,0
+0575  0EEC    		mvi	c,mtestZ-mtest1
+0577  AF      		xra	a
+0578          	mtest8:
+0578  86      		add	m
+0579  23      		inx	h
+057A  0D      		dcr	c
+057B          		jrnz	mtest8
+057B  20FB    		DB	20H,mtest8-$-1
+057D  4F      		mov	c,a
+057E          		exaf
+057E  08      		DB	08H
+057F  B9      		cmp	c
+0580          		jrnz	mtestE
+0580  2049    		DB	20H,mtestE-$-1
+0582          		exaf
+0582  08      		DB	08H
+0583  7A      		mov	a,d
+0584  E6F0    		ani	0f0h
+0586  67      		mov	h,a
+0587  2E00    		mvi	l,0
+0589  E9      		pchl
+058A          	mtest9:
+058A  AE      		xra	m
+058B  57      		mov	d,a
+058C  3E0A    		mvi	a,LF
+058E  D3E8    		out	0e8h
+0590          	mtestA:
+0590  DBED    		in	0edh
+0592  E620    		ani	020h
+0594          		jrz	mtestA
+0594  28FA    		DB	28H,mtestA-$-1
+0596  0E02    		mvi	c,2
+0598  0604    		mvi	b,4
+059A          	mtestB:
+059A  7C      		mov	a,h
+059B  07      		rlc
+059C  07      		rlc
+059D  07      		rlc
+059E  07      		rlc
+059F  E60F    		ani	00fh
+05A1  C690    		adi	090h
+05A3  27      		daa
+05A4  CE40    		aci	040h
+05A6  27      		daa
+05A7  D3E8    		out	0e8h
+05A9          	mtestC:
+05A9  DBED    		in	0edh
+05AB  E620    		ani	020h
+05AD          		jrz	mtestC
+05AD  28FA    		DB	28H,mtestC-$-1
+05AF  29      		dad	h
+05B0  29      		dad	h
+05B1  29      		dad	h
+05B2  29      		dad	h
+05B3          		djnz	mtestB
+05B3  10E5    		DB	10H,mtestB-$-1
+05B5  3E20    		mvi	a,' '
+05B7  D3E8    		out	0e8h
+05B9          	mtestD:
+05B9  DBED    		in	0edh
+05BB  E620    		ani	020h
+05BD          		jrz	mtestD
+05BD  28FA    		DB	28H,mtestD-$-1
+05BF  0D      		dcr	c
+05C0  EB      		xchg
+05C1  0602    		mvi	b,002h
+05C3          		jrnz	mtestB
+05C3  20D5    		DB	20H,mtestB-$-1
+05C5  3E2A    		mvi	a,'*'
+05C7  D3E8    		out	0e8h
+05C9          		jr	mtestG
+05C9  1814    		DB	18H,mtestG-$-1
+05CB          	mtestE:
+05CB  DBED    		in	0edh
+05CD  E620    		ani	020h
+05CF          		jrz	mtestE
+05CF  28FA    		DB	28H,mtestE-$-1
+05D1  3E0A    		mvi	a,LF
+05D3  D3E8    		out	0e8h
+05D5          	mtestF:
+05D5  DBED    		in	0edh
+05D7  E620    		ani	020h
+05D9          		jrz	mtestF
+05D9  28FA    		DB	28H,mtestF-$-1
+05DB  3E21    		mvi	a,'!'
+05DD  D3E8    		out	0e8h
+05DF          	mtestG:
+05DF  DBED    		in	0edh
+05E1  E620    		ani	020h
+05E3          		jrz	mtestG
+05E3  28FA    		DB	28H,mtestG-$-1
+05E5  AF      		xra	a
+05E6  06FA    		mvi	b,0fah
+05E8          	mtestH:
+05E8  3D      		dcr	a
+05E9          		jrnz	mtestH
+05E9  20FD    		DB	20H,mtestH-$-1
+05EB          		djnz	mtestH
+05EB  10FB    		DB	10H,mtestH-$-1
+05ED  3E07    		mvi	a,BEL
+05EF  D3E8    		out	0e8h
+05F1          		jr	mtestG
+05F1  18EC    		DB	18H,mtestG-$-1
 		; End of relocated code
-05F9          	mtestZ	equ	$
+05F3          	mtestZ	equ	$
 		;------------------------------------------------
 		
 		; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 			rept	0613h-$
+05F3  FF      		db	0ffh
+05F4  FF      		db	0ffh
+05F5  FF      		db	0ffh
+05F6  FF      		db	0ffh
+05F7  FF      		db	0ffh
+05F8  FF      		db	0ffh
 05F9  FF      		db	0ffh
 05FA  FF      		db	0ffh
 05FB  FF      		db	0ffh
@@ -1306,7 +1304,7 @@ C000          	ramboot	equ	0c000h
 061F  3ED0    		mvi	a,11010000b	; MON off
 0621  320920  		sta	ctl$F0
 0624  E1      		pop	h	; discard ret adr
-0625  C34700  		jmp	intret	; execute
+0625  C34A00  		jmp	intret	; execute
 		
 0628  2A1420  	kpin:	lhld	ABUSS
 062B  4C      		mov	c,h	; port
@@ -1334,7 +1332,7 @@ C000          	ramboot	equ	0c000h
 0648  D3F0    		out	0f0h
 064A  320920  	sst1:	sta	ctl$F0
 064D  E1      		pop	h	; discard ret adr
-064E  C34700  		jmp	intret	; execute
+064E  C34A00  		jmp	intret	; execute
 		
 		; initialize monitor memory at 2000h
 0651          	meminit:
@@ -1399,11 +1397,11 @@ C000          	ramboot	equ	0c000h
 06E0          		jrc	cmerr
 06E0  3809    		DB	38H,cmerr-$-1
 06E2  3A3B20  		lda	lstcmd
-06E5  CD0F04  		call	conout
+06E5  CD0904  		call	conout
 06E8  C39A0C  		jmp	cmexec
 		
-06EB  CD0D04  	cmerr:	call	belout
-06EE  C3BD00  		jmp	prloop
+06EB  CD0704  	cmerr:	call	belout
+06EE  C3C000  		jmp	prloop
 		
 		; get "alternate" (secondary) boot device...
 06F1          	galtbt:
@@ -1474,9 +1472,9 @@ C000          	ramboot	equ	0c000h
 076D  3EC3    		mvi	a,0c3h
 076F  328022  		sta	bootbf	; mark "no string"
 0772  318022  		lxi	sp,bootbf
-0775  CD5F03  		call	doboot	; only returns if error...
+0775  CD5903  		call	doboot	; only returns if error...
 0778          	kperr:
-0778          	deverr:	; TODO: implement
+0778          	deverr:
 0778  FB      		ei	; TODO: more required before this?
 0779  210820  		lxi	h,MFlag
 077C  7E      		mov	a,m
@@ -1519,7 +1517,7 @@ C000          	ramboot	equ	0c000h
 07B6  E6BD    		ani	10111101b	; normal mode...
 07B8  77      		mov	m,a
 			; should return to 'start' but avoid extra prompts...
-07B9  C39900  		jmp	re$entry
+07B9  C39C00  		jmp	re$entry
 		
 		; port options for keys 0-3
 07BC  787CB8BC	ports:	db	078h,07ch,0b8h,0bch
@@ -1551,7 +1549,7 @@ C000          	ramboot	equ	0c000h
 07F0  318022  		lxi	sp,bootbf
 07F3  217807  		lxi	h,kperr
 07F6  E5      		push	h
-07F7  C35F03  		jmp	doboot
+07F7  C35903  		jmp	doboot
 		
 07FA          	kpsbt:	; secondary boot
 07FA  3EC3    		mvi	a,0c3h
@@ -1577,7 +1575,7 @@ C000          	ramboot	equ	0c000h
 0823  FD21    		DB	0FDH,21H
 0825  7807    		DW	kperr
 0827  318022  		lxi	sp,bootbf
-082A  C34903  		jmp	gbooty
+082A  C33E03  		jmp	gbooty
 		
 082D          	btdsp:
 082D  3A0820  		lda	MFlag
@@ -1589,8 +1587,8 @@ C000          	ramboot	equ	0c000h
 083A  C1      		pop	b
 083B  110B20  		lxi	d,ALeds
 083E  CD2B0B  		call	mov3dsp
-			; TODO: fix this - needs to be visible long enough
-0841  3EFA    		mvi	a,250	;;
+			; TODO: fix this - is there a better way?
+0841  3EFA    		mvi	a,250	;; make it briefly visible
 0843  CD3002  		call	delay	;;
 0846  D1      		pop	d
 0847  C9      		ret
@@ -1701,14 +1699,14 @@ C000          	ramboot	equ	0c000h
 08F8          	kpcmd:	; A=keypad command, +80h
 			; keypad pressed...
 08F8  FE8A    		cpi	8ah	; non-digit (hex req first be '0')
-08FA  D2C800  		jnc	cmchr
+08FA  D2CB00  		jnc	cmchr
 08FD  47      		mov	b,a
 08FE  3A0720  		lda	DspMod
 0901  0F      		rrc	; CY=alter mode
 0902          		jrc	kpalter	; alter mode - numeric values only
 0902  3804    		DB	38H,kpalter-$-1
 0904  78      		mov	a,b
-0905  C3C800  		jmp	cmchr
+0905  C3CB00  		jmp	cmchr
 		; A=DspMod >> 1, B=key
 0908          	kpalter:
 0908  2A1420  		lhld	ABUSS
@@ -1818,7 +1816,7 @@ C000          	ramboot	equ	0c000h
 0994          	h17ini0:
 0994  36C3    		mvi	m,0c3h
 0996  23      		inx	h
-0997  365C    		mvi	m,LOW (nulint-rst0)
+0997  365F    		mvi	m,LOW (nulint-rst0)
 0999  23      		inx	h
 099A  3600    		mvi	m,HIGH (nulint-rst0)
 099C  23      		inx	h
@@ -1834,15 +1832,15 @@ C000          	ramboot	equ	0c000h
 09A8  20F9    		DB	20H,waitcr-$-1
 09AA          	crlf:
 09AA  3E0D    		mvi	a,CR
-09AC  CD0F04  		call	conout
+09AC  CD0904  		call	conout
 09AF  3E0A    		mvi	a,LF
-09B1  C30F04  		jmp	conout
+09B1  C30904  		jmp	conout
 		
 09B4          	msgout:
 09B4  7E      		mov	a,m
 09B5  B7      		ora	a
 09B6  C8      		rz
-09B7  CD0F04  		call	conout
+09B7  CD0904  		call	conout
 09BA  23      		inx	h
 09BB          		jr	msgout
 09BB  18F7    		DB	18H,msgout-$-1
@@ -1857,12 +1855,12 @@ C000          	ramboot	equ	0c000h
 09C6          		jrz	conin
 09C6  28F5    		DB	28H,conin-$-1
 			; cancel console cmd, leave keypad char for cmdin
-09C8  C3A500  		jmp	start
+09C8  C3A800  		jmp	start
 		
 09CB  DBE8    	conin0:	in	0e8h
 09CD  E67F    		ani	07fh
 09CF  FE7F    		cpi	DEL	; DEL key restarts from anywhere?
-09D1  CA9900  		jz	re$entry
+09D1  CA9C00  		jz	re$entry
 09D4  C9      		ret
 		
 		; called in the context of command on front-panel
@@ -1876,7 +1874,7 @@ C000          	ramboot	equ	0c000h
 09DE  30F5    		DB	30H,keyin-$-1
 			; cancel kaypad cmd, leave console char for cmdin
 			; TODO: what modes need reset?
-09E0  C3A500  		jmp	start
+09E0  C3A800  		jmp	start
 		
 		; wait for command - console or keypad
 09E3          	cmdin:
@@ -2177,7 +2175,7 @@ C000          	ramboot	equ	0c000h
 0B70  3A0820  		lda	MFlag
 0B73  0F      		rrc		; private int1?
 0B74  DC1F20  		cc	vrst1
-0B77  C34700  		jmp	intret
+0B77  C34A00  		jmp	intret
 		
 		; match module by character (letter)
 		; C=letter, B=00:cmd,ff:boot
@@ -2238,7 +2236,7 @@ C000          	ramboot	equ	0c000h
 0BB2  79      		mov	a,c
 0BB3  B7      		ora	a
 0BB4  3E2C    		mvi	a,','
-0BB6  C40F04  		cnz	conout
+0BB6  C40904  		cnz	conout
 0BB9  0C      		inr	c
 0BBA  78      		mov	a,b
 0BBB          		subx	mdbase
@@ -2246,7 +2244,7 @@ C000          	ramboot	equ	0c000h
 0BBE          		cmpx	mdluns
 0BBE  DDBE03  		DB	0DDH,0BEH,mdluns
 0BC1  3E2A    		mvi	a,'*'
-0BC3  DC0F04  		cc	conout
+0BC3  DC0904  		cc	conout
 0BC6          		pushix
 0BC6  DDE5    		DB	0DDH,0E5H
 0BC8  E1      		pop	h
@@ -2272,7 +2270,7 @@ C000          	ramboot	equ	0c000h
 0BE5          		jrnc	bfll2
 0BE5  3002    		DB	30H,bfll2-$-1
 0BE7  3E2A    		mvi	a,'*'
-0BE9  CD0F04  	bfll2:	call	conout
+0BE9  CD0904  	bfll2:	call	conout
 0BEC          		pushix
 0BEC  DDE5    		DB	0DDH,0E5H
 0BEE  E1      		pop	h
@@ -2280,21 +2278,21 @@ C000          	ramboot	equ	0c000h
 0BF2  19      		dad	d
 0BF3  CDB409  		call	msgout
 0BF6  3E09    		mvi	a,TAB
-0BF8  CD0F04  		call	conout
+0BF8  CD0904  		call	conout
 0BFB          		ldx	a,mdchr
 0BFB  DD7E0A  		DB	0DDH,a*8+46H,mdchr
-0BFE  CD0F04  		call	conout
+0BFE  CD0904  		call	conout
 0C01  3E20    		mvi	a,' '
-0C03  CD0F04  		call	conout
+0C03  CD0904  		call	conout
 0C06          		ldx	a,mdkey
 0C06  DD7E0B  		DB	0DDH,a*8+46H,mdkey
 0C09  C630    		adi	'0'
 0C0B          		jrnc	bfll0
 0C0B  3002    		DB	30H,bfll0-$-1
 0C0D  3E2D    		mvi	a,'-'
-0C0F  CD0F04  	bfll0:	call	conout
+0C0F  CD0904  	bfll0:	call	conout
 0C12  3E20    		mvi	a,' '
-0C14  CD0F04  		call	conout
+0C14  CD0904  		call	conout
 0C17          		ldx	a,mdbase
 0C17  DD7E02  		DB	0DDH,a*8+46H,mdbase
 0C1A  CDA00C  		call	decout
@@ -2304,7 +2302,7 @@ C000          	ramboot	equ	0c000h
 0C21          		jrz	bfll1
 0C21  280F    		DB	28H,bfll1-$-1
 0C23  3E2D    		mvi	a,'-'
-0C25  CD0F04  		call	conout
+0C25  CD0904  		call	conout
 0C28          		ldx	a,mdbase
 0C28  DD7E02  		DB	0DDH,a*8+46H,mdbase
 0C2B          		addx	mdluns
@@ -2442,9 +2440,9 @@ C000          	ramboot	equ	0c000h
 0CAD  C630    		adi	'0'
 0CAF  F5      		push	psw
 0CB0  7A      		mov	a,d
-0CB1  CD0F04  		call	conout
+0CB1  CD0904  		call	conout
 0CB4  F1      		pop	psw
-0CB5  C30F04  		jmp	conout
+0CB5  C30904  		jmp	conout
 		
 		; Returns NZ if found, D=phy drv
 0CB8          	gtdvtb:
@@ -2505,7 +2503,7 @@ C000          	ramboot	equ	0c000h
 0D12  DABE01  		jc	error
 0D15  B7      		ora	a
 0D16  C2BE01  		jnz	error
-0D19  C34203  		jmp	goboot
+0D19  C33703  		jmp	goboot
 		
 0D1C          	dfboot0:	; HL=setup data for pri or sec
 0D1C  7E      		mov	a,m
@@ -2598,188 +2596,238 @@ C000          	ramboot	equ	0c000h
 0D8D  C9      		ret
 		endif
 		
+0D8E  3600    	linix:	mvi	m,0	; terminate buffer
+0D90  C9      		ret
+		
+		; input a line from console, allow backspace
+		; HL=buffer (size 128)
+		; returns B=num chars, 128 max (never is 0c3h)
+0D91          	linin:
+0D91  0600    		mvi	b,0	; count chars
+0D93  CDBD09  	lini0	call	conin	; handles DEL (cancel)
+0D96  FE0D    		cpi	CR
+0D98          		jrz	linix
+0D98  28F4    		DB	28H,linix-$-1
+0D9A  FE08    		cpi	BS
+0D9C          		jrz	backup
+0D9C  281C    		DB	28H,backup-$-1
+0D9E  FE20    		cpi	' '
+0DA0          		jrc	chrnak
+0DA0  3811    		DB	38H,chrnak-$-1
+0DA2  FE7F    		cpi	'~'+1
+0DA4          		jrnc	chrnak
+0DA4  300D    		DB	30H,chrnak-$-1
+0DA6  77      	chrok:	mov	m,a
+0DA7  23      		inx	h
+0DA8  04      		inr	b
+0DA9  FAB10D  		jm	chrovf	; 128 chars max
+0DAC  CD0904  		call	conout
+0DAF          		jr	lini0
+0DAF  18E2    		DB	18H,lini0-$-1
+0DB1  2B      	chrovf:	dcx	h
+0DB2  05      		dcr	b
+0DB3  3E07    	chrnak:	mvi	a,BEL
+0DB5  CD0904  		call	conout
+0DB8          		jr	lini0
+0DB8  18D9    		DB	18H,lini0-$-1
+0DBA          	backup:
+0DBA  78      		mov	a,b
+0DBB  B7      		ora	a
+0DBC          		jrz	lini0
+0DBC  28D5    		DB	28H,lini0-$-1
+0DBE  05      		dcr	b
+0DBF  2B      		dcx	h
+0DC0  3E08    		mvi	a,BS
+0DC2  CD0904  		call	conout
+0DC5  3E20    		mvi	a,' '
+0DC7  CD0904  		call	conout
+0DCA  3E08    		mvi	a,BS
+0DCC  CD0904  		call	conout
+0DCF          		jr	lini0
+0DCF  18C2    		DB	18H,lini0-$-1
+		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Dump command
-0D8E          	cmddmp:
-0D8E  21D206  		lxi	h,dmpms
-0D91  CDB409  		call	msgout
-0D94  211420  		lxi	h,ABUSS
-0D97  B7      		ora	a	; NC
-0D98  160D    		mvi	d,CR
-0D9A  CD1A04  		call	adrin
-0D9D  EB      		xchg	; HL=adr
-0D9E  0608    		mvi	b,8	; 8 lines (one half page, 128 bytes)
-0DA0  C5      	dmp0:	push	b
-0DA1  CD6A04  		call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
-0DA4  E5      		push	h
-0DA5  0610    		mvi	b,16
-0DA7  7E      	dmp1:	mov	a,m
-0DA8  CD7904  		call	hexout
-0DAB  CD7504  		call	spout
-0DAE  23      		inx	h
-0DAF          		djnz	dmp1
-0DAF  10F6    		DB	10H,dmp1-$-1
-0DB1  E1      		pop	h
-0DB2  0610    		mvi	b,16
-0DB4  7E      	dmp2:	mov	a,m
-0DB5  FE20    		cpi	' '
-0DB7          		jrc	dmp3
-0DB7  3804    		DB	38H,dmp3-$-1
-0DB9  FE7F    		cpi	'~'+1
-0DBB          		jrc	dmp4
-0DBB  3802    		DB	38H,dmp4-$-1
-0DBD  3E2E    	dmp3:	mvi	a,'.'
-0DBF  CD0F04  	dmp4:	call	conout
-0DC2  23      		inx	h
-0DC3          		djnz	dmp2
-0DC3  10EF    		DB	10H,dmp2-$-1
-0DC5  C1      		pop	b
-0DC6          		djnz	dmp0
-0DC6  10D8    		DB	10H,dmp0-$-1
-0DC8  221420  		shld	ABUSS
-0DCB  C9      		ret
+0DD1          	cmddmp:
+0DD1  21D206  		lxi	h,dmpms
+0DD4  CDB409  		call	msgout
+0DD7  211420  		lxi	h,ABUSS
+0DDA  B7      		ora	a	; NC
+0DDB  160D    		mvi	d,CR
+0DDD  CD1404  		call	adrin
+0DE0  EB      		xchg	; HL=adr
+0DE1  0608    		mvi	b,8	; 8 lines (one half page, 128 bytes)
+0DE3  C5      	dmp0:	push	b
+0DE4  CD6404  		call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
+0DE7  E5      		push	h
+0DE8  0610    		mvi	b,16
+0DEA  7E      	dmp1:	mov	a,m
+0DEB  CD7304  		call	hexout
+0DEE  CD6F04  		call	spout
+0DF1  23      		inx	h
+0DF2          		djnz	dmp1
+0DF2  10F6    		DB	10H,dmp1-$-1
+0DF4  E1      		pop	h
+0DF5  0610    		mvi	b,16
+0DF7  7E      	dmp2:	mov	a,m
+0DF8  FE20    		cpi	' '
+0DFA          		jrc	dmp3
+0DFA  3804    		DB	38H,dmp3-$-1
+0DFC  FE7F    		cpi	'~'+1
+0DFE          		jrc	dmp4
+0DFE  3802    		DB	38H,dmp4-$-1
+0E00  3E2E    	dmp3:	mvi	a,'.'
+0E02  CD0904  	dmp4:	call	conout
+0E05  23      		inx	h
+0E06          		djnz	dmp2
+0E06  10EF    		DB	10H,dmp2-$-1
+0E08  C1      		pop	b
+0E09          		djnz	dmp0
+0E09  10D8    		DB	10H,dmp0-$-1
+0E0B  221420  		shld	ABUSS
+0E0E  C9      		ret
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; List available boot modules
-0DCC  21DF0D  	cmdlb:	lxi	h,lbmsg
-0DCF  CDB409  		call	msgout
-0DD2  CDF801  		call	gtdfbt
-0DD5  42      		mov	b,d
-0DD6  21AB0B  		lxi	h,bflst
-0DD9  0E00    		mvi	c,0
-0DDB  CD3B0C  		call	bfind0
-0DDE  C9      		ret
+0E0F  21220E  	cmdlb:	lxi	h,lbmsg
+0E12  CDB409  		call	msgout
+0E15  CDF801  		call	gtdfbt
+0E18  42      		mov	b,d
+0E19  21AB0B  		lxi	h,bflst
+0E1C  0E00    		mvi	c,0
+0E1E  CD3B0C  		call	bfind0
+0E21  C9      		ret
 		
-0DDF  69737420	lbmsg:	db	'ist boot modules',CR,LF,0
+0E22  69737420	lbmsg:	db	'ist boot modules',CR,LF,0
       626F6F74
       206D6F64
       756C6573
       0D0A00
-0DF2  656C7020	hbmsg:	db	'elp boot',CR,LF,0
+0E35  656C7020	hbmsg:	db	'elp boot',CR,LF,0
       626F6F74
       0D0A00
-0DFD  5072693A	hbmsg2:	db	'Pri: ',0
+0E40  5072693A	hbmsg2:	db	'Pri: ',0
       2000
-0E03  5365633A	hbmsg3:	db	'Sec: ',0
+0E46  5365633A	hbmsg3:	db	'Sec: ',0
       2000
 		
 		; Help boot command
-0E09  21F20D  	cmdhb:	lxi	h,hbmsg
-0E0C  CDB409  		call	msgout
-0E0F  CDF801  		call	gtdfbt
-0E12  42      		mov	b,d
-0E13  21D50B  		lxi	h,bfllst
-0E16  CD3B0C  		call	bfind0
+0E4C  21350E  	cmdhb:	lxi	h,hbmsg
+0E4F  CDB409  		call	msgout
+0E52  CDF801  		call	gtdfbt
+0E55  42      		mov	b,d
+0E56  21D50B  		lxi	h,bfllst
+0E59  CD3B0C  		call	bfind0
 			; Now display primary/secondary configs
-0E19  21FD0D  		lxi	h,hbmsg2
-0E1C  1104F8  		lxi	d,susave+dpdev
-0E1F  DBF2    		in	0f2h
-0E21  E670    		ani	01110000b	; default boot device
-0E23  FE70    		cpi	01110000b	; use setup cfg?
-0E25  3E2A    		mvi	a,'*'
-0E27          		jrz	cmdhb6
-0E27  2802    		DB	28H,cmdhb6-$-1
-0E29  3E20    		mvi	a,' '
-0E2B  CD3A0E  	cmdhb6:	call	cmdhbx
-0E2E  21030E  		lxi	h,hbmsg3
-0E31  1186F8  		lxi	d,susave+dsdev
-0E34  3E20    		mvi	a,' '	; never the default
-0E36  CD3A0E  		call	cmdhbx
-0E39  C9      		ret
+0E5C  21400E  		lxi	h,hbmsg2
+0E5F  1104F8  		lxi	d,susave+dpdev
+0E62  DBF2    		in	0f2h
+0E64  E670    		ani	01110000b	; default boot device
+0E66  FE70    		cpi	01110000b	; use setup cfg?
+0E68  3E2A    		mvi	a,'*'
+0E6A          		jrz	cmdhb6
+0E6A  2802    		DB	28H,cmdhb6-$-1
+0E6C  3E20    		mvi	a,' '
+0E6E  CD7D0E  	cmdhb6:	call	cmdhbx
+0E71  21460E  		lxi	h,hbmsg3
+0E74  1186F8  		lxi	d,susave+dsdev
+0E77  3E20    		mvi	a,' '	; never the default
+0E79  CD7D0E  		call	cmdhbx
+0E7C  C9      		ret
 		
-0E3A  CD0F04  	cmdhbx:	call	conout
-0E3D  CDB409  		call	msgout
-0E40  1A      		ldax	d
-0E41  13      		inx	d
-0E42  FEFF    		cpi	0ffh
-0E44          		jrnz	cmdhb0
-0E44  2002    		DB	20H,cmdhb0-$-1
-0E46  3E2D    		mvi	a,'-'
-0E48  CD0F04  	cmdhb0:	call	conout
-0E4B  3E20    		mvi	a,' '
-0E4D  CD0F04  		call	conout
-0E50  1A      		ldax	d
-0E51  13      		inx	d
-0E52  C630    		adi	'0'	; FF=2F,CY
-0E54          		jrnc	cmdhb1
-0E54  3002    		DB	30H,cmdhb1-$-1
-0E56  3E2D    		mvi	a,'-'
-0E58  CD0F04  	cmdhb1:	call	conout
-0E5B  3E20    		mvi	a,' '
-0E5D  CD0F04  		call	conout
-0E60  1A      		ldax	d
-0E61  FEFF    		cpi	0ffh
-0E63          		jrnz	cmdhb2
-0E63  2007    		DB	20H,cmdhb2-$-1
-0E65  3E2D    		mvi	a,'-'
-0E67  CD0F04  		call	conout
-0E6A          		jr	cmdhb3
-0E6A  1804    		DB	18H,cmdhb3-$-1
-0E6C  EB      	cmdhb2:	xchg
-0E6D  CDB409  		call	msgout
-0E70  CDAA09  	cmdhb3:	call	crlf
-0E73  C9      		ret
+0E7D  CD0904  	cmdhbx:	call	conout
+0E80  CDB409  		call	msgout
+0E83  1A      		ldax	d
+0E84  13      		inx	d
+0E85  FEFF    		cpi	0ffh
+0E87          		jrnz	cmdhb0
+0E87  2002    		DB	20H,cmdhb0-$-1
+0E89  3E2D    		mvi	a,'-'
+0E8B  CD0904  	cmdhb0:	call	conout
+0E8E  3E20    		mvi	a,' '
+0E90  CD0904  		call	conout
+0E93  1A      		ldax	d
+0E94  13      		inx	d
+0E95  C630    		adi	'0'	; FF=2F,CY
+0E97          		jrnc	cmdhb1
+0E97  3002    		DB	30H,cmdhb1-$-1
+0E99  3E2D    		mvi	a,'-'
+0E9B  CD0904  	cmdhb1:	call	conout
+0E9E  3E20    		mvi	a,' '
+0EA0  CD0904  		call	conout
+0EA3  1A      		ldax	d
+0EA4  FEFF    		cpi	0ffh
+0EA6          		jrnz	cmdhb2
+0EA6  2007    		DB	20H,cmdhb2-$-1
+0EA8  3E2D    		mvi	a,'-'
+0EAA  CD0904  		call	conout
+0EAD          		jr	cmdhb3
+0EAD  1804    		DB	18H,cmdhb3-$-1
+0EAF  EB      	cmdhb2:	xchg
+0EB0  CDB409  		call	msgout
+0EB3  CDAA09  	cmdhb3:	call	crlf
+0EB6  C9      		ret
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Add new boot module
-0E74  C9      	cmdab:	ret
+0EB7  C9      	cmdab:	ret
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Update ROM
-0E75  C9      	cmdur:	ret
+0EB8  C9      	cmdur:	ret
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Terminal mode - shuttle I/O between H19 and serial port
 		; since both ports operate at the same speed, don't need
 		; to check ready as often.
-0E76          	termod:
-0E76  21BE0E  		lxi	h,terms
-0E79  CDB409  		call	msgout
-0E7C  CDA309  		call	waitcr
-0E7F          	termfl:
-0E7F  DBED    		in	0edh
-0E81  E660    		ani	01100000b
-0E83  FE60    		cpi	01100000b
-0E85          		jrnz	termfl	; wait for output to flush
-0E85  20F8    		DB	20H,termfl-$-1
-0E87  DBEB    		in	0ebh
-0E89  F680    		ori	10000000b
-0E8B  D3EB    		out	0ebh
-0E8D  D3DB    		out	0dbh
-0E8F  DBE8    		in	0e8h
-0E91  D3D8    		out	0d8h
-0E93  DBE9    		in	0e9h
-0E95  D3D9    		out	0d9h
-0E97  DBEB    		in	0ebh
-0E99  E67F    		ani	01111111b
-0E9B  D3EB    		out	0ebh
-0E9D  D3DB    		out	0dbh
-0E9F  AF      		xra	a
-0EA0  D3D9    		out	0d9h
-0EA2  DBD8    		in	0d8h
-0EA4  3E0F    		mvi	a,00fh
-0EA6  D3DC    		out	0dch
-0EA8          	termlp:
-0EA8  DBDD    		in	0ddh
-0EAA  E601    		ani	00000001b
-0EAC          		jrz	terml0
-0EAC  2804    		DB	28H,terml0-$-1
-0EAE  DBD8    		in	0d8h
-0EB0  D3E8    		out	0e8h
-0EB2          	terml0:
-0EB2  DBED    		in	0edh
-0EB4  E601    		ani	00000001b
-0EB6          		jrz	termlp
-0EB6  28F0    		DB	28H,termlp-$-1
-0EB8  DBE8    		in	0e8h
-0EBA  D3D8    		out	0d8h
-0EBC          		jr	termlp
-0EBC  18EA    		DB	18H,termlp-$-1
+0EB9          	termod:
+0EB9  21010F  		lxi	h,terms
+0EBC  CDB409  		call	msgout
+0EBF  CDA309  		call	waitcr
+0EC2          	termfl:
+0EC2  DBED    		in	0edh
+0EC4  E660    		ani	01100000b
+0EC6  FE60    		cpi	01100000b
+0EC8          		jrnz	termfl	; wait for output to flush
+0EC8  20F8    		DB	20H,termfl-$-1
+0ECA  DBEB    		in	0ebh
+0ECC  F680    		ori	10000000b
+0ECE  D3EB    		out	0ebh
+0ED0  D3DB    		out	0dbh
+0ED2  DBE8    		in	0e8h
+0ED4  D3D8    		out	0d8h
+0ED6  DBE9    		in	0e9h
+0ED8  D3D9    		out	0d9h
+0EDA  DBEB    		in	0ebh
+0EDC  E67F    		ani	01111111b
+0EDE  D3EB    		out	0ebh
+0EE0  D3DB    		out	0dbh
+0EE2  AF      		xra	a
+0EE3  D3D9    		out	0d9h
+0EE5  DBD8    		in	0d8h
+0EE7  3E0F    		mvi	a,00fh
+0EE9  D3DC    		out	0dch
+0EEB          	termlp:
+0EEB  DBDD    		in	0ddh
+0EED  E601    		ani	00000001b
+0EEF          		jrz	terml0
+0EEF  2804    		DB	28H,terml0-$-1
+0EF1  DBD8    		in	0d8h
+0EF3  D3E8    		out	0e8h
+0EF5          	terml0:
+0EF5  DBED    		in	0edh
+0EF7  E601    		ani	00000001b
+0EF9          		jrz	termlp
+0EF9  28F0    		DB	28H,termlp-$-1
+0EFB  DBE8    		in	0e8h
+0EFD  D3D8    		out	0d8h
+0EFF          		jr	termlp
+0EFF  18EA    		DB	18H,termlp-$-1
 		
-0EBE  65726D69	terms:	db	'erminal Mode',TRM
+0F01  65726D69	terms:	db	'erminal Mode',TRM
       6E616C20
       4D6F6465
       00
@@ -2787,100 +2835,33 @@ C000          	ramboot	equ	0c000h
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Print ROM version command
-0ECB          	prtver:
-0ECB  21D80E  		lxi	h,versms
-0ECE  CDB409  		call	msgout
-0ED1  21EE0E  		lxi	h,vernum
-0ED4  CDB409  		call	msgout
-0ED7  C9      		ret
+0F0E          	prtver:
+0F0E  211B0F  		lxi	h,versms
+0F11  CDB409  		call	msgout
+0F14  21310F  		lxi	h,vernum
+0F17  CDB409  		call	msgout
+0F1A  C9      		ret
 		
-0ED8  65727369	versms:	db	'ersion ',TRM
+0F1B  65727369	versms:	db	'ersion ',TRM
       6F6E2000
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-0EE0  0D0A4838	signon:	db	CR,LF,'H8 '
+0F23  0D0A4838	signon:	db	CR,LF,'H8 '
       20
 0000          	if z180
 		endif
-0EE5  4D6F6E69		db	'Monitor v'
+0F28  4D6F6E69		db	'Monitor v'
       746F7220
       76
-0EEE  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+0F31  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 0000          	if alpha
 		endif
 0003          	if beta
-0EF1  28626574		db	'(beta',beta+'0',')'
+0F34  28626574		db	'(beta',beta+'0',')'
       613329
 		endif
-0EF8  0D0A00  		db	CR,LF,TRM
+0F3B  0D0A00  		db	CR,LF,TRM
 		
 			rept	1000h-$-2
-0EFB  FF      		db	0ffh
-0EFC  FF      		db	0ffh
-0EFD  FF      		db	0ffh
-0EFE  FF      		db	0ffh
-0EFF  FF      		db	0ffh
-0F00  FF      		db	0ffh
-0F01  FF      		db	0ffh
-0F02  FF      		db	0ffh
-0F03  FF      		db	0ffh
-0F04  FF      		db	0ffh
-0F05  FF      		db	0ffh
-0F06  FF      		db	0ffh
-0F07  FF      		db	0ffh
-0F08  FF      		db	0ffh
-0F09  FF      		db	0ffh
-0F0A  FF      		db	0ffh
-0F0B  FF      		db	0ffh
-0F0C  FF      		db	0ffh
-0F0D  FF      		db	0ffh
-0F0E  FF      		db	0ffh
-0F0F  FF      		db	0ffh
-0F10  FF      		db	0ffh
-0F11  FF      		db	0ffh
-0F12  FF      		db	0ffh
-0F13  FF      		db	0ffh
-0F14  FF      		db	0ffh
-0F15  FF      		db	0ffh
-0F16  FF      		db	0ffh
-0F17  FF      		db	0ffh
-0F18  FF      		db	0ffh
-0F19  FF      		db	0ffh
-0F1A  FF      		db	0ffh
-0F1B  FF      		db	0ffh
-0F1C  FF      		db	0ffh
-0F1D  FF      		db	0ffh
-0F1E  FF      		db	0ffh
-0F1F  FF      		db	0ffh
-0F20  FF      		db	0ffh
-0F21  FF      		db	0ffh
-0F22  FF      		db	0ffh
-0F23  FF      		db	0ffh
-0F24  FF      		db	0ffh
-0F25  FF      		db	0ffh
-0F26  FF      		db	0ffh
-0F27  FF      		db	0ffh
-0F28  FF      		db	0ffh
-0F29  FF      		db	0ffh
-0F2A  FF      		db	0ffh
-0F2B  FF      		db	0ffh
-0F2C  FF      		db	0ffh
-0F2D  FF      		db	0ffh
-0F2E  FF      		db	0ffh
-0F2F  FF      		db	0ffh
-0F30  FF      		db	0ffh
-0F31  FF      		db	0ffh
-0F32  FF      		db	0ffh
-0F33  FF      		db	0ffh
-0F34  FF      		db	0ffh
-0F35  FF      		db	0ffh
-0F36  FF      		db	0ffh
-0F37  FF      		db	0ffh
-0F38  FF      		db	0ffh
-0F39  FF      		db	0ffh
-0F3A  FF      		db	0ffh
-0F3B  FF      		db	0ffh
-0F3C  FF      		db	0ffh
-0F3D  FF      		db	0ffh
 0F3E  FF      		db	0ffh
 0F3F  FF      		db	0ffh
 0F40  FF      		db	0ffh
@@ -5137,9 +5118,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-   410	symbols
+   416	symbols
   6144	bytes
 
-  2905	macro calls
+  2861	macro calls
   3807	macro bytes
      0	invented symbols
