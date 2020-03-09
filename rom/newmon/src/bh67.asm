@@ -1,6 +1,7 @@
 ; Boot Module for H67
 	maclib	ram
 	maclib	core
+	maclib	setup
 	maclib	z80
 
 	org	1000h
@@ -18,11 +19,14 @@ first:	db	HIGH (last-first)	; +0: num pages
 	db	'H67',0	; +16: mnemonic string
 
 init:
+	lda	susave+h67pt
+	cpi	0ffh
+	jrnz	init1
 	mvi	c,10b
 	call	getport	; no return on error
 	jrnz	init0	; not fatal, if caller gets port later
 	mov	a,b
-	sta	cport
+init1:	sta	cport
 init0:	xra	a	; NC
 	ret
 

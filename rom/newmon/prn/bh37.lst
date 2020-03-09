@@ -7,6 +7,9 @@
 			maclib	core
 **** core.lib ****
 **** bh37.asm ****
+			maclib	setup
+**** setup.lib ****
+**** bh37.asm ****
 			maclib	z80
 **** z80.lib ****
 **** bh37.asm ****
@@ -17,112 +20,152 @@
 1002  2E04    		db	46,4	; +2,+3: phy drv base, num
 		
 1004  C31410  		jmp	init	; +4: init entry
-1007  C31610  		jmp	boot	; +7: boot entry
+1007  C32810  		jmp	boot	; +7: boot entry
 		
 100A  43      		db	'C'	; +10: Boot command letter
 100B  03      		db	3	; +11: front panel key
-100C  78      		db	78h	; +12: port, 0 if variable
+100C  00      		db	0	; +12: port, 0 if variable
 100D  92E0F1  		db	10010010b,11100000b,11110001b	; +13: FP display ("H37")
 1010  48333700		db	'H37',0	; +16: mnemonic string
 		
-1014  AF      	init:	xra	a	; NC
-1015  C9      		ret
+1014          	init:
+1014  3A0DF9  		lda	susave+h37pt
+1017  FEFF    		cpi	0ffh
+1019  2008    		jrnz	init0
+101B  DBF2    		in	0f2h
+101D  E60C    		ani	00001100b	; the only standard setup
+101F  37      		stc
+1020  C0      		rnz
+1021  3E78    		mvi	a,078h
+1023  325021  	init0:	sta	cport
+1026  AF      		xra	a	; NC
+1027  C9      		ret
 		
-1016          	boot:
-1016  219F10  		lxi	h,intz37
-1019  222920  		shld	vrst4+1
-101C  2B      		dcx	h
-101D  223720  		shld	l2037h
-1020  3A3121  		lda	AIO$UNI
-1023  FE04    		cpi	004h
-1025  D0      		rnc
-1026  3C      		inr	a
-1027  2E08    		mvi	l,00001000b
-1029          	bz37$0:
-1029  29      		dad	h
-102A  3D      		dcr	a
-102B  20FC    		jrnz	bz37$0
-102D  D379    		out	079h
-102F  DBF2    		in	0f2h
-1031  E60C    		ani	00ch
-1033  C0      		rnz
-1034  3E78    		mvi	a,078h
-1036  325021  		sta	cport
-1039  3ED0    		mvi	a,0d0h
-103B  D37A    		out	07ah
-103D  7D      		mov	a,l
-103E  F608    		ori	00001000b
-1040  57      		mov	d,a
-1041  D378    		out	078h
-1043  14      		inr	d
-1044  1E19    		mvi	e,019h
-1046  3E05    		mvi	a,5
-1048  CD4100  		call	take$A
-104B  017B14  		lxi	b,0147bh	; mask, port
-104E          	bz37$1:
-104E  DB7A    		in	07ah
-1050  A8      		xra	b
-1051  E602    		ani	002h
-1053  28F9    		jrz	bz37$1
-1055  10F7    		djnz	bz37$1
-1057          	bz37$2:
-1057  218022  		lxi	h,bootbf
-105A  3E01    		mvi	a,001h
-105C  D379    		out	079h
-105E  D37A    		out	07ah
-1060  7A      		mov	a,d
-1061  D378    		out	078h
-1063  0604    		mvi	b,004h
-1065          	bz37$3:
-1065  AF      		xra	a
-1066  D379    		out	079h
-1068  3E40    		mvi	a,040h
-106A  D37A    		out	07ah
-106C  CDA810  		call	ei$spin
-106F  10F4    		djnz	bz37$3
-1071  AF      		xra	a
-1072  D379    		out	079h
-1074  3E0B    		mvi	a,00bh
-1076  D37A    		out	07ah
-1078  CDA810  		call	ei$spin
-107B  7A      		mov	a,d
-107C  EE04    		xri	004h
-107E  57      		mov	d,a
-107F  F602    		ori	002h
-1081  D378    		out	078h
-1083  3E9C    		mvi	a,09ch
-1085  D37A    		out	07ah
-1087  CDAB10  		call	hlt$ini
-108A  E6EF    		ani	0efh
-108C  200D    		jrnz	bz37$4
-108E  7C      		mov	a,h
-108F  FE2C    		cpi	02ch
-1091  3808    		jrc	bz37$4
-1093  3E08    		mvi	a,008h
-1095  D378    		out	078h
-1097  E1      		pop	h
-1098  C33B00  		jmp	hwboot
-109B          	bz37$4:
-109B  1D      		dcr	e
-109C  20B9    		jrnz	bz37$2
-109E  C9      		ret
+1028          	boot:
+1028  21C110  		lxi	h,intz37
+102B  222920  		shld	vrst4+1
+102E  21CF10  		lxi	h,nulz37
+1031  223720  		shld	l2037h
+1034  3A5021  		lda	cport
+1037  4F      		mov	c,a
+1038  3A3121  		lda	AIO$UNI
+103B  FE04    		cpi	004h
+103D  D0      		rnc
+103E  3C      		inr	a
+103F  2E08    		mvi	l,00001000b
+1041          	bz37$0:
+1041  29      		dad	h
+1042  3D      		dcr	a
+1043  20FC    		jrnz	bz37$0
+1045  0C      		inr	c	; cport+1
+1046  ED79    		outp	a	; cport+1 - A=0
+1048  0C      		inr	c	; cport+2
+1049  3ED0    		mvi	a,0d0h	; FORCE INTERRUPT
+104B  ED79    		outp	a	; cport+2
+104D  7D      		mov	a,l
+104E  F608    		ori	00001000b	; add MOTOR ON
+1050  57      		mov	d,a
+1051  0D      		dcr	c	; cport+1
+1052  0D      		dcr	c	; cport+0
+1053  ED79    		outp	a	; cport+0
+1055  14      		inr	d	; add INTRQ EN for later
+1056  1E19    		mvi	e,25	; number of retries
+1058  3E05    		mvi	a,5
+105A  CD4100  		call	take$A
+105D  0C      		inr	c	; cport+1
+105E  0C      		inr	c	; cport+2
+			; see 20 index pulses before continuing...
+105F  0614    		mvi	b,20
+1061          	bz37$1:
+1061  ED78    		inp	a	; cport+2
+1063  E602    		ani	002h	; INDEX
+1065  28FA    		jrz	bz37$1
+1067  10F8    		djnz	bz37$1
+			; diskette must be inserted and spinning...
+1069          	bz37$2:	; C=cport+2
+1069  0D      		dcr	c	; cport+1
+106A  218022  		lxi	h,bootbf
+106D  3E01    		mvi	a,001h
+106F  ED79    		outp	a	; cport+1 - MUX to track/sector regs
+1071  0C      		inr	c	; cport+2
+1072  ED79    		outp	a	; cport+2 - track = 1?
+1074  0D      		dcr	c	; cport+1
+1075  0D      		dcr	c	; cport+0
+1076  7A      		mov	a,d
+1077  ED79    		outp	a	; cport+0 - INTRQ EN now
+1079  0604    		mvi	b,4	; step in 4 tracks...
+107B  0C      		inr	c	; cport+1
+107C  0C      		inr	c	; cport+2
+107D          	bz37$3:
+107D  0D      		dcr	c	; cport+1
+107E  AF      		xra	a
+107F  ED79    		outp	a	; cport+1 - MUX to cmd/sts/data regs
+1081  0C      		inr	c	; cport+2
+1082  3E40    		mvi	a,040h	; STEP IN
+1084  ED79    		outp	a	; cport+2 - start command
+1086  CDD010  		call	ei$spin	; returns C=cport+2
+1089  10F2    		djnz	bz37$3
+108B  0D      		dcr	c	; cport+1
+108C  AF      		xra	a
+108D  ED79    		outp	a	; cport+1 - MUX to cmd/sts/data regs
+108F  0C      		inr	c	; cport+2
+1090  3E0B    		mvi	a,00bh	; RESTORE
+1092  ED79    		outp	a	; cport+2 - start command
+1094  CDD010  		call	ei$spin	; returns C=cport+2
+1097  0D      		dcr	c	; cport+1
+1098  0D      		dcr	c	; cport+0
+1099  7A      		mov	a,d
+109A  EE04    		xri	004h	; toggle DDEN
+109C  57      		mov	d,a
+109D  F602    		ori	002h	; DRQ EN
+109F  ED79    		outp	a	; cport+0
+10A1  0C      		inr	c	; cport+1
+10A2  0C      		inr	c	; cport+2
+10A3  3E9C    		mvi	a,09ch	; READ MULTI
+10A5  ED79    		outp	a	; cport+2 - start command
+10A7  CDD310  		call	hlt$ini
+			; assume C=cport+2 after intz37...
+10AA  E6EF    		ani	0efh	; ignore RNF (always set for READ MULTI)
+10AC  200F    		jrnz	bz37$4
+10AE  7C      		mov	a,h
+10AF  FE2C    		cpi	02ch	; 2280h + 10 sectors min
+10B1  380A    		jrc	bz37$4
+10B3  0D      		dcr	c	; cport+1
+10B4  0D      		dcr	c	; cport+0
+10B5  3E08    		mvi	a,008h	; MOTOR ON only
+10B7  ED79    		outp	a	; cport+0
+10B9  E1      		pop	h
+10BA  C33B00  		jmp	hwboot
+10BD          	bz37$4:	; error, retry
+10BD  1D      		dcr	e
+10BE  20A9    		jrnz	bz37$2
+10C0  C9      		ret
 		
-109F  DB7A    	intz37:	in	07ah
-10A1  E3      		xthl
-10A2  2A3720  		lhld	l2037h
-10A5  E3      		xthl
-10A6  FB      		ei
-10A7  C9      		ret
+		; must have C=cport+2... could assume came from rd316$0...
+10C1          	intz37:
+10C1  3A5021  		lda	cport
+10C4  C602    		adi	2	; cport+2
+10C6  4F      		mov	c,a
+10C7  ED78    		inp	a
+10C9  E3      		xthl
+10CA  2A3720  		lhld	l2037h
+10CD  E3      		xthl
+10CE  FB      		ei
+10CF  C9      	nulz37:	ret
 		
-10A8  FB      	ei$spin: ei
-10A9  18FE    		jr	$-1	; wait for intr to break us out
+10D0  FB      	ei$spin: ei
+10D1  18FE    		jr	$-1	; wait for intr to break us out
 		
-10AB  FB      	hlt$ini: ei
-10AC  76      	rd316$0: hlt
-10AD  EDA2    		ini
-10AF  C3AC10  		jmp	rd316$0
+10D3          	hlt$ini:	; must have C=cport+3
+10D3  3A5021  		lda	cport
+10D6  C603    		adi	3	; cport+3
+10D8  4F      		mov	c,a
+10D9  FB      		ei
+10DA  76      	rd316$0: hlt
+10DB  EDA2    		ini
+10DD  C3DA10  		jmp	rd316$0
 		
-10B2  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+10E0  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -130,18 +173,6 @@
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFF
 0000          	if ($ > 1800h)
 		endif
 		
@@ -153,9 +184,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-    79	symbols
+   102	symbols
    256	bytes
 
-   103	macro calls
+    75	macro calls
   3759	macro bytes
      0	invented symbols

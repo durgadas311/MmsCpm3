@@ -76,6 +76,33 @@ if not z180
 	lxi	h,last+m512k
 	call	getyn
 endif
+
+	mvi	a,'6'
+	sta	dport+1
+	lxi	d,dport
+	lxi	h,last+h67pt
+	call	gethex
+
+	mvi	a,'4'
+	sta	dport+1
+	lxi	d,dport
+	lxi	h,last+h47pt
+	call	gethex
+
+	mvi	a,'3'
+	sta	dport+1
+	lxi	d,dport
+	lxi	h,last+h37pt
+	call	gethex
+
+if 0	; H17 is not configurable?
+	mvi	a,'1'
+	sta	dport+1
+	lxi	d,dport
+	lxi	h,last+h17pt
+	call	gethex
+endif
+
 	; TODO: more setup?
 	lda	dirty
 	ora	a
@@ -329,6 +356,21 @@ decout:
 	pop	b
 	ret
 
+hexout:
+	push	psw
+	rlc
+	rlc
+	rlc
+	rlc
+	call	hexdig
+	pop	psw
+hexdig:	ani	0fh
+	adi	90h
+	daa
+	aci	40h
+	daa
+	jmp	chrout
+
 divide:	mvi	e,0
 div0:	sub	d
 	inr	e
@@ -345,6 +387,38 @@ div1:	setb	0,c
 	add	e
 	call	chrout
 	pop	psw	; remainder
+	ret
+
+parshx:
+	mvi	d,0
+px0:	mov	a,m
+	ora	a
+	rz
+	sui	'0'
+	rc
+	cpi	'9'-'0'+1
+	jrc	px3
+	sui	'A'-'0'
+	ani	11011111b	; toupper
+	cpi	'F'-'A'+1
+	cmc
+	rc
+	adi	10
+px3:	mov	e,a
+	mov	a,d
+	add	a
+	rc
+	add	a
+	rc
+	add	a
+	rc
+	add	a
+	rc
+	add	e	; no CY possible
+	mov	d,a
+	inx	h
+	djnz	px0
+	ora	a
 	ret
 
 ; Parse a 8-bit (max) decimal number
@@ -553,6 +627,44 @@ getltx:	mvi	m,0ffh
 	jr	getlete
 
 ; DE=prompt prefix, HL=value location
+gethexe:
+	mvi	a,BEL
+	call	conout
+gethex:
+	push	d
+	push	h
+	call	msgout
+	mov	a,m
+	call	hexout
+	lxi	d,gpunn
+	call	msgout
+	call	linin
+	jc	nmerr9
+	mov	a,c
+	ora	a
+	jrz	getxit
+	lda	inbuf
+	cpi	ESC	; delete setting
+	jrz	gethxx
+	mov	b,c
+	lxi	h,inbuf
+	call	parshx
+	mov	a,d
+	pop	h
+	pop	d
+	jrc	gethexe
+	mov	m,a
+	mvi	a,1
+	sta	dirty
+	ret
+
+; delete setting, re-prompt
+gethxx:	pop	h
+	mvi	m,0ffh
+	pop	d
+	jr	gethexe
+
+; DE=prompt prefix, HL=value location
 getnume:
 	mvi	a,BEL
 	call	conout
@@ -656,6 +768,7 @@ gsdev:	db	'Secondary boot device (',0
 gsuni:	db	'Secondary boot unit (',0
 gsstr:	db	'Secondary boot string (',0
 g512k:	db	'H8-512K RAM installed (',0
+dport:	db	'H_7 Port (FF=use SW1) (',0
 
 dirty:	db	0
 curmsg:	dw	0

@@ -1,6 +1,7 @@
 ; Boot Module for H47
 	maclib	ram
 	maclib	core
+	maclib	setup
 	maclib	z80
 
 	org	1000h
@@ -18,11 +19,14 @@ first:	db	HIGH (last-first)	; +0: num pages
 	db	'H47',0	; +16: mnemonic string
 
 init:
+	lda	susave+h47pt
+	cpi	0ffh
+	jrnz	init1
 	mvi	c,01b
 	call	getport	; no return on error
 	jrnz	init0	; not fatal, if caller gets port later
 	mov	a,b
-	sta	cport
+init1:	sta	cport
 init0:
 	; 'JMP' already in place
 	lxi	h,z47$dati

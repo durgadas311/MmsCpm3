@@ -5,6 +5,9 @@
 			maclib	core
 **** core.lib ****
 **** bh47.asm ****
+			maclib	setup
+**** setup.lib ****
+**** bh47.asm ****
 			maclib	z80
 **** z80.lib ****
 **** bh47.asm ****
@@ -15,7 +18,7 @@
 1002  0504    		db	5,4	; +2,+3: phy drv base, num
 		
 1004  C31410  		jmp	init	; +4: init entry
-1007  C33310  		jmp	boot	; +7: boot entry
+1007  C33A10  		jmp	boot	; +7: boot entry
 		
 100A  44      		db	'D'	; +10: Boot command letter
 100B  01      		db	1	; +11: front panel key
@@ -24,124 +27,127 @@
 1010  48343700		db	'H47',0	; +16: mnemonic string
 		
 1014          	init:
-1014  0E01    		mvi	c,01b
-1016  CD0400  		call	getport	; no return on error
-1019  2004    		jrnz	init0	; not fatal, if caller gets port later
-101B  78      		mov	a,b
-101C  325021  		sta	cport
-101F          	init0:
+1014  3A0CF9  		lda	susave+h47pt
+1017  FEFF    		cpi	0ffh
+1019  2008    		jrnz	init1
+101B  0E01    		mvi	c,01b
+101D  CD0400  		call	getport	; no return on error
+1020  2004    		jrnz	init0	; not fatal, if caller gets port later
+1022  78      		mov	a,b
+1023  325021  	init1:	sta	cport
+1026          	init0:
 			; 'JMP' already in place
-101F  219E10  		lxi	h,z47$dati
-1022  223801  		shld	h47$dati+1
-1025  217310  		lxi	h,z47$dato
-1028  221406  		shld	h47$dato+1
-102B  217710  		lxi	h,z47$cmdo
-102E  221806  		shld	h47$cmdo+1
-1031  AF      		xra	a	; NC
-1032  C9      		ret
+1026  21A510  		lxi	h,z47$dati
+1029  223801  		shld	h47$dati+1
+102C  217A10  		lxi	h,z47$dato
+102F  221406  		shld	h47$dato+1
+1032  217E10  		lxi	h,z47$cmdo
+1035  221806  		shld	h47$cmdo+1
+1038  AF      		xra	a	; NC
+1039  C9      		ret
 		
-1033          	boot:
-1033  3A3121  		lda	AIO$UNI
-1036  0F      		rrc		; u000000u
-1037  0F      		rrc		; uu000000
-1038  0F      		rrc		; 0uu00000
-1039  3C      		inr	a	; 0uu00001
-103A  5F      		mov	e,a
-103B  3E05    		mvi	a,5
-103D  CD4100  		call	take$A	; error out after 5 seconds...
-1040  3E02    		mvi	a,2
-1042  CD8410  		call	outport0
-1045  3E02    		mvi	a,2
-1047  CD7710  		call	z47$cmdo
-104A  7B      		mov	a,e
-104B  CD7310  		call	z47$dato
-104E  CD9E10  		call	z47$dati
-1051  E60C    		ani	00ch
-1053  0F      		rrc
-1054  0F      		rrc
-1055  3C      		inr	a
-1056  47      		mov	b,a
-1057  3E01    		mvi	a,1
-1059          	bz47$0:
-1059  87      		add	a
-105A  10FD    		djnz	bz47$0
-105C  1F      		rar
+103A          	boot:
+103A  3A3121  		lda	AIO$UNI
+103D  0F      		rrc		; u000000u
+103E  0F      		rrc		; uu000000
+103F  0F      		rrc		; 0uu00000
+1040  3C      		inr	a	; 0uu00001
+1041  5F      		mov	e,a
+1042  3E05    		mvi	a,5
+1044  CD4100  		call	take$A	; error out after 5 seconds...
+1047  3E02    		mvi	a,2
+1049  CD8B10  		call	outport0
+104C  3E02    		mvi	a,2
+104E  CD7E10  		call	z47$cmdo
+1051  7B      		mov	a,e
+1052  CD7A10  		call	z47$dato
+1055  CDA510  		call	z47$dati
+1058  E60C    		ani	00ch
+105A  0F      		rrc
+105B  0F      		rrc
+105C  3C      		inr	a
 105D  47      		mov	b,a
-105E  218022  		lxi	h,bootbf
-1061  C5      		push	b
-1062  CDA710  		call	z47$read
-1065  C1      		pop	b
-1066  1C      		inr	e
-1067  CDA710  		call	z47$read
-106A  CD9210  		call	inport0
-106D  E601    		ani	001h
-106F  C0      		rnz
-1070  C33B00  		jmp	hwboot
+105E  3E01    		mvi	a,1
+1060          	bz47$0:
+1060  87      		add	a
+1061  10FD    		djnz	bz47$0
+1063  1F      		rar
+1064  47      		mov	b,a
+1065  218022  		lxi	h,bootbf
+1068  C5      		push	b
+1069  CDAE10  		call	z47$read
+106C  C1      		pop	b
+106D  1C      		inr	e
+106E  CDAE10  		call	z47$read
+1071  CD9910  		call	inport0
+1074  E601    		ani	001h
+1076  C0      		rnz
+1077  C33B00  		jmp	hwboot
 		
-1073          	z47$dato:
-1073  1680    		mvi	d,080h	; TR - date transfer request
-1075  1802    		jr	z47$out0
-1077          	z47$cmdo:
-1077  1620    		mvi	d,020h	; DONE
-1079          	z47$out0:
-1079  37      		stc
-107A  F5      		push	psw
-107B          	z47$wt0:
-107B  CD9210  		call	inport0
-107E  A2      		ana	d
-107F  28FA    		jrz	z47$wt0
-1081  F1      		pop	psw
-1082  1801    		jr	z47$out1
-1084          	outport0:
-1084  B7      		ora	a
-1085          	z47$out1:
-1085  C5      		push	b
-1086  47      		mov	b,a
-1087  3A5021  		lda	cport
-108A  CE00    		aci	0
-108C  4F      		mov	c,a
-108D  78      		mov	a,b
-108E  ED79    		outp	a
-1090  C1      		pop	b
-1091  C9      		ret
+107A          	z47$dato:
+107A  1680    		mvi	d,080h	; TR - date transfer request
+107C  1802    		jr	z47$out0
+107E          	z47$cmdo:
+107E  1620    		mvi	d,020h	; DONE
+1080          	z47$out0:
+1080  37      		stc
+1081  F5      		push	psw
+1082          	z47$wt0:
+1082  CD9910  		call	inport0
+1085  A2      		ana	d
+1086  28FA    		jrz	z47$wt0
+1088  F1      		pop	psw
+1089  1801    		jr	z47$out1
+108B          	outport0:
+108B  B7      		ora	a
+108C          	z47$out1:
+108C  C5      		push	b
+108D  47      		mov	b,a
+108E  3A5021  		lda	cport
+1091  CE00    		aci	0
+1093  4F      		mov	c,a
+1094  78      		mov	a,b
+1095  ED79    		outp	a
+1097  C1      		pop	b
+1098  C9      		ret
 		
-1092          	inport0:
-1092  B7      		ora	a	; NC
-1093          	inportx:	; input from cport+CY
-1093  C5      		push	b
-1094  3A5021  		lda	cport
-1097  CE00    		aci	0
-1099  4F      		mov	c,a
-109A  ED78    		inp	a
-109C  C1      		pop	b
-109D  C9      		ret
+1099          	inport0:
+1099  B7      		ora	a	; NC
+109A          	inportx:	; input from cport+CY
+109A  C5      		push	b
+109B  3A5021  		lda	cport
+109E  CE00    		aci	0
+10A0  4F      		mov	c,a
+10A1  ED78    		inp	a
+10A3  C1      		pop	b
+10A4  C9      		ret
 		
-109E          	z47$dati:
-109E  CD9210  		call	inport0
-10A1  07      		rlc	; TR
-10A2  30FA    		jrnc	z47$dati
-10A4  C39310  		jmp	inportx	; CY=1, input cport+1
+10A5          	z47$dati:
+10A5  CD9910  		call	inport0
+10A8  07      		rlc	; TR
+10A9  30FA    		jrnc	z47$dati
+10AB  C39A10  		jmp	inportx	; CY=1, input cport+1
 		
-10A7          	z47$read:
-10A7  3E07    		mvi	a,7	; read thru buffer command
-10A9  CD7710  		call	z47$cmdo
-10AC  AF      		xra	a
-10AD  CD7310  		call	z47$dato	; params
-10B0  7B      		mov	a,e
-10B1  CD7310  		call	z47$dato	; params
-10B4          	z47$rd0:
-10B4  0E80    		mvi	c,128
-10B6          	z47$rd1:
-10B6  CD9E10  		call	z47$dati
-10B9  77      		mov	m,a
-10BA  23      		inx	h
-10BB  0D      		dcr	c
-10BC  20F8    		jrnz	z47$rd1
-10BE  05      		dcr	b
-10BF  20F3    		jrnz	z47$rd0
-10C1  C9      		ret
+10AE          	z47$read:
+10AE  3E07    		mvi	a,7	; read thru buffer command
+10B0  CD7E10  		call	z47$cmdo
+10B3  AF      		xra	a
+10B4  CD7A10  		call	z47$dato	; params
+10B7  7B      		mov	a,e
+10B8  CD7A10  		call	z47$dato	; params
+10BB          	z47$rd0:
+10BB  0E80    		mvi	c,128
+10BD          	z47$rd1:
+10BD  CDA510  		call	z47$dati
+10C0  77      		mov	m,a
+10C1  23      		inx	h
+10C2  0D      		dcr	c
+10C3  20F8    		jrnz	z47$rd1
+10C5  05      		dcr	b
+10C6  20F3    		jrnz	z47$rd0
+10C8  C9      		ret
 		
-10C2  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+10C9  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -154,9 +160,7 @@
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFF
+      FFFFFF
 0000          	if ($ > 1800h)
 		endif
 		
@@ -168,9 +172,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-    84	symbols
+   106	symbols
    256	bytes
 
-    88	macro calls
+    84	macro calls
   3759	macro bytes
      0	invented symbols
