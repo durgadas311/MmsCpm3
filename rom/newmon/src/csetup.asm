@@ -1,5 +1,5 @@
 ; Command module for SETUP
-VERN	equ	01h
+VERN	equ	02h
 
 false	equ	0
 true	equ	not false
@@ -506,7 +506,7 @@ cserr:	lxi	d,csbad
 	mov	d,h
 	mov	e,l
 	mvi	m,0ffh
-	inx	h
+	inx	d
 	lxi	b,susize-1
 	ldir
 	lxi	h,0
