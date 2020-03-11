@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	4
+beta	equ	5
 
 z180	equ	false
 
@@ -475,34 +475,6 @@ delay0:
 	pop	h
 	ret
 
-digerr:
-	call	belout
-	jr	btdig0
-; Got a digit in boot command, parse it
-btdig:	; boot by phys drive number, E=0
-	call	conout	; echo digit
-	ani	00fh	; convert to binary
-	mov	d,a
-btdig0:
-	call	conin	; get another, until term char (C)
-	cmp	c
-	jrz	gotnum
-	cpi	'0'
-	jrc	digerr
-	cpi	'9'+1
-	jrnc	digerr
-	call	conout
-	ani	00fh
-	mvi	b,10	; add 10 times, i.e. D = (D * 10) + A
-btdig1:
-	add	d
-	jc	error
-	djnz	btdig1
-	mov	d,a
-	cpi	200
-	jnc	error
-	jr	btdig0
-
 gotnum:	; Boot N... "N" in D
 	push	d	; save unit num (E)
 	mov	c,d
@@ -517,7 +489,7 @@ gotnum:	; Boot N... "N" in D
 	mov	a,d
 	ldx	d,mdbase
 	sub	d
-	mov	e,a
+	mov	e,a	; always zero?
 	jmp	goboot
 
 cmdboot:
@@ -537,12 +509,10 @@ boot0:
 	cmp	c
 	jz	dfboot	; default boot, by phy drv...
 	mvi	e,0
-	cpi	'0'
-	jrc	nodig
-	cpi	'9'+1
-	jrc	btdig
-nodig:	; boot by letter... Boot alpha-
+	; boot by letter... Boot alpha-
 	ani	05fh ; toupper
+	cpi	'A'
+	jrc	bterr
 	cpi	'Z'+1
 	jrnc	bterr
 	cpi	'A'
@@ -584,32 +554,23 @@ vfp0:	sta	cport
 lunerr:
 	call	belout
 luboot0:
-	call	conin
+	call	hexin
+	jrnc	luboot2	; valid HEX digit...
 	cmp	c
 	jrz	goboot
 	cpi	':'
 	jrz	colon
 	cpi	' '
 	jrz	space
-	cpi	'0'
+	jr	lunerr
+luboot2:
+	call	E$x16$A
 	jrc	lunerr
-	cpi	'9'+1
-	jrnc	lunerr
 	call	conout
-	sui	'0'
-	mov	e,a	; single digit (0..9)
-luboot1:
-	call	conin
-	cmp	c
-	jrz	goboot
-	cpi	':'	; Boot alpha-dig:str
-	jrz	colon
-	cpi	' '	; cosmetic spaces?
-	jrz	space
-	mvi	a,BEL
+	jr	luboot0
 space:
 	call	conout
-	jr	luboot1
+	jr	luboot0	; TODO: this gets dodgy if spaces between digits.
 
 colon:	; get arbitrary string as last boot param
 	call	conout	; echo ':'
@@ -629,6 +590,7 @@ goboot:
 ; Move string to stack, if present.
 ; Stack space is 292 bytes, be certain not to overrun.
 ; Since len value is 127 max + TRM, should be OK.
+; Can't use stack until copy is done... can't destroy DE...
 gbooty:
 	lxi	h,bootbf
 	mov	a,m
@@ -637,25 +599,24 @@ gbooty:
 	mov	c,a	; length
 	mvi	b,0
 	inx	h	; first byte of string...
-	xchg
-	lxi	h,0
-	dad	sp	; get curr SP
-	inx	b	; incl. TRM
-	ora	a
-	dsbc	b
-	sphl		; set new SP
-	xchg
-	ldir
+	dad	b	; point to end (TRM)
+btstr1:
+	mov	a,m
+	push	psw
+	inx	sp	; undo half of push
+	dcx	h
+	dcr	c
+	jrnz	btstr1
 gboot0:
 	pushiy	; error routine
 ; IX=boot module (in memory)
 ; D=phy drv base, E=unit
 doboot:	; common boot path for console and keypad
-	call	h17init
+	call	h17init	; leaves interrupts disabled
 	mov	a,e
 	sta	AIO$UNI	; relative unit num
-	add	d
-	sta	l2034h	; boot phys drv unit num
+	mov	a,d
+	sta	l2034h	; boot phys drv base
 	jmp	btboot
 	; btboot effectively returns here on success
 	; (in most cases)
@@ -844,6 +805,8 @@ hexchk:
 	cpi	'9'+1
 	cmc
 	rnc
+	cpi	'A'
+	rc
 	ani	05fh	; toupper
 	cpi	'A'
 	rc
@@ -1637,11 +1600,15 @@ iob0:
 	ret
 
 ; returns with interrupts disabled
+; preserves DE
 h17init:
 	di
+	in	0f2h
+	ani	00000011b	; port 7C - only one for H17
+	jrnz	h17in0
 	xra	a
-	out	07fh
-	push	d
+	out	07fh	; avoid this if H17 not configured
+h17in0:	push	d
 	lxi	h,ctl$F0
 	mvi	m,11010000b	; !beep, 2mS, !mon, !SI
 	lxi	h,R$CONST
@@ -2021,15 +1988,15 @@ bfkey:	ldx	a,+2	; phy drv or type
 	ret
 
 ; match boot module by phy drv number
-; C=phy drv, B=type
+; C=phy drv (base), B=type
 ; Only for boot modules
 bfnum:	ldx	a,mdbase	; phy drv or type
 	cpi	200	; boot modules < 200
 	jrnc	bfn0	; skip if >= 200
 	mov	a,c
 	subx	mdbase
-	cmpx	mdluns
-	jrnc	bfn0 ; might be Z...
+	ora	a
+	jrnz	bfn0
 	xra	a
 	ret
 bfn0:	xra	a
@@ -2048,9 +2015,9 @@ bflst:	ldx	a,mdbase	; phy drv or type
 	inr	c
 	mov	a,b
 	subx	mdbase
-	cmpx	mdluns
+	ora	a
 	mvi	a,'*'
-	cc	conout
+	cz	conout
 	pushix
 	pop	h
 	lxi	d,mdname
@@ -2065,9 +2032,9 @@ bfllst:	ldx	a,mdbase	; phy drv or type
 	jrnc	bfn0
 	mov	a,b
 	subx	mdbase
-	cmpx	mdluns
+	ora	a
 	mvi	a,' '
-	jrnc	bfll2
+	jrnz	bfll2
 	mvi	a,'*'
 bfll2:	call	conout
 	pushix
@@ -2090,19 +2057,10 @@ bfll0:	call	conout
 	call	conout
 	ldx	a,mdbase
 	call	decout
-	ldx	a,mdluns
-	dcr	a
-	jrz	bfll1
-	mvi	a,'-'
-	call	conout
-	ldx	a,mdbase
-	addx	mdluns
-	dcr	a
-	call	decout
-bfll1:	call	crlf
+	call	crlf
 	lxi	h,bfllst
 	xra	a	; NZ - keep going
-	inr	a
+	inr	a	;
 	ret
 
 ; Find boot module and load into 1000h if necessary.
@@ -2314,7 +2272,10 @@ dfboot0:	; HL=setup data for pri or sec
 	cpi	0ffh
 	jrnz	dfbt0
 	xra	a
-dfbt0:	mov	e,a	; DE=phy drv base,unit
+dfbt0:	cmpx	mdluns
+	cmc
+	rc
+	mov	e,a	; DE=phy drv base,unit
 	mov	a,m
 	cpi	0ffh	; no string?
 	jrz	dfbt2
@@ -2455,6 +2416,36 @@ backup:
 	mvi	a,BS
 	call	conout
 	jr	lini0
+
+; Used during entry of LUN in boot command.
+; multiply E by 16, check for >= (IX+mdnum) (or overflow)
+; add in A (converted to binary).
+; IX=active boot module
+; Returns CY on overflow, else E updated to new LUN value
+E$x16$A:
+	mov	b,e
+	ralr	b
+	rc
+	ralr	b
+	rc
+	ralr	b
+	rc
+	ralr	b
+	rc
+	push	psw
+	sui	'0'
+	cpi	9+1
+	jrc	ex16a0
+	sui	'A'-'0'-10
+ex16a0:	add	b	; never CY
+	cmpx	mdluns	; might be 0ffh
+	jrc	ex16a1	; value OK
+	pop	psw
+	stc
+	ret
+ex16a1:	mov	e,a
+	pop	psw
+	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Dump command

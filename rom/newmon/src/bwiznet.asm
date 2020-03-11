@@ -88,7 +88,7 @@ nvbuf:	ds	512
 	org	1000h
 first:	db	HIGH (last-first)	; +0: num pages
 	db	HIGH first		; +1: ORG page
-	db	60,1	; +2,+3: phy drv base, num
+	db	60,255	; +2,+3: phy drv base, num
 
 	jmp	init	; +4: init entry
 	jmp	boot	; +7: boot entry
@@ -330,7 +330,7 @@ boot:
 	ldir
 nb5:	xra	a
 	stax	d	; NUL term
-	lda	AIO$UNI	; server id, 0..9
+	lda	AIO$UNI	; server id, 0..254
 	sta	server
 	; locate server node id in chip's socket regs.
 	;
