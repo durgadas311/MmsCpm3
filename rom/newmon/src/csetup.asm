@@ -124,18 +124,22 @@ mkchg:	lxi	d,dochg
 	lhld	sum
 	shld	ssum
 	di
+if z180
+	in0	a,mmu$cbar	; preserve monitor CBAR
+	push	psw
 	lda	ctl$F2
 	push	psw
-if z180
+	mvi	b,1000$0000b
+	out0	b,mmu$cbar
 	mvi	b,0
 	out0	b,mmu$cbr
 	mvi	b,0f8h
 	out0	b,mmu$bbr
-	mvi	b,1000$0000b
-	out0	b,mmu$cbar
 	ori	10100000b	; WE, no legacy ROM
 	out	0f2h
 else
+	lda	ctl$F2
+	push	psw
 	ani	11011111b	; ORG0 off
 	ori	10001000b	; WE, MEM1
 	out	0f2h
@@ -163,6 +167,8 @@ endif
 if z180
 	xra	a
 	out	mmu$bbr
+	pop	psw
+	out0	a,mmu$cbar
 endif
 	ei
 	lxi	d,saved
@@ -181,31 +187,41 @@ error:	pop	psw
 	ret	; what else can we do?
 
 get$su:	di
+if z180
+	in0	a,mmu$cbar	; preserve monitor CBAR
+	push	psw
 	lda	ctl$F2
 	push	psw
-if z180
+	mvi	b,1000$0000b
+	out0	b,mmu$cbar
 	mvi	b,0
 	out0	b,mmu$cbr
 	mvi	b,0f8h
 	out0	b,mmu$bbr
-	mvi	b,1000$0000b
-	out0	b,mmu$cbar
 	ori	10100000b	; WE, no legacy ROM
 	out	0f2h
-else
-	ani	11011111b	; ORG0 off
-	ori	00001000b	; MEM1
-	out	0f2h
-endif
 	lxi	h,suadr
 	lxi	d,last
 	lxi	b,susize
 	ldir
 	pop	psw
 	out	0f2h
-if z180
 	xra	a
-	out	mmu$bbr
+	out0	a,mmu$bbr
+	pop	psw
+	out0	a,mmu$cbar
+else
+	lda	ctl$F2
+	push	psw
+	ani	11011111b	; ORG0 off
+	ori	00001000b	; MEM1
+	out	0f2h
+	lxi	h,suadr
+	lxi	d,last
+	lxi	b,susize
+	ldir
+	pop	psw
+	out	0f2h
 endif
 	ei
 	lxi	d,last
