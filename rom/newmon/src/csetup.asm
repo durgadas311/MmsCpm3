@@ -5,6 +5,7 @@ false	equ	0
 true	equ	not false
 
 z180	equ	false
+nofp	equ	false
 
 	maclib	ram
 	maclib	setup
@@ -60,6 +61,7 @@ exec:
 	lxi	d,gpstr
 	lxi	h,last+dpstr
 	call	getstr
+if not nofp
 	; Secondary boot options
 	lxi	d,gsdev
 	lxi	h,last+dsdev
@@ -70,6 +72,7 @@ exec:
 	lxi	d,gsstr
 	lxi	h,last+dsstr
 	call	getstr
+endif
 	; Add-ons Installed
 if not z180
 	lxi	d,g512k
@@ -780,10 +783,14 @@ gpunn:	db	'): ',0
 gpdev:	db	'Primary/Default boot device (',0
 gpuni:	db	'Primary/Default boot unit (',0
 gpstr:	db	'Primary/Default boot string (',0
+if not nofp
 gsdev:	db	'Secondary boot device (',0
 gsuni:	db	'Secondary boot unit (',0
 gsstr:	db	'Secondary boot string (',0
+endif
+if not z180
 g512k:	db	'H8-512K RAM installed (',0
+endif
 dport:	db	'H_7 Port (FF=use SW1) (',0
 
 dirty:	db	0

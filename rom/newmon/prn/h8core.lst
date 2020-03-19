@@ -8,6 +8,9 @@ FFFF          	true	equ	not false
 0005          	beta	equ	5
 		
 0000          	z180	equ	false
+0000          	h8nofp	equ	false
+0000          	h89	equ	false
+0000          	nofp	set	false
 		
 			maclib	ram
 **** ram.lib ****
@@ -16,11 +19,18 @@ FFFF          	true	equ	not false
 **** setup.lib ****
 **** h8core.asm ****
 0000          	if z180
-		else
+		else	; Z80 based
+FF80          	pcode	set	0ff80h
 			maclib	z80
 **** z80.lib ****
 **** h8core.asm ****
-FF80          	pcode	equ	0ff80h
+0000          	if h8nofp
+		endif
+0000          	if h89
+		endif
+		endif	; z180 else z80
+		
+0000          	if h8nofp or h89
 		endif
 			$*macro
 		
@@ -92,8 +102,12 @@ C000          	ramboot	equ	0c000h
 0000          		org	00000h
 		
 0000          	rombeg:
-0000  F3      	rst0:	di	; can't be JMP or Heath CP/M thinks we're an H89
+0000          	rst0:
+0000          	if nofp
+		else
+0000  F3      		di	; can't be JMP or Heath CP/M thinks we're an H89
 0001  C32D03  		jmp	init
+		endif
 		
 0004  C30A02  		jmp	getport
 0007  00      		db	0
@@ -168,12 +182,18 @@ C000          	ramboot	equ	0c000h
 005F  FB      		ei
 0060  C9      		ret
 		
+0000          	if nofp
+		endif
+		
 0061          	int1$cont:
 0061  23      		inx	h
 0062  221B20  		shld	ticcnt
 0065  3A3620  		lda	ctl$F2
 0068  D3F2    		out	0f2h
+0000          	if nofp
+		else
 006A  C3490B  		jmp	int1$fp
+		endif
 		
 006D          	intsetup:
 006D          		exx
@@ -246,7 +266,9 @@ C000          	ramboot	equ	0c000h
 00C0  CDE909  		call	cmdin
 00C3  E6DF    		ani	11011111b ; toupper
 00C5  323B20  		sta	lstcmd
+FFFF          	if not nofp
 00C8  FAF808  		jm	kpcmd	; from keypad... jumps back here...
+		endif
 00CB  21DB00  	cmchr:	lxi	h,cmdtab
 00CE  061C    		mvi	b,numcmd
 00D0          	cmloop:
@@ -286,6 +308,7 @@ C000          	ramboot	equ	0c000h
 00FA  C90E    	 dw cmdab	; Add boot module
 00FC  55      		db	'U' !
 00FD  CA0E    	 dw cmdur	; Update entire ROM
+FFFF          	if not nofp
 			; front-panel commands    key(old)  command/action
 00FF  80      		db	80h !
 0100  0007    	 dw kpubt	; [0]     - Universal Boot
@@ -319,7 +342,11 @@ C000          	ramboot	equ	0c000h
 012A  C508    	 dw kpmem	; [E] [#] - Memory Mode
 012C  8F      		db	8fh !
 012D  DA08    	 dw kprgm	; [F] [.] - Register Mode
+		endif
 001C          	numcmd	equ	($-cmdtab)/3
+		
+0000          	if nofp
+		endif
 		
 			rept	0137h-$
 012F  FF      		db	0ffh
@@ -333,6 +360,9 @@ C000          	ramboot	equ	0c000h
 0000          	if	($ <> 0137h)
 		endif
 0137  C30000  		jmp	0	; initialized by H47 boot module
+		
+0000          	if nofp
+		endif
 		
 013A          	docmd:
 013A  B7      		ora	a
@@ -380,6 +410,8 @@ C000          	ramboot	equ	0c000h
 0174  CDB003  		call	inhexcr
 0177  DC6201  		cc	cmdpc1	; read HEX until CR, store in HL
 017A  CDB009  		call	crlf
+FFFF          	if not nofp
+			; TODO: make single-step work on H8
 017D  3ED0    		mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
 017F          		jr	cmdgo0
 017F  1808    		DB	18H,cmdgo0-$-1
@@ -387,6 +419,8 @@ C000          	ramboot	equ	0c000h
 0182  3A0920  		lda	ctl$F0
 0185  EE10    		xri	010h	; toggle single-step
 0187  D3F0    		out	0f0h
+		else
+		endif
 0189          	cmdgo0:
 0189  320920  		sta	ctl$F0
 018C  E1      		pop	h
@@ -394,10 +428,13 @@ C000          	ramboot	equ	0c000h
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 0190          	int2$cont:
+FFFF          	if not nofp
 0190  F610    		ori	010h	; disable single-step
 0192  D3F0    		out	0f0h
 0194  12      		stax	d
 0195  E620    		ani	020h	; MON active?
+		else
+		endif
 0197  C2A800  		jnz	start	; break to monitor code
 019A  C32220  		jmp	vrst2	; else chain to (possible) user code.
 		
@@ -1322,6 +1359,7 @@ C000          	ramboot	equ	0c000h
 061D  56      		mov	d,m
 061E  C9      		ret
 		
+FFFF          	if not nofp
 061F          	kpgo:
 061F  3ED0    		mvi	a,11010000b	; MON off
 0621  320920  		sta	ctl$F0
@@ -1355,6 +1393,7 @@ C000          	ramboot	equ	0c000h
 064A  320920  	sst1:	sta	ctl$F0
 064D  E1      		pop	h	; discard ret adr
 064E  C34A00  		jmp	intret	; execute
+		endif
 		
 		; initialize monitor memory at 2000h
 0651          	meminit:
@@ -1368,7 +1407,10 @@ C000          	ramboot	equ	0c000h
 0664  323A20  		sta	kpchar
 0667  3C      		inr	a	; 1
 0668  320A20  		sta	Refind
+0000          	if nofp
+		else
 066B  3E20    		mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
+		endif
 066D  323620  		sta	ctl$F2	; 2mS off, ORG0 on
 0670  D3F2    		out	0f2h	; enable RAM now...
 0672  3EC9    		mvi	a,0c9h	; RET
@@ -1391,8 +1433,12 @@ C000          	ramboot	equ	0c000h
       656D3A20
       00
 		
-06A3  0D0A4838	prompt:	db	CR,LF,'H8: ',TRM
-      3A2000
+06A3  0D0A4838	prompt:	db	CR,LF,'H8'
+0000          	if h8nofp
+		endif
+0000          	if h89
+		endif
+06A7  3A2000  		db	': ',TRM
 06AA  6F6F7420	bootms:	db	'oot ',TRM
       00
 06AF  6F2000  	goms:	db	'o ',TRM
@@ -1425,6 +1471,7 @@ C000          	ramboot	equ	0c000h
 06EB  CDC003  	cmerr:	call	belout
 06EE  C3C000  		jmp	prloop
 		
+FFFF          	if not nofp
 		; get "alternate" (secondary) boot device...
 06F1          	galtbt:
 06F1  110000  		lxi	d,0
@@ -1812,6 +1859,7 @@ C000          	ramboot	equ	0c000h
 0972          	iob0:
 			; TODO: blip to ack entry?
 0972  C9      		ret
+		endif
 		
 		; returns with interrupts disabled
 		; preserves DE
@@ -1875,6 +1923,8 @@ C000          	ramboot	equ	0c000h
 		; called in the context of a command on console
 09C3  DBED    	conin:	in	0edh
 09C5  0F      		rrc
+0000          	if nofp
+		else
 09C6          		jrc	conin0
 09C6  3809    		DB	38H,conin0-$-1
 09C8  3A3A20  		lda	kpchar
@@ -1883,6 +1933,7 @@ C000          	ramboot	equ	0c000h
 09CC  28F5    		DB	28H,conin-$-1
 			; cancel console cmd, leave keypad char for cmdin
 09CE  C3A800  		jmp	start
+		endif
 		
 09D1  DBE8    	conin0:	in	0e8h
 09D3  E67F    		ani	07fh
@@ -1890,6 +1941,7 @@ C000          	ramboot	equ	0c000h
 09D7  CA9C00  		jz	re$entry
 09DA  C9      		ret
 		
+FFFF          	if not nofp
 		; called in the context of command on front-panel
 09DB  3A3A20  	keyin:	lda	kpchar
 09DE  B7      		ora	a
@@ -1902,6 +1954,7 @@ C000          	ramboot	equ	0c000h
 			; cancel kaypad cmd, leave console char for cmdin
 			; TODO: what modes need reset?
 09E6  C3A800  		jmp	start
+		endif
 		
 		; wait for command - console or keypad
 09E9          	cmdin:
@@ -1909,6 +1962,8 @@ C000          	ramboot	equ	0c000h
 09EB  0F      		rrc
 09EC          		jrc	conin0
 09EC  38E3    		DB	38H,conin0-$-1
+0000          	if nofp
+		else
 09EE  3A3A20  		lda	kpchar
 09F1  B7      		ora	a
 09F2          		jrz	cmdin
@@ -1929,7 +1984,9 @@ C000          	ramboot	equ	0c000h
 0A05  F680    		ori	10000000b	; distinguish from console input
 			; TODO: check for CANCEL key?
 0A07  C9      		ret
+		endif
 		
+FFFF          	if not nofp
 		; keypad check at 32mS
 0A08  211620  	kpchk:	lxi	h,RckA
 0A0B  DBF0    		in	0f0h
@@ -2198,6 +2255,8 @@ C000          	ramboot	equ	0c000h
 0B70  F1      		pop	psw
 0B71  E60F    		ani	15	; 32mS
 0B73  CC080A  		cz	kpchk
+		endif
+0B76          	int1$xx:
 			; not really FP related, but no space in low ROM...
 0B76  3A0820  		lda	MFlag
 0B79  0F      		rrc		; private int1?
@@ -2760,8 +2819,10 @@ C000          	ramboot	equ	0c000h
       0D0A00
 0E52  5072693A	hbmsg2:	db	'Pri: ',0
       2000
+FFFF          	if not nofp
 0E58  5365633A	hbmsg3:	db	'Sec: ',0
       2000
+		endif
 		
 		; Help boot command
 0E5E  21470E  	cmdhb:	lxi	h,hbmsg
@@ -2781,10 +2842,12 @@ C000          	ramboot	equ	0c000h
 0E7C  2802    		DB	28H,cmdhb6-$-1
 0E7E  3E20    		mvi	a,' '
 0E80  CD8F0E  	cmdhb6:	call	cmdhbx
+FFFF          	if not nofp
 0E83  21580E  		lxi	h,hbmsg3
 0E86  1186F8  		lxi	d,susave+dsdev
 0E89  3E20    		mvi	a,' '	; never the default
 0E8B  CD8F0E  		call	cmdhbx
+		endif
 0E8E  C9      		ret
 		
 0E8F  CDC203  	cmdhbx:	call	conout
@@ -2897,8 +2960,12 @@ C000          	ramboot	equ	0c000h
 0F2D  65727369	versms:	db	'ersion ',TRM
       6F6E2000
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-0F35  0D0A4838	signon:	db	CR,LF,'H8 '
-      20
+0F35  0D0A4838	signon:	db	CR,LF,'H8'
+0000          	if h8nofp
+		endif
+0000          	if h89
+		endif
+0F39  20      		db	' '
 0000          	if z180
 		endif
 0F3A  4D6F6E69		db	'Monitor v'
@@ -5152,7 +5219,7 @@ Statistics:
 
      4	passes
      0	jr promotions
-   415	symbols
+   419	symbols
   6144	bytes
 
   2890	macro calls

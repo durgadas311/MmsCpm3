@@ -8,16 +8,35 @@ alpha	equ	0
 beta	equ	5
 
 z180	equ	false
+h8nofp	equ	false
+h89	equ	false
+nofp	set	false
 
 	maclib	ram
 	maclib	setup
 if z180
+pcode	set	0f180h
 	maclib	z180
 use$dma	equ	true
-pcode	equ	0f180h
-else
+if h8nofp
+pcode	set	0f18fh
+endif
+if h89
+pcode	set	0f189h
+endif
+else	; Z80 based
+pcode	set	0ff80h
 	maclib	z80
-pcode	equ	0ff80h
+if h8nofp
+pcode	set	0ff8fh
+endif
+if h89
+pcode	set	0ff89h
+endif
+endif	; z180 else z80
+
+if h8nofp or h89
+nofp	set	true
 endif
 	$*macro
 
@@ -109,8 +128,14 @@ debounce equ	1
 	org	00000h
 
 rombeg:
-rst0:	di	; can't be JMP or Heath CP/M thinks we're an H89
+rst0:
+if nofp
+	jmp	init	; must be JMP so Heath CP/M thinks we're an H89
+	nop
+else
+	di	; can't be JMP or Heath CP/M thinks we're an H89
 	jmp	init
+endif
 
 	jmp	getport
 	db	0
@@ -178,12 +203,28 @@ nulint:
 	ei
 	ret
 
+if nofp
+nReg	equ	13*2	; must match number of entries in intsetup/intret...
+
+	rept	0066h-$
+	db	0ffh
+	endm
+if	($ <> 0066h)
+	.error	'NMI overflow'
+endif
+	jmp	nmi
+endif
+
 int1$cont:
 	inx	h
 	shld	ticcnt
 	lda	ctl$F2
 	out	0f2h
+if nofp
+	jmp	int1$xx
+else
 	jmp	int1$fp
+endif
 
 intsetup:
 	exx
@@ -248,7 +289,9 @@ prloop:
 	call	cmdin
 	ani	11011111b ; toupper
 	sta	lstcmd
+if not nofp
 	jm	kpcmd	; from keypad... jumps back here...
+endif
 cmchr:	lxi	h,cmdtab
 	mvi	b,numcmd
 cmloop:
@@ -274,6 +317,7 @@ cmdtab:
 	db	'H' ! dw cmdhb	; long list (Help) boot modules
 	db	'A' ! dw cmdab	; Add boot module
 	db	'U' ! dw cmdur	; Update entire ROM
+if not nofp
 	; front-panel commands    key(old)  command/action
 	db	80h ! dw kpubt	; [0]     - Universal Boot
 	db	81h ! dw kppbt	; [1]     - Pri Boot
@@ -291,7 +335,49 @@ cmdtab:
 	db	8dh ! dw kprw	; [D] [/] - Display/Alter
 	db	8eh ! dw kpmem	; [E] [#] - Memory Mode
 	db	8fh ! dw kprgm	; [F] [.] - Register Mode
+endif
 numcmd	equ	($-cmdtab)/3
+
+if nofp
+nmi:	; only get here from I/O instructions on ports F0,F1,FA,FB
+	xthl
+	push	h
+	push	psw
+	; This assumes i8080 code... reasonable for HDOS
+	dcx	h	; should be I/O port number...
+	mov	a,m
+	cpi	0f0h	; H8 FP ctrl
+	jrz	nmi$f0
+	cpi	0f1h	; H8 FP disp
+	jrz	nmi$ign
+	cpi	0fah	; H8-5 console port
+	jrz	nmi$ign
+	cpi	0fbh	; H8-5 console port
+	jrz	nmi$ign
+nmi$xit2:
+	pop	psw
+nmi$xit:
+	pop	h
+	xthl
+	retn
+nmi$ign:	; ignore, but IN must get 00
+	dcx	h
+	mov	a,m
+	cpi	0d3h	; OUT
+	jrnz	nmi$xit2
+	pop	psw
+	mvi	a,0	; don't change flags...
+	jr	nmi$xit
+
+nmi$f0:
+	dcx	h
+	mov	a,m
+	cpi	0d3h	; OUT
+	jrz	nmi$out
+	cpi	0dbh	; IN
+	jrz	nmi$in
+	jr	nmi$xit2
+endif
 
 	rept	0137h-$
 	db	0ffh
@@ -300,6 +386,29 @@ if	($ <> 0137h)
 	.error 'HDOS entry overrun 0137h'
 endif
 	jmp	0	; initialized by H47 boot module
+
+if nofp
+nmi$in:	; simulate IN returning FF
+	pop	psw
+	mvi	a,0ffh
+	jr	nmi$xit
+
+nmi$out:	; convert relevant F0 bits to F2 bits
+	pop	psw
+	push	psw	; _  7 6 5 4 3 2 1 0
+	ral		; 7  6 5 4 3 2 1 0 _
+	ral		; 6  5 4 3 2 1 0 _ 7
+	cma		; 6  5'4'3'2'1'0'_ 7'
+	ral		; 5' 4'3'2'1'0'_ 7'6
+	rlc		; 4' 3'2'1'0'_ 7'6 4'
+	ani	03h	; _  _ _ _ _ _ _ 6 4'
+	lxi	h,ctl$F2
+	ora	m	; this assumes ctl$F2 bits 0,1 are "0"
+	out	0f2h
+	ani	11111100b	; ensure bits are "0"
+	mov	m,a
+	jr	nmi$xit2
+endif
 
 docmd:
 	ora	a
@@ -346,12 +455,17 @@ cmdgo:
 	call	inhexcr
 	cc	cmdpc1	; read HEX until CR, store in HL
 	call	crlf
+if not nofp
+	; TODO: make single-step work on H8
 	mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
 	jr	cmdgo0
 	di	; TODO: dead code? single-step...
 	lda	ctl$F0
 	xri	010h	; toggle single-step
 	out	0f0h
+else
+	; TODO: single-step on H89
+endif
 cmdgo0:
 	sta	ctl$F0
 	pop	h
@@ -359,10 +473,16 @@ cmdgo0:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 int2$cont:
+if not nofp
 	ori	010h	; disable single-step
 	out	0f0h
 	stax	d
 	ani	020h	; MON active?
+else
+	; TODO: single-step on H89
+	xra	a
+	inr	a
+endif
 	jnz	start	; break to monitor code
 	jmp	vrst2	; else chain to (possible) user code.
 
@@ -1152,6 +1272,7 @@ adrin3:	pop	h
 	mov	d,m
 	ret
 
+if not nofp
 kpgo:
 	mvi	a,11010000b	; MON off
 	sta	ctl$F0
@@ -1183,6 +1304,7 @@ kpsst:	; single-step one instruction
 sst1:	sta	ctl$F0
 	pop	h	; discard ret adr
 	jmp	intret	; execute
+endif
 
 ; initialize monitor memory at 2000h
 meminit:
@@ -1196,7 +1318,11 @@ meminit:
 	sta	kpchar
 	inr	a	; 1
 	sta	Refind
+if nofp
+	mvi	a,ctl$ORG0+ctl$CLK	; ORG0 on, 2mS on...
+else
 	mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
+endif
 	sta	ctl$F2	; 2mS off, ORG0 on
 	out	0f2h	; enable RAM now...
 	mvi	a,0c9h	; RET
@@ -1213,7 +1339,14 @@ meminit:
 cserms:	db	BEL,'Cksum error',TRM
 topms:	db	'Top of Mem: ',TRM
 
-prompt:	db	CR,LF,'H8: ',TRM
+prompt:	db	CR,LF,'H8'
+if h8nofp
+	db	'N'
+endif
+if h89
+	db	'9'
+endif
+	db	': ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
 subms:	db	'ubstitute ',TRM
@@ -1237,6 +1370,7 @@ nocmd:
 cmerr:	call	belout
 	jmp	prloop
 
+if not nofp
 ; get "alternate" (secondary) boot device...
 galtbt:
 	lxi	d,0
@@ -1598,6 +1732,7 @@ iobo0:	cnc	keyin
 iob0:
 	; TODO: blip to ack entry?
 	ret
+endif
 
 ; returns with interrupts disabled
 ; preserves DE
@@ -1656,12 +1791,17 @@ msgout:
 ; called in the context of a command on console
 conin:	in	0edh
 	rrc
+if nofp
+	jrnc	conin
+	; fall-through to conin0...
+else
 	jrc	conin0
 	lda	kpchar
 	ora	a
 	jrz	conin
 	; cancel console cmd, leave keypad char for cmdin
 	jmp	start
+endif
 
 conin0:	in	0e8h
 	ani	07fh
@@ -1669,6 +1809,7 @@ conin0:	in	0e8h
 	jz	re$entry
 	ret
 
+if not nofp
 ; called in the context of command on front-panel
 keyin:	lda	kpchar
 	ora	a
@@ -1679,12 +1820,16 @@ keyin:	lda	kpchar
 	; cancel kaypad cmd, leave console char for cmdin
 	; TODO: what modes need reset?
 	jmp	start
+endif
 
 ; wait for command - console or keypad
 cmdin:
 	in	0edh
 	rrc
 	jrc	conin0
+if nofp
+	jr	cmdin
+else
 	lda	kpchar
 	ora	a
 	jrz	cmdin
@@ -1703,7 +1848,9 @@ gotkey:	ani	00001111b
 	ori	10000000b	; distinguish from console input
 	; TODO: check for CANCEL key?
 	ret
+endif
 
+if not nofp
 ; keypad check at 32mS
 kpchk:	lxi	h,RckA
 	in	0f0h
@@ -1959,6 +2106,8 @@ fp3:	ora	c
 	pop	psw
 	ani	15	; 32mS
 	cz	kpchk
+endif
+int1$xx:
 	; not really FP related, but no space in low ROM...
 	lda	MFlag
 	rrc		; private int1?
@@ -2497,7 +2646,9 @@ cmdlb:	lxi	h,lbmsg
 lbmsg:	db	'ist boot modules',CR,LF,0
 hbmsg:	db	'elp boot',CR,LF,0
 hbmsg2:	db	'Pri: ',0
+if not nofp
 hbmsg3:	db	'Sec: ',0
+endif
 
 ; Help boot command
 cmdhb:	lxi	h,hbmsg
@@ -2516,10 +2667,12 @@ cmdhb:	lxi	h,hbmsg
 	jrz	cmdhb6
 	mvi	a,' '
 cmdhb6:	call	cmdhbx
+if not nofp
 	lxi	h,hbmsg3
 	lxi	d,susave+dsdev
 	mvi	a,' '	; never the default
 	call	cmdhbx
+endif
 	ret
 
 cmdhbx:	call	conout
@@ -2620,7 +2773,14 @@ prtver:
 
 versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-signon:	db	CR,LF,'H8 '
+signon:	db	CR,LF,'H8'
+if h8nofp
+	db	'N'
+endif
+if h89
+	db	'9'
+endif
+	db	' '
 if z180
 	db	'Z180 '
 endif
