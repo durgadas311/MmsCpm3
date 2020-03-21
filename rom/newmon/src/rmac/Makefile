@@ -46,6 +46,10 @@ wizcfg.spr: wizcfg.rel libwiznt.rel libnvram.rel
 	vcpm link $@=wizcfg,libwiznt,libnvram'[os,nr]'
 	cp $@ ../../bin
 
+sdtest.sys: sdtest.spr
+	mknetboot -x -b 0x3000 -o $@ $^
+	cp $@ ../../bin
+
 wizcfg.sys: wizcfg.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
