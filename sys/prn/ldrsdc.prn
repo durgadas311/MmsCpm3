@@ -1,0 +1,558 @@
+ 2031 =         VERS	EQU   '1 '  ; Apr 03, 2020 18:46 drm "ldrsdc.asm"
+                ***************************************************
+                ;	Loader disk I/O module for MMS CP/M 2.24
+                ;	for the SDCard H8xSPI interface 
+                ;	Copyright (c) 1983 Magnolia Microsystems
+                ***************************************************
+                
+                	MACLIB	z80
+                	$-MACRO
+                
+                	public	btend		;end of system (boot stops loading there)
+                	extrn	BDOS,CBOOT,DSKSTA,TIMEOT,MIXER,DIRBUF,DLOG
+                	extrn	NEWDSK,NEWTRK,NEWSEC,DMAA,phytrk
+                
+ 0050 =         DRIV0	EQU	80		; FIRST PHYSICAL DRIVE NUMBER
+ 0009 =         NDRIV	EQU	9
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+ 00F2 =         GPIO	EQU	0F2H		; SWITCH 501
+                
+ 0042 =         spi	equ	42h	; separate board from WizNet
+                
+ 0042 =         spi?dat	equ	spi+0
+ 0043 =         spi?ctl	equ	spi+1
+ 0043 =         spi?sts	equ	spi+1
+                
+ 0001 =         SD0SCS	equ	01b	; SCS for SDCard 0
+ 0002 =         SD1SCS	equ	10b	; SCS for SDCard 1
+                
+ 0040 =         CMDST	equ	01000000b	; command start bits
+                
+ 000A =         DPHDPB	EQU	10
+ 0010 =         DPHL	EQU	16
+ 0015 =         DPBL	EQU	21
+ 0004 =         DDEFL	EQU	4
+ 000D =         CSTRNG	EQU	13
+ 0013 =         NPART	EQU	19
+ 0004 =         CBYTE	EQU	4
+ 0005 =         DDATA	EQU	5
+ 0003 =         DCTYPE	EQU	3
+ 0014 =         SECTBL	EQU	20
+ 002F =         DDPB	EQU	47
+                
+ 0000 =         WRALL	EQU	0	; WRITE TO ALLOCATED
+ 0001 =         WRDIR	EQU	1	; WRITE TO DIRECTORY
+ 0002 =         WRUNA	EQU	2	; WRITE TO UNALLOCATED
+ 0003 =         READOP	EQU	3	; READ OPERATION
+                
+ 2034 =         BTDRV	EQU	2034H	; BOOT DRIVE SAVE BY PROM
+ 25F0 =         STRNG	EQU	25F0H	; ASCII SEGMENT NUMBER SAVE BY BOOT LOADER
+ 2131 =         UNITNUM EQU	2131H	; PARTITION NUMBER SAVE BY EPROM
+ 2156 =         SEGOFF	EQU	2156H	; segment offset setup by ROM
+ 004E =         nsegmt	equ	004eh	; where to pass segment to CP/M 3
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK I/O MODULE
+                *************************************************** 
+                
+                ; Assume SPT is always 64 (16x512):
+                ; Init:
+                ;	seg_off = (STRNG - 'A') << 19		[256M segments]
+                ;	partn(UNITNUM) += seg_off
+                ; each I/O:
+                ;	LBA = partn(UNITNUM) + (NEWTRK << 4) + (NEWSEC - 1)
+                
+                	cseg   
+                 
+ 0000 C3E401    	jmp	INIT$SDC
+ 0003 C3A201    	jmp	SEL$SDC
+ 0006 C36F02    	jmp	READ$SDC
+                
+ 0009 0000      	dw	0
+ 000B 0000      	dw	0     
+                
+                ;	TEXT
+ 000D 5344432000	DB	'SDC ',0,'SDCard system loader ',0,'v3.00'
+ 002D 31202400  	DW	VERS,'$'
+                
+                
+ 0031 0000000000DPH0:	DW	0,0,0,0,DIRBUF,DPB0,CSV0,ALV0
+ 0041 0000000000DPH1:	DW	0,0,0,0,DIRBUF,DPB1,CSV0,ALV0
+ 0051 0000000000DPH2:	DW	0,0,0,0,DIRBUF,DPB2,CSV0,ALV0
+ 0061 0000000000DPH3:	DW	0,0,0,0,DIRBUF,DPB3,CSV0,ALV0
+ 0071 0000000000DPH4:	DW	0,0,0,0,DIRBUF,DPB4,CSV0,ALV0
+ 0081 0000000000DPH5:	DW	0,0,0,0,DIRBUF,DPB5,CSV0,ALV0
+ 0091 0000000000DPH6:	DW	0,0,0,0,DIRBUF,DPB6,CSV0,ALV0
+ 00A1 0000000000DPH7:	DW	0,0,0,0,DIRBUF,DPB7,CSV0,ALV0
+ 00B1 0000000000DPH8:	DW	0,0,0,0,DIRBUF,DPB8,CSV0,ALV0
+                
+                
+                ;	SECTOR DEFINITION/TRANSLATION TABLE
+                ;	already converted to 512b sectors
+                ;	i.e. base LBA 27:0
+                ;		-----ADDRESS----
+ 00C1 00000000  DDEFTBL:DB	0,   0,   0,   0
+ 00C5 00000000  	DB	0,   0,   0,   0
+ 00C9 00000000  	DB	0,   0,   0,   0
+ 00CD 00000000  	DB	0,   0,   0,   0
+ 00D1 00000000  	DB	0,   0,   0,   0
+ 00D5 00000000  	DB	0,   0,   0,   0
+ 00D9 00000000  	DB	0,   0,   0,   0
+ 00DD 00000000  	DB	0,   0,   0,   0
+ 00E1 00000000  	DB	0,   0,   0,   0
+                
+                ;
+                ;
+                ; DISK PARAMETER BLOCKS -- CONTAIN DUMMY DATA. REAL DATA IS OBTAINED FROM 
+                ;			   MAGIC SECTOR ON INITIALIZATION OF PARTITION
+                ;
+ 00E5 4000      DPB0:	DW	64		; SPT
+ 00E7 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 00EA 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 00EE F000      	DB	0F0H,0		; AL0,AL1
+ 00F0 00000200  	DW	0,2		; CKS,OFF
+ 00F4 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 00F7 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 00FA 4000      DPB1:	DW	64		; SPT
+ 00FC 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 00FF 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0103 F000      	DB	0F0H,0		; AL0,AL1
+ 0105 00000200  	DW	0,2		; CKS,OFF
+ 0109 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 010C FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 010F 4000      DPB2:	DW	64		; SPT
+ 0111 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0114 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0118 F000      	DB	0F0H,0		; AL0,AL1
+ 011A 00000200  	DW	0,2		; CKS,OFF
+ 011E 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0121 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0124 4000      DPB3:	DW	64		; SPT
+ 0126 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0129 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 012D F000      	DB	0F0H,0		; AL0,AL1
+ 012F 00000200  	DW	0,2		; CKS,OFF
+ 0133 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0136 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0139 4000      DPB4:	DW	64		; SPT
+ 013B 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 013E 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0142 F000      	DB	0F0H,0		; AL0,AL1
+ 0144 00000200  	DW	0,2		; CKS,OFF
+ 0148 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 014B FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 014E 4000      DPB5:	DW	64		; SPT
+ 0150 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0153 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0157 F000      	DB	0F0H,0		; AL0,AL1
+ 0159 00000200  	DW	0,2		; CKS,OFF
+ 015D 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0160 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0163 4000      DPB6:	DW	64		; SPT
+ 0165 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0168 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 016C F000      	DB	0F0H,0		; AL0,AL1
+ 016E 00000200  	DW	0,2		; CKS,OFF
+ 0172 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0175 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0178 4000      DPB7:	DW	64		; SPT
+ 017A 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 017D 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0181 F000      	DB	0F0H,0		; AL0,AL1
+ 0183 00000200  	DW	0,2		; CKS,OFF
+ 0187 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 018A FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 018D 4000      DPB8:	DW	64		; SPT
+ 018F 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0192 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0196 F000      	DB	0F0H,0		; AL0,AL1
+ 0198 00000200  	DW	0,2		; CKS,OFF
+ 019C 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 019F FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+                ;	SELECT DISK CODE
+                ;	this should always select the same drive
+                SEL$SDC:
+ 01A2 AF        	xra	a
+ 01A3 32A903    	sta	SELERR		; NO SELECT ERRORS (YET)
+ 01A6 3AAA03    	lda	PARTLUN
+ 01A9 47        	mov	b,a
+ 01AA 3A0000    	lda	NEWDSK
+ 01AD D650      	sui	DRIV0
+ 01AF B8        	cmp	b
+ 01B0 D2DB01    	jnc	ERREXT
+ 01B3 47        	mov	b,a
+ 01B4 11C100    	lxi	d,DDEFTBL
+ 01B7 6F        	mov	l,a		; NOW POINT TO THE CORRECT
+ 01B8 2600      	mvi	h,0		; ENTRY IN THE SECTOR
+ 01BA 29        	dad	h		; OFFSET TABLE
+ 01BB 29        	dad	h		; *4
+ 01BC 19        	dad	d
+ 01BD 22A503    	shld	SECPTR
+ 01C0 212100    	lxi	h,DPH0-DPHL	; POINT TO DPH TABLE
+ 01C3 111000    	lxi	d,DPHL		; LENGTH OF DPH's
+ 01C6 04        	inr	b
+ 01C7 19        SEL1:	dad	d
+ 01C8           	djnz	SEL1		; CALCULATE POINTER TO REQUESTED DPH
+ 01CA 22A703    	shld	curdph		
+ 01CD 110A00    	lxi	d,DPHDPB
+ 01D0 19        	dad	d		; POINT TO ADDRESS OF DPB
+ 01D1 CD0F03    	call	HLIHL		; DPB ADDRESS IN HL
+ 01D4 22B003    	shld	CURDPB		; SAVE IT
+ 01D7 2AA703    	lhld	curdph
+ 01DA C9        	ret
+                
+ 01DB 3E01      ERREXT: mvi	a,1
+ 01DD 32A903    	sta	SELERR
+ 01E0 210000    	lxi	h,0
+ 01E3 C9        	ret
+                
+                INIT$SDC:
+                	; gather info from bootloader
+ 01E4 3A3121    	lda	UNITNUM
+ 01E7 324D00    	sta	nsegmt-1	;hope it is safe here
+ 01EA 3C        	inr	a	; 0->01b, 1->10b
+ 01EB 326702    	sta	scs
+ 01EE 3A3420    	lda	BTDRV		;FROM BOOT LOADER
+ 01F1 320000    	sta	MIXER
+ 01F4 2A5621    	lhld	SEGOFF		;from ROM
+ 01F7 224E00    	shld	nsegmt		;hope it is safe here
+                	; since we only have one disk, init partn table now.
+                	; read "magic sector"
+ 01FA 22B203    	shld	CURLBA+0
+ 01FD 210000    	lxi	h,0
+ 0200 22B403    	shld	CURLBA+2		; phy sec 0 = partition table
+ 0203 CDBB02    	call	READ
+ 0206 C0        	rnz	; error
+ 0207 3ACD03    	lda	HSTBUF+NPART	; num partns
+ 020A 32AA03    	sta	PARTLUN		; use all partitons
+                	; copy over all DPBs
+ 020D 3AAA03    	lda	PARTLUN		; compute length of DPB block
+ 0210 47        	mov	b,a
+ 0211 210000    	lxi	h,0		; CALCULATE TOTAL LENGTH OF DPB'S TO BE MOVED 
+ 0214 111500    	lxi	d,DPBL
+ 0217 19        NXTLEN:	dad	d
+ 0218           	djnz	NXTLEN
+ 021A 44        	mov	b,h		; PUT LENGTH IN BC
+ 021B 4D        	mov	c,l
+ 021C 11E500    	lxi	d,DPB0
+ 021F 21E903    	lxi	h,HSTBUF+DDPB	; PUT FROM ADDRESS IN HL
+ 0222           	ldir
+                	; copy over sector (partition) offsets,
+                	; converting from LBA and 4-byte entries.
+ 0224           	lxix	DDEFTBL		; destination start
+ 0228 21CE03    	lxi	h,HSTBUF+SECTBL	; source start
+ 022B 3AAA03    	lda	PARTLUN		; num entries
+ 022E 47        	mov	b,a
+ 022F C5        nxtdef:	push	b
+ 0230 3A5621    	lda	SEGOFF+0; LBA27:24,DRV is fixed
+ 0233           	stx	a,+0
+ 0236           	inxix
+ 0238 0603      	mvi	b,3
+ 023A 3A5721    	lda	SEGOFF+1; LBA23:19 is segment offset
+ 023D 57        	mov	d,a	; carry-in, s0000000
+ 023E 7E        	mov	a,m
+ 023F E61F      	ani	00011111b	; must clear LUN bits
+ 0241 77        	mov	m,a
+                nxdef0:
+ 0242 1E00      	mvi	e,0
+ 0244 7E        	mov	a,m
+ 0245 23        	inx	h
+ 0246           	srlr	a	; convert 128B-secnum to 512B-secnum
+ 0248           	rarr	e	;
+ 024A           	srlr	a	;
+ 024C           	rarr	e	;
+ 024E B2        	ora	d	; carry-in from previous
+ 024F           	stx	a,+0
+ 0252           	inxix
+ 0254 53        	mov	d,e	; carry-out becomes next carry-in
+ 0255           	djnz	nxdef0
+ 0257 C1        	pop	b
+ 0258           	djnz	nxtdef
+                	; anything else to do?
+ 025A AF        	xra	a
+ 025B C9        	ret
+                
+                ; HL, DE are LBA buffers to be compared
+ 025C 0604      cmplba:	mvi	b,4
+                cmplba0:
+ 025E 1A        	ldax	d
+ 025F BE        	cmp	m
+ 0260 C0        	rnz
+ 0261 23        	inx	h
+ 0262 13        	inx	d
+ 0263           	djnz	cmplba0
+ 0265 AF        	xra	a
+ 0266 C9        	ret
+                
+ 0267 01        scs:	db	SD0SCS
+ 0268 5100000000cmd17:	db	CMDST+17,0,0,0,0,0
+ 026E 00        	db	0
+                
+                READ$SDC:
+ 026F 3AA903    	lda	SELERR
+ 0272 B7        	ora	a
+ 0273 C0        	rnz
+ 0274 2A0000    	lhld	phytrk
+ 0277 22AC03    	shld	REQTRK
+ 027A 0E00      	mvi	c,0		; CALCULATE PHYSICAL SECTOR
+ 027C 3A0000    	lda	NEWSEC
+ 027F           	srlr	a		; DIVIDE ACCUMULATOR BY 2
+ 0281           	rarr	c		; SAVE OVERFLOW BIT
+ 0283           	srlr	a		; DIVIDE ACCUMULATOR BY 4
+ 0285           	rarr	c		; SAVE OVERFLOW BIT
+ 0287 32AE03    	sta	REQSEC		; SAVE IT
+ 028A 79        	mov	a,c
+ 028B 07        	rlc
+ 028C 07        	rlc			; sub-sector index
+ 028D 32AF03    	sta	BLKSEC		; STORE IT
+ 0290 CDCF02    	call	SET$LBA		; setup CURLBA from REQTRK/SEC
+                	; only one disk, each partn LBAs are unique
+ 0293 21B603    	lxi	h,HSTLBA
+ 0296 11B203    	lxi	d,CURLBA
+ 0299 CD5C02    	call	cmplba
+ 029C CAA302    	jz	NOREAD		; no pre-read required
+                	; no flushing required - we never write
+ 029F CDBB02    	call	READ		; READ THE SECTOR
+ 02A2 C0        	rnz
+ 02A3 21BA03    NOREAD: lxi	h,HSTBUF	; POINT TO START OF SECTOR BUFFER
+ 02A6 018000    	lxi	b,128
+ 02A9 3AAF03    	lda	BLKSEC		; POINT TO LOCATION OF CORRECT LOGICAL SECTOR
+ 02AC 3D        MOVIT1: dcr	a
+ 02AD FAB302    	jm	MOVIT2
+ 02B0 09        	dad	b
+ 02B1           	jr	MOVIT1
+ 02B3           MOVIT2: lded	DMAA		; POINT TO DMA
+ 02B7           	ldir			; MOVE IT
+ 02B9 AF        	xra	a		; FLAG NO ERROR
+ 02BA C9        	ret			; RETURN TO BDOS
+                
+                ;
+                ;	READ A PHYSICAL SECTOR CODE
+                ;
+                READ:
+ 02BB CD0203    	call	SET$SEC 	; set ctrl regs from CURLBA
+ 02BE CD1403    	call	SDCRD		; DO READ OR WRITE
+ 02C1 C0        	rnz
+ 02C2 21B203    	lxi	h,CURLBA
+ 02C5 11B603    	lxi	d,HSTLBA	; SET UP NEW BUFFER PARAMETERS
+ 02C8 010400    	lxi	b,4
+ 02CB           	ldir
+ 02CD AF        	xra	a
+ 02CE C9        	ret
+                
+                ;	ABSOLUTE SECTOR NUMBER
+                ;
+                ;	CALCULATE THE REQUESTED SECTOR
+                ;
+                SET$LBA:
+                	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
+                	; so H,D are LSB and L,E are MSB.
+ 02CF 2AAC03    	lhld	REQTRK		; GET REQUESTED TRACK
+ 02D2 5D        	mov	e,l	;
+ 02D3 6C        	mov	l,h	;
+ 02D4 63        	mov	h,e	; bswap HL
+ 02D5 110000    	lxi	d,0
+ 02D8 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
+                stlba0:
+ 02DA           	slar	h
+ 02DC           	rarr	l
+ 02DE           	rarr	d	; can't carry out
+ 02E0           	djnz	stlba0
+                	; sector can't carry - 0-15 into vacated bits
+ 02E2 3AAE03    	lda	REQSEC		; GET REQUESTED SECTOR
+ 02E5 B4        	ora	h
+ 02E6 67        	mov	h,a
+ 02E7 22B403    	shld	CURLBA+2
+ 02EA EB        	xchg
+ 02EB 22B203    	shld	CURLBA+0
+                	; add 32-bit values LBA += *(SECPTR)
+ 02EE 21B503    	lxi	h,CURLBA+3
+ 02F1           	lded	SECPTR	; adjusted by SEGOFF already
+ 02F5 13        	inx	d
+ 02F6 13        	inx	d
+ 02F7 13        	inx	d	; SECPTR+3
+                	; CY is cleared above
+ 02F8 0604      	mvi	b,4
+                stlba1:
+ 02FA 1A        	ldax	d
+ 02FB 8E        	adc	m
+ 02FC 77        	mov	m,a
+ 02FD 2B        	dcx	h
+ 02FE 1B        	dcx	d
+ 02FF           	djnz	stlba1
+ 0301 C9        	ret
+                
+                SET$SEC:
+ 0302 2AB203    	lhld	CURLBA	; adjusted by SEGOFF already
+ 0305 226902    	shld	cmd17+1
+ 0308 2AB403    	lhld	CURLBA+2
+ 030B 226B02    	shld	cmd17+3
+ 030E C9        	ret
+                
+ 030F 7E        HLIHL:	mov	a,m
+ 0310 23        	inx	h
+ 0311 66        	mov	h,m
+ 0312 6F        	mov	l,a
+ 0313 C9        	ret
+                
+                ;
+                ;	ACTUAL READ OF DATA
+                ;
+                
+                ; read LBA stored in cmd17...
+                ; HL=buffer
+                ; returns CY on error
+                SDCRD: 			; THIS ROUTINE IS FOR READING
+ 0314 21BA03    	lxi	h,HSTBUF
+ 0317 E5        	push	h
+ 0318 216802    	lxi	h,cmd17
+ 031B 1601      	mvi	d,1
+ 031D 1E00      	mvi	e,0	; leave SCS on
+ 031F CD3403    	call	sdcmd
+ 0322 E1        	pop	h
+ 0323           	jrc	badblk	; turn off SCS
+ 0325 3A6E02    	lda	cmd17+6
+ 0328 B7        	ora	a
+ 0329           	jrc	badblk	; turn off SCS
+ 032B CD7603    	call	sdblk	; turns off SCS
+ 032E C9        	ret	; NZ=error
+                badblk:
+ 032F AF        	xra	a
+ 0330 D343      	out	spi?ctl	; SCS off
+ 0332 3C        	inr	a
+ 0333 C9        	ret	; NZ = error
+                
+                ; send (6 byte) command to SDCard, get response.
+                ; HL=command+response buffer, D=response length
+                ; return A=response code (00=success), HL=idle length, DE=gap length
+                sdcmd:
+ 0334 3A6702    	lda	scs
+ 0337 D343      	out	spi?ctl	; SCS on
+ 0339 0E42      	mvi	c,spi?dat
+                	; wait for idle
+                	; TODO: timeout this loop
+ 033B E5        	push	h	; save command+response buffer
+ 033C 210000    	lxi	h,0	; idle timeout
+ 033F           sdcmd0:	inp	a
+ 0341 FEFF      	cpi	0ffh
+ 0343           	jrz	sdcmd1
+ 0345 2B        	dcx	h
+ 0346 7C        	mov	a,h
+ 0347 B5        	ora	l
+ 0348           	jrnz	sdcmd0
+                	; timeout - error
+ 034A E1        	pop	h
+ 034B 37        	stc
+ 034C C9        	ret
+ 034D E1        sdcmd1:	pop	h	; command buffer back
+ 034E 0606      	mvi	b,6
+ 0350           	outir
+ 0352           	inp	a	; prime the pump
+ 0354 E5        	push	h	; points to response area...
+ 0355 210000    	lxi	h,0	; gap timeout
+ 0358           sdcmd2:	inp	a
+ 035A FEFF      	cpi	0ffh
+ 035C           	jrnz	sdcmd3
+ 035E 2B        	dcx	h
+ 035F 7C        	mov	a,h
+ 0360 B5        	ora	l
+ 0361           	jrnz	sdcmd2
+ 0363 E1        	pop	h
+ 0364 37        	stc
+ 0365 C9        	ret
+ 0366 E1        sdcmd3:	pop	h	; response buffer back
+ 0367 42        	mov	b,d
+ 0368 77        	mov	m,a
+ 0369 23        	inx	h
+ 036A 05        	dcr	b
+ 036B           	jrz	sdcmd4
+ 036D           	inir	; rest of response
+ 036F 7B        sdcmd4:	mov	a,e	; SCS flag
+ 0370 B7        	ora	a
+ 0371 C8        	rz
+ 0372 AF        	xra	a
+ 0373 D343      	out	spi?ctl	; SCS off
+ 0375 C9        	ret	; ZR
+                
+                ; read a 512-byte data block, with packet header and CRC (ignored).
+                ; READ command was already sent and responded to.
+                ; HL=buffer
+                ; return CY on error (A=error), SCS always off, HL=next buf
+                sdblk:
+ 0376 3A6702    	lda	scs
+ 0379 D343      	out	spi?ctl	; SCS on
+ 037B 0E42      	mvi	c,spi?dat
+                	; wait for packet header (or error)
+                	; TODO: timeout this loop
+ 037D 110000    	lxi	d,0	; gap timeout
+ 0380           sdblk0:	inp	a
+ 0382 FEFF      	cpi	0ffh
+ 0384           	jrnz	sdblk1
+ 0386 1B        	dcx	d
+ 0387 7A        	mov	a,d
+ 0388 B3        	ora	e
+ 0389           	jrnz	sdblk0
+ 038B 3C        	inr	a	; NZ
+ 038C 37        	stc
+ 038D           	jr	sdblk2
+                sdblk1:	
+ 038F FEFE      	cpi	11111110b	; data start
+ 0391 37        	stc	; else must be error
+ 0392           	jrnz	sdblk2
+ 0394 0600      	mvi	b,0	; 256 bytes at a time
+ 0396           	inir
+ 0398           	inir
+ 039A           	inp	a	; CRC 1
+ 039C           	inp	a	; CRC 2
+ 039E AF        	xra	a	; ZR,NC
+ 039F F5        sdblk2:	push	psw
+ 03A0 AF        	xra	a
+ 03A1 D343      	out	spi?ctl	; SCS off
+ 03A3 F1        	pop	psw
+ 03A4 C9        	ret
+                
+                ****************************************************************
+                
+                ;
+                ;	DATA BUFFERS AND STORAGE
+                ;
+ 03A5 0000      SECPTR	DW	0		; POINTER TO CURRENT SECTOR TABLE ENTRY
+ 03A7 0000      CURDPH	DW	0		; current disk parameter header
+ 03A9 00        SELERR	DB	0		; SELECT ERROR FLAG
+ 03AA 00        PARTLUN DB	0		; NUMBER OF PARTITIONS IN CURRENT LUN
+ 03AB 00        DSKERR:	db	0
+                ;
+                ; DEBLOCKING VARIABLES
+                ;
+ 03AC 0000      REQTRK	DW	0
+ 03AE 00        REQSEC	DB	0
+ 03AF 00        BLKSEC: DB	0		; LOCATION OF LOGICAL SECTOR WITHIN PHYSICAL
+ 03B0 0000      CURDPB	DW	0		; ADDRESS OF CURRENT DISK PARAMETER BLOCK
+                
+ 03B2 00000000  CURLBA:	db	0,0,0,0
+ 03B6 FF000000  HSTLBA:	db	0ffh,0,0,0
+                
+ 03BA =         btend	equ	$
+                
+                ********************************************************
+                ** BUFFERS
+                ********************************************************
+                
+ 03BA           HSTBUF: DS	512
+ 05BA           CSV0:	DS	128
+ 063A           ALV0:	DS	256
+                
+ 073A           	END
+

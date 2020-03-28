@@ -4,6 +4,7 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
+	zout/bsdcard.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
 	zout/chelp.cim \
@@ -23,6 +24,7 @@ H8NMODS= 2716_444-19_H17.rom \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
+	zout/bsdcard.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
 	zout/chelp.cim \
@@ -38,6 +40,7 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
+	zout/bsdcard.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
 	zout/chelp.cim \

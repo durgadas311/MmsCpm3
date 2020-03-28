@@ -11,6 +11,7 @@ BASE = mbios3.rel chrio3.rel end.rel lptbl.rel getdp.rel scb.rel
 BASEZ = mbios3z.rel chrio3.rel end.rel lptbl.rel getdp.rel scb.rel
 
 GIDEDRVS = -d a:=70,b:=71,c:=72,d:=73,e:=74,f:=75,g:=76,h:=77
+SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 Z17DRVS = -d i:=0,j:=1,k:=2
 Z17MODS = -m "0=dds,mds;1=dds,mds;2=dds,mds"
@@ -21,7 +22,12 @@ M316MODS = -m "33=dds,mdd,mds;34=dds,mdd,mds;35=dds,mdd,mds;36=dds,mdd,mds"
 RDDRVS = -d l:=40
 DSO = -p def,a:
 
-all: c3z17krr.sys c3z37krr.sys c3z67mr.sys c3g37krr.sys c3z37zrr.sys c3g37zrr.sys
+SDCSYS = c3g37krr.sys c3g37zrr.sys
+GIDESYS = c3g37krr.sys c3g37zrr.sys
+Z67SYS = c3z17krr.sys c3z37krr.sys c3z67mr.sys c3z37zrr.sys
+ALLSYS = $(Z67SYS) $(GIDESYS) $(SDCSYS)
+
+all: $(ALLSYS)
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
@@ -42,6 +48,10 @@ b3g37krr.spr: $(BASE) gide'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
 	vcpm link "b3g37krr=mbios3,chrio3,gide'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
+b3s37krr.spr: $(BASE) sdc'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldrsdc.com
+	vcpm link "b3s37krr=mbios3,chrio3,sdc'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(SDCDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+
 b3z67mr.spr: $(BASE) m320'3.rel m316'3.rel nortc.rel mem318.rel
 	vcpm link "b3z67mr=mbios3,chrio3,m320'3,m316'3,end,lptbl,nortc,mem318,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(M316DRVS) $(M316MODS) $(DSO) $@
@@ -58,6 +68,10 @@ b3z37zrr.spr: $(BASEZ) m320'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.re
 b3g37zrr.spr: $(BASEZ) gide'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
 	vcpm link "b3g37zrr=mbios3z,chrio3,gide'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
 	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+# SDC+Z37+Z180MMU+RTC+RAMDISK
+b3s37zrr.spr: $(BASEZ) sdc'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3s37zrr=mbios3z,chrio3,sdc'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(SDCDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
 c3%.sys: b3%.spr
 	cp $? bnkbios3.spr
