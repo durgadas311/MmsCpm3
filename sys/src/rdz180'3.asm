@@ -41,19 +41,19 @@ dstat	equ	30h
 dmode	equ	31h
 dcntl	equ	32h
 
-; CP/M 3 uses 00000-39FFF, ROM is at F8000-FFFFF
-base$pg	equ	3ah	; 778240 bytes, 760.0K, 6080 sectors (128B)
-num$pgs	equ	190	; in case anyone asks
+; CP/M 3 uses 00000-39FFF, unused RAM is 3A000-7FFFF
+base$pg	equ	3ah	; 286720 bytes, 280K, 2240 sectors (128B)
+num$pgs	equ	70	; in case anyone asks
 
 driv0	equ	40		; first drive in system
 ndriv	equ	1		; # of drives is system
 
-dsm	equ	380-1	; 778240 bytes for ramdisk
+dsm	equ	140-1	; 286720 bytes for ramdisk
 bsh	equ	4
 blm	equ	15	; 2K block size
 exm	equ	0
-drm	equ	128-1	; still requires manual ALV0 setup
-alv0	equ	11000000b
+drm	equ	64-1	; still requires manual ALV0 setup
+alv0	equ	10000000b
 ;-------------------------------------------------------
 ;	Start of relocatable disk I/O module.
 ;-------------------------------------------------------
@@ -69,7 +69,7 @@ alv0	equ	11000000b
 	dw	dphtbl,modtbl
 
 string: DB	'RDZ180 ',0
-	DB	'760K RAM Disk ',0,'v3.10'
+	DB	'280K RAM Disk ',0,'v3.10'
 	DW	VERS
 	DB	'$'
 

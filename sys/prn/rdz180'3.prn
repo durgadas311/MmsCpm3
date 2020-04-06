@@ -1,0 +1,330 @@
+ 2031 =         VERS EQU '1 ' ; Feb 15, 2020  16:39  drm  "RDZ180'3.ASM"
+                ;*********************************************************
+                ;	Disk I/O module for MMS CP/M 3.1
+                ;	for RAM disk on the Z180 MMU 1M RAM
+                ;	Copyright (c) 2020 Douglas Miller
+                ;*********************************************************
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                	maclib z180
+                
+                	extrn	@trk,@sect,@dma,@dbnk,@cbnk
+                	extrn	@compg
+                	extrn	@dircb,@dtacb
+                	extrn	@tz180,@dz180
+                	extrn	?bnksl
+                
+                ;---------------------------------------------------------
+                ;
+                ;	Physical drives are assigned as follows:
+                ;
+                ;	40 - 1st drive
+                ;
+                ;---------------------------------------------------------
+                ;	Ports and Constants
+                ;---------------------------------------------------------
+                ;  PORT ASSIGNMENTS
+                
+ 0038 =         mmu$cbr	equ	38h
+ 0039 =         mmu$bbr	equ	39h
+ 003A =         mmu$cbar equ	3ah
+ 0020 =         sar0l	equ	20h
+ 0021 =         sar0h	equ	21h
+ 0022 =         sar0b	equ	22h
+ 0023 =         dar0l	equ	23h
+ 0024 =         dar0h	equ	24h
+ 0025 =         dar0b	equ	25h
+ 0026 =         bcr0l	equ	26h
+ 0027 =         bcr0h	equ	27h
+ 0030 =         dstat	equ	30h
+ 0031 =         dmode	equ	31h
+ 0032 =         dcntl	equ	32h
+                
+                ; CP/M 3 uses 00000-39FFF, unused RAM is 3A000-7FFFF
+ 003A =         base$pg	equ	3ah	; 286720 bytes, 280K, 2240 sectors (128B)
+ 0046 =         num$pgs	equ	70	; in case anyone asks
+                
+ 0028 =         driv0	equ	40		; first drive in system
+ 0001 =         ndriv	equ	1		; # of drives is system
+                
+ 008B =         dsm	equ	140-1	; 286720 bytes for ramdisk
+ 0004 =         bsh	equ	4
+ 000F =         blm	equ	15	; 2K block size
+ 0000 =         exm	equ	0
+ 003F =         drm	equ	64-1	; still requires manual ALV0 setup
+ 0080 =         alv0	equ	10000000b
+                ;-------------------------------------------------------
+                ;	Start of relocatable disk I/O module.
+                ;-------------------------------------------------------
+                	cseg
+                
+ 0000 E000      	dw	thread
+ 0002 2801      	db	driv0,ndriv
+ 0004 C36200    	jmp	init$rd
+ 0007 C39F00    	jmp	login$rd
+ 000A C30301    	jmp	read$rd
+ 000D C31E01    	jmp	write$rd
+ 0010 1600      	dw	string
+ 0012 06003500  	dw	dphtbl,modtbl
+                
+ 0016 52445A3138string: DB	'RDZ180 ',0
+ 001E 3238304B20	DB	'280K RAM Disk ',0,'v3.10'
+ 0032 3120      	DW	VERS
+ 0034 24        	DB	'$'
+                
+ 0035 80000000  modtbl: db	10000000b,00000000b,00000000b,00000000b ; drive 40, like HDD
+ 0039 FFFFFFFF  	  db	11111111b,11111111b,11111111b,11111111b
+                
+ 003D 8000      rddpb:	dw	128	; SPT - arbitrary
+ 003F 040F00    	db	bsh,blm,exm
+ 0042 8B003F00  	dw	dsm,drm
+ 0046 8000      	db	alv0,0
+ 0048 00800000  	dw	08000h,0
+ 004C 0000      	db	0,0	; PSH,PSM = 128byte sectors
+                
+                ; 128 bytes to/from 'pbuf', HL=src, DE=dst
+                xfer$dma:
+ 004E F3        	di
+ 004F 3A0000    	lda	@dbnk
+ 0052 CD0000    	call	?bnksl
+ 0055 018000    	lxi	b,128
+                	ldir
+ 0058+EDB0      	DB	0EDH,0B0H
+ 005A AF        	xra	a
+ 005B CD0000    	call	?bnksl
+ 005E FB        	ei
+ 005F C9        	ret
+                
+ 0060           pbuf:	ds	128
+                
+ 00E0 =         thread	equ	$
+                
+                	dseg
+                
+ 0000 000000    usr$addr: db	0,0,0
+ 0003 000000    dsk$addr: db	0,0,0
+                
+                ; No bank switching required, most of the time.
+                ; No data buffers, no HASH
+ 0006 0000000000dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0ffffh
+ 001E 00        	db 0
+                
+ 001F           alv40:	ds	(dsm+1)/4 	;
+                
+                ; This could be overlapped with alv40: never used after init$rd.
+ 0042 2052414D44label:	db	020h,'RAMDISK3LBL'
+ 000C =         lblen	equ	$-label
+ 004E 01000000  	db	00000001b,0,0,0	; no modes (yet)
+ 0052 0000000000	db	0,0,0,0,0,0,0,0	; password
+ 005A 00000000  	db	0,0,0,0		; ctime
+ 005E 00000000  	db	0,0,0,0		; utime
+                
+                init$rd:	; interrupts are disabled - leave them that way
+                	; Check if a valid directory already exists...
+                	; carefully change mapping to make this easier...
+                	; note: we must be (are) in bank 0...
+ 0062 3E80      	mvi	a,1000$0000b	; common at 8000, 32K for ramdisk view
+                	out0	a,mmu$cbar
+ 0064+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+ 0067 3E3A      	mvi	a,base$pg
+                	out0	a,mmu$bbr	; map in first part of ramdisk
+ 0069+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 006C 210000    	lxi	h,0	; first sector... first dirent (label)
+ 006F 114200    	lxi	d,label
+ 0072 060C      	mvi	b,lblen
+ 0074 1A        ird2:	ldax	d
+ 0075 BE        	cmp	m
+                	jrnz	ird1
+ 0076+2006      	DB	20H,IRD1-$-1
+ 0078 13        	inx	d
+ 0079 23        	inx	h
+                	djnz	ird2
+ 007A+10F8      	DB	10H,IRD2-$-1
+                	jr	ird3
+ 007C+1817      	DB	18H,IRD3-$-1
+                ird1:	; must re-initialize directory (to empty)
+ 007E 110000    	lxi	d,0
+ 0081 214200    	lxi	h,label
+ 0084 012000    	lxi	b,32
+                	ldir
+ 0087+EDB0      	DB	0EDH,0B0H
+ 0089 EB        	xchg	; make rest empty
+ 008A 112000    	lxi	d,32	; bytes/dirent
+ 008D 063F      	mvi	b,drm	; DRM (one already done)
+ 008F 3EE5      	mvi	a,0e5h	; empty entry
+ 0091 77        ird0:	mov	m,a
+ 0092 19        	dad	d
+                	djnz	ird0
+ 0093+10FC      	DB	10H,IRD0-$-1
+                ird3:
+                	; restore mapping
+ 0095 AF        	xra	a
+                	out0	a,mmu$bbr	; map in first part of ramdisk
+ 0096+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 0099 3EE0      	mvi	a,1110$0000b	; standard mapping (TODO: get from memz180)
+                	out0	a,mmu$cbar
+ 009B+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+ 009E C9        	ret
+                
+                login$rd:
+ 009F AF        	xra	a
+ 00A0 C9        	ret
+                
+ 00A1 00        punt:	db	0
+                
+                ; transfer crosses common boundary,
+                ; this really can only happen when @dbnk == 1.
+                ; setup temp buf in known region.
+                punt$rw:
+ 00A2 AF        	xra	a
+ 00A3 320200    	sta	usr$addr+2
+ 00A6 216000    	lxi	h,pbuf
+ 00A9 220000    	shld	usr$addr
+ 00AC 3C        	inr	a
+ 00AD 32A100    	sta	punt
+                	jr	join$rw
+ 00B0+182A      	DB	18H,JOIN$RW-$-1
+                
+                ; TODO: handle buffer that crosses common boundary...
+                setup$rw:
+ 00B2 AF        	xra	a
+ 00B3 32A100    	sta	punt
+                	; convert bank,vaddr to paddr
+ 00B6 2A0000    	lhld	@dma
+ 00B9 EB        	xchg
+ 00BA 210000    	lxi	h,@dz180
+ 00BD 3A0000    	lda	@compg	; check for common memory buffer...
+ 00C0 3D        	dcr	a
+ 00C1 BA        	cmp	d
+                	jrc	comm$rw	; use bank 0 for common
+ 00C2+380A      	DB	38H,COMM$RW-$-1
+                	jrz	punt$rw
+ 00C4+28DC      	DB	28H,PUNT$RW-$-1
+ 00C6 3A0000    	lda	@dbnk
+ 00C9 87        	add	a
+ 00CA 4F        	mov	c,a
+ 00CB 0600      	mvi	b,0
+ 00CD 09        	dad	b
+                comm$rw:
+                	; add 0:D:E (user dma)
+                	;   + H:L:0 (actually, (HL+1):(HL):0)
+ 00CE 7A        	mov	a,d
+ 00CF 86        	add	m
+ 00D0 57        	mov	d,a
+ 00D1 23        	inx	h
+ 00D2 3E00      	mvi	a,0
+ 00D4 8E        	adc	m
+ 00D5 320200    	sta	usr$addr+2
+ 00D8 EB        	xchg
+ 00D9 220000    	shld	usr$addr
+                join$rw:
+ 00DC 3A0000    	lda	@sect	; 0-127
+ 00DF B7        	ora	a
+ 00E0 1F        	rar	; * 128
+ 00E1 57        	mov	d,a
+ 00E2 3E00      	mvi	a,0
+ 00E4 1F        	rar
+ 00E5 5F        	mov	e,a	; DE=sector*128
+ 00E6 3A0000    	lda	@trk	; 0-47 (16K each)
+ 00E9 4F        	mov	c,a
+ 00EA AF        	xra	a
+                	rarr	c	;
+ 00EB+CB19      	DB	0CBH, 18H + C
+ 00ED 1F        	rar		;
+                	rarr	c	;
+ 00EE+CB19      	DB	0CBH, 18H + C
+ 00F0 1F        	rar		; C:A:0 = track * 128 * 128
+                	; (0000xxxx:xx000000:00000000) track  C:A:0
+                	; (00000000:00xxxxxx:x0000000) sector 0:D:E
+                	; merge C:A:0 (track) and 0:D:E (sector) (no carry possible)
+ 00F1 B2        	ora	d
+ 00F2 57        	mov	d,a
+                	; LBA is C:D:E
+ 00F3 21A003    	lxi	h,base$pg SHL 4	; base addr of disk
+                	; add C:D:E
+                	;   + H:L:0
+ 00F6 7A        	mov	a,d
+ 00F7 85        	add	l
+ 00F8 57        	mov	d,a
+ 00F9 79        	mov	a,c
+ 00FA 8C        	adc	h
+ 00FB 320500    	sta	dsk$addr+2
+ 00FE EB        	xchg
+ 00FF 220300    	shld	dsk$addr
+ 0102 C9        	ret
+                
+                read$rd:
+ 0103 CDB200    	call	setup$rw
+ 0106 210300    	lxi	h,dsk$addr	; source
+ 0109 110000    	lxi	d,usr$addr	; dest
+ 010C CD3B01    	call	rw$common
+ 010F 3AA100    	lda	punt
+ 0112 B7        	ora	a
+ 0113 C8        	rz	; never an error?
+ 0114 2A0000    	lhld	@dma
+ 0117 EB        	xchg
+ 0118 216000    	lxi	h,pbuf
+ 011B C34E00    	jmp	xfer$dma
+                
+                write$rd:
+ 011E CDB200    	call	setup$rw
+ 0121 3AA100    	lda	punt
+ 0124 B7        	ora	a
+                	jrz	wr0
+ 0125+2809      	DB	28H,WR0-$-1
+ 0127 2A0000    	lhld	@dma
+ 012A 116000    	lxi	d,pbuf
+ 012D CD4E00    	call	xfer$dma
+ 0130 210000    wr0:	lxi	h,usr$addr	; source
+ 0133 110300    	lxi	d,dsk$addr	; dest
+ 0136 CD3B01    	call	rw$common
+ 0139 AF        	xra	a	; never an error?
+ 013A C9        	ret
+                
+                rw$common:
+ 013B F3        	di	; needed?
+ 013C 7E        	mov	a,m
+                	out0	a,sar0l
+ 013D+ED3920    	DB	0EDH, A*8+01H, SAR0L
+ 0140 23        	inx	h
+ 0141 7E        	mov	a,m
+                	out0	a,sar0h
+ 0142+ED3921    	DB	0EDH, A*8+01H, SAR0H
+ 0145 23        	inx	h
+ 0146 7E        	mov	a,m
+                	out0	a,sar0b
+ 0147+ED3922    	DB	0EDH, A*8+01H, SAR0B
+ 014A 1A        	ldax	d
+                	out0	a,dar0l
+ 014B+ED3923    	DB	0EDH, A*8+01H, DAR0L
+ 014E 13        	inx	d
+ 014F 1A        	ldax	d
+                	out0	a,dar0h
+ 0150+ED3924    	DB	0EDH, A*8+01H, DAR0H
+ 0153 13        	inx	d
+ 0154 1A        	ldax	d
+                	out0	a,dar0b
+ 0155+ED3925    	DB	0EDH, A*8+01H, DAR0B
+ 0158 3E80      	mvi	a,128
+                	out0	a,bcr0l
+ 015A+ED3926    	DB	0EDH, A*8+01H, BCR0L
+ 015D AF        	xra	a
+                	out0	a,bcr0h
+ 015E+ED3927    	DB	0EDH, A*8+01H, BCR0H
+ 0161 3E02      	mvi	a,00000010b	; mem2mem, burst mode
+                	out0	a,dmode
+ 0163+ED3931    	DB	0EDH, A*8+01H, DMODE
+ 0166 3E60      	mvi	a,01100000b	; DE0,/DWE0(not /DWE1) - start ch 0
+ 0168 013000    	lxi	b,dstat		; B must be 0, 64-bit I/O internally
+                	outp	a		; DMA starts now...
+ 016B+ED79      	DB	0EDH,A*8+41H
+                rwc0:	tstio	01000000b	; wait for DMAC to idle
+ 016D+ED7440    	DB	0EDH, 74H, 01000000B
+                	jrnz	rwc0
+ 0170+20FB      	DB	20H,RWC0-$-1
+ 0172 FB        	ei
+ 0173 C9        	ret
+                
+ 0174           	end
+
