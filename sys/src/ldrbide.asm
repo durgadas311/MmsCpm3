@@ -1,4 +1,4 @@
-VERS	EQU   '1 '  ; June 27, 2019 05:26 drm "ldrbide.asm"
+VERS	EQU   '2 '  ; April 7, 2020 17:45 drm "ldrbide.asm"
 
 	MACLIB	z80
 	$-MACRO
@@ -15,7 +15,9 @@ VERS	EQU   '1 '  ; June 27, 2019 05:26 drm "ldrbide.asm"
 **  PORTS AND CONSTANTS
 ***************************************************
 
+?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
+?PORT2	EQU	0F3H
 
 ctl$F2	EQU	2036H		; last image of ?PORT
 SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
@@ -106,7 +108,9 @@ load:
 
 DONE:	DI
 	mvi	a,10011111b	; H8 2mS off, display blank
-	out	0f0h	; H89 NMI here should be OK
+	out	?H8PT		; H89 NMI here should be OK
+	mvi	a,00000010b	; aux 2mS enable
+	out	?PORT2		; in case of H8 CPU
 	lda	ctl$F2
 	ani	11111101b	; CLK off
 	out	?PORT

@@ -1,4 +1,4 @@
-vers equ '1 ' ; July 19, 1983  10:07  mjm  "LDRBZ17.ASM"
+vers equ '2 ' ; April 7, 2020  17:46  drm  "LDRBZ17.ASM"
 ********** LOADER BOOT ROUTINE **********
 ********** FOR Z17 BOOT        **********
 
@@ -29,6 +29,8 @@ drv0	equ	0
 ***************************************************
 ?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
+?PORT2	EQU	0F3H
+ctl$F2	EQU	2036H		; last image of ?PORT
 
 R@XOK	EQU	205EH	;TURN OFF Z17
 R@READ	EQU	2067H	;ENTRY TO 444-19 ROM FOR READ DISK
@@ -123,12 +125,19 @@ ERR00:	POP	B
 DONE:
 	DI
 	mvi	a,09fh	; 2ms off, blank fp on H8
-	out	?h8pt	; H89 NMI should be innocuous
+	out	?H8PT	; H89 NMI should be innocuous
+	mvi	a,00000010b	; aux 2mS enable
+	out	?PORT2		; in case of H8 CPU
+	lda	ctl$F2
+	ani	11111101b	; CLK off
+	out	?PORT
+	ani	00100000b	; ORG0 already?
+	jrnz	done2
 	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
 	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
 	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
 	OUTIR
-	lxi	h,3000h+256
+done2:	lxi	h,3000h+256
 	lxi	d,loader
 	lbcd	syssiz
 	ldir

@@ -1,4 +1,4 @@
-VERS	EQU   '3 '  ; January 30, 2020 19:24 drm "ldrb320.asm"
+VERS	EQU   '4 '  ; April 7, 2020 18:44 drm "ldrb320.asm"
 
 	MACLIB	Z80
 	$-MACRO
@@ -17,6 +17,7 @@ VERS	EQU   '3 '  ; January 30, 2020 19:24 drm "ldrb320.asm"
 
 ?H8PT	EQU	0F0H
 ?PORT	EQU	0F2H
+?PORT2	EQU	0F3H
 
 ctl$F2	EQU	2036H		; last image of ?PORT
 BASE$PORT EQU	2150H		; PORT ADDRESS SAVE BY BOOT PROM
@@ -160,7 +161,9 @@ CHK02:	INP	A		; INPUT FROM CONTROL PORT
 
 DONE:	DI
 	mvi	a,09fh	; 2ms off, blank fp on H8
-	out	?h8pt	; H89 NMI should be innocuous
+	out	?H8PT	; H89 NMI should be innocuous
+	mvi	a,00000010b	; aux 2mS enable
+	out	?PORT2		; for Norberto's
 	lda	ctl$F2
 	ani	11111101b	; CLK off
 	out	?PORT
