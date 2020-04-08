@@ -1,4 +1,4 @@
-VERS EQU '1 ' ; June 28, 2019 21:42 drm "GIDE'3.ASM"
+VERS EQU '2 ' ; Apr 4, 2020 08:06 drm "GIDE'3.ASM"
 *************************************************************************
 
 	TITLE	'GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE'
@@ -173,6 +173,7 @@ init$gide:
 	lhld	nsegmt		;grab this before it's gone...
 	shld	segoff
 	xra	a
+	out	GIDE$EF		; ensure this reg is sane
 	ret
 
 login:	lda	init
