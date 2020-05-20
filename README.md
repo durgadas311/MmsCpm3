@@ -17,7 +17,7 @@ respectively. Top-level directories are:
 -   CP/M 3 non-standard utilities, MMS and modern.
 
 **net:**
--   CP/NET for CP/M 3 files, NDOS and utilities.
+-   CP/NET remnants, network boot support.
 
 **defsasi3:**
 -   DEFSASI3 files.
