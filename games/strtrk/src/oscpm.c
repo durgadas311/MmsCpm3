@@ -1,22 +1,21 @@
 /* SYSTEM dependant routines */
 
 /* CP/M */
+#include <cpm.h>
 
 /* TODO: use real-time units. */
 #define CHRTIME	1000	/* approx 1/8 "game time-unit" */
 static int t = CHRTIME;
 
-osinit() {
+void osinit() {
 	/* TODO: determine time base */
 }
 
-osreset() {
+void osreset() {
 	t = CHRTIME;
 }
 
-outchr(c)
-char c;
-{
+void outchr(char c) {
 	bdos(6,c);
 }
 

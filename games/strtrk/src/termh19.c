@@ -1,26 +1,26 @@
 /* TERMINAL dependant routines */
 
-extern prts();
-extern outchr();
+extern void prts(char *s);
+extern void outchr(char c);
 
 static char rev = 0;
 
-clrscr() {prts("\033E");}
+void clrscr() {prts("\033E");}
 
-cleol() {prts("\033K");}
+void cleol() {prts("\033K");}
 
-curon() {prts("\033y5");}
+void curon() {prts("\033y5");}
 
-curoff() {prts("\033x5");}
+void curoff() {prts("\033x5");}
 
-revv() {
+void revv() {
 	if (!rev) {
 		prts("\033p");
 		rev = 1;
 	}
 }
 
-nrmv() {
+void nrmv() {
 	if (rev) {
 		prts("\033q");
 		rev = 0;
@@ -30,55 +30,46 @@ nrmv() {
 static gron() { prts("\033F"); }
 static groff() { prts("\033G"); }
 
-cursor(r,c)
-char r,c;
-{
+void cursor(char r, char c) {
     outchr(27); outchr('Y');
     outchr(r+32); outchr(c+32);
 }
 
-llc() {	/* lower-left corner graphic */
+void llc() {	/* lower-left corner graphic */
 	gron();
 	outchr('e');
 	groff();
 }
-lrc() {	/* lower right corner */
+void lrc() {	/* lower right corner */
 	gron();
 	outchr('d');
 	groff();
 }
-ulc() {	/* upper left corner */
+void ulc() {	/* upper left corner */
 	gron();
 	outchr('f');
 	groff();
 }
-urc() {	/* upper right corner */
+void urc() {	/* upper right corner */
 	gron();
 	outchr('c');
 	groff();
 }
-horz(n,t)	/* N horiz chars, T = top */
-int n;
-char t;
-{
+void horz(int n, char t) {	/* N horiz chars, T = top */
 	gron();
 	while (n-- > 0) {
 		outchr('a');
 	}
 	groff();
 }
-vl(l)	/* single vert line char, L = left */
-char l;
-{
+void vl(char l) {	/* single vert line char, L = left */
 	gron();
 	outchr('`');
 	groff();
 }
 
 /* "critical hits" bargraph, 3 ticks per char cell. */
-hits(m)
-char m;
-{
+void hits(char m) {
 	revv();
 	if (m) {
 		gron();
@@ -89,9 +80,7 @@ char m;
 }
 char hit0() { return('_'); }
 char pos0() { gron(); outchr('^'); groff(); }
-putshl(r,c,a)
-char r,c,a;
-{
+void putshl(char r, char c, char a) {
 	gron();
 	cursor(r,c);
 	if (a) prts("fac");

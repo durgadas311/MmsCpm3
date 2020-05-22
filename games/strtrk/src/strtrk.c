@@ -2,33 +2,40 @@
 
 /* STAR TREK game for STD graphics */
 
-#include <A:STDIO.H>
-#include "keybd.h"
+#include <stdio.h>
+#ifdef _KP_
+#include "termkp.h"
+#endif
+#ifdef _H19_
+#include "termh19.h"
+#endif
 
 /* e.g. oscpm.c */
-extern osinit();
-extern outchr();  /* (char c); */
+extern void osinit();
+extern void osreset();
+extern void outchr(char c);
 extern char gc(); /* returns CHAR or 0 if not ready */
+extern char gcto(); /* returns CHAR or 0 if not ready, after timeout */
 extern char inch0();	/* wait for character */
 
 /* e.g. termkp.c */
-extern clrscr();/* clear screen and home */
-extern cleol();	/* clear to end of line */
-extern curon();	/* cursor on */
-extern curoff();/* cursor off */
-extern revv();	/* reverse video (hilight) */
-extern nrmv();	/* normal video (undo revv()) */
-extern cursor(); /* (char r,char c); */
-extern llc();	/* lower-left corner graphic */
-extern lrc();	/* lower right corner */
-extern ulc();	/* upper left corner */
-extern urc();	/* upper right corner */
-extern horz();	/* (int n, char t) N horiz chars, T = top */
-extern vl();	/* (char l) single vert line char, L = left */
-extern hits();	/* (char a) 0/1 for two-step display */
+extern void clrscr();/* clear screen and home */
+extern void cleol();	/* clear to end of line */
+extern void curon();	/* cursor on */
+extern void curoff();/* cursor off */
+extern void revv();	/* reverse video (hilight) */
+extern void nrmv();	/* normal video (undo revv()) */
+extern void cursor(char r, char c);
+extern void llc();	/* lower-left corner graphic */
+extern void lrc();	/* lower right corner */
+extern void ulc();	/* upper left corner */
+extern void urc();	/* upper right corner */
+extern void horz(int n, char t);	/* N horiz chars, T = top */
+extern void vl(char l);	/* single vert line char, L = left */
+extern void hits(char a);	/* 0/1 for two-step display */
 extern char hit0(); /* "empty" hits cell char */
-extern pos0();
-extern putshl(); /* (r,c,a) */
+extern void pos0();
+extern void putshl(char r, char c, char a);
 
 /* table for skill levels
 	 number-of-klingons = rnd / skill[0] + skill[1]
@@ -40,16 +47,18 @@ extern putshl(); /* (r,c,a) */
    sheild-recharge-rate = skill[10]
   impulse-recharge-rate = skill[11]
 		   -0--1--2--3---4---5-6---7--8---9--10--11-	 */
-int skill[10][12]={ 6,30,32, 3,-20,-10,0,  0,10,200,100, 20,
-			6,30,22, 2,  0,-10,7,  0,10,150,100, 20,
-			6,30,22, 2,  0, 10,6, 80,20,100, 75, 20,
-			3,30,22, 2,  0, 10,6, 50,20,100, 75, 20,
-			3,30,22, 2,  0,  6,5,100,30, 75, 75, 20,
-			3,30,16, 1,  5, 10,5, 80,40, 75, 75, 20,
-			2,33,16, 1, 10, 10,5, 50,40, 50, 75, 20,
-			2,33,22, 1, 10, 10,5, 20,50, 50, 75, 20,
-			2,45,22, 1, 10, 10,5,  0,50, 50, 75, 20,
-			2,50,32, 1, 16, 16,5,  0,60, 50, 50, 20		};
+int skill[10][12]={
+	{ 6,30,32, 3,-20,-10,0,  0,10,200,100, 20},
+	{ 6,30,22, 2,  0,-10,7,  0,10,150,100, 20},
+	{ 6,30,22, 2,  0, 10,6, 80,20,100, 75, 20},
+	{ 3,30,22, 2,  0, 10,6, 50,20,100, 75, 20},
+	{ 3,30,22, 2,  0,  6,5,100,30, 75, 75, 20},
+	{ 3,30,16, 1,  5, 10,5, 80,40, 75, 75, 20},
+	{ 2,33,16, 1, 10, 10,5, 50,40, 50, 75, 20},
+	{ 2,33,22, 1, 10, 10,5, 20,50, 50, 75, 20},
+	{ 2,45,22, 1, 10, 10,5,  0,50, 50, 75, 20},
+	{ 2,50,32, 1, 16, 16,5,  0,60, 50, 50, 20}
+};
 
 char galaxy[64][16];
 
@@ -65,54 +74,56 @@ struct {
 	int sin;
 	int cos;
 	   } direct[32]={
- 11,39,-10000,0,   11,41,-9809,1951, 11,43,-9239,3827, 11,45,-8315,5556,
- 12,47,-7071,7071, 13,48,-5556,8315, 14,49,-3827,9239, 15,49,-1951,9808,
- 16,49,0,10000,    17,49,1951,9808,  18,49,3827,9239,  19,48,5556,8315,
- 20,47,7071,7071,  21,45,8315,5556,  21,43,9239,3827,  21,41,9808,1951,
- 21,39,10000,0,    21,37,9808,-1951, 21,35,9239,-3827, 21,33,8315,-5556,
- 20,31,7071,-7071, 19,30,5556,-8315, 18,29,3827,-9239, 17,29,1951,-9808,
- 16,29,0,-10000,   15,29,-1951,-9808,14,29,-3827,-9239,13,30,-5556,-8315,
- 12,31,-7071,-7071,11,33,-8315,-5556,11,35,-9239,-3827,11,37,-9808,-1951 };
+{ 11,39,-10000,0},   {11,41,-9809,1951}, {11,43,-9239,3827}, {11,45,-8315,5556},
+{ 12,47,-7071,7071}, {13,48,-5556,8315}, {14,49,-3827,9239}, {15,49,-1951,9808},
+{ 16,49,0,10000},    {17,49,1951,9808},  {18,49,3827,9239},  {19,48,5556,8315},
+{ 20,47,7071,7071},  {21,45,8315,5556},  {21,43,9239,3827},  {21,41,9808,1951},
+{ 21,39,10000,0},    {21,37,9808,-1951}, {21,35,9239,-3827}, {21,33,8315,-5556},
+{ 20,31,7071,-7071}, {19,30,5556,-8315}, {18,29,3827,-9239}, {17,29,1951,-9808},
+{ 16,29,0,-10000},   {15,29,-1951,-9808},{14,29,-3827,-9239},{13,30,-5556,-8315},
+{ 12,31,-7071,-7071},{11,33,-8315,-5556},{11,35,-9239,-3827},{11,37,-9808,-1951}
+};
 
 int dist[8][8]={
-		   0,1000,2000,3000,4000,5000,6000,7000,
-		1000,1414,2236,3162,4123,5099,6083,7071,
-		2000,2236,2828,3606,4472,5385,6325,7280,
-		3000,3162,3606,4243,5000,5831,6708,7616,
-		4000,4123,4472,5000,5657,6403,7211,8062,
-		5000,5099,5385,5831,6403,7071,7810,8602,
-		6000,6083,6325,6708,7211,7810,8485,9220,
-		7000,7071,7280,7616,8062,8602,9220,9899 };
+	{   0,1000,2000,3000,4000,5000,6000,7000},
+	{1000,1414,2236,3162,4123,5099,6083,7071},
+	{2000,2236,2828,3606,4472,5385,6325,7280},
+	{3000,3162,3606,4243,5000,5831,6708,7616},
+	{4000,4123,4472,5000,5657,6403,7211,8062},
+	{5000,5099,5385,5831,6403,7071,7810,8602},
+	{6000,6083,6325,6708,7211,7810,8485,9220},
+	{7000,7071,7280,7616,8062,8602,9220,9899}
+};
 
 struct { char x; char y; char *str; }
-	commnd[]={2,52,"  LONG RANGE SCAN",
-		  3,52,"  LIST STAREBASES",
-		  4,52,"  OPERATION MANUALS",
-		  6,52,"(TAB) = FIRE PHASORS",
-		  7,52,"(ESC) = PHOTON TORPEDOS",
-		  8,52,"(space) MOVE BY IMPULSE",
-		  9,52," 1-6  = WARP (FACTOR)",
-		  10,52,"(DEL) = SHIELDS"},
-	 opcom[]={14,52,"Select Topic:",
-		  15,52,"  NAVIGATION",
-		  16,52,"  WEAPONRY",
-		  17,52,"  THE ENEMY",
-		  18,52,"  DAMAGE CONTROL",
-		  19,52,"  GALACTIC MAP",
-		  20,52,"  STARBASES",
-		  22,52,"(ESC) when finished"},
+	commnd[]={{2,52,"  LONG RANGE SCAN"},
+		  {3,52,"  LIST STAREBASES"},
+		  {4,52,"  OPERATION MANUALS"},
+		  {6,52,"(TAB) = FIRE PHASORS"},
+		  {7,52,"(ESC) = PHOTON TORPEDOS"},
+		  {8,52,"(space) MOVE BY IMPULSE"},
+		  {9,52," 1-6  = WARP (FACTOR)"},
+		  {10,52,"(DEL) = SHIELDS"}},
+	 opcom[]={{14,52,"Select Topic:"},
+		  {15,52,"  NAVIGATION"},
+		  {16,52,"  WEAPONRY"},
+		  {17,52,"  THE ENEMY"},
+		  {18,52,"  DAMAGE CONTROL"},
+		  {19,52,"  GALACTIC MAP"},
+		  {20,52,"  STARBASES"},
+		  {22,52,"(ESC) when finished"}},
 	stats[]={
-	1,21,"        CONDITION:",
-	2,21,"          SHIELDS:",
-	3,21,"          PHASORS:",
-	4,21,"  PHOTON TORPEDOS:",
-	5,21,"          SCANNER:",
-	6,21,"     WARP ENGINES:",
-	7,21,"    IMPULSE POWER:",
-	8,21,"CRITICAL HITS:  ..........",
-	9,21,"   POSITION:",
-	10,21,"         KLINGONS:",
-	11,21,"TIME: 0      LEVEL:" };
+	{1,21,"        CONDITION:"},
+	{2,21,"          SHIELDS:"},
+	{3,21,"          PHASORS:"},
+	{4,21,"  PHOTON TORPEDOS:"},
+	{5,21,"          SCANNER:"},
+	{6,21,"     WARP ENGINES:"},
+	{7,21,"    IMPULSE POWER:"},
+	{8,21,"CRITICAL HITS:  .........."},
+	{9,21,"   POSITION:"},
+	{10,21,"         KLINGONS:"},
+	{11,21,"TIME: 0      LEVEL:" }};
 
 #define STROPS 8
 #define NUMOPS 6
@@ -158,20 +169,20 @@ char strg[30];
 char *outstr="OUT     ",*dec8="%-8d",*deadsb="#%1.1d  --*--      ";
 char *wrking="WORKING ";
 
-static reset();
-static clrwin();
-static prtwin();
-static setexp();
+static void reset();
+static void clrwin();
+static void prtwin(int a);
+static void setexp(int a, int b, int c);
 static int sgn();
 static int abs();
 static int rnd();
 static int coline();
 static int kgcol();
-static settim();
-static upde();
+static void settim(int t);
+static void upde();
 static char inchr();
-static hitinit();
-static sethit();
+static void hitinit();
+static void sethit(int a);
 static char setklg();
 static int chkklg();
 static void setwpe();
@@ -186,17 +197,18 @@ static void setdir();
 static void setshl(); /* (shlds,shlde) */
 static int setent();
 static char chkdck();
-static longscan();
-static dispgm();
-static shortscan();
-static botline();
-static frame();
+static void longscan();
+static void dispgm();
+static void shortscan();
+static void botline();
+static void frame();
 static void fiximp();
 static void fixphs();
 static void fixshl();
 static void fixscn();
 static void fixpht();
 static void fixwpe();
+int prts(char *s);
 
 main() {
 	osinit();
@@ -297,11 +309,13 @@ main() {
 	curon(); /* cursor on */
 }
 
-static reset() {
+static void reset() {
 	int a,b;
 	osreset(); /* courtesy call */
-	ep.ti=1; ep.ix=ep.iy=(-1);
-	init=1; t0=t1=t2=crithit=0;
+	ep.ti = 1;
+	ep.ix = ep.iy = (-1);
+	init = 1;
+	t0 = t1 = t2 = crithit = 0;
 	for (a=0;a<64;++a) {
 		for (b=0;b<16;++b) {
 			galaxy[a][b]=0;
@@ -324,11 +338,9 @@ static reset() {
 	sethit(0);
 }
 
-static clrwin() { for (xx=13;xx<24;++xx) {cursor(xx,52); cleol();} }
+static void clrwin() { for (xx=13;xx<24;++xx) {cursor(xx,52); cleol();} }
 
-static prtwin(a)
-int a;
-{
+static void prtwin(int a) {
 	clrwin();
 	wind=a;
 	switch (a) {
@@ -439,7 +451,7 @@ int a;
 		cursor(16,52); prts("push CTRL-A to re-start");
 		yy=0;
 		for (xx=0;xx<numbas;++xx) { if (sb[xx].ix == -1) continue;
-			galaxy[sb[xx].ix][sb[xx].iy/4] =& ~(0x3<<(sb[xx].iy&0x3)*2);
+			galaxy[sb[xx].ix][sb[xx].iy/4] &= ~(0x3<<(sb[xx].iy&0x3)*2);
 			if (((sb[xx].ix^ep.ix|sb[xx].iy^ep.iy)&0xFFF8)==0) yy=1;
 			else dispgm(sb[xx].ix,sb[xx].iy,0);
 			sb[xx].ix=(-1);
@@ -455,9 +467,7 @@ int a;
 /*  return(1); // must return .TRUE. */
 }
 
-static setexp(a,b,c)
-int a,b,c;
-	{
+static void setexp(int a, int b, int c) {
 	if (type==2) kg[idx].ti =- c;
 	if (scnnr==0) {
 		if (explod.ti!=0) {
@@ -476,7 +486,7 @@ int a,b,c;
 			type==1 && c>=750 && (sb[idx].ix=(-1),wind!=1||
 			(cursor(16+idx,52),sprintf(strg,deadsb,idx),
 			prts(strg)))) {
-		galaxy[a][b/4] =& ~(0x3<<(b&0x3)*2);
+		galaxy[a][b/4] &= ~(0x3<<(b&0x3)*2);
 		dispgm(a,b,1);
 	}
 }
@@ -512,7 +522,7 @@ static int coline() /* is there an object co-linear with enterprize? */
 				}
 				}
 			}
-			d=>>2;
+			d>>=2;
 			}
 		}
 		}
@@ -549,7 +559,7 @@ int x;
 				abs(dx*y0-dy*x0)<=e/3000)
 				{ if (e<dd) { return(0); } }
 			}
-			d=>>2;
+			d>>=2;
 			}
 		}
 		}
@@ -557,10 +567,10 @@ int x;
 	return(1);
 	}
 
-static settim(t) int t; { cursor(stats[TIMES].x,stats[TIMES].y-13);
+static void settim(int t) { cursor(stats[TIMES].x,stats[TIMES].y-13);
 		   sprintf(strg,"%-6.6d",t); prts(strg); }
 
-static upde() {
+static void upde() {
 	char c;
 	int a,b,d,e;
 	a = -1;
@@ -645,21 +655,21 @@ static char inchr() {
 		e = (rnd()*2+rnd())*2+rnd()+1; /* max 442 stars */
 		for (a = 0; a < e; ++a) { /* make up to 442 stars */
 			while ((galaxy[b=rnd()][(d=rnd())/4]&(0x03<<(d&0x03)*2))!=0);
-			galaxy[b][d/4]=|(3<<(d&0x03)*2);
+			galaxy[b][d/4]|=(3<<(d&0x03)*2);
 		}
 		numbas = rnd()/skill[skil][2]+skill[skil][3]; /* number of bases */
 		numklg = rnd()/skill[skil][0]+skill[skil][1]; /* nmbr of klingons */
 		e = (numklg-skill[skil][4]-rnd()/skill[skil][5])/numbas; /* photons*/
 		for (a = 0; a < numbas; ++a) {  /* init star bases */
 			while ((galaxy[b=rnd()][(d=rnd())/4]&(0x03<<(d&0x03)*2))!=0);
-			galaxy[b][d/4]=|(1<<(d&0x03)*2);
+			galaxy[b][d/4]|=(1<<(d&0x03)*2);
 			sb[a].ix=b; sb[a].iy=d; sb[a].ti=e;
 		}
 		while (setent(rnd(),rnd()) == -1);
 		for (a = 0; a < numklg; ++a) {  /* 30 klingons */
 			while ((galaxy[b=rnd()][(d=rnd())/4]&(0x03<<(d&0x03)*2))!=0 ||
 				((ep.ix^b|ep.iy^d)&0xFFF8)==0);
-			galaxy[b][d/4]=|(2<<(d&0x03)*2);
+			galaxy[b][d/4]|=(2<<(d&0x03)*2);
 			kg[a].ix=b;
 			kg[a].iy=d;
 			kg[a].ti=2000;
@@ -713,7 +723,7 @@ static char inchr() {
 	return(c);
 }
 
-static hitinit() {
+static void hitinit() {
 	char h;
 	char *s;
 	h = hit0();
@@ -723,9 +733,7 @@ static hitinit() {
 	}
 }
 
-static sethit(a)
-int a;
-{
+static void sethit(int a) {
 	if (a==0) {
 		/* reset bargraph */
 		cursor(stats[CRTHIT].x,stats[CRTHIT].y-19);
@@ -738,9 +746,7 @@ int a;
 	crithit=a;
 }
 
-static char setklg(a)
-int a;
-{
+static char setklg(int a) {
 	cursor(stats[KLGONS].x,stats[KLGONS].y);
 	sprintf(strg,dec8,a); prts(strg);
 	if (a==0) prtwin(21);
@@ -967,7 +973,7 @@ static char chkdck() {
 	return(0);
 }
 
-static longscan() {
+static void longscan() {
 	int a,b;
 	if (scnnr==0) {
 		for (a= -1;a<2;++a) {
@@ -979,7 +985,7 @@ static longscan() {
 	}
 }
 
-static dispgm(a,b,c)
+static void dispgm(a,b,c)
 int a,b;
 char c;
 {
@@ -1003,7 +1009,7 @@ char c;
 	if (c) nrmv();
 }
 
-static shortscan() {
+static void shortscan() {
 	char a,b,c;
 	int qx,qy;
 	explod.ti=0;
@@ -1033,9 +1039,9 @@ static shortscan() {
 	}
 }
 
-static botline() { llc(); horz(28,0); lrc(); }
+static void botline() { llc(); horz(28,0); lrc(); }
 
-static frame() {
+static void frame() {
 	char a;
 	clrscr();	/* clear screen and home */
 	ulc(); horz(10,1); prts(" STATUS "); horz(10,1); urc();
@@ -1083,9 +1089,7 @@ static frame() {
 	}
 }
 
-int prts(s)
-char *s;
-{
+int prts(char *s) {
 	while (*s != 0) { outchr(*s++); }
 	return(1);
 }
