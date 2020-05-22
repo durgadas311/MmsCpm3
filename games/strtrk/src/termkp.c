@@ -5,6 +5,9 @@ extern void outchr(char c);
 
 static char rev = 0;
 
+void trmin() {}
+void trmde() {}
+
 void clrscr() {outchr('\032');}
 
 void cleol() {outchr('\030');}
@@ -26,6 +29,9 @@ void nrmv() {
 		rev = 0;
 	}
 }
+
+static void gron() {}
+static void groff() {}
 
 void cursor(char r, char c) {
     outchr(27); outchr('=');

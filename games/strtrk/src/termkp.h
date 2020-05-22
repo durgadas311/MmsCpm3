@@ -1,6 +1,7 @@
 /* Kaypro terminal */
 /* keyboard defines */
 
+#define KEXIT	0x03	/* Ctrl-C terminates */
 #define KRST	0x11
 #define KLEFT	0x13
 #define KRIGHT	0x04

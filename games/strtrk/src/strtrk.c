@@ -9,6 +9,9 @@
 #ifdef _H19_
 #include "termh19.h"
 #endif
+#ifdef _XT_
+#include "termxt.h"
+#endif
 
 /* e.g. oscpm.c */
 extern void osinit();
@@ -19,6 +22,8 @@ extern char gcto(); /* returns CHAR or 0 if not ready, after timeout */
 extern char inch0();	/* wait for character */
 
 /* e.g. termkp.c */
+extern void trmin();
+extern void trmde();
 extern void clrscr();/* clear screen and home */
 extern void cleol();	/* clear to end of line */
 extern void curon();	/* cursor on */
@@ -212,6 +217,7 @@ int prts(char *s);
 
 main() {
 	osinit();
+	trmin();
 /*  if (*(defcom+1) != ' ') { if ((skil= *(defcom+1)-'0') > 9) skil=0; }
 	else skil=0; */
 	skil=0;
@@ -221,7 +227,7 @@ main() {
 	frame();
 	cursor(stats[LEVEL].x,stats[LEVEL].y+1); outchr(skil+'0');
 	reset();  /* everything working */
-	while ((key=inchr()) != 0x03) {
+	while ((key=inchr()) != KEXIT) {
 		if (ep.ti==0) {if (key==0x01) reset(); continue;}
 		if (nklg==0 || ep.ti==2) if (key==0x01) {reset(); continue;}
 		switch (key) {
@@ -307,6 +313,7 @@ main() {
 	}
 	cursor(23,0);
 	curon(); /* cursor on */
+	trmde();
 }
 
 static void reset() {

@@ -1,101 +1,114 @@
 /* TERMINAL dependant routines */
 
+#include <stdio.h>	/* TODO: better way */
+
 extern void prts(char *s);
 extern void outchr(char c);
 
 static char rev = 0;
 
-void trmin() {}
-void trmde() {}
+void trmin() {
+	prts("\033[1;1H\033[2J\033[1;24r");
+}
+void trmde() {
+	prts("\033[r\033[1;1H\033[2J");
+}
 
-void clrscr() {prts("\033E");}
+void clrscr() {prts("\033[2J");}
 
-void cleol() {prts("\033K");}
+void cleol() {prts("\033[K");}
 
-void curon() {prts("\033y5");}
+void curon() {
+	prts("\033[?25h");
+}
 
-void curoff() {prts("\033x5");}
+void curoff() {
+	prts("\033[?25l");
+}
 
 void revv() {
 	if (!rev) {
-		prts("\033p");
+		prts("\033[7m");
 		rev = 1;
 	}
 }
 
 void nrmv() {
 	if (rev) {
-		prts("\033q");
+		prts("\033[0m");
 		rev = 0;
 	}
 }
 
-static void gron() { prts("\033F"); }
-static void groff() { prts("\033G"); }
+static void gron() { prts("\033(0"); }
+static void groff() { prts("\033(B"); }
 
 void cursor(char r, char c) {
-    outchr(27); outchr('Y');
-    outchr(r+32); outchr(c+32);
+    	static char buf[10];
+	sprintf(buf, "\033[%d;%dH", r+1, c+1);
+	prts(buf);
 }
 
 void llc() {	/* lower-left corner graphic */
 	gron();
-	outchr('e');
+	outchr('m');
 	groff();
 }
 void lrc() {	/* lower right corner */
 	gron();
-	outchr('d');
+	outchr('j');
 	groff();
 }
 void ulc() {	/* upper left corner */
 	gron();
-	outchr('f');
+	outchr('l');
 	groff();
 }
 void urc() {	/* upper right corner */
 	gron();
-	outchr('c');
+	outchr('k');
 	groff();
 }
 void horz(int n, char t) {	/* N horiz chars, T = top */
 	gron();
 	while (n-- > 0) {
-		outchr('a');
+		outchr('q');
 	}
 	groff();
 }
 void vl(char l) {	/* single vert line char, L = left */
 	gron();
-	outchr('`');
+	outchr('x');
 	groff();
 }
 
 /* "critical hits" bargraph, 3 ticks per char cell. */
 void hits(char m) {
-	revv();
 	if (m) {
 		gron();
-		outchr('q');
+		outchr('a');
 		groff();
-	} else outchr(' ');
-	nrmv();
+	} else {
+		revv();
+		outchr(' ');
+		nrmv();
+	}
 }
 char hit0() { return('_'); }
-char pos0() { gron(); outchr('^'); groff(); }
+char pos0() { gron(); outchr('`'); groff(); }
 void putshl(char r, char c, char a) {
 	gron();
 	cursor(r,c);
-	if (a) prts("fac");
+	if (a) prts("lqk");
 	else prts("   ");
 	cursor(r+1,c+2);
-	if (a) outchr('`');
+	if (a) outchr('x');
 	else outchr(' ');
 	cursor(r+1,c);
-	if (a) outchr('`');
+	if (a) outchr('x');
 	else outchr(' ');
 	cursor(r+2,c);
-	if (a) prts("ead");
+	if (a) prts("mqj");
 	else prts("   ");
 	groff();
 }
