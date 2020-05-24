@@ -283,15 +283,15 @@ main() {
 		case '5':
 		case '6':
 			if (wrpe!=0 || dock==1) break;
-			key=- '0';
+			key -= '0';
 			yy=(direct[dir].sin+1)/2;
 			xx=(direct[dir].cos+1)/2;
 			yy=(yy*key+313*sgn(yy))/625;
 			xx=(xx*key+313*sgn(xx))/625;
-			while (setent(ep.ix+yy,ep.iy+xx)==-1)
+			while (setent(ep.ix+yy,ep.iy+xx) == -1)
 				{ yy=yy-sgn(yy); xx=xx-sgn(xx); }
 			if (skil!=0) {
-				t1 =- (key+2);
+				t1 -= (key+2);
 				settim(t1);
 				if (t1<=0 && t2==0 && nklg!=0) prtwin(22);
 			}
@@ -475,7 +475,7 @@ static void prtwin(int a) {
 }
 
 static void setexp(int a, int b, int c) {
-	if (type==2) kg[idx].ti =- c;
+	if (type==2) kg[idx].ti -= c;
 	if (scnnr==0) {
 		if (explod.ti!=0) {
 			cursor(1+(explod.ix&0x07),32+(explod.iy&0x07)*2);
@@ -581,14 +581,14 @@ static void upde() {
 	char c;
 	int a,b,d,e;
 	a = -1;
-	while((a=chkklg(a+1))!=-1) {
+	while((a=chkklg(a+1)) != -1) {
 		if ((--kg[a].fire&0x7) != 0) continue;
 /*
 		if ((kg[a].fire&0xF)==0) {
 			b= -1; e=0; d=dd;
-			while((b=chkklg(b+1))!=-1) {if(a==b)continue;
-			e =+ 10500-dd; }
-			e =+ 5250;
+			while((b=chkklg(b+1))!= -1) {if(a==b)continue;
+			e += 10500-dd; }
+			e += 5250;
 			}
  */
 		if (kgcol(a)!=1) continue;
@@ -602,7 +602,7 @@ static void upde() {
 				setshl(shlds,shlde-power);
 				power=0;
 			} else {
-				power =- shlde;
+				power -= shlde;
 				setshl(shlds,0);
 			}
 		}
@@ -767,7 +767,7 @@ int a;
 	int b;
 	if (a<0||a>=numklg) return(-1);
 	for (b=a;b<numklg;++b) {
-		if (kg[b].ix==-1) continue;
+		if (kg[b].ix== -1) continue;
 		if (((kg[b].ix^ep.ix|kg[b].iy^ep.iy)&0xFFF8)==0) return(b);
 	}
 	return(-1);
@@ -800,14 +800,14 @@ char c;
 		setimp(3000);	/* impulse power = 3000 */
 		if (phot<0) phot=savpht;
 		ttt=(10-phot>sb[idx].ti?sb[idx].ti:10-phot);
-		setpht(phot+ttt); sb[idx].ti =- ttt;
+		setpht(phot+ttt); sb[idx].ti -= ttt;
 		if (wind==1) {
 			cursor(16+idx,64);
 			sprintf(strg,"%2.2d",sb[idx].ti); prts(strg);
 		}
 		setwpe(0);	/* warp engines working */
 		if (scnnr!=0) {setscn(0); shortscan(); }
-	} else if (chkklg(0)!=-1) {
+	} else if (chkklg(0)!= -1) {
 		revv(); prts(" RED    "); nrmv();
 	} else if (shlde<2500||phas<2500||wrpe!=0||imp<200||phot<0) prts("YELLOW  ");
 	else prts("GREEN   ");
@@ -972,7 +972,7 @@ int a,b;
 static char chkdck() {
 	int aa,bb;
 	for(idx=0;idx<numbas;++idx) {
-		if (sb[idx].ix==-1) continue;
+		if (sb[idx].ix== -1) continue;
 		if (((ep.ix^sb[idx].ix|ep.iy^sb[idx].iy)&0xFFF8)!=0) continue;
 		aa=abs(ep.ix-sb[idx].ix); bb=abs(ep.iy-sb[idx].iy);
 		if (aa==0 && bb==1 || aa==1 && bb==0) return(1);
