@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	5
+beta	equ	6
 
 z180	equ	false
 h8nofp	equ	false
@@ -1223,6 +1223,26 @@ mtestH:
 mtestZ	equ	$
 ;------------------------------------------------
 
+; must be called with interrupts off
+; A = horn delay, in 2mS ticks
+; A,HL used
+set$horn:
+	sta	horn
+	lxi	h,ctl$F0
+	res	7,m	; beep on
+	mov	a,m
+	out	0f0h
+	ret
+
+; must be called with interrupts enabled
+; A = horn delay, in 2mS ticks
+; A,HL used
+set$horn0:
+	di
+	call	set$horn
+	ei
+	ret
+
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 	rept	0613h-$
 	db	0ffh
@@ -1316,6 +1336,7 @@ meminit:
 	sta	DspMod
 	sta	Radix
 	sta	kpchar
+	sta	horn
 	inr	a	; 1
 	sta	Refind
 if nofp
@@ -1867,6 +1888,8 @@ kpchk:	lxi	h,RckA
 	; got a key press...
 	sta	kpchar
 	mvi	m,rptcnt
+	mvi	a,4/2	; 4mS click
+	call	set$horn
 	ret
 kpchk0:	mov	m,a	; RckA
 	inx	h	; kpcnt
@@ -2077,13 +2100,22 @@ clrdisp:
 
 ; Front panel display refresh and keypad check
 int1$fp:
-	lxi	h,MFlag
+	mvi	c,0
+	lxi	h,horn
 	mov	a,m
-	mov	b,a
-	ani	01000000b	; refresh display?
+	ora	a
+	jrz	fp1
+	dcr	m
+	jrnz	fp1
+	mvi	c,10000000b	; beep off
+fp1:
+	lxi	h,MFlag
+	mov	b,m
 	inx	h	; ctl$F0
 	mov	a,m
-	mvi	c,0
+	ora	c	; beep off bit
+	mov	m,a
+	bit	6,b	; refresh display?
 	jrnz	fp3
 	inx	h	; Refind
 	dcr	m
@@ -2091,11 +2123,11 @@ int1$fp:
 	mvi	m,9
 fp2:	mov	e,m	; 1-9
 	mvi	d,0
-	dad	d	; fpLeds[E-1]
-	mov	c,e
-fp3:	ora	c
+	dad	d	; HL = &fpLeds[E-1]
+	ora	e	; merge digit select
+fp3:
 	out	0f0h
-	mov	a,m
+	mov	a,m	; FP segments (fpLeds[E-1])
 	out	0f1h
 	; See if time to update display values or check keypad
 	mvi	l,LOW ticcnt
