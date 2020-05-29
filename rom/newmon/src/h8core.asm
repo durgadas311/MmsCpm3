@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	6
+beta	equ	7
 
 z180	equ	false
 h8nofp	equ	false
@@ -1410,7 +1410,7 @@ kpubt:
 	sta	MFlag
 	call	clrdisp	; clean slate
 	lxi	b,dDev
-	lxi	d,ALeds
+	lxi	d,Aleds
 	call	mov3dsp
 	call	keyin	; get device
 	ani	01111111b
@@ -1424,7 +1424,7 @@ kpubt:
 	jrc	deverr
 	db	0ddh ! mov b,h	; mov b,IXh ; module address
 	mvi	c,mddisp
-	lxi	d,ALeds
+	lxi	d,Aleds
 	call	mov3dsp
 	push	d	; save LEDs pointer
 	; determine if fixed port...
@@ -1466,7 +1466,7 @@ deverr:
 	ori	00000010b	; disable disp updates
 	mov	m,a
 	lxi	b,dErr
-	lxi	d,ALeds
+	lxi	d,Aleds
 	mvi	l,6
 	call	movLdsp
 	mvi	c,10000000b	; beep on/off bit
@@ -1525,6 +1525,7 @@ kpbt0:
 	jc	kperr
 	call	vfport
 	jc	kperr	; TODO: specific error? SW1 Error?
+	call	btdsp2	; show device name
 	pop	d	; phy drv, unit
 	lxi	sp,bootbf
 	lxi	h,kperr
@@ -1549,7 +1550,9 @@ kppbt0:	lxi	h,susave+dpdev
 	jc	kperr
 	ora	a
 	jnz	kperr
-kpbt1:	lxiy	kperr
+kpbt1:
+	call	btdsp2	; show device name
+	lxiy	kperr
 	lxi	sp,bootbf
 	jmp	gbooty
 
@@ -1560,13 +1563,27 @@ btdsp:
 	push	d
 	push	b
 	call	clrdisp
-	pop	b
-	lxi	d,ALeds
+	pop	b	; display string
+	lxi	d,Aleds
+	call	mov3dsp
+	pop	d
+	ret
+; IX=boot module
+; show device name in FP display
+btdsp2:
+	push	d	; device/unit
+	pushix
+	pop	h
+	lxi	d,13	; FP display name
+	dad	d
+	mov	c,l
+	mov	b,h
+	lxi	d,Dleds
 	call	mov3dsp
 	; TODO: fix this - is there a better way?
 	mvi	a,250	;; make it briefly visible
 	call	delay	;;
-	pop	d
+	pop	d	; device/unit
 	ret
 
 kptap:	; cassette load (read) or store (write, save)
@@ -1584,7 +1601,7 @@ kprdx:	; choose radix for display
 	sta	MFlag
 	call	clrdisp
 	lxi	b,dRad
-	lxi	d,ALeds
+	lxi	d,Aleds
 	call	mov3dsp
 	lda	Radix
 	ora	a
@@ -1594,7 +1611,7 @@ kprdx:	; choose radix for display
 rdx0:	sta	Radix		; 00       ff
 	ani	00010011b	; 00->00,  ff->13
 	xri	10000001b	; 00->81,  ff->92
-	sta	ALeds+5		; 00->'O', ff->'H'
+	sta	Aleds+5		; 00->'O', ff->'H'
 	; wait 1S to allow user to see...
 	mvi	a,250		; 500mS
 	call	delay
@@ -1925,7 +1942,7 @@ ufd:	mvi	a,00000010b
 	mov	l,a
 ufd1:	push	psw
 	xchg
-	lxi	h,ALeds
+	lxi	h,Aleds
 	mov	a,d
 	call	dod
 	mov	a,e
@@ -1935,7 +1952,7 @@ ufd1:	push	psw
 	jrz	dod	; if displaying memory
 	; displaying register name
 	pop	b
-	lxi	d,DLeds
+	lxi	d,Dleds
 mv3byt:	mvi	l,3
 mvb:	ldax	b
 	stax	d
