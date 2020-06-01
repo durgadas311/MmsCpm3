@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	7
+beta	equ	8
 
 z180	equ	false
 h8nofp	equ	false
@@ -611,6 +611,22 @@ gotnum:	; Boot N... "N" in D
 	sub	d
 	mov	e,a	; always zero?
 	jmp	goboot
+
+	rept	0260h-$
+	db	0ffh
+	endm
+if	($ <> 0260h)
+	.error 'HDOS entry overrun 0260h'
+endif
+; Legacy entry for "Horn" - beep for num 2mS ticks in A
+hhorn:	push	h
+	call	set$horn
+	lxi	h,horn
+	xra	a
+hhorn0:	cmp	m
+	jrnz	hhorn0
+	pop	h
+	ret
 
 cmdboot:
 	lxi	h,bootms
@@ -1794,7 +1810,7 @@ h17in0:	push	d
 	mvi	c,30
 	mov	m,a
 	ldir	; fill l20a0h...
-	inr	a	; A=1
+	mvi	a,7
 	lxi	h,intvec	; vector area
 h17ini0:
 	mvi	m,0c3h
@@ -1803,8 +1819,8 @@ h17ini0:
 	inx	h
 	mvi	m,HIGH (nulint-rst0)
 	inx	h
-	add	a	; shift left, count 7
-	jp	h17ini0
+	dcr	a
+	jrnz	h17ini0
 	pop	d
 	ret
 
