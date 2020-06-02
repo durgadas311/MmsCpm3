@@ -1,0 +1,124 @@
+                ; THIS PROGRAM CAN BE USED TO "RETURN TO MONITOR", A.K.A. REBOOT.
+                ; TRIES TO SHUTDOWN EVERYTHING IT KNOWS ABOUT.
+                	MACLIB	Z80
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+ 0000 =         CPM	EQU	0
+ 0005 =         BDOS	EQU	5
+                
+ 0009 =         PRINT	EQU	9
+ 000C =         GETVER	EQU	12
+ 000D =         DRESET	EQU	13
+ 0045 =         NETCFG	EQU	69
+                
+ F000 =         RB$STUB	EQU	0F000H	; OUT OF THE WAY OF EVERYTHING...
+                
+ 0000 =         MMU	EQU	0	; H8-512K MMU BASE PORT
+                
+ 0100           	ORG	100H
+                START:
+ 0100 0E0C      	MVI	C,GETVER
+ 0102 CD0500    	CALL	BDOS
+ 0105 7C        	MOV	A,H
+ 0106 E602      	ANI	02H
+                	JRZ	NOCPN
+ 0108+2841      	DB	28H,NOCPN-$-1
+                
+                	; TRY TO SHUTDOWN CP/NET AND NETWORK
+ 010A 7D        	MOV	A,L
+ 010B FE30      	CPI	30H
+                	JRC	CPN12
+ 010D+3805      	DB	38H,CPN12-$-1
+                
+                	; CP/NET 3, REMOVE RSX TO SHUTDOWN
+ 010F CD7B01    	CALL	RSXRM
+                	JR	NOCPN
+ 0112+1837      	DB	18H,NOCPN-$-1
+                
+                CPN12:	; CP/NET 1.2 - CHECK FOR COMPATIBLE SNIOS
+ 0114 0E45      	MVI	C,NETCFG
+ 0116 CD0500    	CALL	BDOS
+ 0119 E5        	PUSH	H
+                	POPIX
+ 011A+DDE1      	DB	0DDH,0E1H
+                	; CHECK FOR AT LEAST 6 JMPS...
+                	LDX	C,-3
+ 011C+DD4EFD    	DB	0DDH,C*8+46H,-3
+                	LDX	B,-6
+ 011F+DD46FA    	DB	0DDH,B*8+46H,-6
+                	LDX	E,-9
+ 0122+DD5EF7    	DB	0DDH,E*8+46H,-9
+                	LDX	D,-12
+ 0125+DD56F4    	DB	0DDH,D*8+46H,-12
+                	LDX	L,-15
+ 0128+DD6EF1    	DB	0DDH,L*8+46H,-15
+                	LDX	H,-18
+ 012B+DD66EE    	DB	0DDH,H*8+46H,-18
+ 012E 79        	MOV	A,C
+ 012F A0        	ANA	B
+ 0130 A3        	ANA	E
+ 0131 A2        	ANA	D
+ 0132 A5        	ANA	L
+ 0133 A4        	ANA	H
+ 0134 FEC3      	CPI	0C3H	;JMP?
+                	JRNZ	NOCPN
+ 0136+2013      	DB	20H,NOCPN-$-1
+ 0138 79        	MOV	A,C
+ 0139 B0        	ORA	B
+ 013A B3        	ORA	E
+ 013B B2        	ORA	D
+ 013C B5        	ORA	L
+ 013D B4        	ORA	H
+ 013E FEC3      	CPI	0C3H	;JMP?
+                	JRNZ	NOCPN
+ 0140+2009      	DB	20H,NOCPN-$-1
+                	LDX	L,-2
+ 0142+DD6EFE    	DB	0DDH,L*8+46H,-2
+                	LDX	H,-1
+ 0145+DD66FF    	DB	0DDH,H*8+46H,-1
+ 0148 CD6701    	CALL	CALLHL
+                NOCPN:
+                	; TODO: ANYTHING NEEDED FOR CP/M?
+                	; TODO: ANYTHING FOR THE HARDWARE?
+ 014B 116801    	LXI	D,RB$MSG
+ 014E 0E09      	MVI	C,PRINT
+ 0150 CD0500    	CALL	BDOS
+ 0153 0E0D      	MVI	C,DRESET
+ 0155 CD0500    	CALL	BDOS
+ 0158 F3        	DI
+ 0159 217101    	LXI	H,REBOOT
+ 015C 1100F0    	LXI	D,RB$STUB
+ 015F 010A00    	LXI	B,REBOOTLEN
+                	LDIR
+ 0162+EDB0      	DB	0EDH,0B0H
+ 0164 C300F0    	JMP	RB$STUB
+                
+ 0167 E9        CALLHL:	PCHL
+                
+ 0168 5265626F6FRB$MSG:	DB	'Reboot',CR,LF,'$'
+                
+                ; COPIED INTO HIGH MEMORY...
+                ; SHOULD BE POSITION-INDEPENDENT.
+                ; INTERRUPTS MUST BE OFF - LONG BEFORE CALLING
+                REBOOT:
+ 0171 AF        	XRA	A
+ 0172 D300      	OUT	MMU	; DISABLE MMU "MAP"
+ 0174 D3F2      	OUT	0F2H	; ORG0 OFF, MEM1 OFF, ...
+ 0176 D3F3      	OUT	0F3H	; H89-2MS OFF
+ 0178 C30000    	JMP	0000H
+ 000A =         REBOOTLEN EQU	$-REBOOT
+                
+ 017B 118C01    RSXRM:	LXI	D,RSXPB
+ 017E 0E3C      	MVI	C,60
+ 0180 CD0500    	CALL	BDOS
+ 0183 C9        	RET
+                
+ 0184 4E444F5333NDOS3:	DB	'NDOS3   '
+ 018C 71        RSXPB:	DB	113
+ 018D 01        	DB	1
+ 018E 8401      	DW	NDOS3
+                
+ 0190           	END
+
