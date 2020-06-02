@@ -6,7 +6,8 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
-	zout/ccass.cim
+	zout/ccass.cim \
+	zout/cspeed.cim
 #	zout/cx.cim
 #	zout/csetup.cim # Z80/Z180 differences
 
@@ -17,7 +18,8 @@ H8NMODS= 2716_444-19_H17.rom \
 	zout/bh47.cim \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
-	zout/bwiznet.cim
+	zout/bwiznet.cim \
+	zout/cspeed.cim
 
 # TODO: what will this include?
 H89MODS= 2716_444-19_H17.rom \
@@ -27,7 +29,8 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/bh47.cim \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
-	zout/bwiznet.cim
+	zout/bwiznet.cim \
+	zout/cspeed.cim
 
 H8MON = zout/h8core.cim $(H8MODS) zout/csetup.cim
 H8NMON = zout/h8ncore.cim $(H8NMODS) zout/csetupn.cim

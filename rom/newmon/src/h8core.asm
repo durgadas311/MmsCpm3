@@ -179,6 +179,7 @@ rst7:	jmp	vrst7
 	jmp	take$A	; 0041
 	jmp	msgout	; 0044
 	jmp	linin	; 0047
+	jmp	conin	; 004a
 
 intret:
 	pop	psw
