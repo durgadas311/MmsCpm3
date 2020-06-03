@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	8
+beta	equ	9
 
 z180	equ	false
 h8nofp	equ	false
@@ -50,6 +50,7 @@ TRM	equ	0
 DEL	equ	127
 
 ; ctrl port F2 bit definitions
+ctl$SPD		equ	00010100b	; CPU speed control bits
 ctl$CLK		equ	00000010b	; enable H89 2mS clock (not used here)
 ctl$MEM1	equ	00001000b	; maps full ROM (if !ORG0)
 ctl$ORG0	equ	00100000b	; maps full RAM
@@ -1056,6 +1057,10 @@ cmdmt1:
 	cmp	c
 	jrnz	cserr
 	di
+	lda	ctl$F2
+	ani	ctl$SPD	; all but speed bits OFF
+	ori	ctl$ORG0	; set ORG0 only
+	; pass ctl$F2 in A...
 	jmp	memtest - (mtest1-mtest)
 
 ;------------------------------------------------
@@ -1064,7 +1069,7 @@ cmdmt1:
 ;
 mtest0:
 mtest:
-	mvi	a,ctl$ORG0	; ORG0 on (ROM off)
+	; A reg contains desired ctl$F2 image
 	out	0f2h
 mtest1:		; lands at 03000h - retained relocated code
 	exx

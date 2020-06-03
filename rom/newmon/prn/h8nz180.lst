@@ -5,7 +5,7 @@
 FFFF          	true	equ	not false
 		
 0000          	alpha	equ	0
-0008          	beta	equ	8
+0009          	beta	equ	9
 		
 FFFF          	z180	equ	true
 FFFF          	h8nofp	equ	true
@@ -47,6 +47,7 @@ FFFF          	nofp	set	true
 007F          	DEL	equ	127
 		
 		; ctrl port F2 bit definitions
+0014          	ctl$SPD		equ	00010100b	; CPU speed control bits
 0002          	ctl$CLK		equ	00000010b	; enable H89 2mS clock (not used here)
 0008          	ctl$MEM1	equ	00001000b	; maps full ROM (if !ORG0)
 0020          	ctl$ORG0	equ	00100000b	; maps full RAM
@@ -613,7 +614,7 @@ FFFF          	if nofp
 		endif
 		; Legacy entry for "Horn" - beep for num 2mS ticks in A
 0260  E5      	hhorn:	push	h
-0261  CDC205  		call	set$horn
+0261  CDC705  		call	set$horn
 0264  213C20  		lxi	h,horn
 0267  AF      		xra	a
 0268  BE      	hhorn0:	cmp	m
@@ -1048,13 +1049,13 @@ FFFF          	if use$dma
 04A5  0600    		mvi	b,000h
 04A7          		exx
 04A7  D9      		DB	0D9H
-04A8  21D204  		lxi	h,mtest0
-04AB  11FC2F  		lxi	d,memtest - (mtest1-mtest0)
-04AE  01F000  		lxi	b,mtestZ-mtest0
+04A8  21D904  		lxi	h,mtest0
+04AB  11FE2F  		lxi	d,memtest - (mtest1-mtest0)
+04AE  01EE00  		lxi	b,mtestZ-mtest0
 04B1          		ldir
 04B1  EDB0    		DB	0EDH,0B0H
 04B3  110030  		lxi	d,memtest
-04B6  21D604  		lxi	h,mtest1
+04B6  21DB04  		lxi	h,mtest1
 04B9  0EEC    		mvi	c,mtestZ-mtest1
 04BB  AF      		xra	a
 04BC          		exaf
@@ -1081,252 +1082,251 @@ FFFF          	if use$dma
 04CC          		jrnz	cserr
 04CC  20A7    		DB	20H,cserr-$-1
 04CE  F3      		di
-04CF  C3FC2F  		jmp	memtest - (mtest1-mtest)
+04CF  3A3620  		lda	ctl$F2
+04D2  E614    		ani	ctl$SPD	; all but speed bits OFF
+04D4  F620    		ori	ctl$ORG0	; set ORG0 only
+			; pass ctl$F2 in A...
+04D6  C3FE2F  		jmp	memtest - (mtest1-mtest)
 		
 		;------------------------------------------------
 		; Start of relocated code...
 		; Memory Test routine, position-independent
 		;
-04D2          	mtest0:
-04D2          	mtest:
-04D2  3E20    		mvi	a,ctl$ORG0	; ORG0 on (ROM off)
-04D4  D3F2    		out	0f2h
-04D6          	mtest1:		; lands at 03000h - retained relocated code
-04D6          		exx
-04D6  D9      		DB	0D9H
-04D7  62      		mov	h,d
-04D8  2E00    		mvi	l,0
-04DA  78      		mov	a,b
+04D9          	mtest0:
+04D9          	mtest:
+			; A reg contains desired ctl$F2 image
+04D9  D3F2    		out	0f2h
+04DB          	mtest1:		; lands at 03000h - retained relocated code
 04DB          		exx
 04DB  D9      		DB	0D9H
-04DC  4F      		mov	c,a
-04DD  0602    		mvi	b,2
-04DF          	mtest2:
-04DF  79      		mov	a,c
-04E0  07      		rlc
-04E1  07      		rlc
-04E2  07      		rlc
-04E3  07      		rlc
-04E4  4F      		mov	c,a
-04E5  E60F    		ani	00fh
-04E7  C690    		adi	090h
-04E9  27      		daa
-04EA  CE40    		aci	040h
-04EC  27      		daa
-04ED  D3E8    		out	0e8h
-04EF          	mtest3:
-04EF  DBED    		in	0edh
-04F1  E620    		ani	020h
-04F3          		jrz	mtest3
-04F3  28FA    		DB	28H,mtest3-$-1
-04F5  05      		dcr	b
-04F6          		jrnz	mtest2
-04F6  20E7    		DB	20H,mtest2-$-1
-04F8  3E0D    		mvi	a,CR
-04FA  D3E8    		out	0e8h
-04FC          		exx
-04FC  D9      		DB	0D9H
-04FD  78      		mov	a,b
-04FE          	mtest4:
-04FE  77      		mov	m,a
-04FF  C601    		adi	1
-0501  27      		daa
-0502  2C      		inr	l
-0503          		jrnz	mtest4
-0503  20F9    		DB	20H,mtest4-$-1
-0505  24      		inr	h
-0506  0D      		dcr	c
-0507          		jrnz	mtest4
-0507  20F5    		DB	20H,mtest4-$-1
-0509  7C      		mov	a,h
-050A  92      		sub	d
-050B  4F      		mov	c,a
-050C  62      		mov	h,d
-050D  2E00    		mvi	l,0
-050F  78      		mov	a,b
-0510          	mtest5:
-0510  BE      		cmp	m
-0511          		jrnz	mtest9
-0511  2046    		DB	20H,mtest9-$-1
-0513  C601    		adi	1
-0515  27      		daa
-0516  2C      		inr	l
-0517          		jrnz	mtest5
-0517  20F7    		DB	20H,mtest5-$-1
-0519  24      		inr	h
-051A  0D      		dcr	c
-051B          		jrnz	mtest5
-051B  20F3    		DB	20H,mtest5-$-1
-051D          		exx
-051D  D9      		DB	0D9H
-051E  210030  		lxi	h,memtest
-0521  110000  		lxi	d,0
-0524  01EC00  		lxi	b,mtestZ-mtest1
-0527          		exx
-0527  D9      		DB	0D9H
-0528  7A      		mov	a,d
-0529  EE30    		xri	030h
-052B  57      		mov	d,a
-052C          		jrz	mtest6
-052C  2803    		DB	28H,mtest6-$-1
-052E  4B      		mov	c,e
-052F          		jr	mtest7
-052F  180A    		DB	18H,mtest7-$-1
-0531          	mtest6:
-0531  0E30    		mvi	c,030h
-0533  3E01    		mvi	a,001h
-0535  80      		add	b
-0536  27      		daa
-0537  47      		mov	b,a
-0538          		exx
-0538  D9      		DB	0D9H
-0539  EB      		xchg
-053A          		exx
-053A  D9      		DB	0D9H
-053B          	mtest7:
-053B          		exx
-053B  D9      		DB	0D9H
-053C          		ldir
-053C  EDB0    		DB	0EDH,0B0H
-053E  7A      		mov	a,d
-053F  E6F0    		ani	0f0h
-0541  67      		mov	h,a
-0542  2E00    		mvi	l,0
-0544  0EEC    		mvi	c,mtestZ-mtest1
-0546  AF      		xra	a
-0547          	mtest8:
-0547  86      		add	m
-0548  23      		inx	h
-0549  0D      		dcr	c
-054A          		jrnz	mtest8
-054A  20FB    		DB	20H,mtest8-$-1
-054C  4F      		mov	c,a
-054D          		exaf
-054D  08      		DB	08H
-054E  B9      		cmp	c
-054F          		jrnz	mtestE
-054F  2049    		DB	20H,mtestE-$-1
-0551          		exaf
-0551  08      		DB	08H
-0552  7A      		mov	a,d
-0553  E6F0    		ani	0f0h
-0555  67      		mov	h,a
-0556  2E00    		mvi	l,0
-0558  E9      		pchl
-0559          	mtest9:
-0559  AE      		xra	m
-055A  57      		mov	d,a
-055B  3E0A    		mvi	a,LF
-055D  D3E8    		out	0e8h
-055F          	mtestA:
-055F  DBED    		in	0edh
-0561  E620    		ani	020h
-0563          		jrz	mtestA
-0563  28FA    		DB	28H,mtestA-$-1
-0565  0E02    		mvi	c,2
-0567  0604    		mvi	b,4
-0569          	mtestB:
-0569  7C      		mov	a,h
-056A  07      		rlc
-056B  07      		rlc
-056C  07      		rlc
-056D  07      		rlc
-056E  E60F    		ani	00fh
-0570  C690    		adi	090h
-0572  27      		daa
-0573  CE40    		aci	040h
-0575  27      		daa
-0576  D3E8    		out	0e8h
-0578          	mtestC:
-0578  DBED    		in	0edh
-057A  E620    		ani	020h
-057C          		jrz	mtestC
-057C  28FA    		DB	28H,mtestC-$-1
-057E  29      		dad	h
-057F  29      		dad	h
-0580  29      		dad	h
-0581  29      		dad	h
-0582          		djnz	mtestB
-0582  10E5    		DB	10H,mtestB-$-1
-0584  3E20    		mvi	a,' '
-0586  D3E8    		out	0e8h
-0588          	mtestD:
-0588  DBED    		in	0edh
-058A  E620    		ani	020h
-058C          		jrz	mtestD
-058C  28FA    		DB	28H,mtestD-$-1
-058E  0D      		dcr	c
-058F  EB      		xchg
-0590  0602    		mvi	b,002h
-0592          		jrnz	mtestB
-0592  20D5    		DB	20H,mtestB-$-1
-0594  3E2A    		mvi	a,'*'
-0596  D3E8    		out	0e8h
-0598          		jr	mtestG
-0598  1814    		DB	18H,mtestG-$-1
-059A          	mtestE:
-059A  DBED    		in	0edh
-059C  E620    		ani	020h
-059E          		jrz	mtestE
-059E  28FA    		DB	28H,mtestE-$-1
-05A0  3E0A    		mvi	a,LF
-05A2  D3E8    		out	0e8h
-05A4          	mtestF:
-05A4  DBED    		in	0edh
-05A6  E620    		ani	020h
-05A8          		jrz	mtestF
-05A8  28FA    		DB	28H,mtestF-$-1
-05AA  3E21    		mvi	a,'!'
-05AC  D3E8    		out	0e8h
-05AE          	mtestG:
-05AE  DBED    		in	0edh
-05B0  E620    		ani	020h
-05B2          		jrz	mtestG
-05B2  28FA    		DB	28H,mtestG-$-1
-05B4  AF      		xra	a
-05B5  06FA    		mvi	b,0fah
-05B7          	mtestH:
-05B7  3D      		dcr	a
-05B8          		jrnz	mtestH
-05B8  20FD    		DB	20H,mtestH-$-1
-05BA          		djnz	mtestH
-05BA  10FB    		DB	10H,mtestH-$-1
-05BC  3E07    		mvi	a,BEL
-05BE  D3E8    		out	0e8h
-05C0          		jr	mtestG
-05C0  18EC    		DB	18H,mtestG-$-1
+04DC  62      		mov	h,d
+04DD  2E00    		mvi	l,0
+04DF  78      		mov	a,b
+04E0          		exx
+04E0  D9      		DB	0D9H
+04E1  4F      		mov	c,a
+04E2  0602    		mvi	b,2
+04E4          	mtest2:
+04E4  79      		mov	a,c
+04E5  07      		rlc
+04E6  07      		rlc
+04E7  07      		rlc
+04E8  07      		rlc
+04E9  4F      		mov	c,a
+04EA  E60F    		ani	00fh
+04EC  C690    		adi	090h
+04EE  27      		daa
+04EF  CE40    		aci	040h
+04F1  27      		daa
+04F2  D3E8    		out	0e8h
+04F4          	mtest3:
+04F4  DBED    		in	0edh
+04F6  E620    		ani	020h
+04F8          		jrz	mtest3
+04F8  28FA    		DB	28H,mtest3-$-1
+04FA  05      		dcr	b
+04FB          		jrnz	mtest2
+04FB  20E7    		DB	20H,mtest2-$-1
+04FD  3E0D    		mvi	a,CR
+04FF  D3E8    		out	0e8h
+0501          		exx
+0501  D9      		DB	0D9H
+0502  78      		mov	a,b
+0503          	mtest4:
+0503  77      		mov	m,a
+0504  C601    		adi	1
+0506  27      		daa
+0507  2C      		inr	l
+0508          		jrnz	mtest4
+0508  20F9    		DB	20H,mtest4-$-1
+050A  24      		inr	h
+050B  0D      		dcr	c
+050C          		jrnz	mtest4
+050C  20F5    		DB	20H,mtest4-$-1
+050E  7C      		mov	a,h
+050F  92      		sub	d
+0510  4F      		mov	c,a
+0511  62      		mov	h,d
+0512  2E00    		mvi	l,0
+0514  78      		mov	a,b
+0515          	mtest5:
+0515  BE      		cmp	m
+0516          		jrnz	mtest9
+0516  2046    		DB	20H,mtest9-$-1
+0518  C601    		adi	1
+051A  27      		daa
+051B  2C      		inr	l
+051C          		jrnz	mtest5
+051C  20F7    		DB	20H,mtest5-$-1
+051E  24      		inr	h
+051F  0D      		dcr	c
+0520          		jrnz	mtest5
+0520  20F3    		DB	20H,mtest5-$-1
+0522          		exx
+0522  D9      		DB	0D9H
+0523  210030  		lxi	h,memtest
+0526  110000  		lxi	d,0
+0529  01EC00  		lxi	b,mtestZ-mtest1
+052C          		exx
+052C  D9      		DB	0D9H
+052D  7A      		mov	a,d
+052E  EE30    		xri	030h
+0530  57      		mov	d,a
+0531          		jrz	mtest6
+0531  2803    		DB	28H,mtest6-$-1
+0533  4B      		mov	c,e
+0534          		jr	mtest7
+0534  180A    		DB	18H,mtest7-$-1
+0536          	mtest6:
+0536  0E30    		mvi	c,030h
+0538  3E01    		mvi	a,001h
+053A  80      		add	b
+053B  27      		daa
+053C  47      		mov	b,a
+053D          		exx
+053D  D9      		DB	0D9H
+053E  EB      		xchg
+053F          		exx
+053F  D9      		DB	0D9H
+0540          	mtest7:
+0540          		exx
+0540  D9      		DB	0D9H
+0541          		ldir
+0541  EDB0    		DB	0EDH,0B0H
+0543  7A      		mov	a,d
+0544  E6F0    		ani	0f0h
+0546  67      		mov	h,a
+0547  2E00    		mvi	l,0
+0549  0EEC    		mvi	c,mtestZ-mtest1
+054B  AF      		xra	a
+054C          	mtest8:
+054C  86      		add	m
+054D  23      		inx	h
+054E  0D      		dcr	c
+054F          		jrnz	mtest8
+054F  20FB    		DB	20H,mtest8-$-1
+0551  4F      		mov	c,a
+0552          		exaf
+0552  08      		DB	08H
+0553  B9      		cmp	c
+0554          		jrnz	mtestE
+0554  2049    		DB	20H,mtestE-$-1
+0556          		exaf
+0556  08      		DB	08H
+0557  7A      		mov	a,d
+0558  E6F0    		ani	0f0h
+055A  67      		mov	h,a
+055B  2E00    		mvi	l,0
+055D  E9      		pchl
+055E          	mtest9:
+055E  AE      		xra	m
+055F  57      		mov	d,a
+0560  3E0A    		mvi	a,LF
+0562  D3E8    		out	0e8h
+0564          	mtestA:
+0564  DBED    		in	0edh
+0566  E620    		ani	020h
+0568          		jrz	mtestA
+0568  28FA    		DB	28H,mtestA-$-1
+056A  0E02    		mvi	c,2
+056C  0604    		mvi	b,4
+056E          	mtestB:
+056E  7C      		mov	a,h
+056F  07      		rlc
+0570  07      		rlc
+0571  07      		rlc
+0572  07      		rlc
+0573  E60F    		ani	00fh
+0575  C690    		adi	090h
+0577  27      		daa
+0578  CE40    		aci	040h
+057A  27      		daa
+057B  D3E8    		out	0e8h
+057D          	mtestC:
+057D  DBED    		in	0edh
+057F  E620    		ani	020h
+0581          		jrz	mtestC
+0581  28FA    		DB	28H,mtestC-$-1
+0583  29      		dad	h
+0584  29      		dad	h
+0585  29      		dad	h
+0586  29      		dad	h
+0587          		djnz	mtestB
+0587  10E5    		DB	10H,mtestB-$-1
+0589  3E20    		mvi	a,' '
+058B  D3E8    		out	0e8h
+058D          	mtestD:
+058D  DBED    		in	0edh
+058F  E620    		ani	020h
+0591          		jrz	mtestD
+0591  28FA    		DB	28H,mtestD-$-1
+0593  0D      		dcr	c
+0594  EB      		xchg
+0595  0602    		mvi	b,002h
+0597          		jrnz	mtestB
+0597  20D5    		DB	20H,mtestB-$-1
+0599  3E2A    		mvi	a,'*'
+059B  D3E8    		out	0e8h
+059D          		jr	mtestG
+059D  1814    		DB	18H,mtestG-$-1
+059F          	mtestE:
+059F  DBED    		in	0edh
+05A1  E620    		ani	020h
+05A3          		jrz	mtestE
+05A3  28FA    		DB	28H,mtestE-$-1
+05A5  3E0A    		mvi	a,LF
+05A7  D3E8    		out	0e8h
+05A9          	mtestF:
+05A9  DBED    		in	0edh
+05AB  E620    		ani	020h
+05AD          		jrz	mtestF
+05AD  28FA    		DB	28H,mtestF-$-1
+05AF  3E21    		mvi	a,'!'
+05B1  D3E8    		out	0e8h
+05B3          	mtestG:
+05B3  DBED    		in	0edh
+05B5  E620    		ani	020h
+05B7          		jrz	mtestG
+05B7  28FA    		DB	28H,mtestG-$-1
+05B9  AF      		xra	a
+05BA  06FA    		mvi	b,0fah
+05BC          	mtestH:
+05BC  3D      		dcr	a
+05BD          		jrnz	mtestH
+05BD  20FD    		DB	20H,mtestH-$-1
+05BF          		djnz	mtestH
+05BF  10FB    		DB	10H,mtestH-$-1
+05C1  3E07    		mvi	a,BEL
+05C3  D3E8    		out	0e8h
+05C5          		jr	mtestG
+05C5  18EC    		DB	18H,mtestG-$-1
 		; End of relocated code
-05C2          	mtestZ	equ	$
+05C7          	mtestZ	equ	$
 		;------------------------------------------------
 		
 		; must be called with interrupts off
 		; A = horn delay, in 2mS ticks
 		; A,HL used
-05C2          	set$horn:
-05C2  323C20  		sta	horn
-05C5  210920  		lxi	h,ctl$F0
-05C8          		res	7,m	; beep on
-05C8  CBBE    		DB	0CBH,7*8+m+80H
-05CA  7E      		mov	a,m
-05CB  D3F0    		out	0f0h
-05CD  C9      		ret
+05C7          	set$horn:
+05C7  323C20  		sta	horn
+05CA  210920  		lxi	h,ctl$F0
+05CD          		res	7,m	; beep on
+05CD  CBBE    		DB	0CBH,7*8+m+80H
+05CF  7E      		mov	a,m
+05D0  D3F0    		out	0f0h
+05D2  C9      		ret
 		
 		; must be called with interrupts enabled
 		; A = horn delay, in 2mS ticks
 		; A,HL used
-05CE          	set$horn0:
-05CE  F3      		di
-05CF  CDC205  		call	set$horn
-05D2  FB      		ei
-05D3  C9      		ret
+05D3          	set$horn0:
+05D3  F3      		di
+05D4  CDC705  		call	set$horn
+05D7  FB      		ei
+05D8  C9      		ret
 		
 		; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 			rept	0613h-$
-05D4  FF      		db	0ffh
-05D5  FF      		db	0ffh
-05D6  FF      		db	0ffh
-05D7  FF      		db	0ffh
-05D8  FF      		db	0ffh
 05D9  FF      		db	0ffh
 05DA  FF      		db	0ffh
 05DB  FF      		db	0ffh
@@ -2342,9 +2342,9 @@ FFFF          	if z180
 0B33  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 0000          	if alpha
 		endif
-0008          	if beta
+0009          	if beta
 0B36  28626574		db	'(beta',beta+'0',')'
-      613829
+      613929
 		endif
 0B3D  0D0A00  		db	CR,LF,TRM
 		
@@ -5627,9 +5627,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-   355	symbols
+   356	symbols
   6144	bytes
 
-  3840	macro calls
+  3835	macro calls
   4064	macro bytes
      0	invented symbols
