@@ -1,0 +1,179 @@
+		; Command module for FP clock display
+		
+			maclib	core
+**** core.lib ****
+**** cclock.asm ****
+			maclib	ram
+**** ram.lib ****
+**** cclock.asm ****
+			maclib	z80
+**** z80.lib ****
+**** cclock.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0003          	CTLC	equ	3
+		
+00A0          	rtc	equ	0a0h	; standard port address
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C31610  		jmp	init	; +4: init entry
+1007  C31E10  		jmp	exec	; +7: action entry
+		
+100A  52      		db	'R'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  436C6F63		db	'Clock',0	; +16: mnemonic string
+      6B00
+		
+1016          	init:
+1016  DBAF    		in	rtc+15
+1018  F604    		ori	00000100b ; 24-hour format
+101A  D3AF    		out	rtc+15
+			; more to init?
+101C  AF      		xra	a	; NC
+101D  C9      		ret
+		
+101E          	exec:
+101E  21B710  		lxi	h,signon
+1021  CD4400  		call	msgout
+1024  3A0820  		lda	MFlag
+1027  F602    		ori	00000010b	; disable disp updates
+1029  320820  		sta	MFlag
+		
+102C          	clock:
+102C  CD8110  		call	gettime
+102F  21B110  		lxi	h,time
+1032  3AB010  		lda	lastsec
+1035  BE      		cmp	m
+1036  C45110  		cnz	show
+		
+1039  DBED    		in	0edh
+103B  E601    		ani	1
+103D  28ED    		jrz	clock
+103F  DBE8    	fin0:	in	0e8h
+1041  FE03    		cpi	CTLC
+1043  20E7    		jrnz	clock
+1045  CD1B00  	fin:	call	crlf
+1048  3A0820  		lda	MFlag
+104B  E6FD    		ani	11111101b	; enable disp updates
+104D  320820  		sta	MFlag
+1050  C9      		ret
+		
+		; HL=time[0]
+1051          	show:
+1051  7E      		mov	a,m	; seconds LSD
+1052  32B010  		sta	lastsec
+1055  111320  		lxi	d,fpLeds+8
+1058  0606    		mvi	b,6
+105A  7E      	show0:	mov	a,m
+105B  E5      		push	h
+105C  217710  		lxi	h,fpdig
+105F  85      		add	l
+1060  6F      		mov	l,a
+1061  3001    		jrnc	show2
+1063  24      		inr	h
+1064  7E      	show2:	mov	a,m
+1065  12      		stax	d
+1066  E1      		pop	h
+1067  23      		inx	h
+1068  1B      		dcx	d
+1069  05      		dcr	b
+106A  CB40    		bit	0,b
+106C  2004    		jrnz	show1
+106E  3E7F    		mvi	a,01111111b	; " ."
+1070  12      		stax	d
+1071  1B      		dcx	d
+1072  78      	show1:	mov	a,b
+1073  B7      		ora	a
+1074  20E4    		jrnz	show0
+1076  C9      		ret
+		
+1077          	fpdig:	
+1077  81      		db	10000001b	; "0"
+1078  F3      		db	11110011b	; "1"
+1079  C8      		db	11001000b	; "2"
+107A  E0      		db	11100000b	; "3"
+107B  B2      		db	10110010b	; "4"
+107C  A4      		db	10100100b	; "5"
+107D  84      		db	10000100b	; "6"
+107E  F1      		db	11110001b	; "7"
+107F  80      		db	10000000b	; "8"
+1080  A0      		db	10100000b	; "9"
+		
+1081          	gettime:
+1081  CD9810  		call	hold
+1084  21B110  		lxi	h,time
+1087  0E9F    		mvi	c,rtc-1
+1089  0606    		mvi	b,6
+108B  0C      	gettm0:	inr	c
+108C  ED78    		inp	a
+108E  E60F    		ani	0fh
+1090  77      		mov	m,a
+1091  23      		inx	h
+1092  10F7    		djnz	gettm0
+1094  CDA910  		call	unhold
+1097  C9      		ret
+		
+1098  DBAD    	hold:	in	rtc+13
+109A  F601    		ori	0001b	; HOLD
+109C  D3AD    		out	rtc+13
+109E  DBAD    		in	rtc+13
+10A0  E602    		ani	0010b	; BUSY
+10A2  C8      		rz
+10A3  E60E    		ani	00001110b
+10A5  D3AD    		out	rtc+13
+			; TODO: pause?
+10A7  18EF    		jr	hold
+		
+10A9  DBAD    	unhold:	in	rtc+13
+10AB  E6FE    		ani	11111110b
+10AD  D3AD    		out	rtc+13
+10AF  C9      		ret
+		
+10B0          	lastsec:
+10B0  FF      		db	0ffh
+		
+10B1  00000000	time:	db	0,0,0,0,0,0	;1sec,10sec,1min,10min,1hr,10hr
+      0000
+		
+10B7  52544320	signon:	db	'RTC FP clock',CR,LF
+      46502063
+      6C6F636B
+      0D0A
+10C5  43746C2D		db	'Ctl-C to quit ',0
+      4320746F
+      20717569
+      742000
+		
+10D4  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+    91	symbols
+   256	bytes
+
+    67	macro calls
+  3759	macro bytes
+     0	invented symbols

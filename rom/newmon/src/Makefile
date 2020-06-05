@@ -7,7 +7,8 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
 	zout/ccass.cim \
-	zout/cspeed.cim
+	zout/cspeed.cim \
+	zout/cclock.cim
 #	zout/cx.cim
 #	zout/csetup.cim # Z80/Z180 differences
 
