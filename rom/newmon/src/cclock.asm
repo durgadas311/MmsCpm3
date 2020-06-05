@@ -44,18 +44,33 @@ clock:
 	lxi	h,time
 	lda	lastsec
 	cmp	m
-	cnz	show
+	cnz	show	; HL=time
+	; delay a bit, do not always keep RTC in HOLD
+	lxi	h,ticcnt
+	mvi	a,50	; 100mS
+	add	m
+	mov	c,a
+wait0:	call	chkabort
+	jrc	fin
+	mov	a,m
+	cmp	c
+	jrnz	wait0
+	jr	clock
 
-	in	0edh
-	ani	1
-	jrz	clock
-fin0:	in	0e8h
-	cpi	CTLC
-	jrnz	clock
 fin:	call	crlf
 	lda	MFlag
 	ani	11111101b	; enable disp updates
 	sta	MFlag
+	ret
+
+chkabort:
+	in	0edh
+	ani	1
+	rz
+	in	0e8h
+	cpi	CTLC
+	rnz
+	stc
 	ret
 
 ; HL=time[0]
@@ -134,7 +149,7 @@ lastsec:
 
 time:	db	0,0,0,0,0,0	;1sec,10sec,1min,10min,1hr,10hr
 
-signon:	db	'RTC FP clock',CR,LF
+signon:	db	'TC FP clock',CR,LF
 	db	'Ctl-C to quit ',0
 
 	rept	(($+0ffh) and 0ff00h)-$
