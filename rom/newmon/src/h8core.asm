@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	9
+beta	equ	10
 
 z180	equ	false
 h8nofp	equ	false
@@ -153,10 +153,10 @@ rst2	equ	$-1	; must be a nop...
 	ldax	d
 	jmp	int2$cont
 
-rst3:	jmp	vrst3
+rst3:	jmp	vrst3	; 0018
 
-	jmp	crlf
-	db	0,0
+	jmp	crlf	; 001b
+	dw	retmon	; 001e
 
 rst4:	jmp	vrst4
 
@@ -180,7 +180,7 @@ rst7:	jmp	vrst7
 	jmp	take$A	; 0041
 	jmp	msgout	; 0044
 	jmp	linin	; 0047
-	jmp	conin	; 004a
+	jmp	conin1	; 004a - without kaypad or DEL
 
 intret:
 	pop	psw
@@ -1869,6 +1869,13 @@ conin0:	in	0e8h
 	jz	re$entry
 	ret
 
+conin1:	in	0edh
+	rrc
+	jrnc	conin1
+	in	0e8h
+	ani	07fh
+	ret
+
 if not nofp
 ; called in the context of command on front-panel
 keyin:	lda	kpchar
@@ -2844,6 +2851,18 @@ prtver:
 
 versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; code required to return to monitor from stand-alone programs.
+retmon:
+	di
+	xra	a	; reset state of ctl port
+	out	0f2h
+if not nofp
+	mvi	a,0dfh	; reset state of FP port 0
+	out	0f0h
+endif
+	jmp	0
+
 signon:	db	CR,LF,'H8'
 if h8nofp
 	db	'N'
@@ -2861,7 +2880,11 @@ if alpha
 	db	'(alpha',alpha+'0',')'
 endif
 if beta
-	db	'(beta',beta+'0',')'
+	db	'(beta'
+if beta > 9
+	db	(beta/10)+'0'
+endif
+	db	(beta MOD 10)+'0',')'
 endif
 	db	CR,LF,TRM
 
