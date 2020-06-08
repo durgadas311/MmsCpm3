@@ -1,0 +1,154 @@
+		; From H8 bring-up manual, initial "test" program
+		; that displays "your H8 is up and running |---| |---| |---|"
+		; on the front panel (marqui paging style).
+		
+			maclib	ram
+**** ram.lib ****
+**** h8test1.asm ****
+			maclib	core
+**** core.lib ****
+**** h8test1.asm ****
+			maclib	z80
+**** z80.lib ****
+**** h8test1.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0003          	CTLC	equ	3
+		
+0009          	FPDSPW	equ	9	; LED display has 9 "characters"
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C31510  		jmp	init	; +4: init entry
+1007  C31710  		jmp	exec	; +7: action entry
+		
+100A  59      		db	'Y'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  54657374		db	'Test',0	; +16: mnemonic string
+      00
+		
+1015          	init:
+1015  AF      		xra	a	; NC
+1016  C9      		ret
+		
+1017          	exec:
+1017  3A0820  		lda	MFlag
+101A  3E02    		mvi	a,00000010b	; auto disp update OFF
+101C  320820  		sta	MFlag
+101F  217110  		lxi	h,signon
+1022  CD4400  		call	msgout
+			;
+1025  0604    	show:	mvi	b,nmsg
+1027  219210  		lxi	h,message
+			; copy a "line" to FP display, from HL
+102A  110B20  	nxtlin:	lxi	d,fpLeds
+102D  0E09    		mvi	c,FPDSPW
+102F  7E      	msgcpy:	mov	a,m
+1030  12      		stax	d
+1031  23      		inx	h
+1032  13      		inx	d
+1033  0D      		dcr	c
+1034  20F9    		jrnz	msgcpy
+			; We can't abort delay with Ctrl-C, so must check after
+1036  0E03    		mvi	c,3	; 3*512mS = 1.536 secs
+1038  3EFF    	pause:	mvi	a,255	; 512mS
+103A  CD2B00  		call	delay
+103D  CD5B10  		call	check	; jumps directly to abort...
+1040  0D      		dcr	c
+1041  20F5    		jrnz	pause
+1043  05      		dcr	b
+1044  20E4    		jrnz	nxtlin
+			; double "beep" the horn
+1046  3E32    		mvi	a,50	; 100mS
+1048  CD6002  		call	hhorn
+104B  3E32    		mvi	a,50	; 100mS
+104D  CD2B00  		call	delay
+1050  3E32    		mvi	a,50	; 100mS
+1052  CD6002  		call	hhorn
+1055  CD5B10  		call	check	; jumps directly to abort...
+1058  C32510  		jmp	show
+		
+105B  DBED    	check:	in	0edh
+105D  0F      		rrc
+105E  D0      		rnc
+105F  DBE8    		in	0e8h
+1061  FE03    		cpi	CTLC
+1063  C0      		rnz
+1064  E1      		pop	h	; discard local return adr
+1065  CD1B00  	abort:	call	crlf
+1068  3A0820  		lda	MFlag
+106B  E6FD    		ani	11111101b	; re-enable disp update
+106D  320820  		sta	MFlag
+1070  C9      		ret
+		
+1071  20465020	signon:	db	' FP display test',CR,LF
+      64697370
+      6C617920
+      74657374
+      0D0A
+1083  43746C2D		db	'Ctl-C to quit ',0
+      4320746F
+      20717569
+      742000
+		
+1092          	message:	; each "entry" is 9 bytes (display width)
+			; " your H8 "
+1092  FFB2B8BA		db	11111111b,10110010b,10111000b,10111010b,10111101b,11111111b
+      BDFF
+1098  9280FF  		db	10010010b,10000000b,11111111b
+			; "is up and"
+109B  9FA4FFBA		db	10011111b,10100100b,11111111b,10111010b,10011000b,11111111b
+      98FF
+10A1  90D6C2  		db	10010000b,11010110b,11000010b
+			; " running "
+10A4  FFBDBAB9		db	11111111b,10111101b,10111010b,10111001b,10111001b,11111011b
+      B9FB
+10AA  B9A0FF  		db	10111001b,10100000b,11111111b
+			; "|---||---||---|"
+10AD  9EFEF29E		db	10011110b,11111110b,11110010b,10011110b,11111110b,11110010b
+      FEF2
+10B3  9EFEF2  		db	10011110b,11111110b,11110010b
+0004          	nmsg	equ	($-message)/FPDSPW
+		
+10B6  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+    87	symbols
+   256	bytes
+
+    83	macro calls
+  3759	macro bytes
+     0	invented symbols
