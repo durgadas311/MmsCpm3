@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	10
+beta	equ	12
 
 z180	equ	false
 h8nofp	equ	false
@@ -1894,9 +1894,20 @@ cmdin:
 	in	0edh
 	rrc
 	jrc	conin0
+	; flush out VDIP1 while we wait...
+	in	0dah	; VDIP1/FT245R status
+	ani	00001000b	; VDIP1 RxR
+	; INS8250 IIR always 0
+	; 16550 IIR is RxD timeout (?)
+	; 16C2550 ISR is RxD timeout (?)
 if nofp
+	jrz	cmdin
+	in	0d9h	; flush char, VDIP1 data reg
 	jr	cmdin
 else
+	jrz	novdip1
+	in	0d9h	; flush char
+novdip1:
 	lda	kpchar
 	ora	a
 	jrz	cmdin

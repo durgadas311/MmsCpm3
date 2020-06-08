@@ -7,17 +7,9 @@
                 	public	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
                 	extrn	vdbuf
                 
- 00D8 =         vdip1	equ	0d8h	; base port
+ 201B =         ticcnt	equ	201bh
                 
  000D =         CR	equ	13
-                
- 00D9 =         vd$dat	equ	vdip1+1
- 00DA =         vd$sts	equ	vdip1+2
-                
- 0004 =         vd$txe	equ	00000100b	; Tx ready
- 0008 =         vd$rxr	equ	00001000b	; Rx data ready
-                
- 201B =         ticcnt	equ	201bh
                 
                 	cseg
                 
@@ -54,7 +46,7 @@
  0017 BE        	cmp	m
  0018 C0        	rnz
  0019 B7        	ora	a
- 001A C8        	rz
+ 001A C8        	rz
  001B FE0D      	cpi	CR
  001D C8        	rz
  001E 23        	inx	h
@@ -62,12 +54,12 @@
                 	jr	strcmp
  0020+18F4      	DB	18H,STRCMP-$-1
                 
-                ; send command, wait for prompt or error
+                ; send command, wait for prompt or error
                 ; HL=command string, CR term
                 vdcmd:	
- 0022 CDC300    	call	vdmsg
+ 0022 CDCD00    	call	vdmsg
                 vdend:
- 0025 CD7700    	call	vdinp
+ 0025 CD8100    	call	vdinp
  0028 210000    	lxi	h,vdbuf
  002B 110000    	lxi	d,prompt
  002E CD1600    	call	strcmp
@@ -80,11 +72,11 @@
                 ; returns CY if error, else HL at "next" addr
  0034 E5        vdrd:	push	h
  0035 210500    	lxi	h,rdf
- 0038 CDC300    	call	vdmsg
+ 0038 CDCD00    	call	vdmsg
  003B E1        	pop	h
- 003C CDA900    	call	vdinb
+ 003C CDB300    	call	vdinb
  003F E5        	push	h
- 0040 CD7700    	call	vdinp
+ 0040 CD8100    	call	vdinp
  0043 210000    	lxi	h,vdbuf
  0046 110000    	lxi	d,prompt
  0049 CD1600    	call	strcmp
@@ -95,10 +87,10 @@
                 
  0050 0605      sync:	mvi	b,5
  0052 3E45      	mvi	a,'E'
- 0054 CDB800    	call	vdout
+ 0054 CDC200    	call	vdout
  0057 3E0D      	mvi	a,CR
- 0059 CDB800    	call	vdout
- 005C CD7700    	call	vdinp	; line to vdbuf
+ 0059 CDC200    	call	vdout
+ 005C CD8100    	call	vdinp	; line to vdbuf
  005F D8        	rc
  0060 3A0000    	lda	vdbuf
  0063 FE45      	cpi	'E'
@@ -110,101 +102,123 @@
                 sync0:	djnz	sync
  006D+10E1      	DB	10H,SYNC-$-1
  006F 37        	stc
- 0070 C9        	ret
+ 0070 C9        	ret
+                
+                ; Observed timing:
+                ; [0-562mS]
+                ;	(cr)
+                ;	Ver 03.68VDAPF On-Line:(cr)
+                ; [250mS]
+                ;	Device Detected P2(cr)
+                ; [16-18mS]
+                ;	No Upgrade(cr)
+                ; [1-2mS]
+                ;	D:\>(cr)
+                ; Delays are measured between (cr)s, include all characters.
                 
                 ; get rid of any characters waiting... flush input
+                ; Stop if we hit '>',CR
+                runout0:
+ 0071 5F        	mov	e,a
                 runout:
- 0071 CD8500    	call	vdinz	; short timeout...
- 0074 D8        	rc		; done - nothing more to drain
-                	jr	runout
- 0075+18FA      	DB	18H,RUNOUT-$-1
+ 0072 CD8F00    	call	vdinz	; short timeout...
+ 0075 D8        	rc		; done - nothing more to drain
+ 0076 FE0D      	cpi	CR
+                	jrnz	runout0
+ 0078+20F7      	DB	20H,RUNOUT0-$-1
+ 007A 7B        	mov	a,e
+ 007B FE3E      	cpi	'>'
+                	jrnz	runout
+ 007D+20F3      	DB	20H,RUNOUT-$-1
+ 007F AF        	xra	a
+ 0080 C9        	ret
                 
                 ;;;;;;;; everything else is private ;;;;;;;;;
                 
                 ; receive chars until CR, into vdbuf
                 ; returns HL->[CR] (if NC)
- 0077 210000    vdinp:	lxi	h,vdbuf
- 007A CD8E00    vdi2:	call	vdinc
- 007D D8        	rc
- 007E 77        	mov	m,a
- 007F FE0D      	cpi	CR
- 0081 C8        	rz
- 0082 23        	inx	h
+ 0081 210000    vdinp:	lxi	h,vdbuf
+ 0084 CD9800    vdi2:	call	vdinc
+ 0087 D8        	rc
+ 0088 77        	mov	m,a
+ 0089 FE0D      	cpi	CR
+ 008B C8        	rz
+ 008C 23        	inx	h
                 	jr	vdi2
- 0083+18F5      	DB	18H,VDI2-$-1
+ 008D+18F5      	DB	18H,VDI2-$-1
                 
                 ; short-timeout input - for draining
                 vdinz:
- 0085 060A      	mvi	b,10		; 20mS timeout
- 0087 E5        	push	h
- 0088 211B20    	lxi	h,ticcnt	; use 2mS increments
- 008B 4E        	mov	c,m
+ 008F 0632      	mvi	b,50		; 100mS timeout
+ 0091 E5        	push	h
+ 0092 211B20    	lxi	h,ticcnt	; use 2mS increments
+ 0095 4E        	mov	c,m
                 	jr	vdi0
- 008C+1807      	DB	18H,VDI0-$-1
+ 0096+1807      	DB	18H,VDI0-$-1
                 
                 ; avoid hung situations
                 vdinc:
- 008E 0606      	mvi	b,6		; 2.5-3 second timeout
- 0090 E5        	push	h
- 0091 211C20    	lxi	h,ticcnt+1	; hi byte ticks at 512mS
- 0094 4E        	mov	c,m		; current tick...
- 0095 DBDA      vdi0:	in	vd$sts
- 0097 E608      	ani	vd$rxr
+ 0098 0606      	mvi	b,6		; 2.5-3 second timeout
+ 009A E5        	push	h
+ 009B 211C20    	lxi	h,ticcnt+1	; hi byte ticks at 512mS
+ 009E 4E        	mov	c,m		; current tick...
+ 009F DBDA      vdi0:	in	vd$sts
+ 00A1 E608      	ani	vd$rxr
                 	jrnz	vdi1
- 0099+200A      	DB	20H,VDI1-$-1
- 009B 7E        	mov	a,m
- 009C B9        	cmp	c
+ 00A3+200A      	DB	20H,VDI1-$-1
+ 00A5 7E        	mov	a,m
+ 00A6 B9        	cmp	c
                 	jrz	vdi0
- 009D+28F6      	DB	28H,VDI0-$-1
- 009F 4F        	mov	c,a
+ 00A7+28F6      	DB	28H,VDI0-$-1
+ 00A9 4F        	mov	c,a
                 	djnz	vdi0
- 00A0+10F3      	DB	10H,VDI0-$-1
- 00A2 E1        	pop	h
- 00A3 37        	stc
- 00A4 C9        	ret
- 00A5 DBD9      vdi1:	in	vd$dat
- 00A7 E1        	pop	h
- 00A8 C9        	ret
+ 00AA+10F3      	DB	10H,VDI0-$-1
+ 00AC E1        	pop	h
+ 00AD 37        	stc
+ 00AE C9        	ret
+ 00AF DBD9      vdi1:	in	vd$dat
+ 00B1 E1        	pop	h
+ 00B2 C9        	ret
                 
-                ; get read data.
+                ; get read data.
                 ; HL=buffer, length always 128
- 00A9 0680      vdinb:	mvi	b,128
- 00AB DBDA      vdb0:	in	vd$sts
- 00AD E608      	ani	vd$rxr
+ 00B3 0680      vdinb:	mvi	b,128
+ 00B5 DBDA      vdb0:	in	vd$sts
+ 00B7 E608      	ani	vd$rxr
                 	jrz	vdb0
- 00AF+28FA      	DB	28H,VDB0-$-1
- 00B1 DBD9      	in	vd$dat
- 00B3 77        	mov	m,a
- 00B4 23        	inx	h
+ 00B9+28FA      	DB	28H,VDB0-$-1
+ 00BB DBD9      	in	vd$dat
+ 00BD 77        	mov	m,a
+ 00BE 23        	inx	h
                 	djnz	vdb0
- 00B5+10F4      	DB	10H,VDB0-$-1
- 00B7 C9        	ret
+ 00BF+10F4      	DB	10H,VDB0-$-1
+ 00C1 C9        	ret
                 
                 ; send char to VDIP1
                 ; A=char
- 00B8 F5        vdout:	push	psw
- 00B9 DBDA      vdo0:	in	vd$sts
- 00BB E604      	ani	vd$txe
+ 00C2 F5        vdout:	push	psw
+ 00C3 DBDA      vdo0:	in	vd$sts
+ 00C5 E604      	ani	vd$txe
                 	jrz	vdo0
- 00BD+28FA      	DB	28H,VDO0-$-1
- 00BF F1        	pop	psw
- 00C0 D3D9      	out	vd$dat
- 00C2 C9        	ret
+ 00C7+28FA      	DB	28H,VDO0-$-1
+ 00C9 F1        	pop	psw
+ 00CA D3D9      	out	vd$dat
+ 00CC C9        	ret
                 
                 ; HL=message, terminated by CR
                 vdmsg:
- 00C3 DBDA      	in	vd$sts
- 00C5 E604      	ani	vd$txe
+ 00CD DBDA      	in	vd$sts
+ 00CF E604      	ani	vd$txe
                 	jrz	vdmsg
- 00C7+28FA      	DB	28H,VDMSG-$-1
- 00C9 7E        	mov	a,m
- 00CA D3D9      	out	vd$dat
- 00CC FE0D      	cpi	CR	; CR
- 00CE C8        	rz
- 00CF 23        	inx	h
+ 00D1+28FA      	DB	28H,VDMSG-$-1
+ 00D3 7E        	mov	a,m
+ 00D4 D3D9      	out	vd$dat
+ 00D6 FE0D      	cpi	CR	; CR
+ 00D8 C8        	rz
+ 00D9 23        	inx	h
                 	jr	vdmsg
- 00D0+18F1      	DB	18H,VDMSG-$-1
+ 00DA+18F1      	DB	18H,VDMSG-$-1
                 ; end of library
                 
- 00D2           	end
-
+ 00DC           	end
+

@@ -7,17 +7,9 @@
 	public	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
 	extrn	vdbuf
 
-vdip1	equ	0d8h	; base port
+ticcnt	equ	201bh
 
 CR	equ	13
-
-vd$dat	equ	vdip1+1
-vd$sts	equ	vdip1+2
-
-vd$txe	equ	00000100b	; Tx ready
-vd$rxr	equ	00001000b	; Rx data ready
-
-ticcnt	equ	201bh
 
 	cseg
 
@@ -108,11 +100,32 @@ sync0:	djnz	sync
 	stc
 	ret
 
+; Observed timing:
+; [0-562mS]
+;	(cr)
+;	Ver 03.68VDAPF On-Line:(cr)
+; [250mS]
+;	Device Detected P2(cr)
+; [16-18mS]
+;	No Upgrade(cr)
+; [1-2mS]
+;	D:\>(cr)
+; Delays are measured between (cr)s, include all characters.
+
 ; get rid of any characters waiting... flush input
+; Stop if we hit '>',CR
+runout0:
+	mov	e,a
 runout:
 	call	vdinz	; short timeout...
 	rc		; done - nothing more to drain
-	jr	runout
+	cpi	CR
+	jrnz	runout0
+	mov	a,e
+	cpi	'>'
+	jrnz	runout
+	xra	a
+	ret
 
 ;;;;;;;; everything else is private ;;;;;;;;;
 
@@ -129,7 +142,7 @@ vdi2:	call	vdinc
 
 ; short-timeout input - for draining
 vdinz:
-	mvi	b,10		; 20mS timeout
+	mvi	b,50		; 100mS timeout
 	push	h
 	lxi	h,ticcnt	; use 2mS increments
 	mov	c,m
