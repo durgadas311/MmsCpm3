@@ -18,7 +18,7 @@ first:	db	HIGH (last-first)	; +0: num pages
 	jmp	init	; +4: init entry
 	jmp	exec	; +7: action entry
 
-	db	'R'	; +10: Command letter
+	db	'c'	; +10: Command letter
 	db	-1	; +11: front panel key
 	db	0	; +12: port, 0 if variable
 	db	11111111b,11111111b,11111111b	; +13: FP display
@@ -149,7 +149,7 @@ lastsec:
 
 time:	db	0,0,0,0,0,0	;1sec,10sec,1min,10min,1hr,10hr
 
-signon:	db	'TC FP clock',CR,LF
+signon:	db	' FP clock',CR,LF
 	db	'Ctl-C to quit ',0
 
 	rept	(($+0ffh) and 0ff00h)-$

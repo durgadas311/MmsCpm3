@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	12
+beta	equ	13
 
 z180	equ	false
 h8nofp	equ	false
@@ -313,12 +313,13 @@ cmdtab:
 	db	'P' ! dw cmdpc	; Set PC
 	db	'B' ! dw cmdboot; Boot
 	db	'M' ! dw cmdmt	; Memory Test
-	db	'T' ! dw termod	; Terminal Mode
 	db	'V' ! dw prtver	; Version of ROM
 	db	'L' ! dw cmdlb	; List boot modules
 	db	'H' ! dw cmdhb	; long list (Help) boot modules
-	db	'A' ! dw cmdab	; Add boot module
-	db	'U' ! dw cmdur	; Update entire ROM
+	db	'X' ! dw cmdx	; extended command set X_
+; TODO: vflash.sys does 'U', 'A' may require more complexity.
+;	db	'A' ! dw cmdab	; Add boot module
+;	db	'U' ! dw cmdur	; Update entire ROM
 if not nofp
 	; front-panel commands    key(old)  command/action
 	db	80h ! dw kpubt	; [0]     - Universal Boot
@@ -2795,60 +2796,29 @@ cmdhb3:	call	crlf
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Add new boot module
-cmdab:	ret
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; eXtended command set
+cmdx:
+	call	conin	; get actual command character
+	ori	00100000b	; lower case
+	cpi	'a'
+	jrc	cmxerr
+	cpi	'z'+1
+	jrnc	cmxerr
+	sta	lstcmd
+	; would like to re-use nocmd, but error path is wrong...
+	mov	c,a
+	mvi	b,0	; no boot modules
+	lxi	h,bfchr
+	call	bfind
+	jrc	cmxerr
+	lda	lstcmd
+	ani	01011111b	; upper case echo
+	call	conout
+	jmp	cmexec
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Update ROM
-cmdur:	ret
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+cmxerr:	call	belout
+	jr	cmdx
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Terminal mode - shuttle I/O between H19 and serial port
-; since both ports operate at the same speed, don't need
-; to check ready as often.
-termod:
-	lxi	h,terms
-	call	msgout
-	call	waitcr
-termfl:
-	in	0edh
-	ani	01100000b
-	cpi	01100000b
-	jrnz	termfl	; wait for output to flush
-	in	0ebh
-	ori	10000000b
-	out	0ebh
-	out	0dbh
-	in	0e8h
-	out	0d8h
-	in	0e9h
-	out	0d9h
-	in	0ebh
-	ani	01111111b
-	out	0ebh
-	out	0dbh
-	xra	a
-	out	0d9h
-	in	0d8h
-	mvi	a,00fh
-	out	0dch
-termlp:
-	in	0ddh
-	ani	00000001b
-	jrz	terml0
-	in	0d8h
-	out	0e8h
-terml0:
-	in	0edh
-	ani	00000001b
-	jrz	termlp
-	in	0e8h
-	out	0d8h
-	jr	termlp
-
-terms:	db	'erminal Mode',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
