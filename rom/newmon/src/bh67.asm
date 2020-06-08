@@ -31,11 +31,6 @@ init0:	xra	a	; NC
 	ret
 
 boot:
-	lda	AIO$UNI
-	rrc
-	rrc
-	rrc
-	sta	cmdbuf+1
 	lda	cport
 	inr	a
 	mov	c,a
@@ -48,6 +43,11 @@ boot:
 	shld	l2156h	; zero-out ...
 	shld	l2156h+2
 	sta	l2156h+4
+	lda	AIO$UNI	; set LUN in cmdbuf
+	rrc		;
+	rrc		;
+	rrc		;
+	sta	cmdbuf+1;
 	mvi	d,0	; controller number
 	mvi	a,4	; delay 8mS, also NZ
 	ora	a
