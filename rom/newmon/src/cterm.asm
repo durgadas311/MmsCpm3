@@ -31,6 +31,7 @@ exec:
 	lxi	h,terms
 	call	msgout
 	call	waitcr
+	call	crlf
 termfl:
 	in	0edh
 	ani	01100000b
