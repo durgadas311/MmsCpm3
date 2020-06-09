@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	13
+beta	equ	14
 
 z180	equ	false
 h8nofp	equ	false
@@ -289,6 +289,8 @@ prloop:
 	; could take one of two paths here,
 	; console or kaypad...
 	call	cmdin
+	cpi	'?'	; HELP command?
+	jz	nocmd0	; handled my add-on
 	ani	11011111b ; toupper
 	sta	lstcmd
 if not nofp
@@ -1401,6 +1403,8 @@ dmpms:	db	'ump ',TRM
 ; command not built-in, check modules.
 ; should only be called for console commands.
 ; A=cmd key/chr (also in 'lstcmd')
+nocmd0:
+	sta	lstcmd
 nocmd:
 	mov	c,a
 	mvi	b,0	; no boot modules

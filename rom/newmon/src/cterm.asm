@@ -22,7 +22,7 @@ first:	db	HIGH (last-first)	; +0: num pages
 	db	-1	; +11: front panel key
 	db	0	; +12: port, 0 if variable
 	db	11111111b,11111111b,11111111b	; +13: FP display
-	db	'Term',0	; +16: mnemonic string
+	db	'Terminal mode',0	; +16: mnemonic string
 
 init:	xra	a
 	ret

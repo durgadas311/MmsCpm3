@@ -129,7 +129,7 @@ mmu$init:
 	di
 	lda	z180
 	ora	a
-	jrnz	min0
+	jrz	min0
 	; TODO: Z180 MMU init
 	mvi	a,1100$1100b	; com1 at C000 (bnk disabled)
 	out0	a,mmu$cbar
@@ -224,11 +224,12 @@ vdwr0:	ldax	d
 	pop	d
 	ret	; CY=error
 
+; returns FF if running on Z180, 00 if Z80
 cpu$type:
 	mvi	a,1
-	mlt	b
-	sui	0ffh
-	sbb	a
+	mlt	b	; a.k.a. alt NEG on Z80
+	sui	0ffh	; Z180: CY(02), Z80: NC(00)
+	sbb	a	; Z180: FF, Z80: 00
 	ret
 
 pagex:	db	0

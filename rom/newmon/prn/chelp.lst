@@ -1,0 +1,386 @@
+		; Command Help - '?'
+			maclib	ram
+**** ram.lib ****
+**** chelp.asm ****
+			maclib	core
+**** core.lib ****
+**** chelp.asm ****
+			maclib	z180
+**** z180.lib ****
+**** chelp.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0007          	BEL	equ	7
+0003          	CTLC	equ	3
+007F          	DEL	equ	127
+		
+2000          	btmods	equ	2000h	; start of add-ons
+8000          	bterom	equ	8000h	; size/end of full ROM
+		
+		; Z180 registers
+0038          	mmu$cbr	equ	38h
+0039          	mmu$bbr	equ	39h
+003A          	mmu$cbar equ	3ah
+		
+E000          		org	0E000h	; above full-ROM boundary
+E000  03      	first:	db	HIGH (last-first)	; +0: num pages
+E001  E0      		db	HIGH first		; +1: ORG page
+E002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+E004  C315E0  		jmp	init	; +4: init entry
+E007  C317E0  		jmp	exec	; +7: action entry
+		
+E00A  3F      		db	'?'	; +10: Command letter
+E00B  FF      		db	-1	; +11: front panel key
+E00C  00      		db	0	; +12: port, 0 if variable
+E00D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+E010  48656C70		db	'Help',0	; +16: mnemonic string
+      00
+		
+E015          	init:
+E015  AF      		xra	a	; NC
+E016  C9      		ret
+		
+E017          	exec:
+E017  CD1B00  		call	crlf
+E01A  CD83E1  		call	cpu$type
+E01D  32E3E0  		sta	z180
+E020  CD9CE0  		call	rominit
+E023  3E41    		mvi	a,'A'
+E025  32E0E0  		sta	curcmd
+E028          	loop:
+E028  CDE8E0  		call	builtin
+E02B  3005    		jrnc	gotit
+E02D  CD0DE1  		call	xtra1
+E030  3823    		jrc	nomore
+E032          	gotit:
+E032  CD1B00  		call	crlf
+E035  3AE1E0  		lda	lines
+E038  3C      		inr	a
+E039  32E1E0  		sta	lines
+E03C  FE17    		cpi	23
+E03E  2015    		jrnz	nomore
+E040  211EE2  		lxi	h,more
+E043  CD4400  		call	msgout
+E046  CD6EE1  		call	waitcr
+E049  384D    		jrc	exit
+E04B  AF      		xra	a
+E04C  32E1E0  		sta	lines
+E04F  2139E2  		lxi	h,xmore
+E052  CD4400  		call	msgout
+E055          	nomore:
+E055  3AE0E0  		lda	curcmd
+E058  3C      		inr	a
+E059  32E0E0  		sta	curcmd
+E05C  FE5B    		cpi	'Z'+1
+E05E  38C8    		jrc	loop
+			; now extended cmd set...
+E060  3E61    		mvi	a,'a'
+E062  32E0E0  		sta	curcmd
+E065          	loop1:
+E065  CD0DE1  		call	xtra1
+E068  3823    		jrc	nomore1
+E06A          	gotit1:
+E06A  CD1B00  		call	crlf
+E06D  3AE1E0  		lda	lines
+E070  3C      		inr	a
+E071  32E1E0  		sta	lines
+E074  FE17    		cpi	23
+E076  2015    		jrnz	nomore1
+E078  211EE2  		lxi	h,more
+E07B  CD4400  		call	msgout
+E07E  CD6EE1  		call	waitcr
+E081  3815    		jrc	exit
+E083  AF      		xra	a
+E084  32E1E0  		sta	lines
+E087  2139E2  		lxi	h,xmore
+E08A  CD4400  		call	msgout
+E08D          	nomore1:
+E08D  3AE0E0  		lda	curcmd
+E090  3C      		inr	a
+E091  32E0E0  		sta	curcmd
+E094  FE7B    		cpi	'z'+1
+E096  38CD    		jrc	loop1
+		
+E098          	exit:
+E098  CDCEE0  		call	romdein
+E09B  C9      		ret
+		
+E09C          	rominit:
+E09C  3AE3E0  		lda	z180
+E09F  B7      		ora	a
+E0A0  2812    		jrz	romi0
+			; map ROM F8000 into 4000
+E0A2  210060  		lxi	h,btmods+4000h
+E0A5  22E4E0  		shld	mstart
+E0A8  2100C0  		lxi	h,bterom+4000h
+E0AB  22E6E0  		shld	mend
+E0AE  3EF4    		mvi	a,0f8h-04h
+E0B0  ED3939  		out0	a,mmu$bbr
+E0B3  C9      		ret
+E0B4  F3      	romi0:	di
+E0B5  210020  		lxi	h,btmods
+E0B8  22E4E0  		shld	mstart
+E0BB  210080  		lxi	h,bterom
+E0BE  22E6E0  		shld	mend
+E0C1  3A3620  		lda	ctl$F2
+E0C4  32E2E0  		sta	sav$F2
+E0C7  F608    		ori	00001000b	; MEM1 on
+E0C9  E6DF    		ani	11011111b	; ORG0 off
+E0CB  D3F2    		out	0f2h	; enable full ROM
+E0CD  C9      		ret
+		
+E0CE          	romdein:
+E0CE  3AE3E0  		lda	z180
+E0D1  B7      		ora	a
+E0D2  2805    		jrz	romd0
+E0D4  AF      		xra	a
+E0D5  ED3939  		out0	a,mmu$bbr
+E0D8  C9      		ret
+E0D9          	romd0:
+E0D9  3AE2E0  		lda	sav$F2
+E0DC  D3F2    		out	0f2h
+E0DE  FB      		ei
+E0DF  C9      		ret
+		
+E0E0  00      	curcmd:	db	0
+E0E1  00      	lines:	db	0
+E0E2  00      	sav$F2:	db	0
+E0E3  00      	z180:	db	0
+E0E4  0000    	mstart:	dw	0	; mapped address of ROM image modules
+E0E6  0000    	mend:	dw	0	; mapped address of end of ROM
+		
+		; cmd letter in 'curcmd'
+		; Return CY if not built-in (NC=printed help)
+E0E8          	builtin:
+E0E8  3AE0E0  		lda	curcmd
+E0EB  218BE1  		lxi	h,cmdtab
+E0EE  0609    		mvi	b,numcmd
+E0F0  BE      	chk1:	cmp	m
+E0F1  23      		inx	h
+E0F2  2806    		jrz	got1
+E0F4  23      		inx	h
+E0F5  23      		inx	h
+E0F6  10F8    		djnz	chk1
+E0F8  37      		stc
+E0F9  C9      		ret
+E0FA          	got1:
+E0FA  5E      		mov	e,m
+E0FB  23      		inx	h
+E0FC  56      		mov	d,m
+E0FD  D5      		push	d	; help msg
+E0FE  CD68E1  		call	chrout
+E101  2163E1  		lxi	h,gap
+E104  CD4400  		call	msgout
+E107  E1      		pop	h	; help msg
+E108  CD4400  		call	msgout
+E10B  B7      		ora	a	; NC
+E10C  C9      		ret
+		
+		; search for add-on command
+E10D          	xtra1:
+E10D  DD2AE4E0		lixd	mstart
+E111          	xtra10:
+E111  DD7E02  		ldx	a,+2
+E114  FEC8    		cpi	200	; boot modules < 200
+E116  382E    		jrc	xtra12
+E118  3AE0E0  		lda	curcmd
+E11B  DDBE0A  		cmpx	+10
+E11E  2026    		jrnz	xtra12
+			; found match
+E120  2163E1  		lxi	h,gap
+E123  FE61    		cpi	'a'	; upper/lower case?
+E125  380D    		jrc	nox
+E127  2164E1  		lxi	h,gap2
+E12A  3E58    		mvi	a,'X'
+E12C  CD68E1  		call	chrout
+E12F  3AE0E0  		lda	curcmd
+E132  E65F    		ani	01011111b	; toupper
+E134          	nox:
+E134  CD68E1  		call	chrout
+E137  CD4400  		call	msgout	; gap
+E13A  DDE5    		pushix
+E13C  E1      		pop	h
+E13D  111000  		lxi	d,+16
+E140  19      		dad	d
+E141  CD4400  		call	msgout
+E144  B7      		ora	a	; NC
+E145  C9      		ret
+E146          	xtra12:
+E146  DD5600  		ldx	d,+0	; num pages
+E149  1E00    		mvi	e,0
+E14B  DD19    		dadx	d
+E14D  DDE5    		pushix
+E14F  F1      		pop	psw	; A=IXh
+E150  ED4BE6E0		lbcd	mend	; B=HIGH bterom
+E154  B8      		cmp	b
+E155  300A    		jrnc	xtra11
+E157  DD7E00  		ldx	a,+0	; num pages
+E15A  B7      		ora	a
+E15B  2804    		jrz	xtra11
+E15D  FEFF    		cpi	0ffh
+E15F  20B0    		jrnz	xtra10
+E161          	xtra11:	; end of modules... not found
+E161  37      		stc
+E162  C9      		ret
+		
+E163  20      	gap:	db	' '
+E164  202D2000	gap2:	db	' - ',0
+		
+E168  FD2A2600	chrout:	liyd	conout
+E16C  FDE9    		pciy
+		
+E16E          	waitcr:
+E16E  CD4A00  		call	conin
+E171  FE0D    		cpi	CR
+E173  C8      		rz
+E174  FE7F    		cpi	DEL
+E176  37      		stc
+E177  C8      		rz
+E178  FE03    		cpi	CTLC
+E17A  37      		stc
+E17B  C8      		rz
+E17C  3E07    		mvi	a,BEL
+E17E  CD68E1  		call	chrout
+E181  18EB    		jr	waitcr
+		
+		; returns FF if running on Z180, 00 if Z80
+E183          	cpu$type:
+E183  3E01    		mvi	a,1
+E185  ED4C    		mlt	b	; a.k.a. alt NEG on Z80
+E187  D6FF    		sui	0ffh	; Z180: CY(02), Z80: NC(00)
+E189  9F      		sbb	a	; Z180: FF, Z80: 00
+E18A  C9      		ret
+		
+		; must be kept in-sync with table in h8core.asm:
+E18B          	cmdtab:
+E18B  44      		db	'D' !
+E18C  A6E1    	 dw cmddmp	; Dump memory
+E18E  47      		db	'G' !
+E18F  B2E1    	 dw cmdgo	; Go
+E191  53      		db	'S' !
+E192  BCE1    	 dw cmdsub	; Substitute in memory
+E194  50      		db	'P' !
+E195  CEE1    	 dw cmdpc	; Set PC
+E197  42      		db	'B' !
+E198  E2E1    	 dw cmdboot; Boot
+E19A  4D      		db	'M' !
+E19B  F1E1    	 dw cmdmt	; Memory Test
+E19D  56      		db	'V' !
+E19E  FAE1    	 dw prtver	; Version of ROM
+E1A0  4C      		db	'L' !
+E1A1  02E2    	 dw cmdlb	; List boot modules
+E1A3  48      		db	'H' !
+E1A4  14E2    	 dw cmdhb	; long list (Help) boot modules
+		;	db	'X' ! dw cmdx	; extended command set X_
+0009          	numcmd	equ	($-cmdtab)/3
+		
+E1A6  44756D70	cmddmp:	db	'Dump [addr]',0
+      205B6164
+      64725D00
+E1B2  476F205B	cmdgo:	db	'Go [addr]',0
+      61646472
+      5D00
+E1BC  53756273	cmdsub:	db	'Substitute [addr]',0
+      74697475
+      7465205B
+      61646472
+      5D00
+E1CE  50726F67	cmdpc:	db	'Prog Counter [addr]',0
+      20436F75
+      6E746572
+      205B6164
+      64725D00
+E1E2  426F6F74	cmdboot: db	'Boot [options]',0
+      205B6F70
+      74696F6E
+      735D00
+E1F1  4D656D20	cmdmt:	db	'Mem test',0
+      74657374
+      00
+E1FA  56657273	prtver:	db	'Version',0
+      696F6E00
+E202  4C697374	cmdlb:	db	'List boot modules',0
+      20626F6F
+      74206D6F
+      64756C65
+      7300
+E214  48656C70	cmdhb:	db	'Help boot',0
+      20626F6F
+      7400
+		
+E21E  50726573	more:	db	   'Press RETURN to continue: ',0
+      73205245
+      5455524E
+      20746F20
+      636F6E74
+      696E7565
+      3A2000
+E239  0D202020	xmore:	db	CR,'                          ',CR,0
+      20202020
+      20202020
+      20202020
+      20202020
+      20202020
+      2020200D
+      00
+		
+E256  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFF
+		
+E300          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   127	symbols
+   768	bytes
+
+   248	macro calls
+  3984	macro bytes
+     0	invented symbols

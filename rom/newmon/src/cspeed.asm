@@ -25,11 +25,11 @@ first:	db	HIGH (last-first)	; +0: num pages
 	jmp	init	; +4: init entry
 	jmp	exec	; +7: action entry
 
-	db	'Z'	; +10: Command letter
+	db	's'	; +10: Command letter
 	db	-1	; +11: front panel key
 	db	0	; +12: port, 0 if variable
 	db	11111111b,11111111b,11111111b	; +13: FP display
-	db	'Speed',0	; +16: mnemonic string
+	db	'CPU Speed [2|4|8|M]',0	; +16: mnemonic string
 
 init:
 	xra	a	; NC
@@ -75,7 +75,7 @@ ok1:	lxi	h,ctl$F2
 	lxi	h,mset
 show:	push	h
 	call	crlf
-	lxi	h,signon
+	lxi	h,signon+1
 	call	msgout
 	pop	h
 	call	msgout
@@ -103,7 +103,7 @@ fin:	jmp	crlf
 chrout:	lhld	conout
 	pchl
 
-signon:	db	'CPU speed ',0
+signon:	db	' CPU Speed ',0
 
 mis:	db	'is ',0
 mset:	db	'set to ',0

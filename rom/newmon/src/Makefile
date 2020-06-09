@@ -6,6 +6,7 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
+	zout/chelp.cim \
 	zout/cterm.cim \
 	zout/ccass.cim \
 	zout/cspeed.cim \
@@ -23,6 +24,7 @@ H8NMODS= 2716_444-19_H17.rom \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
+	zout/chelp.cim \
 	zout/cterm.cim \
 	zout/cvtalk.cim \
 	zout/cspeed.cim
@@ -36,6 +38,7 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/bh67.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
+	zout/chelp.cim \
 	zout/cterm.cim \
 	zout/cvtalk.cim \
 	zout/cspeed.cim
