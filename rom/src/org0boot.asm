@@ -27,6 +27,14 @@ around:
 	dcx	h
 done2:	mov	a,m
 	sta	000dh	; for CP/M
+	lxi	h,0040h
+	lxi	b,16
+	mov	d,h
+	mov	e,l
+	mvi	m,0
+	inx	d
+	dcx	b
+	ldir
 
 	lhld	entry
 	pchl
