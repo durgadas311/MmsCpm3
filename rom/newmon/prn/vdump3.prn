@@ -8,7 +8,9 @@
  000A =         LF	equ	10
                 
                 	maclib	z180
+                	maclib	core
                 	aseg
+                	maclib	ram
                 
                 ; Z180 MMU constants - Z180 only
  0038 =         mmu$cbr	equ	38h
@@ -33,235 +35,270 @@
  0006 =         wr32k	equ	mmu+wr+pg32k
  0007 =         wr48k	equ	mmu+wr+pg48k
                 
-                ; ROM hooks...
- 0026 =         conop	equ	0026h	; pointer, not vector
- 2009 =         ctl$F0	equ	2009h
- 2036 =         ctl$F2	equ	2036h
-                
                 ; e.g. org 3000h...
                 	cseg
  0000 F3        begin:	di
- 0001 210920    	lxi	h,ctl$F0
- 0004 7E        	mov	a,m
- 0005 323E01    	sta	sav$F0
- 0008 F640      	ori	01000000b	; 2mS back on
- 000A 77        	mov	m,a
- 000B D3F0      	out	0f0h
- 000D FB        	ei	; TODO: will ROM leave MMU alone?
- 000E CD0000    	call	runout
- 0011 CD0000    	call	sync
- 0014 DAF800    	jc	vderr
- 0017 CD3501    	call	cpu$type
- 001A 323F01    	sta	z180
- 001D B7        	ora	a
- 001E 3E0D      	mvi	a,13	; H8-512K needs 13 pages
+ 0001 2AFE0F    	lhld	0ffeh	; product code...
+ 0004 7D        	mov	a,l
+ 0005 E601      	ani	1	; 0=FrontPanel
+ 0007 327D01    	sta	nofp
+ 000A CD3601    	call	set2ms
+ 000D CD0000    	call	runout
+ 0010 CD0000    	call	sync
+ 0013 DAFA00    	jc	vderr
+ 0016 CD2E01    	call	cpu$type
+ 0019 327C01    	sta	z180
+ 001C B7        	ora	a
+ 001D 3E0D      	mvi	a,13	; H8-512K needs 13 pages
                 	jrz	beg0
- 0020+2802      	DB	28H,BEG0-$-1
- 0022 3E0F      	mvi	a,15	; covers all of CP/M 3 on Z180
- 0024 324001    beg0:	sta	npages
-                
- 0027 215001    	lxi	h,opw
- 002A 11A601    	lxi	d,vdbuf
- 002D CD0000    	call	strcpy
+ 001F+2802      	DB	28H,BEG0-$-1
+ 0021 3E0F      	mvi	a,15	; covers all of CP/M 3 on Z180
+ 0023 327E01    beg0:	sta	npages
+                
+ 0026 218E01    	lxi	h,opw
+ 0029 11F901    	lxi	d,vdbuf
+ 002C CD0000    	call	strcpy
                 	; look for optional filename...
- 0030 218022    	lxi	h,2280h
- 0033 46        	mov	b,m	; len
- 0034 23        	inx	h
- 0035 7E        chkfil:	mov	a,m
- 0036 23        	inx	h
- 0037 B7        	ora	a
+ 002F 218022    	lxi	h,2280h
+ 0032 46        	mov	b,m	; len
+ 0033 23        	inx	h
+ 0034 7E        chkfil:	mov	a,m
+ 0035 23        	inx	h
+ 0036 B7        	ora	a
                 	jrz	nofil
- 0038+2806      	DB	28H,NOFIL-$-1
- 003A FE20      	cpi	' '
+ 0037+2806      	DB	28H,NOFIL-$-1
+ 0039 FE20      	cpi	' '
                 	jrz	gotfil	; already skipped blank...
- 003C+2805      	DB	28H,GOTFIL-$-1
+ 003B+2805      	DB	28H,GOTFIL-$-1
                 	djnz	chkfil
- 003E+10F5      	DB	10H,CHKFIL-$-1
- 0040 215501    nofil:	lxi	h,def
+ 003D+10F5      	DB	10H,CHKFIL-$-1
+ 003F 219301    nofil:	lxi	h,def
                 gotfil:
- 0043 CD0000    	call	strcpy	; does not incl CR
- 0046 3E0D      	mvi	a,CR
- 0048 12        	stax	d
+ 0042 CD0000    	call	strcpy	; does not incl CR
+ 0045 3E0D      	mvi	a,CR
+ 0047 12        	stax	d
                 start:
- 0049 21A601    	lxi	h,vdbuf
- 004C CD0000    	call	vdcmd
- 004F DAE700    	jc	nferr
+ 0048 21F901    	lxi	h,vdbuf
+ 004B CD0000    	call	vdcmd
+ 004E DAE900    	jc	nferr
                 	; setup/activate MMU
- 0052 CD9500    	call	mmu$init
+ 0051 CD9E00    	call	mmu$init
                 	; from here on, must exit via exit
                 
                 	; just map each page into pg48k and dump from there
- 0055 AF        	xra	a
- 0056 323D01    	sta	pagex
+ 0054 AF        	xra	a
+ 0055 327901    	sta	pagex
                 loop0:
- 0059 CDFD00    	call	map$page
- 005C 2100C0    	lxi	h,0c000h	; page 48K
+ 0058 CDFF00    	call	map$page
+ 005B 2100C0    	lxi	h,0c000h	; page 48K
                 loop1:
- 005F EB        	xchg
- 0060 CD1C01    	call	vdwr
- 0063 EB        	xchg
- 0064 DABC00    	jc	error
- 0067 7C        	mov	a,h
- 0068 B5        	ora	l
- 0069 CA7D00    	jz	gotpg
- 006C 7C        	mov	a,h
- 006D E60F      	ani	0fh	; at 4K boundary?
- 006F B5        	ora	l
- 0070 C25F00    	jnz	loop1
- 0073 E5        	push	h
- 0074 3E2E      	mvi	a,'.'
- 0076 CD9100    	call	conout
- 0079 E1        	pop	h
- 007A C35F00    	jmp	loop1
+ 005E EB        	xchg
+ 005F CD1501    	call	vdwr
+ 0062 EB        	xchg
+ 0063 DAC500    	jc	error
+ 0066 7C        	mov	a,h
+ 0067 B5        	ora	l
+ 0068 CA7C00    	jz	gotpg
+ 006B 7C        	mov	a,h
+ 006C E60F      	ani	0fh	; at 4K boundary?
+ 006E B5        	ora	l
+ 006F C25E00    	jnz	loop1
+ 0072 E5        	push	h
+ 0073 3E2E      	mvi	a,'.'
+ 0075 CD9A00    	call	chrout
+ 0078 E1        	pop	h
+ 0079 C35E00    	jmp	loop1
                 gotpg:
- 007D 3A3D01    	lda	pagex
- 0080 3C        	inr	a
- 0081 323D01    	sta	pagex
- 0084 214001    	lxi	h,npages
- 0087 FE06      	cpi	m	; done after num pages
- 0089 D28F00    	jnc	done
- 008C C35900    	jmp	loop0
+ 007C 3E2E      	mvi	a,'.'
+ 007E CD9A00    	call	chrout
+ 0081 3A7901    	lda	pagex
+ 0084 3C        	inr	a
+ 0085 327901    	sta	pagex
+ 0088 217E01    	lxi	h,npages
+ 008B BE        	cmp	m	; done after num pages
+ 008C D29200    	jnc	done
+ 008F C35800    	jmp	loop0	; A=pagex
                 done:
+ 0092 21A001    	lxi	h,fini
+ 0095 CD4400    	call	msgout
                 	jr	exit	; now safe to return directly
- 008F+1831      	DB	18H,EXIT-$-1
+ 0098+1831      	DB	18H,EXIT-$-1
                 
-                conout:
- 0091 2A2600    	lhld	conop
- 0094 E9        	pchl
+                chrout:
+ 009A 2A2600    	lhld	conout
+ 009D E9        	pchl
                 
                 ; Create "unity" page mapping, enable MMU
                 mmu$init:
- 0095 F3        	di
- 0096 3A3F01    	lda	z180
- 0099 B7        	ora	a
+ 009E F3        	di
+ 009F 3A7C01    	lda	z180
+ 00A2 B7        	ora	a
                 	jrz	min0
- 009A+2807      	DB	28H,MIN0-$-1
+ 00A3+2807      	DB	28H,MIN0-$-1
                 	; TODO: Z180 MMU init
- 009C 3ECC      	mvi	a,1100$1100b	; com1 at C000 (bnk disabled)
+ 00A5 3ECC      	mvi	a,1100$1100b	; com1 at C000 (bnk disabled)
                 	out0	a,mmu$cbar
- 009E+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
- 00A1 FB        	ei
- 00A2 C9        	ret
- 00A3 3E00      min0:	mvi	a,0	; page 0
- 00A5 D300      	out	rd00k
- 00A7 D304      	out	wr00k
- 00A9 3C        	inr	a
- 00AA D301      	out	rd16k
- 00AC D305      	out	wr16k
- 00AE 3C        	inr	a
- 00AF D302      	out	rd32k
- 00B1 D306      	out	wr32k
- 00B3 3C        	inr	a
- 00B4 F680      	ori	ena
- 00B6 D303      	out	rd48k
- 00B8 D307      	out	wr48k
- 00BA FB        	ei
- 00BB C9        	ret
+ 00A7+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+ 00AA FB        	ei
+ 00AB C9        	ret
+ 00AC 3E00      min0:	mvi	a,0	; page 0
+ 00AE D300      	out	rd00k
+ 00B0 D304      	out	wr00k
+ 00B2 3C        	inr	a
+ 00B3 D301      	out	rd16k
+ 00B5 D305      	out	wr16k
+ 00B7 3C        	inr	a
+ 00B8 D302      	out	rd32k
+ 00BA D306      	out	wr32k
+ 00BC 3C        	inr	a
+ 00BD F680      	ori	ena
+ 00BF D303      	out	rd48k
+ 00C1 D307      	out	wr48k
+ 00C3 FB        	ei
+ 00C4 C9        	ret
                 
                 error:
- 00BC 116201    	lxi	d,fail
- 00BF CD1301    	call	msgout
- 00C2 214101    exit:	lxi	h,clf
- 00C5 CD0000    	call	vdcmd
- 00C8 3A3E01    	lda	sav$F0
- 00CB 320920    	sta	ctl$F0
- 00CE D3F0      	out	0f0h
-                mmu$deinit:
- 00D0 F3        	di
- 00D1 3A3F01    	lda	z180
- 00D4 B7        	ora	a
+ 00C5 21B501    	lxi	h,fail
+ 00C8 CD4400    	call	msgout
+ 00CB 217F01    exit:	lxi	h,clf
+ 00CE CD0000    	call	vdcmd
+ 00D1 CD5D01    	call	res2ms
+                mmu$deinit:	; never returns...
+ 00D4 F3        	di
+ 00D5 3A7C01    	lda	z180
+ 00D8 B7        	ora	a
                 	jrz	mdi0
- 00D5+2808      	DB	28H,MDI0-$-1
+ 00D9+2806      	DB	28H,MDI0-$-1
                 	; TODO: Z180 de-init
- 00D7 AF        	xra	a
+ 00DB AF        	xra	a
                 	out0	a,mmu$cbar
- 00D8+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
- 00DB FB        	ei
- 00DC C30000    	jmp	0
- 00DF 3E00      mdi0:	mvi	a,0
- 00E1 D300      	out	rd00k	; disables MMU, forces 64K
- 00E3 FB        	ei
- 00E4 C30000    	jmp	0
+ 00DC+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+                	jr	fin
+ 00DF+1804      	DB	18H,FIN-$-1
+ 00E1 3E00      mdi0:	mvi	a,0
+ 00E3 D300      	out	rd00k	; disables MMU, forces 64K
+                fin:
+ 00E5 2A1E00    	lhld	retmon
+ 00E8 E9        	pchl
                 
- 00E7 117701    nferr:	lxi	d,operr
- 00EA CD1301    errout:	call	msgout
- 00ED 3A3E01    	lda	sav$F0
- 00F0 320920    	sta	ctl$F0
- 00F3 D3F0      	out	0f0h
- 00F5 C30000    	jmp	0
- 00F8 118E01    vderr:	lxi	d,nterr
+ 00E9 21CA01    nferr:	lxi	h,operr
+ 00EC CD4400    errout:	call	msgout
+ 00EF 3A7A01    	lda	sav$F0
+ 00F2 320920    	sta	ctl$F0
+ 00F5 D3F0      	out	0f0h
+ 00F7 C30000    	jmp	0
+ 00FA 11E101    vderr:	lxi	d,nterr
                 	jr	errout
- 00FB+18ED      	DB	18H,ERROUT-$-1
+ 00FD+18ED      	DB	18H,ERROUT-$-1
                 
                 map$page:
- 00FD 3A3F01    	lda	z180
- 0100 B7        	ora	a
- 0101 3A3D01    	lda	pagex	; 16K page we're on
+ 00FF 3A7C01    	lda	z180
+ 0102 B7        	ora	a
+ 0103 3A7901    	lda	pagex	; 16K page we're on
                 	jrz	mp0
- 0104+2808      	DB	28H,MP0-$-1
+ 0106+2808      	DB	28H,MP0-$-1
                 	; convert to 4K page adr
                 	; offset by C000...
- 0106 87        	add	a
- 0107 87        	add	a
- 0108 D60C      	sui	0ch	; might be negative
+ 0108 87        	add	a
+ 0109 87        	add	a
+ 010A D60C      	sui	0ch	; might be negative
                 	out0	a,mmu$cbr
- 010A+ED3938    	DB	0EDH, A*8+01H, MMU$CBR
- 010D C9        	ret
- 010E F680      mp0:	ori	ena
- 0110 D303      	out	rd48k
- 0112 C9        	ret
-                
-                ; DE=string, NUL term
- 0113 1A        msgout:	ldax	d
- 0114 B7        	ora	a
- 0115 C8        	rz
- 0116 CD9100    	call	conout
- 0119 13        	inx	d
-                	jr	msgout
- 011A+18F7      	DB	18H,MSGOUT-$-1
+ 010C+ED3938    	DB	0EDH, A*8+01H, MMU$CBR
+ 010F C9        	ret
+ 0110 F680      mp0:	ori	ena
+ 0112 D303      	out	rd48k
+ 0114 C9        	ret
                 
                 ; DE=data buffer (dma adr)
                 ; Returns DE=next
- 011C 214601    vdwr:	lxi	h,wrf
- 011F CD0000    	call	vdmsg
- 0122 010002    	lxi	b,512
- 0125 1A        vdwr0:	ldax	d
- 0126 CD0000    	call	vdout
- 0129 13        	inx	d
- 012A 0B        	dcx	b
- 012B 78        	mov	a,b
- 012C B1        	ora	c
+ 0115 218401    vdwr:	lxi	h,wrf
+ 0118 CD0000    	call	vdmsg
+ 011B 010002    	lxi	b,512
+ 011E 1A        vdwr0:	ldax	d
+ 011F CD0000    	call	vdout
+ 0122 13        	inx	d
+ 0123 0B        	dcx	b
+ 0124 78        	mov	a,b
+ 0125 B1        	ora	c
                 	jrnz	vdwr0
- 012D+20F6      	DB	20H,VDWR0-$-1
- 012F D5        	push	d
- 0130 CD0000    	call	vdend
- 0133 D1        	pop	d
- 0134 C9        	ret	; CY=error
+ 0126+20F6      	DB	20H,VDWR0-$-1
+ 0128 D5        	push	d
+ 0129 CD0000    	call	vdend
+ 012C D1        	pop	d
+ 012D C9        	ret	; CY=error
                 
                 ; returns FF if running on Z180, 00 if Z80
                 cpu$type:
- 0135 3E01      	mvi	a,1
+ 012E 3E01      	mvi	a,1
                 	mlt	b	; a.k.a. alt NEG on Z80
- 0137+ED4C      	DB	0EDH, B*8+4CH
- 0139 D6FF      	sui	0ffh	; Z180: CY(02), Z80: NC(00)
- 013B 9F        	sbb	a	; Z180: FF, Z80: 00
- 013C C9        	ret
+ 0130+ED4C      	DB	0EDH, B*8+4CH
+ 0132 D6FF      	sui	0ffh	; Z180: CY(02), Z80: NC(00)
+ 0134 9F        	sbb	a	; Z180: FF, Z80: 00
+ 0135 C9        	ret
                 
- 013D 00        pagex:	db	0
- 013E 00        sav$F0:	db	0
- 013F 00        z180:	db	0
- 0140 00        npages:	db	0
+                ; Turn on 2mS clock.
+                ; This assumes the "no FP" monitor never turns on 2mS clock,
+                ; or at least that F2 and F3 bits match.
+ 0136 F3        set2ms:	di
+ 0137 3A7D01    	lda	nofp
+ 013A B7        	ora	a
+                	jrnz	nofp1
+ 013B+200E      	DB	20H,NOFP1-$-1
+ 013D 210920    	lxi	h,ctl$F0
+ 0140 7E        	mov	a,m
+ 0141 327A01    	sta	sav$F0
+ 0144 F640      	ori	01000000b	; 2mS back on
+ 0146 77        	mov	m,a
+ 0147 D3F0      	out	0f0h
+                	jr	set2ms1
+ 0149+1810      	DB	18H,SET2MS1-$-1
+ 014B 213620    nofp1:	lxi	h,ctl$F2
+ 014E 7E        	mov	a,m
+ 014F 327B01    	sta	sav$F2
+ 0152 F602      	ori	00000010b	; 2mS CLK
+ 0154 77        	mov	m,a
+ 0155 D3F2      	out	0f2h
+ 0157 E602      	ani	00000010b	; double-enable
+ 0159 D3F3      	out	0f3h
+                set2ms1:
+ 015B FB        	ei	; TODO: will ROM leave MMU alone?
+ 015C C9        	ret
                 
- 0141 636C660D00clf:	db	'clf',CR,0
- 0146 7772662000wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
- 0150 6F70772000opw:	db	'opw ',0
- 0155 636F726564def:	db	'coredump.out',0
+                ; restore previous 2mS clock state
+                res2ms:
+ 015D 3A7D01    	lda	nofp
+ 0160 B7        	ora	a
+                	jrnz	nofp2
+ 0161+2009      	DB	20H,NOFP2-$-1
+ 0163 3A7A01    	lda	sav$F0
+ 0166 320920    	sta	ctl$F0
+ 0169 D3F0      	out	0f0h
+ 016B C9        	ret
+ 016C 3A7B01    nofp2:	lda	sav$F2
+ 016F 323620    	sta	ctl$F2
+ 0172 D3F2      	out	0f2h
+ 0174 E602      	ani	00000010b	; double-enable
+ 0176 D3F3      	out	0f3h
+ 0178 C9        	ret
                 
- 0162 210D0A2A20fail:	db	'!',CR,LF,'* dump failed *',CR,LF,0
- 0177 2A2066696Coperr:	db	'* file open failed *',CR,LF,0
- 018E 2A20564449nterr:	db	'* VDIP1 init failed *',CR,LF,0
+ 0179 00        pagex:	db	0
+ 017A 00        sav$F0:	db	0
+ 017B 00        sav$F2:	db	0
+ 017C 00        z180:	db	0
+ 017D 00        nofp:	db	0
+ 017E 00        npages:	db	0
                 
- 01A6           vdbuf:	ds	128
+ 017F 636C660D00clf:	db	'clf',CR,0
+ 0184 7772662000wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
+ 018E 6F70772000opw:	db	'opw ',0
+ 0193 636F726564def:	db	'coredump.out',0
                 
- 0226           	end
-
+ 01A0 0D0A766475fini:	db	CR,LF,'vdump3 finished.',CR,LF,0
+ 01B5 210D0A2A20fail:	db	'!',CR,LF,'* dump failed *',CR,LF,0
+ 01CA 2A2066696Coperr:	db	'* file open failed *',CR,LF,0
+ 01E1 2A20564449nterr:	db	'* VDIP1 init failed *',CR,LF,0
+                
+ 01F9           vdbuf:	ds	128
+                
+ 0279           	end
+

@@ -36,6 +36,7 @@ test512k.sys: test512k.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 
+vdump3.rel: ram.lib core.lib vdump3.asm
 setrtc.rel: core.lib setrtc.asm
 
 setrtc.sys: setrtc.spr

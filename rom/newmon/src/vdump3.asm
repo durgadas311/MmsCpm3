@@ -8,7 +8,9 @@ CR	equ	13
 LF	equ	10
 
 	maclib	z180
+	maclib	core
 	aseg
+	maclib	ram
 
 ; Z180 MMU constants - Z180 only
 mmu$cbr	equ	38h
@@ -33,21 +35,14 @@ wr16k	equ	mmu+wr+pg16k
 wr32k	equ	mmu+wr+pg32k
 wr48k	equ	mmu+wr+pg48k
 
-; ROM hooks...
-conop	equ	0026h	; pointer, not vector
-ctl$F0	equ	2009h
-ctl$F2	equ	2036h
-
 ; e.g. org 3000h...
 	cseg
 begin:	di
-	lxi	h,ctl$F0
-	mov	a,m
-	sta	sav$F0
-	ori	01000000b	; 2mS back on
-	mov	m,a
-	out	0f0h
-	ei	; TODO: will ROM leave MMU alone?
+	lhld	0ffeh	; product code...
+	mov	a,l
+	ani	1	; 0=FrontPanel
+	sta	nofp
+	call	set2ms
 	call	runout
 	call	sync
 	jc	vderr
@@ -106,22 +101,26 @@ loop1:
 	jnz	loop1
 	push	h
 	mvi	a,'.'
-	call	conout
+	call	chrout
 	pop	h
 	jmp	loop1
 gotpg:
+	mvi	a,'.'
+	call	chrout
 	lda	pagex
 	inr	a
 	sta	pagex
 	lxi	h,npages
-	cpi	m	; done after num pages
+	cmp	m	; done after num pages
 	jnc	done
-	jmp	loop0
+	jmp	loop0	; A=pagex
 done:
+	lxi	h,fini
+	call	msgout
 	jr	exit	; now safe to return directly
 
-conout:
-	lhld	conop
+chrout:
+	lhld	conout
 	pchl
 
 ; Create "unity" page mapping, enable MMU
@@ -152,14 +151,12 @@ min0:	mvi	a,0	; page 0
 	ret
 
 error:
-	lxi	d,fail
+	lxi	h,fail
 	call	msgout
 exit:	lxi	h,clf
 	call	vdcmd
-	lda	sav$F0
-	sta	ctl$F0
-	out	0f0h
-mmu$deinit:
+	call	res2ms
+mmu$deinit:	; never returns...
 	di
 	lda	z180
 	ora	a
@@ -167,14 +164,14 @@ mmu$deinit:
 	; TODO: Z180 de-init
 	xra	a
 	out0	a,mmu$cbar
-	ei
-	jmp	0
+	jr	fin
 mdi0:	mvi	a,0
 	out	rd00k	; disables MMU, forces 64K
-	ei
-	jmp	0
+fin:
+	lhld	retmon
+	pchl
 
-nferr:	lxi	d,operr
+nferr:	lxi	h,operr
 errout:	call	msgout
 	lda	sav$F0
 	sta	ctl$F0
@@ -198,14 +195,6 @@ map$page:
 mp0:	ori	ena
 	out	rd48k
 	ret
-
-; DE=string, NUL term
-msgout:	ldax	d
-	ora	a
-	rz
-	call	conout
-	inx	d
-	jr	msgout
 
 ; DE=data buffer (dma adr)
 ; Returns DE=next
@@ -232,9 +221,53 @@ cpu$type:
 	sbb	a	; Z180: FF, Z80: 00
 	ret
 
+; Turn on 2mS clock.
+; This assumes the "no FP" monitor never turns on 2mS clock,
+; or at least that F2 and F3 bits match.
+set2ms:	di
+	lda	nofp
+	ora	a
+	jrnz	nofp1
+	lxi	h,ctl$F0
+	mov	a,m
+	sta	sav$F0
+	ori	01000000b	; 2mS back on
+	mov	m,a
+	out	0f0h
+	jr	set2ms1
+nofp1:	lxi	h,ctl$F2
+	mov	a,m
+	sta	sav$F2
+	ori	00000010b	; 2mS CLK
+	mov	m,a
+	out	0f2h
+	ani	00000010b	; double-enable
+	out	0f3h
+set2ms1:
+	ei	; TODO: will ROM leave MMU alone?
+	ret
+
+; restore previous 2mS clock state
+res2ms:
+	lda	nofp
+	ora	a
+	jrnz	nofp2
+	lda	sav$F0
+	sta	ctl$F0
+	out	0f0h
+	ret
+nofp2:	lda	sav$F2
+	sta	ctl$F2
+	out	0f2h
+	ani	00000010b	; double-enable
+	out	0f3h
+	ret
+
 pagex:	db	0
 sav$F0:	db	0
+sav$F2:	db	0
 z180:	db	0
+nofp:	db	0
 npages:	db	0
 
 clf:	db	'clf',CR,0
@@ -242,6 +275,7 @@ wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
 opw:	db	'opw ',0
 def:	db	'coredump.out',0
 
+fini:	db	CR,LF,'vdump3 finished.',CR,LF,0
 fail:	db	'!',CR,LF,'* dump failed *',CR,LF,0
 operr:	db	'* file open failed *',CR,LF,0
 nterr:	db	'* VDIP1 init failed *',CR,LF,0
