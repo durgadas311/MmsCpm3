@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	14
+beta	equ	15
 
 z180	equ	false
 h8nofp	equ	false
@@ -2607,9 +2607,9 @@ savram:	; interrupts are disabled
 	mvi	a,00h+ena
 	out	rd32k
 	mvi	a,0ch+ena
-	out	wr48k
+	out	wr32k
 	lxi	h,08000h
-	lxi	d,0c000h
+	lxi	d,08000h
 	lxi	b,16*1024
 	ldir
 	; de-init mmu
