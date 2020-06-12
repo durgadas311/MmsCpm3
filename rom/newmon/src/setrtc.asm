@@ -20,7 +20,9 @@ linbuf	equ	2280h
 
 	dseg
 signon:	db	'RTC Set Time',CR,LF
-	db	'Enter MM/DD/YY HH:MM:SS (24-hour)',CR,LF
+	db	'Current time: ',0
+newtime: db	'New time: ',0
+enter:	db	CR,LF,'Enter MM/DD/YY HH:MM:SS (24-hour)',CR,LF
 	db	'> ',0
 noset:	db	'Time not set',CR,LF,0
 setmsg:	db	' (RETURN to set): ',0
@@ -52,6 +54,10 @@ start:
 	out	rtc+15
 	lxi	h,signon
 	call	msgout
+	call	gettime
+	call	show
+	lxi	h,enter
+	call	msgout
 
 	lxi	h,linbuf
 	call	linin
@@ -59,7 +65,8 @@ start:
 	lxi	h,linbuf
 	call	parse
 	jrc	error
-	call	crlf
+	lxi	h,newtime
+	call	msgout
 	call	show
 	lxi	h,setmsg
 	call	msgout
@@ -80,8 +87,8 @@ quit:	lxi	h,noset
 exit:	lhld	retmon
 	pchl
 
-chrout:	lhld	conout
-	pchl
+chrout:	liyd	conout
+	pciy
 
 ; MM/DD/YY HH:MM:SS
 show:	lda	mon10
@@ -278,7 +285,7 @@ chrok:	mov	m,a
 	; TODO: detect overflow...
 	jr	lini0
 chrnak:	mvi	a,BEL
-	call	conout
+	call	chrout
 	jr	lini0
 backup:
 	mov	a,c
@@ -287,11 +294,11 @@ backup:
 	dcr	c
 	dcx	h
 	mvi	a,BS
-	call	conout
+	call	chrout
 	mvi	a,' '
-	call	conout
+	call	chrout
 	mvi	a,BS
-	call	conout
+	call	chrout
 	jr	lini0
 
 	end
