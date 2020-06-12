@@ -74,9 +74,12 @@ gotfil:
 	mvi	a,CR
 	stax	d
 start:
-	lxi	h,vdbuf
+	lxi	h,vdbuf	; opw
 	call	vdcmd
 	jc	nferr
+	lxi	h,sek	; truncate, effectively
+	call	vdcmd
+	; ignore error?
 	; setup/activate MMU
 	call	mmu$init
 	; from here on, must exit via exit
@@ -272,6 +275,7 @@ npages:	db	0
 
 clf:	db	'clf',CR,0
 wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
+sek:	db	'sek ',0,0,0,0,CR,0	; do not append
 opw:	db	'opw ',0
 def:	db	'coredump.out',0
 
