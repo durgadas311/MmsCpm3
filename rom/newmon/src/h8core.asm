@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	15
+beta	equ	16
 
 z180	equ	false
 h8nofp	equ	false
@@ -1856,11 +1856,18 @@ msgout:
 ; called in the context of a command on console
 conin:	in	0edh
 	rrc
-if nofp
-	jrnc	conin
-	; fall-through to conin0...
-else
 	jrc	conin0
+	; flush out VDIP1 while we wait...
+	in	0dah	; VDIP1/FT245R status
+	ani	00001000b	; VDIP1 RxR
+if nofp
+	jrz	conin
+	in	0d9h	; flush char, VDIP1 data reg
+	jr	conin
+else
+	jrz	novdip2
+	in	0d9h	; flush char
+novdip2:
 	lda	kpchar
 	ora	a
 	jrz	conin
@@ -1874,6 +1881,7 @@ conin0:	in	0e8h
 	jz	re$entry
 	ret
 
+; Pure console input, no tricks
 conin1:	in	0edh
 	rrc
 	jrnc	conin1
