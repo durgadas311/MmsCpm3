@@ -4,7 +4,7 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vflash.sys test512k.sys vdump3.sys wizcfg.sys setrtc.sys
+all: vflash.sys test512k.sys mtest512.sys vdump3.sys wizcfg.sys setrtc.sys
 
 %.lib: ../%.lib
 	unix2dos -n $< $@
@@ -29,6 +29,16 @@ vdump3.spr: vdump3.rel vdip1.rel
 	cp $@ ../../bin
 
 vdump3.sys: vdump3.spr
+	mknetboot -x -b 0x3000 -o $@ $^
+	cp $@ ../../bin
+
+diag512k.rel: core.lib diag512k.asm
+
+diag512k.sys: diag512k.spr
+	mknetboot -x -b 0xc000 -o $@ $^
+	cp $@ ../../bin
+
+mtest512.sys: mtest512.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 

@@ -2611,7 +2611,7 @@ savram:	; interrupts are disabled
 	ori	ena
 	out	rd48k
 	out	wr48k
-	; setup pages 8000->00000, c000->30000
+	; setup pages (RD)8000->00000, (WR)8000->30000
 	mvi	a,00h+ena
 	out	rd32k
 	mvi	a,0ch+ena
