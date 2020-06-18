@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	16
+beta	equ	19
 
 z180	equ	false
 h8nofp	equ	false
@@ -784,7 +784,7 @@ init0:	lxi	h,0ffffh
 	; map in 8K of ROM from 0xf8000 into 0x4000
 	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
 	out0	a,mmu$cbar
-	; both CBR and BBR ar "0" - if got here via RESET
+	; both CBR and BBR are "0" - if got here via RESET
 if use$dma
 	; DMA F8000-FA000 into 00000-02000
 	call	dmarom
@@ -2597,7 +2597,23 @@ savram:	; TODO: implement this w/o DMAC?
 	ret
 else
 savram:	; interrupts are disabled
-	; init mmu
+	; init H8-512K mmu.
+	; WARNING: The H8-512K MAP FF has a R-C delay on its CLR
+	; pin, triggered by RESET. This means the MAP enable bit is held
+	; off for a period of time after RESET is released. Currently,
+	; components are expected to cause a 5mS delay. This places
+	; an upper limit of 10mS on the CLR release, with lots of margin
+	; for component variation. That equates to 853 iterations of this
+	; delay loop at 2.048MHz.
+	; This also requires a change to older H8-512K boards to reduce
+	; the delay time, which was previously 220mS.
+	lxi	b,853
+savram0:		; total: 24 cy
+	dcx	b	;  6 cy
+	mov	a,b	;  4 cy
+	ora	c	;  4 cy
+	jnz	savram0	; 10 cy
+	; H8-512K MMU (MAP) should be usable now.
 	mvi	a,0	; page 0
 	out	rd00k
 	out	wr00k

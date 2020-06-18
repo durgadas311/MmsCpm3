@@ -1743,48 +1743,48 @@ bm314c:
 	mvi	a,10
 	call	take$A
 	in	058h
-	ani	080h
+	ani	080h	; drive power
 	rnz
 	mvi	b,0
 	in	058h
 	mov	c,a
-	mvi	a,0ffh
+	mvi	a,0ffh	; invalid command, evoke a response?
 	out	059h
 bm314$0:
 	in	058h
-	cmp	c
-	jrnz	bm314$1
+	cmp	c	; did status change?
+	jrnz	bm314$1	; must be a controller there...
 	djnz	bm314$0
 	ret
 bm314$1:
 	mvi	b,0
 bm314$2:
-	xthl
-	xthl
-	mvi	a,0ffh
+	xthl	;
+	xthl	; waste some time
+	mvi	a,0ffh	; ???
 	out	059h
 bm314$3:
 	in	058h
 	rrc
-	jrc	bm314$3
+	jrc	bm314$3	; "ready"
 	rrc
-	jrc	bm314$4
+	jrc	bm314$4	; "if-active"
 	djnz	bm314$2
 	ret
 bm314$4:
 	call	cvs$dat
-	cpi	08fh
+	cpi	08fh	; "ill cmd opcode"
 	rnz
 	lxiy	bootbf
 	mov	a,d
 	cpi	9
 	rnc
 	mov	d,a
-	add	a
-	add	d
+	add	a	; *2
+	add	d	; *3
 	mov	c,a
 	mvi	b,0
-	dady	b
+	dady	b	; partition entry?
 	lxix	bootbf
 	lxi	b,256
 	lxi	d,0
@@ -1802,15 +1802,17 @@ bm314$4:
 	rc
 	jmp	hwboot
 
+; C:D:E = LBA
+; B = num chunks
 cvs$read:
-	mvi	a,012h	; read command
+	mvi	a,012h	; read 128B chunk cmd
 	call	cvs$cmd
-	mov	a,c
+	mov	a,c	; hi 4 bits of LBA
 	add	a
 	add	a
 	add	a
 	add	a
-	inr	a
+	inr	a	; drive num always "1"
 	call	cvs$cmd	; command params
 	mov	a,e
 	call	cvs$cmd	; command params
@@ -1818,13 +1820,13 @@ cvs$read:
 	call	cvs$cmd	; command params
 cvs$rd0:
 	in	058h
-	ani	002h	; done
+	ani	002h	; done (if-active)
 	jrz	cvs$rd0
 	mvi	a,8
 cvs$rd1:
 	dcr	a
 	jrnz	cvs$rd1
-	call	cvs$dat
+	call	cvs$dat	; command status (response)
 	rlc	; error bit
 	rc
 	mvi	l,128
@@ -1834,7 +1836,7 @@ cvs$rd2:
 	inxix
 	dcr	l
 	jrnz	cvs$rd2
-	inr	e
+	inr	e	; next LBA
 	jrnz	cvs$rd3
 	inr	d
 	jrnz	cvs$rd3
@@ -1857,7 +1859,7 @@ cvs$cmd0:
 
 cvs$dat:
 	in	058h
-	rar
+	rar	; "ready" (not?)
 	jrc	cvs$dat
 	in	059h
 	ret

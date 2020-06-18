@@ -5,7 +5,7 @@
 FFFF          	true	equ	not false
 		
 0000          	alpha	equ	0
-0010          	beta	equ	16
+0013          	beta	equ	19
 		
 0000          	z180	equ	false
 0000          	h8nofp	equ	false
@@ -127,7 +127,7 @@ C000          	ramboot	equ	0c000h
 0018  C32520  	rst3:	jmp	vrst3	; 0018
 		
 001B  C3CE09  		jmp	crlf	; 001b
-001E  520F    		dw	retmon	; 001e
+001E  5B0F    		dw	retmon	; 001e
 		
 0020  C32820  	rst4:	jmp	vrst4
 		
@@ -151,7 +151,7 @@ C000          	ramboot	equ	0c000h
 003E  C33A03  		jmp	hxboot	; 003e
 0041  C39F01  		jmp	take$A	; 0041
 0044  C3D809  		jmp	msgout	; 0044
-0047  C3CA0D  		jmp	linin	; 0047
+0047  C3D30D  		jmp	linin	; 0047
 004A  C3010A  		jmp	conin1	; 004a - without kaypad or DEL
 		
 004D          	intret:
@@ -289,7 +289,7 @@ FFFF          	if not nofp
 00E3          	cmdtab:
 			; console commands
 00E3  44      		db	'D' !
-00E4  2C0E    	 dw cmddmp	; Dump memory
+00E4  350E    	 dw cmddmp	; Dump memory
 00E6  47      		db	'G' !
 00E7  6701    	 dw cmdgo	; Go
 00E9  53      		db	'S' !
@@ -301,13 +301,13 @@ FFFF          	if not nofp
 00F2  4D      		db	'M' !
 00F3  7E04    	 dw cmdmt	; Memory Test
 00F5  56      		db	'V' !
-00F6  3D0F    	 dw prtver	; Version of ROM
+00F6  460F    	 dw prtver	; Version of ROM
 00F8  4C      		db	'L' !
-00F9  6A0E    	 dw cmdlb	; List boot modules
+00F9  730E    	 dw cmdlb	; List boot modules
 00FB  48      		db	'H' !
-00FC  A70E    	 dw cmdhb	; long list (Help) boot modules
+00FC  B00E    	 dw cmdhb	; long list (Help) boot modules
 00FE  58      		db	'X' !
-00FF  120F    	 dw cmdx	; extended command set X_
+00FF  1B0F    	 dw cmdx	; extended command set X_
 		; TODO: vflash.sys does 'U', 'A' may require more complexity.
 		;	db	'A' ! dw cmdab	; Add boot module
 		;	db	'U' ! dw cmdur	; Update entire ROM
@@ -681,7 +681,7 @@ FFFF          	if not nofp
 02ED          		jr	lunerr
 02ED  18EB    		DB	18H,lunerr-$-1
 02EF          	luboot2:
-02EF  CD0A0E  		call	E$x16$A
+02EF  CD130E  		call	E$x16$A
 02F2          		jrc	lunerr
 02F2  38E6    		DB	38H,lunerr-$-1
 02F4  CDD803  		call	conout
@@ -695,7 +695,7 @@ FFFF          	if not nofp
 02FE          	colon:	; get arbitrary string as last boot param
 02FE  CDD803  		call	conout	; echo ':'
 0301  218122  		lxi	h,bootbf+1
-0304  CDCA0D  		call	linin
+0304  CDD30D  		call	linin
 0307  78      		mov	a,b	; excludes TRM
 0308  328022  		sta	bootbf	; bootbf: <len> <string...> as in CP/M cmd buf
 		; D=Phys Drive base number, E=Unit number
@@ -783,7 +783,7 @@ FFFF          	if not nofp
 036D  CD5804  		call	coninit
 0370  CD5106  		call	meminit
 0373  CF      		rst	1	; kick-start clock
-0374  215D0F  		lxi	h,signon
+0374  21660F  		lxi	h,signon
 0377  CDD809  		call	msgout
 			; save registers on stack, for debugger access...
 037A  C37000  		jmp	intsetup
@@ -2706,338 +2706,345 @@ FFFF          	if not nofp
 0000          	if z180
 		else
 0D98          	savram:	; interrupts are disabled
-			; init mmu
-0D98  3E00    		mvi	a,0	; page 0
-0D9A  D300    		out	rd00k
-0D9C  D304    		out	wr00k
-0D9E  3C      		inr	a
-0D9F  D301    		out	rd16k
-0DA1  D305    		out	wr16k
-0DA3  3C      		inr	a
-0DA4  D302    		out	rd32k
-0DA6  D306    		out	wr32k
-0DA8  3C      		inr	a
-0DA9  F680    		ori	ena
-0DAB  D303    		out	rd48k
-0DAD  D307    		out	wr48k
+			; init H8-512K mmu.
+			; WARNING: The H8-512K MAP FF has a R-C delay on its CLR
+			; pin, triggered by RESET. This means the MAP enable bit is held
+			; off for a period of time after RESET is released. Currently,
+			; components are expected to cause a 5mS delay. This places
+			; an upper limit of 10mS on the CLR release, with lots of margin
+			; for component variation. That equates to 853 iterations of this
+			; delay loop at 2.048MHz.
+			; This also requires a change to older H8-512K boards to reduce
+			; the delay time, which was previously 220mS.
+0D98  015503  		lxi	b,853
+0D9B          	savram0:		; total: 24 cy
+0D9B  0B      		dcx	b	;  6 cy
+0D9C  78      		mov	a,b	;  4 cy
+0D9D  B1      		ora	c	;  4 cy
+0D9E  C29B0D  		jnz	savram0	; 10 cy
+			; H8-512K MMU (MAP) should be usable now.
+0DA1  3E00    		mvi	a,0	; page 0
+0DA3  D300    		out	rd00k
+0DA5  D304    		out	wr00k
+0DA7  3C      		inr	a
+0DA8  D301    		out	rd16k
+0DAA  D305    		out	wr16k
+0DAC  3C      		inr	a
+0DAD  D302    		out	rd32k
+0DAF  D306    		out	wr32k
+0DB1  3C      		inr	a
+0DB2  F680    		ori	ena
+0DB4  D303    		out	rd48k
+0DB6  D307    		out	wr48k
 			; setup pages (RD)8000->00000, (WR)8000->30000
-0DAF  3E80    		mvi	a,00h+ena
-0DB1  D302    		out	rd32k
-0DB3  3E8C    		mvi	a,0ch+ena
-0DB5  D306    		out	wr32k
-0DB7  210080  		lxi	h,08000h
-0DBA  110080  		lxi	d,08000h
-0DBD  010040  		lxi	b,16*1024
-0DC0          		ldir
-0DC0  EDB0    		DB	0EDH,0B0H
+0DB8  3E80    		mvi	a,00h+ena
+0DBA  D302    		out	rd32k
+0DBC  3E8C    		mvi	a,0ch+ena
+0DBE  D306    		out	wr32k
+0DC0  210080  		lxi	h,08000h
+0DC3  110080  		lxi	d,08000h
+0DC6  010040  		lxi	b,16*1024
+0DC9          		ldir
+0DC9  EDB0    		DB	0EDH,0B0H
 			; de-init mmu
-0DC2  3E00    		mvi	a,0
-0DC4  D300    		out	rd00k	; turn off MAP bit, back to normal
-0DC6  C9      		ret
+0DCB  3E00    		mvi	a,0
+0DCD  D300    		out	rd00k	; turn off MAP bit, back to normal
+0DCF  C9      		ret
 		endif
 		
-0DC7  3600    	linix:	mvi	m,0	; terminate buffer
-0DC9  C9      		ret
+0DD0  3600    	linix:	mvi	m,0	; terminate buffer
+0DD2  C9      		ret
 		
 		; input a line from console, allow backspace
 		; HL=buffer (size 128)
 		; returns B=num chars, 128 max (never is 0c3h)
-0DCA          	linin:
-0DCA  0600    		mvi	b,0	; count chars
-0DCC  CDE109  	lini0	call	conin	; handles DEL (cancel)
-0DCF  FE0D    		cpi	CR
-0DD1          		jrz	linix
-0DD1  28F4    		DB	28H,linix-$-1
-0DD3  FE08    		cpi	BS
-0DD5          		jrz	backup
-0DD5  281C    		DB	28H,backup-$-1
-0DD7  FE20    		cpi	' '
-0DD9          		jrc	chrnak
-0DD9  3811    		DB	38H,chrnak-$-1
-0DDB  FE7F    		cpi	'~'+1
-0DDD          		jrnc	chrnak
-0DDD  300D    		DB	30H,chrnak-$-1
-0DDF  77      	chrok:	mov	m,a
-0DE0  23      		inx	h
-0DE1  04      		inr	b
-0DE2  FAEA0D  		jm	chrovf	; 128 chars max
-0DE5  CDD803  		call	conout
-0DE8          		jr	lini0
-0DE8  18E2    		DB	18H,lini0-$-1
-0DEA  2B      	chrovf:	dcx	h
-0DEB  05      		dcr	b
-0DEC  3E07    	chrnak:	mvi	a,BEL
+0DD3          	linin:
+0DD3  0600    		mvi	b,0	; count chars
+0DD5  CDE109  	lini0	call	conin	; handles DEL (cancel)
+0DD8  FE0D    		cpi	CR
+0DDA          		jrz	linix
+0DDA  28F4    		DB	28H,linix-$-1
+0DDC  FE08    		cpi	BS
+0DDE          		jrz	backup
+0DDE  281C    		DB	28H,backup-$-1
+0DE0  FE20    		cpi	' '
+0DE2          		jrc	chrnak
+0DE2  3811    		DB	38H,chrnak-$-1
+0DE4  FE7F    		cpi	'~'+1
+0DE6          		jrnc	chrnak
+0DE6  300D    		DB	30H,chrnak-$-1
+0DE8  77      	chrok:	mov	m,a
+0DE9  23      		inx	h
+0DEA  04      		inr	b
+0DEB  FAF30D  		jm	chrovf	; 128 chars max
 0DEE  CDD803  		call	conout
 0DF1          		jr	lini0
-0DF1  18D9    		DB	18H,lini0-$-1
-0DF3          	backup:
-0DF3  78      		mov	a,b
-0DF4  B7      		ora	a
-0DF5          		jrz	lini0
-0DF5  28D5    		DB	28H,lini0-$-1
-0DF7  05      		dcr	b
-0DF8  2B      		dcx	h
-0DF9  3E08    		mvi	a,BS
-0DFB  CDD803  		call	conout
-0DFE  3E20    		mvi	a,' '
-0E00  CDD803  		call	conout
-0E03  3E08    		mvi	a,BS
-0E05  CDD803  		call	conout
-0E08          		jr	lini0
-0E08  18C2    		DB	18H,lini0-$-1
+0DF1  18E2    		DB	18H,lini0-$-1
+0DF3  2B      	chrovf:	dcx	h
+0DF4  05      		dcr	b
+0DF5  3E07    	chrnak:	mvi	a,BEL
+0DF7  CDD803  		call	conout
+0DFA          		jr	lini0
+0DFA  18D9    		DB	18H,lini0-$-1
+0DFC          	backup:
+0DFC  78      		mov	a,b
+0DFD  B7      		ora	a
+0DFE          		jrz	lini0
+0DFE  28D5    		DB	28H,lini0-$-1
+0E00  05      		dcr	b
+0E01  2B      		dcx	h
+0E02  3E08    		mvi	a,BS
+0E04  CDD803  		call	conout
+0E07  3E20    		mvi	a,' '
+0E09  CDD803  		call	conout
+0E0C  3E08    		mvi	a,BS
+0E0E  CDD803  		call	conout
+0E11          		jr	lini0
+0E11  18C2    		DB	18H,lini0-$-1
 		
 		; Used during entry of LUN in boot command.
 		; multiply E by 16, check for >= (IX+mdnum) (or overflow)
 		; add in A (converted to binary).
 		; IX=active boot module
 		; Returns CY on overflow, else E updated to new LUN value
-0E0A          	E$x16$A:
-0E0A  43      		mov	b,e
-0E0B          		ralr	b
-0E0B  CB10    		DB	0CBH, 10H+b
-0E0D  D8      		rc
-0E0E          		ralr	b
-0E0E  CB10    		DB	0CBH, 10H+b
-0E10  D8      		rc
-0E11          		ralr	b
-0E11  CB10    		DB	0CBH, 10H+b
-0E13  D8      		rc
+0E13          	E$x16$A:
+0E13  43      		mov	b,e
 0E14          		ralr	b
 0E14  CB10    		DB	0CBH, 10H+b
 0E16  D8      		rc
-0E17  F5      		push	psw
-0E18  D630    		sui	'0'
-0E1A  FE0A    		cpi	9+1
-0E1C          		jrc	ex16a0
-0E1C  3802    		DB	38H,ex16a0-$-1
-0E1E  D607    		sui	'A'-'0'-10
-0E20  80      	ex16a0:	add	b	; never CY
-0E21          		cmpx	mdluns	; might be 0ffh
-0E21  DDBE03  		DB	0DDH,0BEH,mdluns
-0E24          		jrc	ex16a1	; value OK
-0E24  3803    		DB	38H,ex16a1-$-1
-0E26  F1      		pop	psw
-0E27  37      		stc
-0E28  C9      		ret
-0E29  5F      	ex16a1:	mov	e,a
-0E2A  F1      		pop	psw
-0E2B  C9      		ret
+0E17          		ralr	b
+0E17  CB10    		DB	0CBH, 10H+b
+0E19  D8      		rc
+0E1A          		ralr	b
+0E1A  CB10    		DB	0CBH, 10H+b
+0E1C  D8      		rc
+0E1D          		ralr	b
+0E1D  CB10    		DB	0CBH, 10H+b
+0E1F  D8      		rc
+0E20  F5      		push	psw
+0E21  D630    		sui	'0'
+0E23  FE0A    		cpi	9+1
+0E25          		jrc	ex16a0
+0E25  3802    		DB	38H,ex16a0-$-1
+0E27  D607    		sui	'A'-'0'-10
+0E29  80      	ex16a0:	add	b	; never CY
+0E2A          		cmpx	mdluns	; might be 0ffh
+0E2A  DDBE03  		DB	0DDH,0BEH,mdluns
+0E2D          		jrc	ex16a1	; value OK
+0E2D  3803    		DB	38H,ex16a1-$-1
+0E2F  F1      		pop	psw
+0E30  37      		stc
+0E31  C9      		ret
+0E32  5F      	ex16a1:	mov	e,a
+0E33  F1      		pop	psw
+0E34  C9      		ret
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Dump command
-0E2C          	cmddmp:
-0E2C  21D506  		lxi	h,dmpms
-0E2F  CDD809  		call	msgout
-0E32  211420  		lxi	h,ABUSS
-0E35  B7      		ora	a	; NC
-0E36  160D    		mvi	d,CR
-0E38  CDE303  		call	adrin
-0E3B  EB      		xchg	; HL=adr
-0E3C  0608    		mvi	b,8	; 8 lines (one half page, 128 bytes)
-0E3E  C5      	dmp0:	push	b
-0E3F  CD3604  		call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
-0E42  E5      		push	h
-0E43  0610    		mvi	b,16
-0E45  7E      	dmp1:	mov	a,m
-0E46  CD4504  		call	hexout
-0E49  CD4104  		call	spout
-0E4C  23      		inx	h
-0E4D          		djnz	dmp1
-0E4D  10F6    		DB	10H,dmp1-$-1
-0E4F  E1      		pop	h
-0E50  0610    		mvi	b,16
-0E52  7E      	dmp2:	mov	a,m
-0E53  FE20    		cpi	' '
-0E55          		jrc	dmp3
-0E55  3804    		DB	38H,dmp3-$-1
-0E57  FE7F    		cpi	'~'+1
-0E59          		jrc	dmp4
-0E59  3802    		DB	38H,dmp4-$-1
-0E5B  3E2E    	dmp3:	mvi	a,'.'
-0E5D  CDD803  	dmp4:	call	conout
-0E60  23      		inx	h
-0E61          		djnz	dmp2
-0E61  10EF    		DB	10H,dmp2-$-1
-0E63  C1      		pop	b
-0E64          		djnz	dmp0
-0E64  10D8    		DB	10H,dmp0-$-1
-0E66  221420  		shld	ABUSS
-0E69  C9      		ret
+0E35          	cmddmp:
+0E35  21D506  		lxi	h,dmpms
+0E38  CDD809  		call	msgout
+0E3B  211420  		lxi	h,ABUSS
+0E3E  B7      		ora	a	; NC
+0E3F  160D    		mvi	d,CR
+0E41  CDE303  		call	adrin
+0E44  EB      		xchg	; HL=adr
+0E45  0608    		mvi	b,8	; 8 lines (one half page, 128 bytes)
+0E47  C5      	dmp0:	push	b
+0E48  CD3604  		call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
+0E4B  E5      		push	h
+0E4C  0610    		mvi	b,16
+0E4E  7E      	dmp1:	mov	a,m
+0E4F  CD4504  		call	hexout
+0E52  CD4104  		call	spout
+0E55  23      		inx	h
+0E56          		djnz	dmp1
+0E56  10F6    		DB	10H,dmp1-$-1
+0E58  E1      		pop	h
+0E59  0610    		mvi	b,16
+0E5B  7E      	dmp2:	mov	a,m
+0E5C  FE20    		cpi	' '
+0E5E          		jrc	dmp3
+0E5E  3804    		DB	38H,dmp3-$-1
+0E60  FE7F    		cpi	'~'+1
+0E62          		jrc	dmp4
+0E62  3802    		DB	38H,dmp4-$-1
+0E64  3E2E    	dmp3:	mvi	a,'.'
+0E66  CDD803  	dmp4:	call	conout
+0E69  23      		inx	h
+0E6A          		djnz	dmp2
+0E6A  10EF    		DB	10H,dmp2-$-1
+0E6C  C1      		pop	b
+0E6D          		djnz	dmp0
+0E6D  10D8    		DB	10H,dmp0-$-1
+0E6F  221420  		shld	ABUSS
+0E72  C9      		ret
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; List available boot modules
-0E6A  217D0E  	cmdlb:	lxi	h,lbmsg
-0E6D  CDD809  		call	msgout
-0E70  CDF801  		call	gtdfbt
-0E73  42      		mov	b,d
-0E74  21F80B  		lxi	h,bflst
-0E77  0E00    		mvi	c,0
-0E79  CD6F0C  		call	bfind0
-0E7C  C9      		ret
+0E73  21860E  	cmdlb:	lxi	h,lbmsg
+0E76  CDD809  		call	msgout
+0E79  CDF801  		call	gtdfbt
+0E7C  42      		mov	b,d
+0E7D  21F80B  		lxi	h,bflst
+0E80  0E00    		mvi	c,0
+0E82  CD6F0C  		call	bfind0
+0E85  C9      		ret
 		
-0E7D  69737420	lbmsg:	db	'ist boot modules',CR,LF,0
+0E86  69737420	lbmsg:	db	'ist boot modules',CR,LF,0
       626F6F74
       206D6F64
       756C6573
       0D0A00
-0E90  656C7020	hbmsg:	db	'elp boot',CR,LF,0
+0E99  656C7020	hbmsg:	db	'elp boot',CR,LF,0
       626F6F74
       0D0A00
-0E9B  5072693A	hbmsg2:	db	'Pri: ',0
+0EA4  5072693A	hbmsg2:	db	'Pri: ',0
       2000
 FFFF          	if not nofp
-0EA1  5365633A	hbmsg3:	db	'Sec: ',0
+0EAA  5365633A	hbmsg3:	db	'Sec: ',0
       2000
 		endif
 		
 		; Help boot command
-0EA7  21900E  	cmdhb:	lxi	h,hbmsg
-0EAA  CDD809  		call	msgout
-0EAD  CDF801  		call	gtdfbt
-0EB0  42      		mov	b,d
-0EB1  21200C  		lxi	h,bfllst
-0EB4  CD6F0C  		call	bfind0
+0EB0  21990E  	cmdhb:	lxi	h,hbmsg
+0EB3  CDD809  		call	msgout
+0EB6  CDF801  		call	gtdfbt
+0EB9  42      		mov	b,d
+0EBA  21200C  		lxi	h,bfllst
+0EBD  CD6F0C  		call	bfind0
 			; Now display primary/secondary configs
-0EB7  219B0E  		lxi	h,hbmsg2
-0EBA  1104F8  		lxi	d,susave+dpdev
-0EBD  DBF2    		in	0f2h
-0EBF  E670    		ani	01110000b	; default boot device
-0EC1  FE70    		cpi	01110000b	; use setup cfg?
-0EC3  3E2A    		mvi	a,'*'
-0EC5          		jrz	cmdhb6
-0EC5  2802    		DB	28H,cmdhb6-$-1
-0EC7  3E20    		mvi	a,' '
-0EC9  CDD80E  	cmdhb6:	call	cmdhbx
+0EC0  21A40E  		lxi	h,hbmsg2
+0EC3  1104F8  		lxi	d,susave+dpdev
+0EC6  DBF2    		in	0f2h
+0EC8  E670    		ani	01110000b	; default boot device
+0ECA  FE70    		cpi	01110000b	; use setup cfg?
+0ECC  3E2A    		mvi	a,'*'
+0ECE          		jrz	cmdhb6
+0ECE  2802    		DB	28H,cmdhb6-$-1
+0ED0  3E20    		mvi	a,' '
+0ED2  CDE10E  	cmdhb6:	call	cmdhbx
 FFFF          	if not nofp
-0ECC  21A10E  		lxi	h,hbmsg3
-0ECF  1186F8  		lxi	d,susave+dsdev
-0ED2  3E20    		mvi	a,' '	; never the default
-0ED4  CDD80E  		call	cmdhbx
+0ED5  21AA0E  		lxi	h,hbmsg3
+0ED8  1186F8  		lxi	d,susave+dsdev
+0EDB  3E20    		mvi	a,' '	; never the default
+0EDD  CDE10E  		call	cmdhbx
 		endif
-0ED7  C9      		ret
+0EE0  C9      		ret
 		
-0ED8  CDD803  	cmdhbx:	call	conout
-0EDB  CDD809  		call	msgout
-0EDE  1A      		ldax	d
-0EDF  13      		inx	d
-0EE0  FEFF    		cpi	0ffh
-0EE2          		jrnz	cmdhb0
-0EE2  2002    		DB	20H,cmdhb0-$-1
-0EE4  3E2D    		mvi	a,'-'
-0EE6  CDD803  	cmdhb0:	call	conout
-0EE9  3E20    		mvi	a,' '
-0EEB  CDD803  		call	conout
-0EEE  1A      		ldax	d
-0EEF  13      		inx	d
-0EF0  C630    		adi	'0'	; FF=2F,CY
-0EF2          		jrnc	cmdhb1
-0EF2  3002    		DB	30H,cmdhb1-$-1
-0EF4  3E2D    		mvi	a,'-'
-0EF6  CDD803  	cmdhb1:	call	conout
-0EF9  3E20    		mvi	a,' '
-0EFB  CDD803  		call	conout
-0EFE  1A      		ldax	d
-0EFF  FEFF    		cpi	0ffh
-0F01          		jrnz	cmdhb2
-0F01  2007    		DB	20H,cmdhb2-$-1
-0F03  3E2D    		mvi	a,'-'
-0F05  CDD803  		call	conout
-0F08          		jr	cmdhb3
-0F08  1804    		DB	18H,cmdhb3-$-1
-0F0A  EB      	cmdhb2:	xchg
-0F0B  CDD809  		call	msgout
-0F0E  CDCE09  	cmdhb3:	call	crlf
-0F11  C9      		ret
+0EE1  CDD803  	cmdhbx:	call	conout
+0EE4  CDD809  		call	msgout
+0EE7  1A      		ldax	d
+0EE8  13      		inx	d
+0EE9  FEFF    		cpi	0ffh
+0EEB          		jrnz	cmdhb0
+0EEB  2002    		DB	20H,cmdhb0-$-1
+0EED  3E2D    		mvi	a,'-'
+0EEF  CDD803  	cmdhb0:	call	conout
+0EF2  3E20    		mvi	a,' '
+0EF4  CDD803  		call	conout
+0EF7  1A      		ldax	d
+0EF8  13      		inx	d
+0EF9  C630    		adi	'0'	; FF=2F,CY
+0EFB          		jrnc	cmdhb1
+0EFB  3002    		DB	30H,cmdhb1-$-1
+0EFD  3E2D    		mvi	a,'-'
+0EFF  CDD803  	cmdhb1:	call	conout
+0F02  3E20    		mvi	a,' '
+0F04  CDD803  		call	conout
+0F07  1A      		ldax	d
+0F08  FEFF    		cpi	0ffh
+0F0A          		jrnz	cmdhb2
+0F0A  2007    		DB	20H,cmdhb2-$-1
+0F0C  3E2D    		mvi	a,'-'
+0F0E  CDD803  		call	conout
+0F11          		jr	cmdhb3
+0F11  1804    		DB	18H,cmdhb3-$-1
+0F13  EB      	cmdhb2:	xchg
+0F14  CDD809  		call	msgout
+0F17  CDCE09  	cmdhb3:	call	crlf
+0F1A  C9      		ret
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; eXtended command set
-0F12          	cmdx:
-0F12  CDE109  		call	conin	; get actual command character
-0F15  F620    		ori	00100000b	; lower case
-0F17  FE61    		cpi	'a'
-0F19          		jrc	cmxerr
-0F19  381D    		DB	38H,cmxerr-$-1
-0F1B  FE7B    		cpi	'z'+1
-0F1D          		jrnc	cmxerr
-0F1D  3019    		DB	30H,cmxerr-$-1
-0F1F  323B20  		sta	lstcmd
+0F1B          	cmdx:
+0F1B  CDE109  		call	conin	; get actual command character
+0F1E  F620    		ori	00100000b	; lower case
+0F20  FE61    		cpi	'a'
+0F22          		jrc	cmxerr
+0F22  381D    		DB	38H,cmxerr-$-1
+0F24  FE7B    		cpi	'z'+1
+0F26          		jrnc	cmxerr
+0F26  3019    		DB	30H,cmxerr-$-1
+0F28  323B20  		sta	lstcmd
 			; would like to re-use nocmd, but error path is wrong...
-0F22  4F      		mov	c,a
-0F23  0600    		mvi	b,0	; no boot modules
-0F25  21C90B  		lxi	h,bfchr
-0F28  CD6F0C  		call	bfind
-0F2B          		jrc	cmxerr
-0F2B  380B    		DB	38H,cmxerr-$-1
-0F2D  3A3B20  		lda	lstcmd
-0F30  E65F    		ani	01011111b	; upper case echo
-0F32  CDD803  		call	conout
-0F35  C3CE0C  		jmp	cmexec
+0F2B  4F      		mov	c,a
+0F2C  0600    		mvi	b,0	; no boot modules
+0F2E  21C90B  		lxi	h,bfchr
+0F31  CD6F0C  		call	bfind
+0F34          		jrc	cmxerr
+0F34  380B    		DB	38H,cmxerr-$-1
+0F36  3A3B20  		lda	lstcmd
+0F39  E65F    		ani	01011111b	; upper case echo
+0F3B  CDD803  		call	conout
+0F3E  C3CE0C  		jmp	cmexec
 		
-0F38  CDD603  	cmxerr:	call	belout
-0F3B          		jr	cmdx
-0F3B  18D5    		DB	18H,cmdx-$-1
+0F41  CDD603  	cmxerr:	call	belout
+0F44          		jr	cmdx
+0F44  18D5    		DB	18H,cmdx-$-1
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		; Print ROM version command
-0F3D          	prtver:
-0F3D  214A0F  		lxi	h,versms
-0F40  CDD809  		call	msgout
-0F43  216B0F  		lxi	h,vernum
-0F46  CDD809  		call	msgout
-0F49  C9      		ret
+0F46          	prtver:
+0F46  21530F  		lxi	h,versms
+0F49  CDD809  		call	msgout
+0F4C  21740F  		lxi	h,vernum
+0F4F  CDD809  		call	msgout
+0F52  C9      		ret
 		
-0F4A  65727369	versms:	db	'ersion ',TRM
+0F53  65727369	versms:	db	'ersion ',TRM
       6F6E2000
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		
 		; code required to return to monitor from stand-alone programs.
-0F52          	retmon:
-0F52  F3      		di
-0F53  AF      		xra	a	; reset state of ctl port
-0F54  D3F2    		out	0f2h
+0F5B          	retmon:
+0F5B  F3      		di
+0F5C  AF      		xra	a	; reset state of ctl port
+0F5D  D3F2    		out	0f2h
 FFFF          	if not nofp
-0F56  3EDF    		mvi	a,0dfh	; reset state of FP port 0
-0F58  D3F0    		out	0f0h
+0F5F  3EDF    		mvi	a,0dfh	; reset state of FP port 0
+0F61  D3F0    		out	0f0h
 		endif
-0F5A  C30000  		jmp	0
+0F63  C30000  		jmp	0
 		
-0F5D  0D0A4838	signon:	db	CR,LF,'H8'
+0F66  0D0A4838	signon:	db	CR,LF,'H8'
 0000          	if h8nofp
 		endif
 0000          	if h89
 		endif
-0F61  20      		db	' '
+0F6A  20      		db	' '
 0000          	if z180
 		endif
-0F62  4D6F6E69		db	'Monitor v'
+0F6B  4D6F6E69		db	'Monitor v'
       746F7220
       76
-0F6B  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+0F74  322E30  	vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 0000          	if alpha
 		endif
-0010          	if beta
-0F6E  28626574		db	'(beta'
+0013          	if beta
+0F77  28626574		db	'(beta'
       61
 0001          	if beta > 9
-0F73  31      		db	(beta/10)+'0'
+0F7C  31      		db	(beta/10)+'0'
 		endif
-0F74  3629    		db	(beta MOD 10)+'0',')'
+0F7D  3929    		db	(beta MOD 10)+'0',')'
 		endif
-0F76  0D0A00  		db	CR,LF,TRM
+0F7F  0D0A00  		db	CR,LF,TRM
 		
 			rept	1000h-$-2
-0F79  FF      		db	0ffh
-0F7A  FF      		db	0ffh
-0F7B  FF      		db	0ffh
-0F7C  FF      		db	0ffh
-0F7D  FF      		db	0ffh
-0F7E  FF      		db	0ffh
-0F7F  FF      		db	0ffh
-0F80  FF      		db	0ffh
-0F81  FF      		db	0ffh
 0F82  FF      		db	0ffh
 0F83  FF      		db	0ffh
 0F84  FF      		db	0ffh
@@ -5226,9 +5233,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-   427	symbols
+   428	symbols
   6144	bytes
 
-  2835	macro calls
+  2826	macro calls
   3823	macro bytes
      0	invented symbols
