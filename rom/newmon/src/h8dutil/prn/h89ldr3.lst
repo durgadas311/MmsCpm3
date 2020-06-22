@@ -1,0 +1,581 @@
+		;
+		; Code to load into the H89 with the bootstrp
+		; program. This provides the functions needed to
+		; save and restore disk images through the
+		; serial port.
+		;  On booting the H89, first use the B to load the jump tables
+		; into RAM, without any disk. Use Shift/Reset to get back
+		; to the H: prompt. Use the S command to enter the boot strap
+		; program. Use H89IMG.COM to load this program.
+		;  The command interpreter recognizes the
+		; following commands:
+		; W - Write image to disk. When each buffer is loaded
+		;      it replies with W. Each buffer must start with 'W'
+		;      or it will abort to command. Buffer size must match.
+		;      It expects the V value to match the disk in the drive.
+		;      Buffer data is transfered as 8 bit value.
+		; R - Reads a disk image, using  V value. Each buffer will
+		;     begin transfer when a 'R' is received. Buffer size
+		;     is the same as used for W command. A character, other
+		;     than r will abort command. Buffer data is transfered
+		;     as 8 bit values. Response handshake is 'r' if error.
+		; S - Save this image loader to disk as a stand alone boot
+		;      ( not HDOS ). The disk must be originally formatted
+		;      with V = 0. It returns a S when complete.
+		; V - Sets the volume number for the various operations.
+		;      Check HDOS docs for useage of the Volume number.
+		;      It must receive the volume number as a non-ascii
+		;      byte as the next byte after the the V command. It
+		;      returns a V when complete.
+		; C - Read the disk and returns the volume number if it is
+		;      an HDOS disk. If it is another type it would be an
+		;      indeterminate value.
+		; I - Fallowed by a number 0,1,2 corresponding to a sector
+		;      interleaving of 1:1, 1:2, or 1:3. Other numbers will
+		;      cause incorrect formatting during writes. This has
+		;      effect on the W and S commands only.
+		; T - Reads the value of the volume from the header of the
+		;      disk in the drive. It does this by looking at track
+		;      1's header and not by the HDOS image value.
+		; Other characters - It will reply with ? this is handy
+		;      to determine if it is truly in the command mode.
+		
+0A00          	ZBUF	EQU	0A00H	; Buffer size 1 track
+0100          	ZSTK	EQU	100H	; STACK SIZE
+		
+2313          	COMTYP	EQU	2313H	; IF FAH THEN H8-5 ELSE H8-4/H89
+					; IN BOOT STRAP
+		
+		
+		; Ports for H8-4
+00E0          	LP4	EQU	0E0H
+00E0          	TX4	EQU	LP4
+00E0          	RX4	EQU	LP4
+00E0          	DVL4	EQU	LP4
+00E1          	DVH4	EQU	LP4+1
+00E1          	IER4	EQU	LP4+1
+00E3          	LCNTL4	EQU	LP4+3
+00E4          	MCNTL4	EQU	LP4+4
+00E5          	LSTAT4	EQU	LP4+5
+		
+		; Ports for H8-5
+00FA          	LP5	EQU	0FAH
+00FA          	TX5	EQU	LP5
+00FA          	RX5	EQU	LP5
+00FB          	CNTL5	EQU	LP5+1
+00FB          	STAT5	EQU	LP5+1
+		
+		; Disk addresses
+2061          	DABORT	EQU	2061H
+2085          	DSDP	EQU	2085H
+2076          	DSDT	EQU	2076H
+2088          	DSTS	EQU	2088H
+1C19          	CLOCK	EQU	1C19H
+1EED          	WSP1	EQU	1EEDH
+2097          	DWNB	EQU	2097H
+205E          	DXOK	EQU	205EH
+206D          	DWRITE	EQU	206DH
+2067          	DREAD	EQU	2067H
+201F          	UIVEC	EQU	201FH
+2008          	MFLAG	EQU	2008H
+20A0          	DTT	EQU	20A0H
+20A4          	DDLYHS	EQU	20A4H
+20A2          	DDVCTL	EQU	20A2H
+20A3          	DDLYMO	EQU	20A3H
+20A9          	DDRVTB	EQU	20A9H
+20A7          	DVOLPT	EQU	20A7H
+2053          	DWHDA	EQU	2053H
+2073          	DDTS	EQU	2073H
+208E          	DUDLY	EQU	208EH
+2091          	DWSC	EQU	2091H
+2082          	DRDB	EQU	2082H
+		
+		
+2329          		ORG 2329H	; MATCHES WITH BOOTLDR
+2329  00      		NOP
+232A  00      		NOP
+232B  00      		NOP
+232C  00      		NOP
+232D  F3      		DI
+232E  315B31  		LXI	SP, SPINT
+2331  215A23  		LXI	H, MAINPAD-1
+2334  01FE03  		LXI	B, BUFFER-MAININT+104H
+2337  00      		NOP
+2338          	ALGNR1:
+2338  00      		NOP
+2339  00      		NOP
+233A  00      		NOP
+233B  23      		INX	H
+233C  7E      		MOV	A, M
+233D  B7      		ORA	A
+233E  CA3823  		JZ	ALGNR1		; FIND FIRST CODE
+2341  11FA02  		LXI	D, BUFFER-MAININT	; COUNT TO MOVE
+2344  19      		DAD	D		; H POINTS TO END OF SHIFTED CODE
+2345  115B26  		LXI	D, BUFFER	; END OF CODE
+2348  00      		NOP
+2349          	ALGNR2:
+2349  00      		NOP
+234A  00      		NOP
+234B  00      		NOP
+234C  7E      		MOV	A, M
+234D  12      		STAX	D	; MOVE IT UP
+234E  1B      		DCX	D
+234F  2B      		DCX	H
+2350  0D      		DCR	C
+2351  C24923  		JNZ	ALGNR2	; 256 BYTES?
+2354  05      		DCR	B	; CAUTION DOESN'T WORK RIGHT FOR
+					;  SIZES OF EVEN 100H
+2355  C24923  		JNZ	ALGNR2	; ALL DONE?
+2358  C36123  		JMP	MAININT
+235B          	MAINPAD:
+235B  00      		NOP
+235C  00      		NOP
+235D  00      		NOP
+235E  00      		NOP
+235F  00      		NOP
+2360  00      		NOP
+2361          	MAININT:
+2361  F3      		DI
+2362  3EC3    		MVI	A, 0C3H	; JMP
+2364  321F20  		STA	UIVEC
+2367  21191C  		LXI	H, CLOCK
+236A  222020  		SHLD	UIVEC+1
+236D  315B31  		LXI	SP, SPINT
+2370  CD8323  		CALL	SINT
+2373  3E01    		MVI	A, 01H
+2375  320820  		STA	MFLAG	; TURN OFF COUNTER
+2378  FB      		EI
+2379  CD6120  		CALL	DABORT	; TRACK 0
+		;	DI
+237C  00      		NOP
+237D          	MAIN1:
+237D  CDBA23  		CALL	CMND
+2380  C37D23  		JMP	MAIN1
+		
+2383          	SINT:
+2383  3A1323  		LDA	COMTYP
+2386  FEFA    		CPI	0FAH	; if H8-5 else H8-4 or H89
+2388  CAA523  		JZ	SINT5
+		
+		
+238B          	SINT4:	; For H8-4 and H89 with LP
+238B  AF      		XRA	A
+238C  D3E3    		OUT	LCNTL4	; LINE CONTROL
+238E  D3E1    		OUT	IER4	; NO INTERRUPTS
+2390  D3E4    		OUT	MCNTL4	; INIT MODEM CONTROL
+2392  3D      		DCR	A	; SHOULD BE 'MVI A, 80H' BUT 0FFH OK
+2393  D3E3    		OUT	LCNTL4
+2395  3E0C    		MVI	A, 0CH	; 9600 BAUD
+2397  D3E0    		OUT	DVL4
+2399  AF      		XRA	A
+239A  D3E1    		OUT	DVH4
+239C  3E07    		MVI	A, 07H	; 8 BIT 2 STOPS
+239E  D3E3    		OUT	LCNTL4
+23A0  DBE5    		IN	LSTAT4
+23A2  DBE0    		IN	RX4	; CLEAR ANY JUNK
+23A4  C9      		RET
+		
+23A5          	SINT5:	; For H8-5 serial
+23A5  3EAA    		MVI	A, 0AAH
+23A7  D3FB    		OUT	CNTL5
+23A9  3E40    		MVI	A, 040H
+23AB  D3FB    		OUT	CNTL5	; RESET 8251
+23AD  3ECE    		MVI	A, 0CEH	; ASYNC 2 STOP 8 BIT NO PARITY 16X
+23AF  D3FB    		OUT	CNTL5
+23B1  3E15    		MVI	A, 015H	; DON'T WANT INTRPTS
+23B3  D3FB    		OUT	CNTL5	; ENABLE TX/RX
+23B5  DBFB    		IN	STAT5
+23B7  DBFA    		IN	RX5	; CLEAR ANY JUNK
+23B9  C9      		RET
+		
+23BA          	CMND:
+23BA  CDEA23  		CALL	CHRIN
+23BD  FE00    		CPI	0
+23BF  CABA23  		JZ	CMND
+23C2  FE52    		CPI	'R'
+23C4  CA1E25  		JZ	RDIMG
+23C7  FE57    		CPI	'W'
+23C9  CAAF24  		JZ	WRIMG
+23CC  FE53    		CPI	'S'
+23CE  CAAC25  		JZ	SVLDR
+23D1  FE56    		CPI	'V'
+23D3  CA0F26  		JZ	SETV
+23D6  FE43    		CPI	'C'
+23D8  CA8625  		JZ	CHKV
+23DB  FE49    		CPI	'I'
+23DD  CA1A26  		JZ	INTRLV
+23E0  FE54    		CPI	'T'
+23E2  CADC25  		JZ	RDDV
+23E5  3E3F    		MVI	A, '?'
+23E7  C3FB23  		JMP	CHROUT
+		
+23EA          	CHRIN:
+23EA  3A1323  		LDA	COMTYP
+23ED  FEFA    		CPI	0FAH	; if H8-5 else H8-4 or H89
+23EF  CA1124  		JZ	CHRIN5
+		
+23F2          	CHRIN4:
+23F2  DBE5    		IN	LSTAT4
+23F4  1F      		RAR
+23F5  D2F223  		JNC	CHRIN4	; WAIT FOR CHAR
+23F8  DBE0    		IN	RX4
+23FA  C9      		RET
+		
+23FB          	CHROUT:
+23FB  57      		MOV	D, A
+23FC  3A1323  		LDA	COMTYP
+23FF  FEFA    		CPI	0FAH	; if H8-5 else H8-4 or H89
+2401  CA1B24  		JZ	CHRO5
+2404          	CHRO4:
+2404  DBE5    		IN	LSTAT4
+2406  E660    		ANI	60H
+2408  FE60    		CPI	60H
+240A  C20424  		JNZ	CHRO4
+240D  7A      		MOV	A, D
+240E  D3E0    		OUT	TX4
+2410  C9      		RET
+		
+2411          	CHRIN5:
+2411  DBFB    		IN	STAT5
+2413  1F      		RAR
+2414  1F      		RAR
+2415  D21124  		JNC	CHRIN5	; WAIT FOR CHAR
+2418  DBFA    		IN	RX5
+241A  C9      		RET
+		
+241B          	CHRO5:
+241B  DBFB    		IN	STAT5
+241D  1F      		RAR
+241E  D21B24  		JNC	CHRO5
+2421  7A      		MOV	A, D
+2422  D3FA    		OUT	TX5
+2424  C9      		RET
+		
+			; FORMAT A SINGLE TRACK
+			; B = track C = vol#
+2425          	FTRK:
+2425  F3      		DI
+2426  3E01    		MVI	A, 01
+2428  320820  		STA	MFLAG	; TURN ON COUNTER
+242B  78      		MOV	A, B
+242C  32A020  		STA	DTT
+242F  3E02    		MVI	A, 02
+2431  32A420  		STA	DDLYHS
+2434  AF      		XRA	A
+2435  D37F    		OUT	7FH
+2437  32A220  		STA	DDVCTL
+243A  32A320  		STA	DDLYMO
+243D  21AA20  		LXI	H, DDRVTB+1
+2440  22A720  		SHLD	DVOLPT
+2443  71      		MOV	M, C
+2444  FB      		EI
+2445  CD8520  		CALL	DSDP	; SDP
+2448  CD7620  		CALL	DSDT	; DIS INTRS
+244B  AF      		XRA	A
+244C  D37E    		OUT	7EH
+244E  3C      		INR	A
+244F  325320  		STA	DWHDA
+2452  3AA220  		LDA	DDVCTL
+2455  3C      		INR	A
+2456  D37F    		OUT	7FH
+2458          	TRK1:
+2458  CD8820  		CALL	DSTS	; SKIP THIS SECTOR
+245B  3AA420  		LDA	DDLYHS
+245E  A7      		ANA	A
+245F  C25824  		JNZ	TRK1	; WAIT DELAY
+2462  2AA720  		LHLD	DVOLPT
+2465  46      		MOV	B, M	; VOL#
+2466  2A5126  		LHLD	SECPNTR	; SEC INTERLEAVE TABLE
+2469          	TRK2:
+2469  0E0A    		MVI	C, 0AH
+246B  CDED1E  		CALL	WSP1	; WRITES 0'S
+246E  78      		MOV	A, B	; VOL#
+246F  CD9720  		CALL	DWNB
+2472  3AA020  		LDA	DTT	; TRACK
+2475  CD9720  		CALL	DWNB
+2478  7E      		MOV	A, M	; SEC#
+2479  CD9720  		CALL	DWNB
+247C  23      		INX	H	; INCR SEC PNTR
+247D  7A      		MOV	A, D	; ?chksum?
+247E  CD9720  		CALL	DWNB
+2481  0E10    		MVI	C, 10H
+2483  CDED1E  		CALL	WSP1
+2486          	TRK3:
+2486  CD9720  		CALL	DWNB
+2489  0D      		DCR	C	; 256 0'S
+248A  C28624  		JNZ	TRK3
+248D          	TRK4:
+248D  AF      		XRA	A
+248E  CD9720  		CALL	DWNB	; END PAD
+2491  DB7F    		IN	7FH
+2493  1F      		RAR
+2494  D28D24  		JNC	TRK4	; UNTIL SEC END
+2497  7E      		MOV	A, M
+2498  B7      		ORA	A	; 0 MARKS END OF SECTABLE
+2499  C26924  		JNZ	TRK2	; UNTIL END OF TRACK
+249C  3AA220  		LDA	DDVCTL
+249F  D37F    		OUT	7FH
+24A1  FB      		EI
+24A2  CD5E20  		CALL	DXOK
+24A5  3E14    		MVI	A, 14H
+24A7  325320  		STA	DWHDA
+24AA  AF      		XRA	A
+24AB  320820  		STA	MFLAG	; TURN OFF COUNTER ?
+24AE  C9      		RET
+		
+24AF          	WRIMG:
+24AF  AF      		XRA	A
+24B0  325526  		STA	SECNUM
+24B3  325426  		STA	CURTRK
+24B6  325626  		STA	SECNUM+1
+24B9          	WRIMG1:
+24B9  21AA20  		LXI	H, DDRVTB+1
+24BC  77      		MOV	M, A
+24BD  22A720  		SHLD	DVOLPT
+24C0  CDEA23  		CALL	CHRIN
+24C3  FE57    		CPI	'W'	; HANDSHAKE
+24C5  C0      		RNZ
+24C6  215B26  		LXI	H, BUFFER
+24C9  01000A  		LXI	B, ZBUF
+24CC          	WRIMG2:
+24CC  CDEA23  		CALL	CHRIN	; GET DATA
+24CF  77      		MOV	M, A
+24D0  23      		INX	H
+24D1  0B      		DCX	B
+24D2  78      		MOV	A, B
+24D3  B1      		ORA	C
+24D4  C2CC24  		JNZ	WRIMG2
+		;
+24D7  3A5426  		LDA	CURTRK
+24DA  47      		MOV	B, A
+24DB  B7      		ORA	A
+24DC  CAE324  		JZ	WRIMG3	; C IS ZERO FROM ABOVE
+24DF  3A5326  		LDA	VOLNUM	;  ON FIRST TRACK
+24E2  4F      		MOV	C, A	;  USE VOL# ON THE REST
+24E3          	WRIMG3:
+24E3  CD2524  		CALL	FTRK
+24E6  3A5426  		LDA	CURTRK
+24E9  3C      		INR	A
+24EA  325426  		STA	CURTRK
+		;
+24ED  01000A  		LXI	B, ZBUF
+24F0  115B26  		LXI	D, BUFFER
+24F3  2A5526  		LHLD	SECNUM
+24F6  CD1525  		CALL	WRBUF
+		;
+24F9  3E57    		MVI	A, 'W'
+24FB  CDFB23  		CALL	CHROUT
+24FE  2A5526  		LHLD	SECNUM
+2501  110A00  		LXI	D, 0AH	; SEC/TRK
+2504  19      		DAD	D
+2505  225526  		SHLD	SECNUM
+2508  1170FE  		LXI	D, -190H	; 400D IS MAX
+250B  19      		DAD	D
+250C  7C      		MOV	A, H
+250D  B5      		ORA	L
+250E  3A5326  		LDA	VOLNUM
+2511  C2B924  		JNZ	WRIMG1	; LAST TRACK?
+2514  C9      		RET
+		
+2515          	WRBUF:
+			; BC = BUFFER SIZE
+			; DE = BUFFER ADDR
+			; HL = FIRST SEC#
+2515  3E02    		MVI	A, 02
+2517  32A420  		STA	DDLYHS
+251A  CD6D20  		CALL	DWRITE
+251D  C9      		RET
+		
+251E          	RDIMG:
+251E  AF      		XRA	A
+251F  325526  		STA	SECNUM
+2522  325626  		STA	SECNUM+1
+2525          	RDIMG1:
+2525  21AA20  		LXI	H, DDRVTB+1
+2528  77      		MOV	M, A
+2529  22A720  		SHLD	DVOLPT
+252C  CDEA23  		CALL	CHRIN
+252F  FE52    		CPI	'R'
+2531  C0      		RNZ
+		;
+2532  01000A  		LXI	B, ZBUF
+2535  115B26  		LXI	D, BUFFER
+2538  2A5526  		LHLD	SECNUM
+253B  CD7425  		CALL	RDBUF
+		;
+253E  215B26  		LXI	H, BUFFER
+2541  01000A  		LXI	B, ZBUF
+2544          	RDIMG2:
+2544  7E      		MOV	A, M
+2545  CDFB23  		CALL	CHROUT
+2548  23      		INX	H
+2549  0B      		DCX	B
+254A  78      		MOV	A, B
+254B  B1      		ORA	C
+254C  C24425  		JNZ	RDIMG2
+		;
+254F  3A5026  		LDA	GOODRD	; LOOK FOR READ ERROR
+2552  B7      		ORA	A
+2553  3E52    		MVI	A, 'R'
+2555  C25A25  		JNZ	RDIMG3
+2558  F620    		ORI	020H	; BAD READ SEND r
+255A          	RDIMG3:
+255A  CDFB23  		CALL	CHROUT
+255D  2A5526  		LHLD	SECNUM
+2560  110A00  		LXI	D, 0AH	; SEC/TRK
+2563  19      		DAD	D
+2564  225526  		SHLD	SECNUM
+2567  1170FE  		LXI	D, -190H	; 400D IS MAX
+256A  19      		DAD	D
+256B  7C      		MOV	A, H
+256C  B5      		ORA	L
+256D  3A5326  		LDA	VOLNUM
+2570  C22525  		JNZ	RDIMG1
+2573  C9      		RET
+		
+2574          	RDBUF:
+			; BC = BUFFER SIZE
+			; DE = BUFFER ADDR
+			; HL = FIRST SEC#
+2574  3E02    		MVI	A, 02
+2576  32A420  		STA	DDLYHS
+2579  CD6720  		CALL	DREAD
+257C  3E00    		MVI	A, 0
+257E  DA8225  		JC	RDBF1	; IF CARRY, READ ERROR
+2581  3D      		DCR	A
+2582  325026  	RDBF1:	STA	GOODRD
+2585  C9      		RET
+		
+2586          	CHKV:
+2586  AF      		XRA	A
+2587  325526  		STA	SECNUM
+258A  325626  		STA	SECNUM+1
+258D          	CHKV1:
+258D  21AA20  		LXI	H, DDRVTB+1
+2590  77      		MOV	M, A
+2591  22A720  		SHLD	DVOLPT
+		;
+2594  01000A  		LXI	B, ZBUF
+2597  115B26  		LXI	D, BUFFER
+259A  2A5526  		LHLD	SECNUM
+259D  CD7425  		CALL	RDBUF
+		;
+25A0  3A5B2F  		LDA	BUFFER+900H
+25A3  CDFB23  		CALL	CHROUT
+25A6  3E43    		MVI	A, 'C'
+25A8  CDFB23  		CALL	CHROUT
+25AB  C9      		RET
+		
+25AC          	SVLDR:
+25AC  AF      		XRA	A
+25AD  325326  		STA	VOLNUM
+25B0  218022  		LXI	H, 2280H
+25B3  110C26  		LXI	D, DSKBOOT
+25B6  0E4F    		MVI	C, DBEND-DSKBOOT
+25B8          	SVLDR1:
+25B8  1A      		LDAX	D
+25B9  13      		INX	D
+25BA  77      		MOV	M, A
+25BB  23      		INX	H
+25BC  0D      		DCR	C
+25BD  C2B825  		JNZ	SVLDR1
+		;
+25C0  AF      		XRA	A
+25C1  47      		MOV	B, A
+25C2  4F      		MOV	C, A
+25C3  CD2524  		CALL	FTRK
+		;
+25C6  AF      		XRA	A
+25C7  2AA720  		LHLD	DVOLPT
+25CA  77      		MOV	M, A
+25CB  01D503  		LXI	B, SECNUM-2280H
+25CE  118022  		LXI	D, 2280H
+25D1  210000  		LXI	H, 0
+25D4  CD1525  		CALL	WRBUF
+25D7  3E53    		MVI	A, 'S'
+25D9  C3FB23  		JMP	CHROUT
+		
+25DC          	RDDV:	; READ DISK VOLUME
+25DC  212000  		LXI	H, 20H	; SOMEPLACE OFF TRACK 0
+25DF  E5      		PUSH	H
+25E0  CD8520  		CALL	DSDP
+25E3  E1      		POP	H
+25E4  CD7320  		CALL	DDTS
+25E7  3E01    		MVI	A,1
+25E9  CD8E20  		CALL	DUDLY
+25EC  CD8820  	RDDV1:	CALL	DSTS	; SKIP SECTOR
+25EF  3AA420  		LDA	DDLYHS
+25F2  A7      		ANA	A
+25F3  C2EC25  		JNZ	RDDV1
+25F6  F3      		DI
+25F7  CD9120  		CALL	DWSC
+25FA  CD8220  		CALL	DRDB
+25FD  FB      		EI
+25FE  F5      		PUSH	PSW
+25FF  CD6120  		CALL	DABORT	; TRACK 0
+2602  F1      		POP	PSW
+2603  CDFB23  		CALL	CHROUT
+2606  3E54    		MVI	A, 'T'
+2608  CDFB23  		CALL	CHROUT
+260B  C9      		RET
+		
+		
+260C          	DSKBOOT:
+260C  C36123  		JMP	MAININT
+		
+260F          	SETV:
+260F  CDEA23  		CALL	CHRIN
+2612  325326  		STA	VOLNUM
+2615  3E56    		MVI	A, 'V'
+2617  C3FB23  		JMP	CHROUT
+		
+261A          	INTRLV:
+261A  CDEA23  		CALL	CHRIN
+261D  87      		ADD	A
+261E  47      		MOV	B, A
+261F  87      		ADD	A
+2620  87      		ADD	A
+2621  80      		ADD	B	; TIMES 10
+2622  4F      		MOV	C, A
+2623  0600    		MVI	B, 0
+2625  213126  		LXI	H, SEC1
+2628  09      		DAD	B
+2629  225126  		SHLD	SECPNTR
+262C  3E49    		MVI	A, 'I'
+262E  C3FB23  		JMP	CHROUT
+		
+2631  00010203	SEC1:	DB	0,1,2,3,4,5,6,7,8,9
+      04050607
+      0809
+263B  00020406	SEC2:	DB	0,2,4,6,8,1,3,5,7,9
+      08010305
+      0709
+2645  00030609	SEC3:	DB	0,3,6,9,2,5,8,1,4,7
+      02050801
+      0407
+264F  00      	SECEND:	DB	0
+		
+2650  00      	GOODRD:	DB	0
+2651  3126    	SECPNTR: DW	SEC1
+2653  00      	VOLNUM:	DB	0
+2654  00      	CURTRK:	DB	0
+2655  0000    	SECNUM:	DW	0	; 400D MAX 190H
+2657  FF00FF00	DUMMY:	DB	0FFH, 0, 0FFH, 0	; INSURE ASYNC ALIGNMENT
+		
+265B          	DBEND:
+265B          	BUFFER:
+265B          		DS	ZBUF
+		
+305B          		DS	ZSTK
+315B          	SPINT:
+		
+315B          		END
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+    93	symbols
+   818	bytes

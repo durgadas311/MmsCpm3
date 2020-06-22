@@ -52,6 +52,8 @@ exec:
 	in	0f2h
 	ani	00000011b
 	jrnz	error
+	lxi	h,MFlag
+	setb	1,m	; disable disp updates
 	; TODO: print message?
 	lxi	h,stmsg
 	call	msgout
@@ -105,6 +107,20 @@ abort:	call	crlf
 chk0:	in	LSR
 	rar
 	jrnc	check
+	; char is ready, see if the last one
+	mov	a,e
+	cpi	LOW bootend
+	rnz
+	mov	a,d
+	cpi	HIGH bootend
+	rnz
+	; on last char of boot...
+	push	h
+	push	d
+	lxi	h,ready
+	call	msgout
+	pop	d
+	pop	h
 	ret
 
 signon:	db	' H8D Utility bootstrap',CR,LF,0
@@ -116,6 +132,7 @@ stmsg:	db	'Using serial port '
 	db	'Start the H8D Utility on host.',CR,LF
 	db	'Ctl-C to quit ',0
 errmsg:	db	BEL,'No H17 installed (dipswitch set?)',CR,LF,0
+ready:	db	CR,LF,'Ready.',CR,LF,0
 
 ; --------- bootstrap code --------
 ; This code is moved to 2300H and must end with the PCHL at 2329H
