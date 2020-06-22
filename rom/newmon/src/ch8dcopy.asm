@@ -21,7 +21,7 @@ CTLC	equ	3
 
 bootadr	equ	2300H
 bootend	equ	2329H
-utilend	equ	265BH
+utilend	equ	2662H
 
 	org	1000h
 first:	db	HIGH (last-first)	; +0: num pages
