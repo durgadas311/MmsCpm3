@@ -50,6 +50,12 @@ FF80          	pcode	set	0ff80h
 0020          	ctl$ORG0	equ	00100000b	; maps full RAM
 0080          	ctl$IO1		equ	10000000b	; enables EEPROM write
 		
+		; MFlag bit definitions
+0080          	mfl$HLT	equ	10000000b	; disable HLT processing (TODO)
+0040          	mfl$NRF	equ	01000000b	; disable refresh of display
+0002          	mfl$DDU	equ	00000010b	; disable disp update (debug info)
+0001          	mfl$CLK	equ	00000001b	; allow 2mS clock hook (user hook)
+		
 0000          	if z180
 		else
 		; H8-512K MMU
@@ -1493,7 +1499,7 @@ FFFF          	if not nofp
 		
 0706          	kpubt:
 0706  3A0820  		lda	MFlag
-0709  F602    		ori	00000010b	; disable disp updates
+0709  F602    		ori	mfl$DDU	; disable disp updates
 070B  320820  		sta	MFlag
 070E  CD780B  		call	clrdisp	; clean slate
 0711  01310B  		lxi	b,dDev
@@ -1554,8 +1560,8 @@ FFFF          	if not nofp
 077E  FB      		ei	; TODO: more required before this?
 077F  210820  		lxi	h,MFlag
 0782  7E      		mov	a,m
-0783  E6FE    		ani	11111110b	; disable "private" clock intr
-0785  F602    		ori	00000010b	; disable disp updates
+0783  E6FE    		ani	not mfl$CLK	; disable "private" clock intr
+0785  F602    		ori	mfl$DDU		; disable disp updates
 0787  77      		mov	m,a
 0788  013A0B  		lxi	b,dErr
 078B  110B20  		lxi	d,Aleds
@@ -1590,7 +1596,7 @@ FFFF          	if not nofp
 07B5  323A20  		sta	kpchar
 07B8  210820  		lxi	h,MFlag
 07BB  7E      		mov	a,m
-07BC  E6BD    		ani	10111101b	; normal mode...
+07BC  E6BD    		ani	not (mfl$NRF+mfl$DDU)	; MFlag normal mode...
 07BE  77      		mov	m,a
 			; should return to 'start' but avoid extra prompts...
 07BF  C39F00  		jmp	re$entry
@@ -1658,7 +1664,7 @@ FFFF          	if not nofp
 		
 0839          	btdsp:
 0839  3A0820  		lda	MFlag
-083C  F602    		ori	00000010b	; disable disp updates
+083C  F602    		ori	mfl$DDU	; disable disp updates
 083E  320820  		sta	MFlag
 0841  D5      		push	d
 0842  C5      		push	b
@@ -1698,7 +1704,7 @@ FFFF          	if not nofp
 		
 0877          	kprdx:	; choose radix for display
 0877  3A0820  		lda	MFlag
-087A  F602    		ori	00000010b	; disable disp updates
+087A  F602    		ori	mfl$DDU	; disable disp updates
 087C  320820  		sta	MFlag
 087F  CD780B  		call	clrdisp
 0882  01400B  		lxi	b,dRad
@@ -1720,7 +1726,7 @@ FFFF          	if not nofp
 08A2  3EFA    		mvi	a,250		; 500mS
 08A4  CD3002  		call	delay
 08A7  3A0820  		lda	MFlag
-08AA  E6FD    		ani	11111101b	; enable disp updates
+08AA  E6FD    		ani	not mfl$DDU	; enable disp updates
 08AC  320820  		sta	MFlag
 			; TODO: beep?
 08AF  C9      		ret
@@ -2065,7 +2071,8 @@ FFFF          	if not nofp
 0A60  C9      		ret
 		
 		; Update Front-panel Display
-0A61  3E02    	ufd:	mvi	a,00000010b
+		; B=MFlag, destroyed
+0A61  3E02    	ufd:	mvi	a,mfl$DDU
 0A63  A0      		ana	b
 0A64  C0      		rnz		; updates disabled
 0A65  210620  		lxi	h,DsProt
@@ -2317,7 +2324,7 @@ FFFF          	if not nofp
 0BB2  7E      		mov	a,m
 0BB3  F5      		push	psw
 0BB4  E61F    		ani	31	; 64mS
-0BB6  CC610A  		cz	ufd	; B=MFlag
+0BB6  CC610A  		cz	ufd	; B=MFlag, destroyed
 0BB9  F1      		pop	psw
 0BBA  E60F    		ani	15	; 32mS
 0BBC  CC400A  		cz	kpchk
@@ -2325,7 +2332,7 @@ FFFF          	if not nofp
 0BBF          	int1$xx:
 			; not really FP related, but no space in low ROM...
 0BBF  3A0820  		lda	MFlag
-0BC2  0F      		rrc		; private int1?
+0BC2  0F      		rrc		; mfl$CLK private int1?
 0BC3  DC1F20  		cc	vrst1
 0BC6  C34D00  		jmp	intret
 		
@@ -5233,7 +5240,7 @@ Statistics:
 
      4	passes
      0	jr promotions
-   428	symbols
+   432	symbols
   6144	bytes
 
   2826	macro calls

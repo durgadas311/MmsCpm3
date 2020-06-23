@@ -56,6 +56,12 @@ ctl$MEM1	equ	00001000b	; maps full ROM (if !ORG0)
 ctl$ORG0	equ	00100000b	; maps full RAM
 ctl$IO1		equ	10000000b	; enables EEPROM write
 
+; MFlag bit definitions
+mfl$HLT	equ	10000000b	; disable HLT processing (TODO)
+mfl$NRF	equ	01000000b	; disable refresh of display
+mfl$DDU	equ	00000010b	; disable disp update (debug info)
+mfl$CLK	equ	00000001b	; allow 2mS clock hook (user hook)
+
 if z180
 ; Z180 internal registers (I/O ports) - CCR
 itc	equ	34h
@@ -1433,7 +1439,7 @@ galtbt:
 
 kpubt:
 	lda	MFlag
-	ori	00000010b	; disable disp updates
+	ori	mfl$DDU	; disable disp updates
 	sta	MFlag
 	call	clrdisp	; clean slate
 	lxi	b,dDev
@@ -1489,8 +1495,8 @@ deverr:
 	ei	; TODO: more required before this?
 	lxi	h,MFlag
 	mov	a,m
-	ani	11111110b	; disable "private" clock intr
-	ori	00000010b	; disable disp updates
+	ani	not mfl$CLK	; disable "private" clock intr
+	ori	mfl$DDU		; disable disp updates
 	mov	m,a
 	lxi	b,dErr
 	lxi	d,Aleds
@@ -1522,7 +1528,7 @@ bterr1:	cmp	m
 	sta	kpchar
 	lxi	h,MFlag
 	mov	a,m
-	ani	10111101b	; normal mode...
+	ani	not (mfl$NRF+mfl$DDU)	; MFlag normal mode...
 	mov	m,a
 	; should return to 'start' but avoid extra prompts...
 	jmp	re$entry
@@ -1585,7 +1591,7 @@ kpbt1:
 
 btdsp:
 	lda	MFlag
-	ori	00000010b	; disable disp updates
+	ori	mfl$DDU	; disable disp updates
 	sta	MFlag
 	push	d
 	push	b
@@ -1624,7 +1630,7 @@ kptap:	; cassette load (read) or store (write, save)
 
 kprdx:	; choose radix for display
 	lda	MFlag
-	ori	00000010b	; disable disp updates
+	ori	mfl$DDU	; disable disp updates
 	sta	MFlag
 	call	clrdisp
 	lxi	b,dRad
@@ -1645,7 +1651,7 @@ rdx0:	sta	Radix		; 00       ff
 	mvi	a,250		; 500mS
 	call	delay
 	lda	MFlag
-	ani	11111101b	; enable disp updates
+	ani	not mfl$DDU	; enable disp updates
 	sta	MFlag
 	; TODO: beep?
 	ret
@@ -1967,7 +1973,8 @@ kpchk0:	mov	m,a	; RckA
 	ret
 
 ; Update Front-panel Display
-ufd:	mvi	a,00000010b
+; B=MFlag, destroyed
+ufd:	mvi	a,mfl$DDU
 	ana	b
 	rnz		; updates disabled
 	lxi	h,DsProt
@@ -2204,7 +2211,7 @@ fp3:
 	mov	a,m
 	push	psw
 	ani	31	; 64mS
-	cz	ufd	; B=MFlag
+	cz	ufd	; B=MFlag, destroyed
 	pop	psw
 	ani	15	; 32mS
 	cz	kpchk
@@ -2212,7 +2219,7 @@ endif
 int1$xx:
 	; not really FP related, but no space in low ROM...
 	lda	MFlag
-	rrc		; private int1?
+	rrc		; mfl$CLK private int1?
 	cc	vrst1
 	jmp	intret
 
