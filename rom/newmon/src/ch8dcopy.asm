@@ -54,6 +54,10 @@ exec:
 	jrnz	error
 	lxi	h,MFlag
 	setb	1,m	; disable disp updates
+	lxi	h,fpmsg
+	lxi	d,fpLeds
+	lxi	b,9
+	ldir
 	; TODO: print message?
 	lxi	h,stmsg
 	call	msgout
@@ -84,7 +88,8 @@ h17ini0:
 	inx	h
 	dcr	a
 	jrnz	h17ini0
-	; H17 "front" should be propped-up.
+	; H17 "front" should now be propped-up.
+	ei
 	lxi	h,bootstrap
 	lxi	d,bootadr
 	lxi	b,bootlen
@@ -103,6 +108,8 @@ check:	in	0edh
 	jrnz	chk0
 	pop	h	; discard local return adr
 abort:	call	crlf
+	lxi	h,MFlag
+	res	1,m	; enable disp updates
 	ret	; return (safely?) to monitor
 chk0:	in	LSR
 	rar
@@ -133,6 +140,10 @@ stmsg:	db	'Using serial port '
 	db	'Ctl-C to quit ',0
 errmsg:	db	BEL,'No H17 installed (dipswitch set?)',CR,LF,0
 ready:	db	CR,LF,'Ready.',CR,LF,0
+; pattern for Front Panel display...
+fpmsg:	db	10010010b,10000000b,11000010b	; "H8d"
+	db	11111111b,11011110b,10001100b	; " rE"
+	db	10010000b,11000010b,10100010b	; "Ady"
 
 ; --------- bootstrap code --------
 ; This code is moved to 2300H and must end with the PCHL at 2329H
