@@ -9,6 +9,22 @@
  */
 
 #include "setup30.h"
+#include "display.h"
+#include "term.h"
+#include "putdrvtb.h"
+#include "tbconv.h"
+#include "btconv.h"
+#include <ctype.h>
+
+int setiored(char *filename);
+void cpyred(word *rvec1, word *rvec2);
+void prtrhd();
+void prtrfix();
+void prtrvar(word *redvec);
+void prtred(word *redvec);
+int getrfld(word *redvec);
+int chkrvec(word *redvec);
+int searchchr(short devnum, short *mod);
 
 #define STLNE	5
 #define NLNE	12

@@ -12,6 +12,20 @@
 
 #include "setup30.h"
 
+int getbyts(int n, byte *array, word adr);
+int putbyts(int n, byte *array, word adr);
+int getword(word *dptr, word address);
+int putword(word *dptr, word address);
+int getbyte(byte *dptr, word address);
+int putbyte(byte *dptr, word address);
+int readwrite(short sec);
+int adrsec(word address);
+int adroff(word address);
+int openbios(char *filename);
+int closebios();
+int readbios(short sector);
+int writebios(short sector);
+
 int getbyts(int n, byte *array, word adr) {	/* get an array of n bytes from bios */
 	ushort i;
 
@@ -70,7 +84,7 @@ int getbyte(byte *dptr, word address) {
 		}
 		ptr = secbuf + adroff(address);
 	} else {
-		ptr = address;
+		ptr = (byte *)address;
 	}
 	*dptr = *ptr;
 	return (OK);
@@ -88,7 +102,7 @@ int putbyte(byte *dptr, word address) {
 		ptr = secbuf + adroff(address);
 		writeflg = TRUE;
 	} else {
-		ptr = address;
+		ptr = (byte *)address;
 	}
 	*ptr = *dptr;
 	return (OK);
@@ -121,7 +135,7 @@ int openbios(char *filename) {
 	byte *ptr;
 
 	if (bioscurflg) {
-		fd = open(filename, 2);
+		fd = open(filename, O_RDWR, 0);
 		if (fd == ERROR) {
 			return (ERROR);
 		}
@@ -130,7 +144,7 @@ int openbios(char *filename) {
 		}
 		biosstart = 0000;
 	} else {
-		ptr = 2;
+		ptr = (byte *)2; /* BIOS wboot hi byte */
 		biosstart = *ptr << 8;
 	}
 	return (OK);
@@ -156,11 +170,11 @@ int closebios() {
 int readbios(short sector) {
 	short er;
 
-	if (seek(fd, sector, 0) == ERROR) {
+	if (lseek(fd, sector * SECSIZE, 0) == ERROR) {
 		return (ERROR);
 	}
-	er = read(fd, secbuf, NUMSEC);
-	if (er != NUMSEC) {
+	er = read(fd, secbuf, NUMSEC * SECSIZE);
+	if (er != NUMSEC * SECSIZE) {
 		return (ERROR);
 	}
 	cursec = sector;
@@ -170,11 +184,11 @@ int readbios(short sector) {
 int writebios(short sector) {
 	short er;
 
-	if (seek(fd, sector, 0) == ERROR) {
+	if (lseek(fd, sector * SECSIZE, 0) == ERROR) {
 		return (ERROR);
 	}
-	er = write(fd, secbuf, NUMSEC);
-	if (er != NUMSEC) {
+	er = write(fd, secbuf, NUMSEC * SECSIZE);
+	if (er != NUMSEC * SECSIZE) {
 		return (ERROR);
 	}
 	cursec = sector;

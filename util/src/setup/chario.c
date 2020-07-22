@@ -9,6 +9,44 @@
  */
 
 #include "setup30.h"
+#include "display.h"
+#include "term.h"
+#include "tbconv.h"
+#include <ctype.h>
+
+void setchario(CHARTABL *mainchr, char *filename);
+void cpychr(CHARTABL *chr1, CHARTABL *chr2);
+void reinitio(CHARTABL *chrentry);
+void prtchd(CHARTABL *chrentry, bool confg);
+void prtcvar(CHARTABL *chrentry, bool confg);
+int getfld(CHARTABL *chrentry, bool confg);
+void prtcmsg(CHARTABL *chrentry, bool confg);
+void inhdmsg();
+void outhdmsg();
+void initfld(CHARTABL *chrentry);
+void baudfld(CHARTABL *chrentry);
+void parfld(CHARTABL *chrentry);
+void stopfld(CHARTABL *chrentry);
+void wlenfld(CHARTABL *chrentry);
+void sftpfld(CHARTABL *chrentry);
+void inhdfld(CHARTABL *chrentry);
+void outhdfld(CHARTABL *chrentry);
+void prtdce(CHARTABL *chrentry);
+void prtbasept(CHARTABL *chrentry);
+void prtinitflg(CHARTABL *chrentry);
+void prtbaudrt(CHARTABL *chrentry);
+void prtparity(CHARTABL *chrentry);
+void prtstop(CHARTABL *chrentry);
+void prtwlen(CHARTABL *chrentry);
+void prtsft(CHARTABL *chrentry);
+void prtinhand(CHARTABL *chrentry);
+void prtouthand(CHARTABL *chrentry);
+void prtpinnum(CHARTABL *chrentry);
+void prtpin(short pos, char *s);
+void prtpind(short pos, char *s);
+int setnode(CHARTABL *chrentry, char *filename);
+void prtndhd(CHARTABL *chrentry);
+void prtnd(byte ndnum);
 
 #define  NCOL	14
 #define  STCOL	24
@@ -51,7 +89,7 @@ void setchario(CHARTABL *mainchr, char *filename) {
 			}
 			cpychr(mainchr, chrentry);
 			if (putchartbl(chrentry) == ERROR) {
-				putwin(1, errmsg(errno()));
+				putwin(1, errmsg(errno));
 				bell();
 				inp = NULL;
 			}
@@ -61,7 +99,7 @@ void setchario(CHARTABL *mainchr, char *filename) {
 }
 
 void cpychr(CHARTABL *chr1, CHARTABL *chr2) {	/* copys chr1 into chr2 */
-	movmem(chr2, chr1, sizeof * chr1);
+	memcpy(chr2, chr1, sizeof * chr1);
 }
 
 void reinitio(CHARTABL *chrentry) {	/* reinitializes the character io */

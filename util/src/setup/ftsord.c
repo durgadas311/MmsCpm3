@@ -9,6 +9,14 @@
  */
 
 #include "setup30.h"
+#include "display.h"
+#include "term.h"
+#include "putdrvtb.h"
+
+int setftsord(char *filename);
+void prtfthd();
+void prtftyp(byte ftsord);
+
 #define  MSTR 6
 
 int setftsord(char *filename) {

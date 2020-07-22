@@ -10,6 +10,34 @@
  */
 
 #include "setup30.h"
+#include "biosfile.h"
+#include <malloc.h>
+
+int gettables();
+int testchario(word modstr);
+int getcpt();
+int getdpt();
+int getthdstr(word *dptr);
+int getnxtthd(word *nxtthd, word thd);
+int btcom(COMTABL *compart, word modstr);
+int btchario(CHARTABL *chrmod, word modstr);
+int btdiskio(DISKTABL *diskmod, word modstr);
+int btxmode(CHARDEV *chrentry);
+int btchrtbl(CHARDEV *chrentry);
+int getnode(word modstr);
+int btmode(FLOPDEV *flpentry);
+int getxmadr(word *adr, word modstr);
+int getctadr(word *adr, word modstr, byte phydevnum);
+int getmadr(word *adr, word modstr);
+void btdsize(FLOPDEV *flpentry);
+void btdrvcontr(FLOPDEV *flpentry);
+void btsteprt(FLOPDEV *flpentry);
+void btmedia(FLOPDEV *flpentry);
+void btmediaft(FLOPDEV *flpentry);
+void btsides(FLOPCHAR *flpchar, byte *modebyt);
+void bttrkden(FLOPCHAR *flpchar, byte *modebyt);
+void btrecden(FLOPCHAR *flpchar, byte *modebyt);
+int testbit(byte *array, ushort bitpos);
 
 int gettables() {
 	short test, er;
@@ -62,7 +90,7 @@ int testchario(word modstr) {	/* TRUE if module is chario */
 	if (getbyte(&phynum, modstr + PHYDEVNUM) == ERROR) {
 		return (ERROR);
 	}
-	if (phynum >= CHIONUM) {
+	if ((int)phynum >= CHIONUM) {
 		return (TRUE);
 	} else {
 		return (FALSE);
@@ -75,7 +103,7 @@ int getcpt() {		/* get free space for a CHARTABL entry */
 	if (numchario >= MAXCHR) {
 		return (ERROR - 1);
 	}
-	if ((chrptrtbl[numchario] = alloc(sizeof * dumchr)) == NULL) {
+	if ((chrptrtbl[numchario] = malloc(sizeof * dumchr)) == NULL) {
 		return (ERROR - 5);
 	}
 	return (OK);
@@ -87,7 +115,7 @@ int getdpt() {		/* get free space for a DISKTABL entry */
 	if (numdiskio >= MAXCHR) {
 		return (ERROR - 2);
 	}
-	if ((dskptrtbl[numdiskio] = alloc(sizeof * dumdsk)) == NULL) {
+	if ((dskptrtbl[numdiskio] = malloc(sizeof * dumdsk)) == NULL) {
 		return (ERROR - 5);
 	}
 	return (OK);
@@ -112,7 +140,7 @@ int btcom(COMTABL *compart, word modstr) {	/* Moves the common part of all modul
 	if (getbyte(&compart->numdev, modstr + NUMDEV) == ERROR) {
 		return (ERROR);
 	}
-	if (compart->phydevnum >= CHIONUM) {
+	if ((int)compart->phydevnum >= CHIONUM) {
 		modstr += CHRSTRADR;
 	} else {
 		modstr += DSKSTRADR;

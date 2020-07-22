@@ -9,6 +9,30 @@
  */
 
 #include "setup30.h"
+#include "display.h"
+#include "term.h"
+#include "putdrvtb.h"
+#include <ctype.h>
+
+int setlptbl(char *filename);
+void cpydrv(DRVTABL *drv1, DRVTABL *drv2);
+void initlptbl(DRVTABL *drvtbl);
+void prtlhd();
+void prtdrlet();
+void prtlptbl(DRVTABL *drvtbl);
+int getlfld(DRVTABL *drvtbl);
+void prtlmsg();
+void tempfld(DRVTABL *drvtbl);
+void schfld(DRVTABL *drvtbl);
+void phyfld(DRVTABL *drvtbl);
+void chkdrvtbl(DRVTABL *drvtbl);
+void prtsord(byte *drvs);
+char *sordstr(short scrnum);
+void prttdrv(byte tdrv);
+void prtpnum(byte *lptbl);
+int prtstr(byte *lptbl);
+void prtdup(byte *lptbl);
+int searchdisk(ushort phydev);
 
 #define STLNE	2
 #define NLNE	17
@@ -53,7 +77,7 @@ int setlptbl(char *filename) {
 }
 
 void cpydrv(DRVTABL *drv1, DRVTABL *drv2) {
-	movmem(drv2, drv1, sizeof * drv1);
+	memcpy(drv2, drv1, sizeof * drv1);
 }
 
 void initlptbl(DRVTABL *drvtbl) {	/* Set default entries in the log/phy table */
@@ -358,7 +382,7 @@ void prtdup(byte *lptbl) {	/* print or clear duplicate msg */
 	short i, j;
 	byte duparr[MAXDRV];
 
-	setmem(duparr, MAXDRV, FALSE);
+	memset(duparr, FALSE, MAXDRV);
 	for (j = 0; j < MAXDRV; ++j) {
 		for (i = 0; i < MAXDRV; ++i) {
 			if (i != j && lptbl[i] != UNASGN && lptbl[i] == lptbl[j]) {

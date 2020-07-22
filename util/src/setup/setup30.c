@@ -7,6 +7,17 @@
  */
 
 #include "setup30.h"
+#include "term.h"
+#include "getdrvtb.h"
+#include "serdp.h"
+#include "btconv.h"
+#include "biosfile.h"
+#include "display.h"
+#include "setlptbl.h"
+#include "chario.h"
+#include "diskio.h"
+#include "ioredir.h"
+#include "ftsord.h"
 
 #define VERS	"3.104 "
 #define SELECT	14	/* select disk */
@@ -19,6 +30,21 @@
 #define NCOL	1	/* number of columns in menu */
 #define STLNE	3	/* starting line of menu */
 #define STCOL	1	/* starting column */
+
+void getfile(char *filename, char *drive);
+void startup(char *filename);
+void endset();
+void mainmenu(char *filename);
+void prtsignon();
+void prtmfix();
+void prtmvar();
+void selmain();
+int execmain(char *filename);
+void chainfil(short altdrv, char *name, char *opt1, char *opt2);
+int chkmbios();
+int chkmpm();
+void outerr(char *filename);
+void outerr2(short er, char *filename);
 
 int main(int argc, char **argv) {	/* main entry point from CP/M */
 	char filename[20], drive[4], *cptr;
@@ -134,11 +160,11 @@ void getfile(char *filename, char *drive) {	/* Setups and opens the bios file */
 		strcat(filename, "BNKXIOS.SPR");
 		if (openbios(filename) == ERROR) {
 			deinit();
-			if (errno() == 11) {
+			if (errno == 11) {
 				bell();
 				puts("\nBanked BIOS file not found\n");
 			} else {
-				outerr();
+				outerr("");
 			}
 			exit(1);
 		}
@@ -162,7 +188,7 @@ void endset() {
 	deinit();
 	if (closebios() == ERROR) {
 		bell();
-		outerr();
+		outerr("");
 		exit(1);
 	}
 }
@@ -176,12 +202,12 @@ void mainmenu(char *filename) {	/* Select submenu and call exec */
 	while (TRUE) {
 		if (bioscurflg) {	/* if TRUE modifing bios file */
 			if (mpmfile) {
-				initcur(STLNE, MPMNLNE + numchario + numdiskio + 2, STCOL, NCOL);
+				initcur(STLNE, MPMNLNE + numchario + numdiskio + 2, STCOL, NCOL, 0);
 			} else {
-				initcur(STLNE, NLNE + numchario + numdiskio + 2, STCOL, NCOL);
+				initcur(STLNE, NLNE + numchario + numdiskio + 2, STCOL, NCOL, 0);
 			}
 		} else {
-			initcur(STLNE, NLNE + numchario + numdiskio + 1, STCOL, NCOL);
+			initcur(STLNE, NLNE + numchario + numdiskio + 1, STCOL, NCOL, 0);
 		}
 		if (cond != ERROR) {
 			prtmfix();
@@ -308,6 +334,22 @@ int execmain(char *filename) {		/* Execute a submenu */
 	return (TRUE);
 }
 
+void execl(char *name, char *opt1, char *opt2) {
+	char *buf;
+	buf = (char *)0x0080;
+	strcpy(buf, name);
+	if (opt1) {
+		strcat(buf, " ");
+		strcat(buf, opt1);
+	}
+	if (opt2) {
+		strcat(buf, " ");
+		strcat(buf, opt2);
+	}
+	bdos(47, 0xff); /* does not return */
+	/* NOTREACHED */
+}
+
 void chainfil(short altdrv, char *name, char *opt1, char *opt2) {
 /* name,opt1,opt2 = command to chain to */
 /* altdrv = drive in bios file name */
@@ -319,7 +361,7 @@ void chainfil(short altdrv, char *name, char *opt1, char *opt2) {
 	logdrv = bdos(GETDSK, 0);
 	if (altdrv != logdrv) {
 		bdos(SELECT, altdrv);
-		execl(name, opt1, opt2, 0);
+		execl(name, opt1, opt2);
 	}
 	for (adr = DRVSC; adr <= DRVSC + 3; ++adr) {
 		scbpd[0] = adr;
@@ -337,7 +379,7 @@ void chainfil(short altdrv, char *name, char *opt1, char *opt2) {
 		filename[1] = ':';
 		filename[2] = NULL;
 		strcat(filename, name);
-		execl(filename, opt1, opt2, 0);
+		execl(filename, opt1, opt2);
 	}
 	bell();
 	prtwin(4, "%s not found", name);
@@ -345,7 +387,7 @@ void chainfil(short altdrv, char *name, char *opt1, char *opt2) {
 }
 
 int chkmbios() {		/* checks if system is valid by checking for */
-	/* 16 JMP's in a row */
+				/* 16 JMP's in a row */
 	byte jump;
 	short i, retcode;
 
@@ -388,7 +430,7 @@ int chkmpm() {
 void outerr(char *filename) {
 	short er;
 
-	if ((er = errno()) == 11) {
+	if ((er = errno) == 11) {
 		printf("\n%s not found\n", filename);
 	} else {
 		printf("\n%s\n", errmsg(er));

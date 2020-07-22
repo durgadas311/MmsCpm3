@@ -9,6 +9,30 @@
  */
 
 #include "setup30.h"
+#include "biosfile.h"
+#include "btconv.h"
+
+int putchartbl(CHARTABL *chrmod);
+int putdisktbl(DISKTABL *diskmod);
+void setmbyt(FLOPDEV *flpentry);
+int putnode();
+void tbinitflg(CHARDEV *chrentry, byte *xmodbyt);
+void tbparity(CHARDEV *chrentry, byte *xmodbyt);
+void tbstopbit(CHARDEV *chrentry, byte *xmodbyt);
+void tbwlen(CHARDEV *chrentry, byte *xmodbyt);
+void tbinhand(CHARDEV *chrentry, byte *xmodbyt);
+void tbouthand(CHARDEV *chrentry, byte *xmodbyt);
+void tbbaud(CHARDEV *chrentry, byte *chrtbl);
+void tbsftpt(CHARDEV *chrentry, byte *chrtbl);
+void tbdrvcontr(FLOPDEV *flpentry);
+void tbsteprt(FLOPDEV *flpentry);
+void tbmedia(FLOPDEV *flpentry);
+void tbmediaft(FLOPDEV *flpentry);
+void tbsides(FLOPCHAR *flpchar, byte *modebyt);
+void tbtrkden(FLOPCHAR *flpchar, byte *modebyt);
+void tbrecden(FLOPCHAR *flpchar, byte *modebyt);
+void clearbit(byte *array, ushort bitpos);
+void setbit(byte *array, ushort bitpos);
 
 int putchartbl(CHARTABL *chrmod) {
 	short i;
@@ -160,7 +184,7 @@ void tbinhand(CHARDEV *chrentry, byte *xmodbyt) {
 	}
 }
 
-void tbouthand(CHARDEV *chrentry, byte *xmodbyt)
+void tbouthand(CHARDEV *chrentry, byte *xmodbyt) {
 	short bitpos, i;
 
 	bitpos = OUT2BIT;

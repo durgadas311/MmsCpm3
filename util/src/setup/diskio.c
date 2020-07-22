@@ -9,6 +9,45 @@
  */
 
 #include "setup30.h"
+#include "display.h"
+#include "term.h"
+#include "btconv.h"
+#include "tbconv.h"
+#include "serdp.h"
+#include "caller.h"
+#include <ctype.h>
+
+void setdiskio(DISKTABL *maindsk, char *filename);
+void cpydsk(DISKTABL *dsk1, DISKTABL *dsk2);
+void prtdhd(DISKTABL *dskentry, bool confg);
+void prtdvar(DISKTABL *dskentry, bool confg);
+int getdfld(DISKTABL *dskentry, bool confg);
+void prtdmsg(DISKTABL *dskentry, bool confg);
+void lstfmt(FLOPDEV *flpentry);
+int dsidfld(FLOPDEV *flpentry);
+int dtrkfld(FLOPDEV *flpentry);
+int drecfld(FLOPDEV *flpentry);
+int steprtfld(FLOPDEV *flpentry);
+int msidfld(FLOPDEV *flpentry);
+int mtrkfld(FLOPDEV *flpentry);
+int mrecfld(FLOPDEV *flpentry);
+int mformat(FLOPDEV *flpentry);
+int searchfmt(char *fmtstr);
+int cmpfmt(char *fmtstr, char *tblpt);
+int notsupmsg();
+void prtfld(DISKTABL *dskentry);
+void prtphydrv(DISKTABL *dskentry);
+void prtdsiz(DISKTABL *dskentry);
+void prtdrvlt(DISKTABL *dskentry);
+int searchlp(ushort devnum);
+void prtsides(FLOPCHAR *flpchar);
+void prttrkden(FLOPCHAR *flpchar);
+void prtrecden(FLOPCHAR *flpchar);
+void prtstrt(DISKTABL *dskentry);
+void prtformat(DISKTABL *dskentry);
+char *getfmt(short fmtcd);
+void prtsecsiz(DISKTABL *dskentry);
+int getsecsiz(FLOPDEV *flpentry);
 
 #define  NCOL	12
 #define  ACOL	11
@@ -50,7 +89,7 @@ void setdiskio(DISKTABL *maindsk, char *filename) {	/* Main entry point for this
 			}
 			cpydsk(maindsk, dskentry);
 			if (putdisktbl(dskentry) == ERROR) {
-				putwin(7, errmsg(errno()));
+				putwin(7, errmsg(errno));
 				bell();
 				inp = NULL;
 			}
@@ -60,7 +99,7 @@ void setdiskio(DISKTABL *maindsk, char *filename) {	/* Main entry point for this
 }
 
 void cpydsk(DISKTABL *dsk1, DISKTABL *dsk2) {	/* copys dsk1 into dsk2 */
-	movmem(dsk2, dsk1, sizeof *dsk1);
+	memcpy(dsk2, dsk1, sizeof *dsk1);
 }
 
 void prtdhd(DISKTABL *dskentry, bool confg) {
@@ -130,7 +169,7 @@ int getdfld(DISKTABL *dskentry, bool confg) {	/* select and execute a field */
 		curon();
 	} while (inp != NULL);
 	if (dskentry->floppart[curline].floppy) {
-		movmem(dskentry->floppart[curline], &flptemp, sizeof flptemp);
+		memcpy(dskentry->floppart[curline], &flptemp, sizeof flptemp);
 		switch (curcol) {
 		case 3:
 			er = dsidfld(dskentry->floppart[curline]);
@@ -163,7 +202,7 @@ int getdfld(DISKTABL *dskentry, bool confg) {	/* select and execute a field */
 		if (er == ERROR || er2 != NULL) {
 			cntrlbuf = NULL;
 			bell();
-			movmem(&flptemp, dskentry->floppart[curline], sizeof flptemp);
+			memcpy(&flptemp, dskentry->floppart[curline], sizeof flptemp);
 		}
 		curoff();
 		prtfld(dskentry);
@@ -261,16 +300,16 @@ int dsidfld(FLOPDEV *flpentry) {	/* drive/controller number of sides */
 	short inp;
 
 	inp = getchr();
-	if (flpentry->drive_cont.sidemask) {
+	if (flpentry->drive_contr.sidemask) {
 		if (inp == '1') {
 			if (!flpentry->media.numsides) {
 				putwin(7, "DS media in SS drive");
 				return (ERROR);
 			} else {
-				flpentry->drive_cont.numsides = TRUE;
+				flpentry->drive_contr.numsides = TRUE;
 			}
 		} else if (inp == '2') {
-			flpentry->drive_cont.numsides = FALSE;
+			flpentry->drive_contr.numsides = FALSE;
 		} else if (inp != NULL) {
 			return (ERROR);
 		}
@@ -284,17 +323,17 @@ int dtrkfld(FLOPDEV *flpentry) {	/* drive/controller track density */
 	short inp, temp;
 
 	inp = getnum(2, &temp);
-	if (flpentry->drive_cont.trkmask) {
+	if (flpentry->drive_contr.trkmask) {
 		if (inp != NULL)
 			if (temp < 60) {
 				if (!flpentry->media.trkden) {
 					putwin(7, "96 tpi media in a 48 tpi drive");
 					return (ERROR);
 				} else {
-					flpentry->drive_cont.trkden = TRUE;
+					flpentry->drive_contr.trkden = TRUE;
 				}
 			} else {
-				flpentry->drive_cont.trkden = FALSE;
+				flpentry->drive_contr.trkden = FALSE;
 			}
 	} else {
 		return (notsupmsg());
@@ -306,16 +345,16 @@ int drecfld(FLOPDEV *flpentry) {	/* drive/controller record density */
 	short inp;
 
 	inp = toupper(getchr());
-	if (flpentry->drive_cont.recmask) {
+	if (flpentry->drive_contr.recmask) {
 		if (inp == 'S') {
 			if (!flpentry->media.recden) {
 				putwin(7, "DD media in a SD drive");
 				return (ERROR);
 			} else {
-				flpentry->drive_cont.recden = TRUE;
+				flpentry->drive_contr.recden = TRUE;
 			}
 		} else if (inp == 'D') {
-			flpentry->drive_cont.recden = FALSE;
+			flpentry->drive_contr.recden = FALSE;
 		} else if (inp != NULL) {
 			return (ERROR);
 		}
@@ -369,7 +408,7 @@ int msidfld(FLOPDEV *flpentry) {	/* media number of sides field */
 		if (inp == '1') {
 			flpentry->media.numsides = TRUE;
 		} else if (inp == '2') {
-			if (flpentry->drive_cont.numsides) {
+			if (flpentry->drive_contr.numsides) {
 				putwin(7, "DS media in SS drive");
 				return (ERROR);
 			} else {
@@ -393,7 +432,7 @@ int mtrkfld(FLOPDEV *flpentry) {	/* media track density field */
 			if (temp < 60) {
 				flpentry->media.trkden = TRUE;
 			} else {
-				if (flpentry->drive_cont.trkden) {
+				if (flpentry->drive_contr.trkden) {
 					putwin(7, "96 tpi media in a 48 tpi drive");
 					return (ERROR);
 				} else {
@@ -414,7 +453,7 @@ int mrecfld(FLOPDEV *flpentry) {	/* media record density field */
 		if (inp == 'S') {
 			flpentry->media.recden = TRUE;
 		} else if (inp == 'D') {
-			if (flpentry->drive_cont.recden) {
+			if (flpentry->drive_contr.recden) {
 				putwin(7, "DD media in a SD drive");
 				return (ERROR);
 			} else {
@@ -499,13 +538,13 @@ void prtfld(DISKTABL *dskentry) {
 		prtdsiz(dskentry);
 		break;
 	case 3:
-		prtsides(dskentry->floppart[curline].drive_cont);
+		prtsides(dskentry->floppart[curline].drive_contr);
 		break;
 	case 4:
-		prttrkden(dskentry->floppart[curline].drive_cont);
+		prttrkden(dskentry->floppart[curline].drive_contr);
 		break;
 	case 5:
-		prtrecden(dskentry->floppart[curline].drive_cont);
+		prtrecden(dskentry->floppart[curline].drive_contr);
 		break;
 	case 6:
 		prtstrt(dskentry);
@@ -604,16 +643,16 @@ void prtformat(DISKTABL *dskentry) {			/* print format field */
 
 char *getfmt(short fmtcd) {	/* get format string from format */
 				/* code - calls serdp with dummy */
-{
-	/* mode */
-	byte dummode[4];
+				/* mode */
+	byte dummode[4] = { 0,1,128,0 };
 	char *tblpt;
 
 	if (serdpadr == NULL) {
 		return (NULL);
 	}
-	initb(dummode, "0,1,128,0");
-	tblpt = call(serdpadr, 0, serdpadr, 0, dummode) + serdpadr + ((15 - fmtcd) * FMTBLEN);
+	/* initb(dummode, "0,1,128,0"); */
+	tblpt = (char *)call(serdpadr, 0, serdpadr, 0, dummode) +
+				serdpadr + ((15 - fmtcd) * FMTBLEN);
 	return (tblpt);
 }
 

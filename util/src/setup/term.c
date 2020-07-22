@@ -11,19 +11,48 @@
 
 #include "setup30.h"
 
+extern void _spr(void *fmt, void (*outp)(char c));
+
+int initial();
+int deinit();
+int getkey();
+int inchar();
+void puts(char *buf);
+void outchr(char c);
+int printf(char *format, ...);
+void putctl(char *buf);
+void putnul(char c);
+void cursor(int position);
+int getwidth();
+int getlength();
+char *getterm();
+void clrscr();
+void curhome();
+void curleft();
+void curright();
+void curup();
+void curdown();
+void clreel();
+void clreop();
+void curoff();
+void curon();
+void invon();
+void invoff();
+void bell();
+
 #define TWIDTH 80
 #define TLENGTH 24
 
-#define numrec 3	/* based on size of termctrl */
+#define numrec 3*SECSIZ	/* based on size of termctrl */
 
 int initial() {
-	char *tcbuf, *fp;
-	int p;
-	if ((fp = open("a:terminal.sys", 0)) == -1) {
+	char *tcbuf;
+	int p, fp;
+	if ((fp = open("a:terminal.sys", O_RDONLY, 0)) == -1) {
 		printf("Terminal control file not on drive A:.\n");
 		exit(0);
 	}
-	tcbuf = termctrl;
+	tcbuf = (char *)&termctrl;
 	if (read(fp, tcbuf, numrec) != numrec) {
 		printf("Terminal control file incomplete.\n");
 		exit(0);
@@ -98,16 +127,15 @@ void outchr(char c) {
 	bdos(6, c);
 }
 
-int printf(char *format) {
-	void outchr();
-	return _spr(&format, &outchr);
+int printf(char *format, ...) {
+	return _spr(&format, outchr);
 }
 
 void putctl(char *buf) {	/* for outputing screen control sequences only ! */
 				/* this routine does not change '\n' into '\r','\n' */
 	char c;
 	while ((c = *buf++) != 0) {
-		if (c >= 0x80) {
+		if (c & 0x80) {
 			putnul(c);
 		} else {
 			bdos(6, c);

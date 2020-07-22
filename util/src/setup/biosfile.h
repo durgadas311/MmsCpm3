@@ -1,0 +1,13 @@
+extern int getbyts(int n, byte *array, word adr);
+extern int putbyts(int n, byte *array, word adr);
+extern int getword(word *dptr, word address);
+extern int putword(word *dptr, word address);
+extern int getbyte(byte *dptr, word address);
+extern int putbyte(byte *dptr, word address);
+extern int readwrite(short sec);
+extern int adrsec(word address);
+extern int adroff(word address);
+extern int openbios(char *filename);
+extern int closebios();
+extern int readbios(short sector);
+extern int writebios(short sector);

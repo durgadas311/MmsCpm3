@@ -11,6 +11,13 @@
  */
 
 #include "setup30.h"
+#include "biosfile.h"
+#include "tbconv.h"
+#include "caller.h"
+#include <malloc.h>
+
+int ldserdp();
+int serdp(FLOPDEV *flpentry);
 
 int ldserdp() {
 	word serdpstr, serdpend;
@@ -36,7 +43,8 @@ int ldserdp() {
 			}
 			serdpend += 8;
 		} while (byt != 0xFF);
-		pt = serdpadr = alloc(serdpend - serdpstr);	/* get some space */
+		serdpadr = malloc(serdpend - serdpstr);	/* get some space */
+		pt = (byte *)serdpadr;
 		if (serdpadr == NULL) {
 			return (ERROR - 5);    /* not enough memory space */
 		}

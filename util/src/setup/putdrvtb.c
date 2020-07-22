@@ -10,6 +10,14 @@
  */
 
 #include "setup30.h"
+#include "biosfile.h"
+
+int putdrvtbl();
+int putlptbl();
+int putsord();
+int puttdrv();
+int putredir();
+int puttyps();
 
 int putdrvtbl() {
 	short er;

@@ -10,6 +10,15 @@
  */
 
 #include "setup30.h"
+#include "biosfile.h"
+
+int getdrvtbl();
+int getlptbl();
+int getlpstr(word *dptr);
+int getsord();
+int gettdrv();
+int getredir();
+int gettyps();
 
 int getdrvtbl() {
 	short er;

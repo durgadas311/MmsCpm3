@@ -9,8 +9,26 @@
  */
 
 #include "setup30.h"
+#include "term.h"
+#include <ctype.h>
 
-extern void outchr();
+extern void outchr(char c);
+extern void _spr(void *fmt, void (*outp)(char c));
+
+int getnum(short fldsiz, short *pdata);
+int getstr(short fldsiz, char *pdata);
+int getchr();
+int getcntrl();
+void movcur(char c, short maxcol, short maxlne);
+void initcur(ushort stline, int nline, int stcol, int ncol, int colwids, ...);
+void prtpos(ushort line, ushort col, char *format, ...);
+void prtcnt(char *format, ...);
+void currnt();
+int prtmcur();
+int prtcur(char *f);
+void clmn();
+void putwin(ushort linenum, char *strpt);
+void prtwin(ushort linenum, char *format, ...);
 
 /* Keyboard routines */
 
@@ -103,7 +121,7 @@ int getchr() {
 
 	if (charbuf == NULL) {
 		c = getkey();
-		if (c >= CNTL || c == CRCD) {
+		if ((c & CNTL) || c == CRCD) {
 			cntrlbuf = c;
 			return (NULL);
 		}
@@ -173,26 +191,26 @@ void movcur(char c, short maxcol, short maxlne) {
  * colwids = first column width
  */
 {
-void initcur(ushort stline, int nline, int stcol, int ncol, int colwids) {
+void initcur(ushort stline, int nline, int stcol, int ncol, int colwids, ...) {
 	ushort *cptr, lpos, cpos, col, ln;
 
 	for (lpos = ((stline - 1) * getwidth()) + stcol, ln = 0;
 			ln < nline; lpos += getwidth(), ln++) {
-		cptr = &colwids;
+		cptr = (ushort *)&colwids;
 		for (cpos = lpos, col = 0; col < ncol; cpos += *cptr++, col++) {
 			curpos[ln][col] = cpos;
 		}
 	}
 }
 
-void prtpos(ushort line, ushort col, char *format) {
+void prtpos(ushort line, ushort col, char *format, ...) {
  	/* print formated data at line and col */
 
 	cursor(curpos[line][col]);
 	_spr(&format, outchr);	      /* formated output libaray function */
 }
 
-void prtcnt(char *format) {
+void prtcnt(char *format, ...) {
 	currnt();
 	_spr(&format, outchr);
 }
@@ -239,10 +257,11 @@ void putwin(ushort linenum, char *strpt) {	/* prints a unformated message in the
 	curon();
 }
 
-void prtwin(ushort linenum, char *format) {	/* prints a formated message in the window */
-	cursor(((linenum - 1 + STMNLNE)*getwidth()) + STMNCOL);
+void prtwin(ushort linenum, char *format, ...) {
+	/* prints a formated message in the window */
+	cursor(((linenum - 1 + STMNLNE) * getwidth()) + STMNCOL);
 	clreel();
-	_spr(&format, outchr);	      /* formated output libaray function */
+	_spr(&format, outchr);	/* formated output libaray function */
 }
 
 /* end of DISPLAY */

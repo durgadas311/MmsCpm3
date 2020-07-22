@@ -9,7 +9,13 @@
  */
 
 /* #include "bdscio.h" */
-#include <stdio.h>
+/* #include <stdio.h> - don't want printf... */
+#include <stddef.h>
+#include <cpm.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
 /* These are some new data types used in this program */
 
@@ -21,6 +27,11 @@
 #define ushort unsigned
 #define short int
 #define bits unsigned
+
+#define TRUE 1		/* logical true constant */
+#define FALSE 0		/* logical false constant */
+#define ERROR -1	/* General "on error" return value */
+#define OK 0		/* General purpose "no error" return value */
 
 			/* GLOBAL CONSTANTS */
 
