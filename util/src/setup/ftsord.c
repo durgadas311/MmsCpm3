@@ -8,70 +8,58 @@
  *
  */
 
-#include "SETUP30.H"
+#include "setup30.h"
 #define  MSTR 6
 
-setftsord(filename)
-	char *filename;
-	{
+int setftsord(char *filename) {
 	byte ftsord;
 	short inp;
- 
-	ftsord=subcom;
+
+	ftsord = subcom;
 	prtfthd();
 	prtcur(filename);
 	prtftyp(ftsord);
-	do
-		{
-		inp=getchr();
-		if(inp>='1' && inp<='3')
-			ftsord=inp-'1';
-		else
-			if(inp!=NULL)
-				bell();
-		prtftyp(ftsord);
-		inp=getcntrl();
-		if(inp==WHITE)
-			{
-			ftsord=subcom;
-			prtftyp(ftsord);
-			}
-		else if(inp==BLUE)
-			{
-			subcom=ftsord;
-			if(puttyps()==ERROR)
-				{
-				putwin(1,errmsg(errmsg()));
-				bell();
-				}
-			}
-		else if(inp==RED)
-			;
-		else if(inp!=NULL)
+	do {
+		inp = getchr();
+		if (inp >= '1' && inp <= '3') {
+			ftsord = inp - '1';
+		} else if (inp != NULL) {
 			bell();
 		}
-	while(inp!=RED && inp!=BLUE);
+		prtftyp(ftsord);
+		inp = getcntrl();
+		if (inp == WHITE) {
+			ftsord = subcom;
+			prtftyp(ftsord);
+		} else if (inp == BLUE) {
+			subcom = ftsord;
+			if (puttyps() == ERROR) {
+				putwin(1, errmsg(errmsg()));
+				bell();
+			}
+		} else if (inp == RED)
+			;
+		else if (inp != NULL) {
+			bell();
+		}
+	} while (inp != RED && inp != BLUE);
 	curon();
-	return(TRUE);
-	}
+	return (TRUE);
+}
 
-prtfthd()
-	{
+void prtfthd() {
 	clrscr();
 	puts("File type search order");
-	putwin(3,"1 = .COM files only");
-	putwin(4,"2 = .COM files 1st, then .SUB");
-	putwin(5,"3 = .SUB files 1st, then .COM");
-	}
+	putwin(3, "1 = .COM files only");
+	putwin(4, "2 = .COM files 1st, then .SUB");
+	putwin(5, "3 = .SUB files 1st, then .COM");
+}
 
-prtftyp(ftsord)
-	byte ftsord;
-	{
+void prtftyp(byte ftsord) {
 	curoff();
-	cursor(MSTR*getwidth()+1);
+	cursor(MSTR * getwidth() + 1);
 	puts("Search order: ");
-	switch(ftsord)
-		{
+	switch (ftsord) {
 	case 0:
 		printf(".COM     ");
 		break;
@@ -81,8 +69,8 @@ prtftyp(ftsord)
 	case 2:
 		printf(".SUB,.COM");
 		break;
-		}
-	cursor(MSTR*getwidth()+15);
-	curon();
 	}
+	cursor(MSTR * getwidth() + 15);
+	curon();
+}
 

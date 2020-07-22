@@ -10,191 +10,173 @@
  *
  */
 
-#include "SETUP30.H"
+#include "setup30.h"
 
-getbyts(n,array,adr)		/* get an array of n bytes from bios */
-	byte *array;
-	word adr;
-	{
+int getbyts(int n, byte *array, word adr) {	/* get an array of n bytes from bios */
 	ushort i;
-	
-	for(i=0;i<n;++i)
-		if(getbyte(array++,adr++)==ERROR)
-			return(ERROR);
-	return(OK);
-	}
 
-putbyts(n,array,adr)		/* puts an array of n bytes in bios */
-	byte *array;	      
-	word adr;
-	{
+	for (i = 0; i < n; ++i)
+		if (getbyte(array++, adr++) == ERROR) {
+			return (ERROR);
+		}
+	return (OK);
+}
+
+int putbyts(int n, byte *array, word adr) {	/* puts an array of n bytes in bios */
 	ushort i;
-	
-	for(i=0;i<n;++i)
-		if(putbyte(array++,adr++)==ERROR)
-			return(ERROR);
-	return(OK);
-	}
 
-getword(dptr,address)
-	word *dptr,address;
-	{
-	word temp1,temp2;
-	
-	if(getbyte(&temp1,address++)==ERROR)	/* high order byte */
-		return(ERROR);
-	if(getbyte(&temp2,address)==ERROR)	/* low order byte */
-		return(ERROR);
-	*dptr=temp2<<8 | (temp1 & 0xFF);
-	return(OK);
-	}
+	for (i = 0; i < n; ++i)
+		if (putbyte(array++, adr++) == ERROR) {
+			return (ERROR);
+		}
+	return (OK);
+}
 
-putword(dptr,address)
-	word *dptr,address;
-	{
+int getword(word *dptr, word address) {
+	word temp1, temp2;
+
+	if (getbyte(&temp1, address++) == ERROR) {	/* high order byte */
+		return (ERROR);
+	}
+	if (getbyte(&temp2, address) == ERROR) {	/* low order byte */
+		return (ERROR);
+	}
+	*dptr = temp2 << 8 | (temp1 & 0xFF);
+	return (OK);
+}
+
+int putword(word *dptr, word address) {
 	byte temp;
-	
-	temp=*dptr & 0xFF;
-	if(putbyte(&temp,address++)==ERROR)
-		return(ERROR);
-	temp=*dptr>>8;
-	if(putbyte(&temp,address)==ERROR)
-		return(ERROR);
-	return(OK);
-	}
 
-getbyte(dptr,address)
-	byte *dptr;
-	word address;
-	{
+	temp = *dptr & 0xFF;
+	if (putbyte(&temp, address++) == ERROR) {
+		return (ERROR);
+	}
+	temp = *dptr >> 8;
+	if (putbyte(&temp, address) == ERROR) {
+		return (ERROR);
+	}
+	return (OK);
+}
+
+int getbyte(byte *dptr, word address) {
 	short sec;
 	byte *ptr;
-	
-	if(bioscurflg)
-		{
-		sec=adrsec(address);
-		if(readwrite(sec)==ERROR)
-			return(ERROR);
-		ptr=secbuf+adroff(address);
-		}
-	else
-		ptr=address;
-	*dptr=*ptr;
-	return(OK);
-	}
 
-putbyte(dptr,address)
-	byte *dptr;
-	word address;
-	{
+	if (bioscurflg) {
+		sec = adrsec(address);
+		if (readwrite(sec) == ERROR) {
+			return (ERROR);
+		}
+		ptr = secbuf + adroff(address);
+	} else {
+		ptr = address;
+	}
+	*dptr = *ptr;
+	return (OK);
+}
+
+int putbyte(byte *dptr, word address) {
 	short sec;
 	byte *ptr;
-	
-	if(bioscurflg)
-		{
-		sec=adrsec(address);
-		if(readwrite(sec)==ERROR)
-			return(ERROR);
-		ptr=secbuf+adroff(address);
-		writeflg=TRUE;
-		}
-	else
-		ptr=address;
-	*ptr=*dptr;
-	return(OK);
-	}
 
-readwrite(sec)
-	short sec;
-	{
-	if(sec!=cursec)
-		{
-		if(writeflg)
-			{
-			writeflg=FALSE;
-			if(writebios(cursec)==ERROR)
-				return(ERROR);
+	if (bioscurflg) {
+		sec = adrsec(address);
+		if (readwrite(sec) == ERROR) {
+			return (ERROR);
+		}
+		ptr = secbuf + adroff(address);
+		writeflg = TRUE;
+	} else {
+		ptr = address;
+	}
+	*ptr = *dptr;
+	return (OK);
+}
+
+int readwrite(short sec) {
+	if (sec != cursec) {
+		if (writeflg) {
+			writeflg = FALSE;
+			if (writebios(cursec) == ERROR) {
+				return (ERROR);
 			}
-		if(readbios(sec)==ERROR)
-			return(ERROR);
 		}
-	return(OK);
+		if (readbios(sec) == ERROR) {
+			return (ERROR);
+		}
 	}
+	return (OK);
+}
 
-adrsec(address)
-	word address;
-	{
-	return((address+FILEOFF)/SECSIZE);
-	}
-	
-adroff(address)
-	word address;
-	{
-	return((address+FILEOFF) % SECSIZE);
-	}
+int adrsec(word address) {
+	return ((address + FILEOFF) / SECSIZE);
+}
 
-openbios(filename)
-	char *filename;
-	{
+int adroff(word address) {
+	return ((address + FILEOFF) % SECSIZE);
+}
+
+int openbios(char *filename) {
 	byte *ptr;
 
-	if(bioscurflg)
-		{
-		fd=open(filename,2);
-		if(fd==ERROR)
-			return(ERROR);
-		if(readbios(2)==ERROR) 
-			return(ERROR);
-		biosstart=0000;
+	if (bioscurflg) {
+		fd = open(filename, 2);
+		if (fd == ERROR) {
+			return (ERROR);
 		}
-	else
-		{
-		ptr=2;
-		biosstart=*ptr<<8;
+		if (readbios(2) == ERROR) {
+			return (ERROR);
 		}
-	return(OK);
+		biosstart = 0000;
+	} else {
+		ptr = 2;
+		biosstart = *ptr << 8;
 	}
+	return (OK);
+}
 
-closebios()
-	{
+int closebios() {
 	short er;
-	
-	if(bioscurflg)
-		{
-		if(writeflg)
-			er=writebios(cursec);
-		if(close(fd)==ERROR)
-			return(ERROR);
-		if(er==ERROR)
-			return(ERROR);
+
+	if (bioscurflg) {
+		if (writeflg) {
+			er = writebios(cursec);
 		}
-	return(OK);
+		if (close(fd) == ERROR) {
+			return (ERROR);
+		}
+		if (er == ERROR) {
+			return (ERROR);
+		}
 	}
+	return (OK);
+}
 
-readbios(sector)
-	short sector;
-	{
+int readbios(short sector) {
 	short er;
-	
-	if(seek(fd,sector,0)==ERROR)
-		return(ERROR);
-	er=read(fd,secbuf,NUMSEC);
-	if(er!=NUMSEC)
-		return(ERROR);
-	cursec=sector;
-	return(OK);
-	}
 
-writebios(sector)
-	short sector;
-	{
-	short er;
-	
-	if(seek(fd,sector,0)==ERROR)
-		return(ERROR);
-	er=write(fd,secbuf,NUMSEC);
-	if(er!=NUMSEC)
-		return(ERROR);
-	cursec=sector;
-	return(OK);
+	if (seek(fd, sector, 0) == ERROR) {
+		return (ERROR);
 	}
+	er = read(fd, secbuf, NUMSEC);
+	if (er != NUMSEC) {
+		return (ERROR);
+	}
+	cursec = sector;
+	return (OK);
+}
+
+int writebios(short sector) {
+	short er;
+
+	if (seek(fd, sector, 0) == ERROR) {
+		return (ERROR);
+	}
+	er = write(fd, secbuf, NUMSEC);
+	if (er != NUMSEC) {
+		return (ERROR);
+	}
+	cursec = sector;
+	return (OK);
+}

@@ -8,7 +8,8 @@
  * "SETUP30.H"
  */
 
-#include "BDSCIO.H"
+/* #include "bdscio.h" */
+#include <stdio.h>
 
 /* These are some new data types used in this program */
 
@@ -111,17 +112,15 @@
 #define COMTABL struct comstr
 #define MAXSTRL 75
 
-COMTABL 		/* common section to module tables */
-	{
+COMTABL { 		/* common section to module tables */
 	char string[MAXSTRL];
 	byte phydevnum;
 	byte numdev;
-	};
+};
 
 #define CHARDEV struct chardev
 
-CHARDEV
-	{
+CHARDEV {
 	word chtbladdr; /* from chrtbl DR CPM3 */
 	char chrstr[8]; 	/* cpm3 chrtbl string */
 	char softproto;
@@ -140,37 +139,34 @@ CHARDEV
 	ushort wordlen;
 	char hsinput[4];	/* RLSD,RI,DST,CTS  0,1,X (don't care) */
 	char hsoutput[4];	/* DTR,RTS,OUT1,OUT2 0,1 */
-	};
+};
 
 #define CHARTABL struct charstr
 #define MAXCHR 6
 #define MAXCDEV 6
 
-CHARTABL		/* char io module table structure */
-	{
+CHARTABL {		/* char io module table structure */
 	COMTABL compart;
 	CHARDEV charpart[MAXCDEV];
-	} *chrptrtbl[MAXCHR];	/* table of pointers - data in free memory */
-				/* allocated at run time by alloc() */
+} *chrptrtbl[MAXCHR];	/* table of pointers - data in free memory */
+			/* allocated at run time by alloc() */
 
 ushort numchario;	/* number of char io modules in table */
 
 #define FLOPCHAR struct flopchar
 
-FLOPCHAR
-	{
+FLOPCHAR {
 	bool numsides;	/* TRUE = side sided  FALSE = double sided */
 	bool sidemask;	/* TRUE = can change  FALSE = can't change */
 	bool trkden;	/* TRUE = 48 tpi      FALSE = 96 tpi */
 	bool trkmask;
 	bool recden;	/* TRUE = single density FALSE = double density */
 	bool recmask;
-	};
+};
 
 #define FLOPDEV struct flopdev
 
-FLOPDEV
-	{
+FLOPDEV {
 	bool floppy;	/* TRUE = floppy disk FALSE = hard disk and ednore */
 	word modeaddr;					       /* mode bytes*/ 
 	byte modebyt[8];	/* Actual mode bytes used by serdp */
@@ -181,18 +177,17 @@ FLOPDEV
 	FLOPCHAR media;
 	ushort medforcd;	/* bit position code in mode byte */
 	byte medmask[2];	/* actual mode masks */
-	};
+};
 
 #define DISKTABL struct diskstr
 #define MAXFDEV 9
 #define MAXDSK 8
 
-DISKTABL
-	{
+DISKTABL {
 	COMTABL compart;
 	FLOPDEV floppart[MAXFDEV];
-	} *dskptrtbl[MAXDSK];	/* a table of pointers - data in free memory */
-				/* allocated by the alloc() function */
+} *dskptrtbl[MAXDSK];	/* a table of pointers - data in free memory */
+			/* allocated by the alloc() function */
 
 ushort numdiskio;     /* number of disk io modules in table */
 word serdpadr;	      /* address of ?serdp routine used to check mode bytes */
@@ -204,14 +199,13 @@ word serdpadr;	      /* address of ?serdp routine used to check mode bytes */
 
 #define MAXDRV 16
 #define DRVTABL struct drvtabl
-DRVTABL
-	{
+DRVTABL {
 	byte logphytbl[MAXDRV];
 	word logphyaddr;    /* address in bios of lptbl */
 	byte drvsch[4];     /* drive search path array	drive number 0-16 */
 			    /* drvsch[0] = 1st drv, drvsch[1] = 2nd drv, etc */
 	byte tempdrv;	    /* temporary drive - drive number 0-16 */
-	}drivtable;	    /* zero = default drive */
+} drivtable;		    /* zero = default drive */
 
 /* SUB, COM search order code */
 
@@ -258,7 +252,7 @@ word biosstart; 	/* 0000 if changeing bios file else start of bios in */
 bool mpmfile;		/* TRUE = bios file is MP/M (BNKXIOS.SPR) */
 			/* FALSE = bios file is CP/M 3 (BNKBIOS.SPR) */
 
-#include "TERMINAL.H"
+#include "terminal.h"
 
 #define STMNLNE 17	/* starting line of window */
 #define STMNCOL 46	/* starting column of window */

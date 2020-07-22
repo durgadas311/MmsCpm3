@@ -72,6 +72,6 @@ struct tcb {
 	char f10name[12];
 	char f11name[12];
 	char f12name[12];
-	} termctrl;
+} termctrl;
 
 /* end of TERMINAL.H */
