@@ -16,27 +16,27 @@ int call(int rtn, int a, int bc, int de, int hl) {
 	add	hl,sp
 	ld	de,here1
 	push	de
-	mov	d,m
-	dcx	h
-	mov	e,m
-	dcx	h
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	dec	hl
 	push	de
-	mov	a,m
-	dcx	h
-	dcx	h
-	mov	b,m
-	dcx	h
-	mov	c,m
-	dcx	h
-	mov	d,m
-	dcx	h
-	mov	e,m
-	dcx	h
+	ld	a,(hl)
+	dec	hl
+	dec	hl
+	ld	b,(hl)
+	dec	hl
+	ld	c,(hl)
+	dec	hl
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	dec	hl
 	push	af
-	mov	a,m
-	dcx	h
-	mov	l,m
-	mov	h,a
+	ld	a,(hl)
+	dec	hl
+	ld	l,(hl)
+	ld	h,a
 	pop	af
 	ret
 here1:
@@ -45,7 +45,36 @@ here1:
 
 /* returns A from routine */
 int calla(int rtn, int a, int bc, int de, int hl) {
-}
-
-void _spr(void **fmt, void (*outp)(char c)) {
+#asm
+	ld	hl,11
+	add	hl,sp
+	ld	de,here2
+	push	de
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	dec	hl
+	push	de
+	ld	a,(hl)
+	dec	hl
+	dec	hl
+	ld	b,(hl)
+	dec	hl
+	ld	c,(hl)
+	dec	hl
+	ld	d,(hl)
+	dec	hl
+	ld	e,(hl)
+	dec	hl
+	push	af
+	ld	a,(hl)
+	dec	hl
+	ld	l,(hl)
+	ld	h,a
+	pop	af
+	ret
+here2:
+	ld	l,a
+	ld	h,0
+#endasm
 }

@@ -69,7 +69,6 @@ char cntrlbuf,charbuf;
 bool bioscurflg;
 word biosstart; 
 bool mpmfile;
-struct tcb  termctrl;
 
 int main(int argc, char **argv) {	/* main entry point from CP/M */
 	char filename[20], drive[4], *cptr;

@@ -10,8 +10,11 @@
 /* CP/M specific */
 
 #include "setup30.h"
+# from stdio.h:
+extern int vsnprintf(char *str, size_t n,const char *fmt,void *ap);
 
 extern void _spr(void **fmt, void (*outp)(char c));
+extern void termload();
 
 int initial();
 int deinit();
@@ -43,21 +46,8 @@ void bell();
 #define TWIDTH 80
 #define TLENGTH 24
 
-#define numrec 3*SECSIZ	/* based on size of termctrl */
-
 int initial() {
-	char *tcbuf;
-	int p, fp;
-	if ((fp = open("a:terminal.sys", O_RDONLY, 0)) == -1) {
-		printf("Terminal control file not on drive A:.\n");
-		exit(0);
-	}
-	tcbuf = (char *)&termctrl;
-	if (read(fp, tcbuf, numrec) != numrec) {
-		printf("Terminal control file incomplete.\n");
-		exit(0);
-	}
-	close(fp);
+	termload();
 	putctl(termctrl.tinit);
 	return (0);
 }
@@ -111,6 +101,12 @@ int inchar() {
 	char c;
 	while ((c = bdos(6, 0xFF)) == NULL) ;
 	return (c);
+}
+
+static char buf[128];
+void _spr(void **fmt, void (*outp)(char c)) {
+	vsnprintf(buf, sizeof(buf), *fmt, &fmt[1]);
+	puts(buf);
 }
 
 void puts(char *buf) {
