@@ -707,7 +707,7 @@ int setnode(CHARTABL *chrentry, char *filename) {
 		} else if (inp == BLUE) {
 			nodenum = ndnum;
 			if (putnode() == ERROR) {
-				putwin(1, errmsg(errmsg()));
+				putwin(1, errmsg(errno));
 				bell();
 			}
 		} else if (inp == RED)

@@ -53,7 +53,7 @@ int setiored(char *filename) {	/* main entry point for set io redirection */
 		if (inp == BLUE) {
 			cpyred(redirvec, redvec);
 			if (putredir() == ERROR) {
-				putwin(1, errmsg(errmsg()));
+				putwin(1, errmsg(errno));
 				bell();
 				inp = NULL;
 			}

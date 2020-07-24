@@ -17,6 +17,8 @@
 #include <string.h>
 #include <errno.h>
 
+extern char *errmsg(int err);
+
 /* These are some new data types used in this program */
 
 #define byte char
@@ -159,10 +161,12 @@ CHARDEV {
 CHARTABL {		/* char io module table structure */
 	COMTABL compart;
 	CHARDEV charpart[MAXCDEV];
-} *chrptrtbl[MAXCHR];	/* table of pointers - data in free memory */
-			/* allocated at run time by alloc() */
+};
 
-ushort numchario;	/* number of char io modules in table */
+extern CHARTABL *chrptrtbl[MAXCHR];	/* table of pointers - data in free memory */
+					/* allocated at run time by alloc() */
+
+extern ushort numchario;	/* number of char io modules in table */
 
 #define FLOPCHAR struct flopchar
 
@@ -197,11 +201,12 @@ FLOPDEV {
 DISKTABL {
 	COMTABL compart;
 	FLOPDEV floppart[MAXFDEV];
-} *dskptrtbl[MAXDSK];	/* a table of pointers - data in free memory */
-			/* allocated by the alloc() function */
+};
+extern DISKTABL *dskptrtbl[MAXDSK];	/* a table of pointers - data in free memory */
+					/* allocated by the alloc() function */
 
-ushort numdiskio;     /* number of disk io modules in table */
-word serdpadr;	      /* address of ?serdp routine used to check mode bytes */
+extern ushort numdiskio;     /* number of disk io modules in table */
+extern word serdpadr;	      /* address of ?serdp routine used to check mode bytes */
 
 
 			/* OTHER GLOBAL VARIABLES */
@@ -216,51 +221,53 @@ DRVTABL {
 	byte drvsch[4];     /* drive search path array	drive number 0-16 */
 			    /* drvsch[0] = 1st drv, drvsch[1] = 2nd drv, etc */
 	byte tempdrv;	    /* temporary drive - drive number 0-16 */
-} drivtable;		    /* zero = default drive */
+};			    /* zero = default drive */
+
+extern DRVTABL drivtable;
 
 /* SUB, COM search order code */
 
-byte subcom;	/* 0 = .COM only  1 = .COM,.SUB  2 = .SUB,.COM */
+extern byte subcom;	/* 0 = .COM only  1 = .COM,.SUB  2 = .SUB,.COM */
 
 
 /* redirection vectors */
 
-word redirvec[5];	 /* MSB = phy device # 200, etc */
+extern word redirvec[5];	 /* MSB = phy device # 200, etc */
 
 	   /* [0] = conin, [1] = conout, [2] = auxin [3] = auxout [4] = lst */
 
 
 /* netlist device node number and address of node number */
 
-word nodeadr;
-byte nodenum;
+extern word nodeadr;
+extern byte nodenum;
 
 
 /* Sector read and write globals */
 
-#define SECSIZE 128
+#define SECSIZ 128
 #define NUMSEC	1
 #define FILEOFF 0x100		/* offset of an spr file */
-byte secbuf[SECSIZE];
-ushort cursec;
-bool writeflg;
-ushort fd;
+extern byte secbuf[SECSIZ];
+extern ushort cursec;
+extern bool writeflg;
+extern ushort fd;
 
 /* Cursor positioning globals */
 
 #define MAXLNE	17
 #define MAXCOL	15
-short curline,curcol,oldcol;
-ushort curpos[MAXLNE][MAXCOL];
-char cntrlbuf,charbuf;
+extern short curline,curcol,oldcol;
+extern ushort curpos[MAXLNE][MAXCOL];
+extern char cntrlbuf,charbuf;
 
 /* general globals */
 
-bool bioscurflg;	/* TRUE = bios file  FALSE = current image in memory */
-word biosstart; 	/* 0000 if changeing bios file else start of bios in */
+extern bool bioscurflg;	/* TRUE = bios file  FALSE = current image in memory */
+extern word biosstart; 	/* 0000 if changeing bios file else start of bios in */
 			/* memory location 0001h */
 
-bool mpmfile;		/* TRUE = bios file is MP/M (BNKXIOS.SPR) */
+extern bool mpmfile;	/* TRUE = bios file is MP/M (BNKXIOS.SPR) */
 			/* FALSE = bios file is CP/M 3 (BNKBIOS.SPR) */
 
 #include "terminal.h"

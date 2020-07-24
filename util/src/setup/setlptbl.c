@@ -66,7 +66,7 @@ int setlptbl(char *filename) {
 		if (inp == BLUE) {
 			cpydrv(drivtable, drvtbl);
 			if (putdrvtbl() == ERROR) {
-				putwin(1, errmsg(errmsg()));
+				putwin(1, errmsg(errno));
 				bell();
 				inp = NULL;
 			}

@@ -42,7 +42,7 @@ int setftsord(char *filename) {
 		} else if (inp == BLUE) {
 			subcom = ftsord;
 			if (puttyps() == ERROR) {
-				putwin(1, errmsg(errmsg()));
+				putwin(1, errmsg(errno));
 				bell();
 			}
 		} else if (inp == RED)

@@ -19,6 +19,9 @@
 #include "ioredir.h"
 #include "ftsord.h"
 
+/* malloc heap... */
+long heap;
+
 #define VERS	"3.104 "
 #define SELECT	14	/* select disk */
 #define GETSCB	49	/* get or put system control block variables */
@@ -45,6 +48,28 @@ int chkmbios();
 int chkmpm();
 void outerr(char *filename);
 void outerr2(short er, char *filename);
+
+CHARTABL *chrptrtbl[MAXCHR];
+ushort numchario;
+DISKTABL *dskptrtbl[MAXDSK];
+ushort numdiskio;
+word serdpadr;
+DRVTABL drivtable;
+byte subcom;
+word redirvec[5];
+word nodeadr;
+byte nodenum;
+byte secbuf[SECSIZ];
+ushort cursec;
+bool writeflg;
+ushort fd;
+short curline,curcol,oldcol;
+ushort curpos[MAXLNE][MAXCOL];
+char cntrlbuf,charbuf;
+bool bioscurflg;
+word biosstart; 
+bool mpmfile;
+struct tcb  termctrl;
 
 int main(int argc, char **argv) {	/* main entry point from CP/M */
 	char filename[20], drive[4], *cptr;

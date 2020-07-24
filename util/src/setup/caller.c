@@ -46,3 +46,6 @@ here1:
 /* returns A from routine */
 int calla(int rtn, int a, int bc, int de, int hl) {
 }
+
+void _spr(void **fmt, void (*outp)(char c)) {
+}

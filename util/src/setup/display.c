@@ -13,7 +13,7 @@
 #include <ctype.h>
 
 extern void outchr(char c);
-extern void _spr(void *fmt, void (*outp)(char c));
+extern void _spr(void **fmt, void (*outp)(char c));
 
 int getnum(short fldsiz, short *pdata);
 int getstr(short fldsiz, char *pdata);

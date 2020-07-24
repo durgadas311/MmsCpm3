@@ -11,7 +11,7 @@
 
 #include "setup30.h"
 
-extern void _spr(void *fmt, void (*outp)(char c));
+extern void _spr(void **fmt, void (*outp)(char c));
 
 int initial();
 int deinit();
