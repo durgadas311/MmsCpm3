@@ -47,7 +47,7 @@ int setlptbl(char *filename) {
 
 	clrscr();
 	initcur(STLNE, NLNE, STCOL, NCOL, 3, 12, 4, 51);
-	cpydrv(drvtbl, drivtable);
+	cpydrv(drivtable, drvtbl);
 	prtlhd();
 	prtlptbl(drvtbl);
 	prtcur(filename);
@@ -57,14 +57,14 @@ int setlptbl(char *filename) {
 	do {
 		inp = getlfld(drvtbl);
 		if (inp == WHITE) {
-			cpydrv(drvtbl, drivtable);
+			cpydrv(drivtable, drvtbl);
 			prtlptbl(drvtbl);
 			curline = 1;
 			curcol = 2;
 			oldcol = 99;
 		}
 		if (inp == BLUE) {
-			cpydrv(drivtable, drvtbl);
+			cpydrv(drvtbl, drivtable);
 			if (putdrvtbl() == ERROR) {
 				putwin(1, errmsg(errno));
 				bell();
@@ -76,8 +76,8 @@ int setlptbl(char *filename) {
 	return (OK);
 }
 
-void cpydrv(DRVTABL *drv1, DRVTABL *drv2) {
-	memcpy(drv2, drv1, sizeof * drv1);
+void cpydrv(DRVTABL *drv1, DRVTABL *drv2) { /* copy drv1 into drv2 */
+	memcpy(drv2, drv1, sizeof(*drv1));
 }
 
 void initlptbl(DRVTABL *drvtbl) {	/* Set default entries in the log/phy table */

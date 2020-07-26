@@ -99,7 +99,7 @@ void setdiskio(DISKTABL *maindsk, char *filename) {	/* Main entry point for this
 }
 
 void cpydsk(DISKTABL *dsk1, DISKTABL *dsk2) {	/* copys dsk1 into dsk2 */
-	memcpy(dsk2, dsk1, sizeof *dsk1);
+	memcpy(dsk2, dsk1, sizeof(*dsk1));
 }
 
 void prtdhd(DISKTABL *dskentry, bool confg) {

@@ -99,7 +99,7 @@ void setchario(CHARTABL *mainchr, char *filename) {
 }
 
 void cpychr(CHARTABL *chr1, CHARTABL *chr2) {	/* copys chr1 into chr2 */
-	memcpy(chr2, chr1, sizeof * chr1);
+	memcpy(chr2, chr1, sizeof(*chr1));
 }
 
 void reinitio(CHARTABL *chrentry) {	/* reinitializes the character io */
