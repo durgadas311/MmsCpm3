@@ -108,7 +108,7 @@ int putredir() {
 		for (i = 0; i < 5; ++i, adr += 2) {
 			scbpd[0] = adr;
 			scbpd[1] = 0;
-			redirvec[i] = (redirvec[i] & 0xFFF0) | (bdos(49, scbpd) & 0x000F);
+			redirvec[i] = (redirvec[i] & 0xFFF0) | (bdos2(49, scbpd) & 0x000F);
 			scbpd[1] = 0xFE;
 			scbpd[2] = redirvec[i] & 0xFF;
 			scbpd[3] = redirvec[i] >> 8;
@@ -131,7 +131,7 @@ int puttyps() {
 	} else {
 		scbpd[0] = STYPSCB;
 		scbpd[1] = 0;
-		temp = temp | (bdos(49, scbpd) & 0xE7);
+		temp = temp | (bdos2(49, scbpd) & 0xE7);
 		scbpd[1] = 0xFF;
 		scbpd[2] = temp;
 		bdos(49, scbpd);

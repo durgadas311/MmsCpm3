@@ -70,7 +70,7 @@ int getsord() {
 		for (i = 0; i < 4; ++i, ++adr) {
 			scbpd[0] = adr;
 			scbpd[1] = 0;
-			drivtable.drvsch[i] = (bdos(49, scbpd) & 0xFF);
+			drivtable.drvsch[i] = (bdos2(49, scbpd) & 0xFF);
 		}
 	}
 	return (OK);
@@ -88,7 +88,7 @@ int gettdrv() {
 	} else {
 		scbpd[0] = TDRVSCB;
 		scbpd[1] = 0;
-		drivtable.tempdrv = (bdos(49, scbpd) & 0xFF);
+		drivtable.tempdrv = (bdos2(49, scbpd) & 0xFF);
 	}
 	return (OK);
 }
@@ -119,7 +119,7 @@ int getredir() {
 		for (i = 0; i < 5; ++i, adr += 2) {
 			scbpd[0] = adr;
 			scbpd[1] = 0;
-			redirvec[i] = bdos(49, scbpd);
+			redirvec[i] = bdos2(49, scbpd);
 		}
 	}
 	return (OK);
@@ -137,7 +137,7 @@ int gettyps() {
 	} else {
 		scbpd[0] = STYPSCB;
 		scbpd[1] = 0;
-		subcom = (bdos(49, scbpd) & 0x18);
+		subcom = (bdos2(49, scbpd) & 0x18);
 	}
 	subcom = subcom >> 3;
 	return (OK);

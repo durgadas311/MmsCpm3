@@ -18,6 +18,7 @@
 #include <errno.h>
 
 extern char *errmsg(int err);
+extern int bdos2(int fnc, int prm) __smallc;
 
 /* These are some new data types used in this program */
 

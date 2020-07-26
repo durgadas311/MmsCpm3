@@ -124,11 +124,11 @@ int readwrite(short sec) {
 }
 
 int adrsec(word address) {
-	return ((address + FILEOFF) / SECSIZE);
+	return ((address + FILEOFF) / SECSIZ);
 }
 
 int adroff(word address) {
-	return ((address + FILEOFF) % SECSIZE);
+	return ((address + FILEOFF) % SECSIZ);
 }
 
 int openbios(char *filename) {
@@ -137,6 +137,7 @@ int openbios(char *filename) {
 	if (bioscurflg) {
 		fd = open(filename, O_RDWR, 0);
 		if (fd == ERROR) {
+			errno = EBADF;
 			return (ERROR);
 		}
 		if (readbios(2) == ERROR) {
@@ -169,12 +170,17 @@ int closebios() {
 
 int readbios(short sector) {
 	short er;
+	long e, p;
 
-	if (lseek(fd, sector * SECSIZE, 0) == ERROR) {
+	p = sector * SECSIZ;
+	e = lseek(fd, p, 0);
+	if (e == ERROR) {
+		errno = EBDFD;
 		return (ERROR);
 	}
-	er = read(fd, secbuf, NUMSEC * SECSIZE);
-	if (er != NUMSEC * SECSIZE) {
+	er = read(fd, secbuf, NUMSEC * SECSIZ);
+	if (er != NUMSEC * SECSIZ) {
+		errno = EINVAL;
 		return (ERROR);
 	}
 	cursec = sector;
@@ -184,11 +190,11 @@ int readbios(short sector) {
 int writebios(short sector) {
 	short er;
 
-	if (lseek(fd, sector * SECSIZE, 0) == ERROR) {
+	if (lseek(fd, (long)(sector * SECSIZ), 0) == ERROR) {
 		return (ERROR);
 	}
-	er = write(fd, secbuf, NUMSEC * SECSIZE);
-	if (er != NUMSEC * SECSIZE) {
+	er = write(fd, secbuf, NUMSEC * SECSIZ);
+	if (er != NUMSEC * SECSIZ) {
 		return (ERROR);
 	}
 	cursec = sector;

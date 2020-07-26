@@ -78,3 +78,51 @@ here2:
 	ld	h,0
 #endasm
 }
+
+/*
+ * z88dk "malloc" facility seems totally broken.
+ * Cannot get auto-init to work, there seems to be no
+ * way to locate the last byte in a program...
+ */
+long heap;	/* should be BSS, nearly last in program */
+#if 1
+static void *sbrk = 0;
+static void *send = 0;
+#else
+#include <malloc.h>
+extern int printf(char *format, ...);
+#endif
+void *memalloc(int len) {
+	void *adr;
+#if 1
+	int *sys;
+	if (sbrk == 0) {
+		/* printf("heap = %04x\n", &heap); */
+		sbrk = (void *)(&heap + 256); /* major kludge */
+		sys = (int *)6;
+		send = *sys & 0xff00;
+	}
+	if (sbrk + len >= send) {
+		return 0;
+	}
+	adr = sbrk;
+	sbrk += len;
+#else
+	adr = malloc(len);
+	printf("malloc(%d) = %04x (%04x: %04x)\n", len, adr, &heap, heap);
+#endif
+	return adr;
+}
+
+int bdos2(int fnc, int prm) {
+#asm
+	ld	hl,2
+	add	hl,sp
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	inc	hl
+	ld	c,(hl)
+	call	5
+#endasm
+}

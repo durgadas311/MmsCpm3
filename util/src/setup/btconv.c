@@ -11,7 +11,7 @@
 
 #include "setup30.h"
 #include "biosfile.h"
-#include <malloc.h>
+extern void *memalloc(int len);
 
 int gettables();
 int testchario(word modstr);
@@ -90,7 +90,7 @@ int testchario(word modstr) {	/* TRUE if module is chario */
 	if (getbyte(&phynum, modstr + PHYDEVNUM) == ERROR) {
 		return (ERROR);
 	}
-	if ((int)phynum >= CHIONUM) {
+	if ((unsigned int)phynum >= CHIONUM) {
 		return (TRUE);
 	} else {
 		return (FALSE);
@@ -103,7 +103,7 @@ int getcpt() {		/* get free space for a CHARTABL entry */
 	if (numchario >= MAXCHR) {
 		return (ERROR - 1);
 	}
-	if ((chrptrtbl[numchario] = malloc(sizeof * dumchr)) == NULL) {
+	if ((chrptrtbl[numchario] = (CHARTABL *)memalloc(sizeof(*dumchr))) == NULL) {
 		return (ERROR - 5);
 	}
 	return (OK);
@@ -112,10 +112,10 @@ int getcpt() {		/* get free space for a CHARTABL entry */
 int getdpt() {		/* get free space for a DISKTABL entry */
 	DISKTABL *dumdsk;
 
-	if (numdiskio >= MAXCHR) {
+	if (numdiskio >= MAXDSK) {
 		return (ERROR - 2);
 	}
-	if ((dskptrtbl[numdiskio] = malloc(sizeof * dumdsk)) == NULL) {
+	if ((dskptrtbl[numdiskio] = (DISKTABL *)memalloc(sizeof(*dumdsk))) == NULL) {
 		return (ERROR - 5);
 	}
 	return (OK);
@@ -140,7 +140,7 @@ int btcom(COMTABL *compart, word modstr) {	/* Moves the common part of all modul
 	if (getbyte(&compart->numdev, modstr + NUMDEV) == ERROR) {
 		return (ERROR);
 	}
-	if ((int)compart->phydevnum >= CHIONUM) {
+	if ((unsigned int)compart->phydevnum >= CHIONUM) {
 		modstr += CHRSTRADR;
 	} else {
 		modstr += DSKSTRADR;
@@ -448,7 +448,7 @@ int getctadr(word *adr, word modstr, byte phydevnum) {	/* get chrtbl address in 
 		return (getword(adr, modstr + CHRTBLADR));
 	} else {
 		biospd[0] = 20;	   /* get chrtbl address is bios entry #20 */
-		*adr = (bdos(50, biospd) + ((phydevnum - CHIONUM) * 8));
+		*adr = (bdos2(50, biospd) + ((phydevnum - CHIONUM) * 8));
 		return (OK);	    /* bdos func 50 is direct bios calls */
 	}
 }

@@ -19,9 +19,6 @@
 #include "ioredir.h"
 #include "ftsord.h"
 
-/* malloc heap... */
-long heap;
-
 #define VERS	"3.104 "
 #define SELECT	14	/* select disk */
 #define GETSCB	49	/* get or put system control block variables */
@@ -78,7 +75,7 @@ int main(int argc, char **argv) {	/* main entry point from CP/M */
 
 	initial();	/* initialize terminal */
 	prtsignon();
-	vers = bdos(12, 0);
+	vers = bdos2(12, 0);
 	if ( ((vers & 0xff) < 0x30) || (vers & 0xfd00) != 0 ) {
 		deinit();
 		bell();
@@ -102,7 +99,7 @@ int main(int argc, char **argv) {	/* main entry point from CP/M */
 				getfile(filename, argv[1]);
 			} else {
 				if ((*(argv + 1))[1] != ':') {
-					filename[0] = bdos(25, 0) + 'A';
+					filename[0] = bdos(GETDSK, 0) + 'A';
 					filename[1] = ':';
 					filename[2] = NULL;
 				} else {
@@ -121,7 +118,7 @@ int main(int argc, char **argv) {	/* main entry point from CP/M */
 		}
 	} else {
 		bioscurflg = TRUE;
-		drive[0] = bdos(25, 0) + 'A';
+		drive[0] = bdos(GETDSK, 0) + 'A';
 		drive[1] = ':';
 		drive[2] = NULL;
 		getfile(filename, drive);
@@ -452,10 +449,10 @@ int chkmpm() {
 }
 
 void outerr(char *filename) {
-	short er;
+	short er = errno;
 
-	if ((er = errno) == 11) {
-		printf("\n%s not found\n", filename);
+	if (filename) {
+		printf("\n%s: (%d) %s", filename, fd, errmsg(er));
 	} else {
 		printf("\n%s\n", errmsg(er));
 	}

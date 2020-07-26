@@ -2,6 +2,10 @@
 # Terminal definition may be built-in or loaded from A:TERMINAL.SYS,
 # determined at link time.
 
+# CC = zcc
+# FLAGS = +cpm -set-r2l-by-default
+CLIBS =
+
 # Core modules to link
 LINKS = \
 	setup30.o \
@@ -24,27 +28,27 @@ LINKS = \
 all: setup.com setuph19.com setupkp.com h19.sys kaypro.sys
 
 %.o: %.c
-	zcc +cpm -c -o $@ -DAMALLOC -DAMALLOC3 $<
+	zcc +cpm -set-r2l-by-default -c -o $@ -DAMALLOC -DAMALLOC3 $<
 
 objs: $(LINKS)
 
 # "normal" version, uses A:TERMINAL.SYS for term def.
 setup.com: $(LINKS) termext.o
-	zcc +cpm -o $@ $(LINKS) termext.o
+	zcc +cpm -set-r2l-by-default -o $@ $(LINKS) termext.o $(CLIBS)
 
 # H19 version, builtin term def.
 setuph19.com: $(LINKS) termint.o h19.o
-	zcc +cpm -o $@ $(LINKS) termint.o h19.o
+	zcc +cpm -set-r2l-by-default -o $@ $(LINKS) termint.o h19.o $(CLIBS)
 
 # Kaypro Magic Wand keypad version, builtin term def.
 setupkp.com: $(LINKS) termint.o kaypro.o
-	zcc +cpm -o $@ $(LINKS) termint.o kaypro.o
+	zcc +cpm -set-r2l-by-default -o $@ $(LINKS) termint.o kaypro.o $(CLIBS)
 
 clean:
 	rm -f *.o
 
 # TERMINAL.SYS file images
 %.sys: %.o
-	zcc +cpm -o $@ --no-crt $^
+	zcc +cpm -set-r2l-by-default -o $@ --no-crt $^
 
 .PRECIOUS: %.o

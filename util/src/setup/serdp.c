@@ -14,7 +14,7 @@
 #include "biosfile.h"
 #include "tbconv.h"
 #include "caller.h"
-#include <malloc.h>
+extern void *memalloc(int len);
 
 int ldserdp();
 int serdp(FLOPDEV *flpentry);
@@ -43,7 +43,7 @@ int ldserdp() {
 			}
 			serdpend += 8;
 		} while (byt != 0xFF);
-		serdpadr = malloc(serdpend - serdpstr);	/* get some space */
+		serdpadr = memalloc(serdpend - serdpstr);	/* get some space */
 		pt = (byte *)serdpadr;
 		if (serdpadr == NULL) {
 			return (ERROR - 5);    /* not enough memory space */
