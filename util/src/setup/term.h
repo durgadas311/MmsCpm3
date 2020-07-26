@@ -1,7 +1,7 @@
 extern int initial();
 extern int deinit();
-extern int getkey();
-extern int inchar();
+extern ushort getkey();
+extern ushort inchar();
 extern void puts(char *buf);
 extern void outchr(char c);
 extern int printf(char *format, ...);

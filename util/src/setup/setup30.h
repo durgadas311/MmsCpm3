@@ -260,7 +260,7 @@ extern ushort fd;
 #define MAXCOL	15
 extern short curline,curcol,oldcol;
 extern ushort curpos[MAXLNE][MAXCOL];
-extern char cntrlbuf,charbuf;
+extern int cntrlbuf,charbuf;
 
 /* general globals */
 

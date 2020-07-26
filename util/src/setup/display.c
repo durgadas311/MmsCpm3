@@ -17,8 +17,8 @@ extern void _spr(void **fmt, void (*outp)(char c));
 
 int getnum(short fldsiz, short *pdata);
 int getstr(short fldsiz, char *pdata);
-int getchr();
-int getcntrl();
+ushort getchr();
+ushort getcntrl();
 void movcur(char c, short maxcol, short maxlne);
 void initcur(ushort stline, int nline, int stcol, int ncol, int colwids, ...);
 void prtpos(ushort line, ushort col, char *format, ...);
@@ -116,8 +116,8 @@ int getstr(short fldsiz, char *pdata) {	/* input a string on the screen */
 	return (!NULL);
 }
 
-int getchr() {
-	char c;
+ushort getchr() {
+	ushort c;
 
 	if (charbuf == NULL) {
 		c = getkey();
@@ -132,8 +132,8 @@ int getchr() {
 	return (c);
 }
 
-int getcntrl() {
-	char c;
+ushort getcntrl() {
+	ushort c;
 
 	if (cntrlbuf == NULL) {
 		c = getkey();

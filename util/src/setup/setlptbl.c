@@ -20,7 +20,7 @@ void initlptbl(DRVTABL *drvtbl);
 void prtlhd();
 void prtdrlet();
 void prtlptbl(DRVTABL *drvtbl);
-int getlfld(DRVTABL *drvtbl);
+ushort getlfld(DRVTABL *drvtbl);
 void prtlmsg();
 void tempfld(DRVTABL *drvtbl);
 void schfld(DRVTABL *drvtbl);
@@ -43,7 +43,7 @@ int searchdisk(ushort phydev);
 
 int setlptbl(char *filename) {
 	DRVTABL drvtbl;
-	short inp;
+	ushort inp;
 
 	clrscr();
 	initcur(STLNE, NLNE, STCOL, NCOL, 3, 12, 4, 51);
@@ -135,10 +135,10 @@ void prtlptbl(DRVTABL *drvtbl) {	/* print all variable portitions of menu */
 	curon();
 }
 
-int getlfld(DRVTABL *drvtbl) {	/* move cursor to a field and if a non cntrl */
+ushort getlfld(DRVTABL *drvtbl) {	/* move cursor to a field and if a non cntrl */
 				/* type character is entered goto the field */
 				/* curcol is pointing to */
-	short inp;
+	ushort inp;
 
 	curon();
 	do {

@@ -18,8 +18,8 @@ extern void termload();
 
 int initial();
 int deinit();
-int getkey();
-int inchar();
+ushort getkey();
+ushort inchar();
 void puts(char *buf);
 void outchr(char c);
 int printf(char *format, ...);
@@ -58,10 +58,10 @@ int deinit() {
 	return (0);
 }
 
-int getkey() {
-	char c[4], cd, *ktbl;
+ushort getkey() {
+	unsigned char c[4], cd, *ktbl;
 	int p, pp, qq;
-	ktbl = termctrl.khome;
+	ktbl = (unsigned char *)termctrl.khome;
 	p = 0;
 	cd = HMCD;
 	c[0] = inchar();
@@ -97,8 +97,8 @@ int getkey() {
 	return (cd);
 }
 
-int inchar() {
-	char c;
+ushort inchar() {
+	unsigned char c;
 	while ((c = bdos(6, 0xFF)) == NULL) ;
 	return (c);
 }

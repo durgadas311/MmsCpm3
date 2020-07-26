@@ -1,7 +1,7 @@
 extern int getnum(short fldsiz, short *pdata);
 extern int getstr(short fldsiz, char *pdata);
-extern int getchr();
-extern int getcntrl();
+extern ushort getchr();
+extern ushort getcntrl();
 extern void movcur(char c, short maxcol, short maxlne);
 extern void initcur(ushort stline, int nline, int stcol, int ncol, int colwids, ...);
 extern void prtpos(ushort line, ushort col, char *format, ...);

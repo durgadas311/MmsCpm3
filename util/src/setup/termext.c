@@ -1,6 +1,7 @@
 /*
  * Provides termctrl when terminal definition is loaded from A:TERMINAL.SYS
  */
+#define ushort unsigned	/* from setup30.h */
 #include "terminal.h"
 #include "term.h"
 #include <fcntl.h>

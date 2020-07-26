@@ -62,7 +62,7 @@ bool writeflg;
 ushort fd;
 short curline,curcol,oldcol;
 ushort curpos[MAXLNE][MAXCOL];
-char cntrlbuf,charbuf;
+int cntrlbuf,charbuf;
 bool bioscurflg;
 word biosstart; 
 bool mpmfile;

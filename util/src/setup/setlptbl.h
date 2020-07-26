@@ -4,7 +4,7 @@ extern void initlptbl(DRVTABL *drvtbl);
 extern void prtlhd();
 extern void prtdrlet();
 extern void prtlptbl(DRVTABL *drvtbl);
-extern int getlfld(DRVTABL *drvtbl);
+extern ushort getlfld(DRVTABL *drvtbl);
 extern void prtlmsg();
 extern void tempfld(DRVTABL *drvtbl);
 extern void schfld(DRVTABL *drvtbl);
