@@ -34,15 +34,15 @@ objs: $(LINKS)
 
 # "normal" version, uses A:TERMINAL.SYS for term def.
 setup.com: $(LINKS) termext.o
-	$(CC) $(CFLAGS) -o $@ $(LINKS) termext.o $(CLIBS)
+	$(CC) $(CFLAGS) -m -o $@ $(LINKS) termext.o $(CLIBS)
 
 # H19 version, builtin term def.
 setuph19.com: $(LINKS) termint.o h19.o
-	$(CC) $(CFLAGS) -o $@ $(LINKS) termint.o h19.o $(CLIBS)
+	$(CC) $(CFLAGS) -m -o $@ $(LINKS) termint.o h19.o $(CLIBS)
 
 # Kaypro Magic Wand keypad version, builtin term def.
 setupkp.com: $(LINKS) termint.o kaypro.o
-	$(CC) $(CFLAGS) -o $@ $(LINKS) termint.o kaypro.o $(CLIBS)
+	$(CC) $(CFLAGS) -m -o $@ $(LINKS) termint.o kaypro.o $(CLIBS)
 
 clean:
 	rm -f *.o
