@@ -1,78 +1,56 @@
 /* Allow C code to directly call functions */
 
 /*
+ * -set-r2l-by-default !!!
+ *
  * SP -> return
- *    +2 HL
- *    +4 DE
+ *    +2 routine
+ *    +4 A
  *    +6 BC
- *    +9 A
- *   +10 routine
+ *    +8 DE
+ *   +10 HL
  */
 
 /* returns HL from routine */
 int call(int rtn, int a, int bc, int de, int hl) {
 #asm
-	ld	hl,11
-	add	hl,sp
 	ld	de,here1
+.there
 	push	de
+	ld	hl,2
+	add	hl,sp
 	ld	d,(hl)
-	dec	hl
+	inc	hl
 	ld	e,(hl)
-	dec	hl
-	push	de
+	inc	hl
+	push	de	; routine to call
 	ld	a,(hl)
-	dec	hl
-	dec	hl
+	inc	hl
+	inc	hl
 	ld	b,(hl)
-	dec	hl
+	inc	hl
 	ld	c,(hl)
-	dec	hl
+	inc	hl
 	ld	d,(hl)
-	dec	hl
+	inc	hl
 	ld	e,(hl)
-	dec	hl
+	inc	hl
 	push	af
 	ld	a,(hl)
-	dec	hl
+	inc	hl
 	ld	l,(hl)
 	ld	h,a
 	pop	af
-	ret
-here1:
+	ret		; go to routine
+here1:			; return here
 #endasm
 }
 
 /* returns A from routine */
 int calla(int rtn, int a, int bc, int de, int hl) {
 #asm
-	ld	hl,11
-	add	hl,sp
 	ld	de,here2
-	push	de
-	ld	d,(hl)
-	dec	hl
-	ld	e,(hl)
-	dec	hl
-	push	de
-	ld	a,(hl)
-	dec	hl
-	dec	hl
-	ld	b,(hl)
-	dec	hl
-	ld	c,(hl)
-	dec	hl
-	ld	d,(hl)
-	dec	hl
-	ld	e,(hl)
-	dec	hl
-	push	af
-	ld	a,(hl)
-	dec	hl
-	ld	l,(hl)
-	ld	h,a
-	pop	af
-	ret
+	jp	there	; reset is the same
 here2:
 	ld	l,a
 	ld	h,0
@@ -84,7 +62,7 @@ here2:
  * Cannot get auto-init to work, there seems to be no
  * way to locate the last byte in a program...
  */
-long heap;	/* should be BSS, nearly last in program */
+extern void _BSS_END_tail;
 #if 1
 static void *sbrk = 0;
 static void *send = 0;
@@ -97,12 +75,12 @@ void *memalloc(int len) {
 #if 1
 	int *sys;
 	if (sbrk == 0) {
-		/* printf("heap = %04x\n", &heap); */
-		sbrk = (void *)(&heap + 256); /* major kludge */
+		sbrk = &_BSS_END_tail;
 		sys = (int *)6;
 		send = *sys & 0xff00;
+		/* printf("heap = %04x .. %04x\n", sbrk, send); */
 	}
-	if (sbrk + len >= send) {
+	if (sbrk + len >= (&len - 256)) {
 		return 0;
 	}
 	adr = sbrk;
