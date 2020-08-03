@@ -70,18 +70,18 @@ st0:	mvi	l,67h	;thread
 
 	lhld	thread
 su2:	mov	e,m
-	inx	h
+	inx	h	; +1
 	mov	d,m
-	inx	h
+	inx	h	; +2
 	mov	a,d
 	ora	e
 	jz	done
 	push	d
-	lxi	d,17
+	lxi	d,13h-2	; chario str is at +13h
 	mov	a,m
 	cpi	200
 	jrnc	su3
-	mvi	e,14	;
+	mvi	e,10h-2	; diskio str is at +10h
 su3:	dad	d	;point to string address
 	mov	e,m
 	inx	h

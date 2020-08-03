@@ -1,4 +1,4 @@
-vers equ '3 ' ; Oct 20, 2019  14:59  drm  "DRIVES.ASM"
+vers equ '3 ' ; July 26, 2020  09:19  drm  "DRIVES.ASM"
 
 	maclib Z80
 
@@ -113,9 +113,9 @@ su0:	mov	a,m
 
 	lhld	thread
 su2:	mov	e,m
-	inx	h
+	inx	h	; +1
 	mov	d,m
-	inx	h
+	inx	h	; +2
 	mov	a,d
 	ora	e
 	jz	su1
@@ -124,9 +124,9 @@ su2:	mov	e,m
 	cpi	200
 	jnc	su3	;disk I/O only, no character I/O.
 	mov	b,a
-	inx	h
+	inx	h	; +3
 	mov	c,m	;number of devices
-	lxi	d,13	;
+	lxi	d,10h-3	;
 	dad	d	;point to string address
 	mov	e,m
 	inx	h
