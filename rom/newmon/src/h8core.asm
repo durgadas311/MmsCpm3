@@ -899,6 +899,7 @@ conot1:
 	out	0e8h
 	ret
 
+if not nofp
 	rept	03eeh-$
 	db	0ffh
 	endm
@@ -923,6 +924,7 @@ doddig:	db	00000001b	; "0."
 	db	01000010b	; "d."
 	db	00001100b	; "E."
 	db	00011100b	; "F."
+endif
 
 ; D=term char (e.g. '.' for Substitute)
 ; HL=location to store address
