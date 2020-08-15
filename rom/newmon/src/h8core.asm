@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	21
+beta	equ	22
 
 z180	equ	false
 h8nofp	equ	false
@@ -899,6 +899,31 @@ conot1:
 	out	0e8h
 	ret
 
+	rept	03eeh-$
+	db	0ffh
+	endm
+if	($ <> 03eeh)
+	.error	'Digit table overrun 03eeh'
+endif
+
+; octal (base 8) 7-seg translation
+doddig:	db	00000001b	; "0."
+	db	01110011b	; "1."
+	db	01001000b	; "2."
+	db	01100000b	; "3."
+	db	00110010b	; "4."
+	db	00100100b	; "5."
+	db	00000100b	; "6."
+	db	01110001b	; "7."
+	db	00000000b	; "8."
+	db	00100000b	; "9."
+	db	00010000b	; "A."
+	db	00000110b	; "b."
+	db	00001101b	; "C."
+	db	01000010b	; "d."
+	db	00001100b	; "E."
+	db	00011100b	; "F."
+
 ; D=term char (e.g. '.' for Substitute)
 ; HL=location to store address
 ; CY=first digit in A
@@ -971,7 +996,7 @@ adrout:
 	call	hexout
 spout:
 	mvi	a,' '
-	jr	conout
+	jmp	conout
 
 hexout:
 	push	psw
@@ -987,7 +1012,7 @@ hexdig:
 	daa
 	aci	040h
 	daa
-	jr	conout
+	jmp	conout
 
 coninit:
 	mvi	c,12	; 9600 baud
@@ -2089,24 +2114,6 @@ deh55:	rlc
 	rlc
 	mov	b,a
 	ret
-
-; octal (base 8) 7-seg translation
-doddig:	db	00000001b	; "0."
-	db	01110011b	; "1."
-	db	01001000b	; "2."
-	db	01100000b	; "3."
-	db	00110010b	; "4."
-	db	00100100b	; "5."
-	db	00000100b	; "6."
-	db	01110001b	; "7."
-	db	00000000b	; "8."
-	db	00100000b	; "9."
-	db	00010000b	; "A."
-	db	00000110b	; "b."
-	db	00001101b	; "C."
-	db	01000010b	; "d."
-	db	00001100b	; "E."
-	db	00011100b	; "F."
 
 dSP:	db	11111111b,10100100b,10011000b	; " SP"
 dPSW:	db	11111111b,10010000b,10011100b	; " AF"
