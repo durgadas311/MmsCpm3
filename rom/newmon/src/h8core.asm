@@ -1482,7 +1482,8 @@ kpubt:
 	lxi	h,bfkey
 	call	bfind
 	jrc	deverr
-	db	0ddh ! mov b,h	; mov b,IXh ; module address
+	pushix
+	pop	b	; b = IXh
 	mvi	c,mddisp
 	lxi	d,Aleds
 	call	mov3dsp
