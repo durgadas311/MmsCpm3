@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	003h
+VERN	equ	004h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -257,32 +257,30 @@ wrimg1:
 	lxi	h,ddrvtb+1
 	mov	m,a
 	shld	dvolpt
-	lxi	h,buffer
-	lxi	b,zbuf
-wrimg2:
-	;
-	; TODO: read image file
-	;
 ;
-	;? mvi	c,0
+	call	vrtrk	; read track from image
+	rc
+;
 	lda	curtrk
 	mov	b,a
 	ora	a
 	jz	wrimg3	; c is zero from above
 	lda	curvol	;  on first track
-	mov	c,a	;  use vol# on the rest
 wrimg3:
-	call	ftrk	; format this track
+	mov	c,a	;  use vol# on the rest
+	call	ftrk	; format this track (B=track, C=volume
 	lda	curtrk
 	inr	a
-	sta	curtrk	; why????
+	sta	curtrk	; only used to detect track 0
 ;
 	lxi	b,zbuf
 	lxi	d,buffer
 	lhld	secnum
 	call	wrbuf
 ;
-	; TODO: progress indicator...
+	mvi	a,'R'
+	call	chrout
+
 	lhld	secnum
 	lxi	d,10	; sec/trk
 	dad	d
@@ -293,7 +291,7 @@ wrimg3:
 	ora	l
 	lda	curvol
 	jnz	wrimg1	; last track?
-	ret
+	jmp	crlf
 
 ; Write sector(s) to H17
 ; BC = buffer size
@@ -421,7 +419,7 @@ comnd:
 	cpi	'R'
 	jrz	crestr
 	cpi	'S'
-	jrz	csave
+	jz	csave
 invcmd:	lxi	d,invld
 	call	print
 	jr	chelp
@@ -477,8 +475,16 @@ crestr:	call	skipb
 	call	strcpy
 	mvi	a,CR	; TODO: need to trim?
 	stax	d
-
-	jmp	failvd
+	lxi	h,opr
+	call	vdcmd
+	jc	failvd	; no need for close...
+	call	wrimg
+	; CY if error
+	push	psw
+	lxi	h,clf
+	call	vdcmd
+	pop	psw
+	jc	failvd
 	jmp	comnd
 
 ; Save diskette image in file
@@ -489,9 +495,14 @@ csave:	call	skipb
 	stax	d
 	lxi	h,opw
 	call	vdcmd
-	jc	failvd
+	jc	failvd	; no need for close...
 	; TODO: need to truncate?
 	call	rdimg
+	; CY if error
+	push	psw
+	lxi	h,clf
+	call	vdcmd
+	pop	psw
 	jc	failvd
 	jmp	comnd
 
