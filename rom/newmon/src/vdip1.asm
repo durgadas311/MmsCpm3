@@ -3,8 +3,8 @@
 ; and 'vdip1' as base port.
 	maclib	z80
 
-	public	strcpy,strcmp
-	public	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
+	public	strcpy,strcmp,sync,runout
+	public	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
 	extrn	vdbuf
 
 ticcnt	equ	201bh
@@ -26,7 +26,7 @@ vd$sts	equ	vdip1+2
 vd$txe	equ	00000100b	; Tx ready
 vd$rxr	equ	00001000b	; Rx data ready
 
-prompt:	db	'D:\>',CR
+vdprmp:	db	'D:\>',CR
 rdf:	db	'rdf ',0,0,0,128,CR
 
 ; copy HL to DE, until NUL
@@ -59,7 +59,7 @@ vdcmd:
 vdend:
 	call	vdinp
 	lxi	h,vdbuf
-	lxi	d,prompt
+	lxi	d,vdprmp
 	call	strcmp
 	rz	; OK
 	; error, always?
@@ -76,7 +76,7 @@ vdrd:	push	h
 	push	h
 	call	vdinp
 	lxi	h,vdbuf
-	lxi	d,prompt
+	lxi	d,vdprmp
 	call	strcmp
 	pop	h	; "next" buffer addr
 	rz

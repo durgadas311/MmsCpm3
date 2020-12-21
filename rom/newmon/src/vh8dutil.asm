@@ -1,9 +1,9 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	002h
+VERN	equ	003h
 
-;	extrn	strcpy,strcmp
-;	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
+	extrn	strcpy,strcmp,sync,runout
+	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
 	public	vdbuf
 
 CR	equ	13
@@ -201,6 +201,52 @@ trk4:
 	mov	m,a
 	ret
 
+; Read file from VDIP1 into 'buffer'.
+; Reads 1 H17 track - 10x256 sectors.
+; File was already opened.
+; Read 128 bytes at a time, as per vdrd routine.
+vrtrk:	lxi	h,buffer
+	mvi	b,20	; 20 records == 10 sectors
+vrt0:	push	b
+	call	vdrd
+	pop	b
+	rc	; error
+	djnz	vrt0
+	ret
+
+; Write to file on VDIP1 from 'buffer'.
+; Writes 1 H17 track - 10x256 sectors.
+; File was already opened (for write).
+; Write 512 bytes at a time.
+vwtrk:	lxi	d,buffer
+	mvi	b,5	; 5x512 == 10x256
+vwt0:	push	b
+	call	vdwr
+	pop	b
+	rc
+	djnz	vwt0
+	ret
+
+; This probably should be in vdip1.asm...
+; DE=data buffer (dma adr)
+; Returns DE=next
+vdwr:	lxi	h,wrf
+	call	vdmsg
+	lxi	b,512
+vdwr0:	ldax	d
+	call	vdout
+	inx	d
+	dcx	b
+	mov	a,b
+	ora	c
+	jrnz	vdwr0
+	push	d
+	call	vdend
+	pop	d
+	ret	; CY=error
+
+wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
+
 ; Copy tracks from image file onto H17
 wrimg:
 	xra	a
@@ -265,25 +311,19 @@ rdimg:
 	sta	secnum
 	sta	secnum+1
 rdimg1:
-;	lxi	h,ddrvtb+1
-;	mov	m,a
-;	shld	dvolpt
-;	call	chrin
-;	cpi	'r'
-;	rnz
+	lxi	h,ddrvtb+1
+	mov	m,a
+	shld	dvolpt
 ;
 	lxi	b,zbuf
 	lxi	d,buffer
 	lhld	secnum
-	call	rdbuf
+	call	rdbuf	; read track off diskette
 ;
-	lxi	h,buffer
-	lxi	b,zbuf
-rdimg2:
-	;
-	; TODO: write to image file
-	;
-	; TODO: progress indicator...
+	call	vwtrk
+	rc
+	mvi	a,'S'
+	call	chrout
 
 	; next sector...
 	lhld	secnum
@@ -296,7 +336,7 @@ rdimg2:
 	ora	l
 	lda	curvol
 	jnz	rdimg1
-	ret
+	jmp	crlf
 
 ; Read sector(s) from H17
 ; BC = buffer size
@@ -378,10 +418,10 @@ comnd:
 	jrz	cvolnm
 	cpi	'I'
 	jrz	cintlv
-;	cpi	'R'
-;	jrz	crestr
-;	cpi	'S'
-;	jrz	csave
+	cpi	'R'
+	jrz	crestr
+	cpi	'S'
+	jrz	csave
 invcmd:	lxi	d,invld
 	call	print
 	jr	chelp
@@ -397,6 +437,11 @@ badcmd:
 	lxi	d,syntax
 	call	print
 chelp:	lxi	d,help
+	call	print
+	jr	comnd
+
+failvd:	; TODO: dump vdbuf?
+	lxi	d,failed
 	call	print
 	jr	comnd
 
@@ -425,6 +470,36 @@ cintlv:	call	skipb
 	jrnc	badcmd
 	call	mkmap
 	jr	showup
+
+; Restore image file onto a diskette
+crestr:	call	skipb
+	lxi	d,opr+4
+	call	strcpy
+	mvi	a,CR	; TODO: need to trim?
+	stax	d
+
+	jmp	failvd
+	jmp	comnd
+
+; Save diskette image in file
+csave:	call	skipb
+	lxi	d,opw+4
+	call	strcpy
+	mvi	a,CR	; TODO: need to trim?
+	stax	d
+	lxi	h,opw
+	call	vdcmd
+	jc	failvd
+	; TODO: need to truncate?
+	call	rdimg
+	jc	failvd
+	jmp	comnd
+
+clf:	db	'clf',CR,0
+opw:	db	'opw ','filename.typ',CR,0
+	ds	16	; safety margin
+opr:	db	'opr ','filename.typ',CR,0
+	ds	16	; safety margin
 
 ; Skip blanks.
 ; HL=buffer curptr
@@ -674,6 +749,7 @@ help:	db	'H8DUTIL v'
 	db	0
 invld:	db	'Invalid command',CR,LF,0
 syntax:	db	'Syntax error',CR,LF,0
+failed:	db	'Command failed',CR,LF,0
 
 curdrv:	db	0
 curvol:	db	0

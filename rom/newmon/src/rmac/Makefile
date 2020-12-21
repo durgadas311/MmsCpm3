@@ -28,6 +28,10 @@ vdump3.spr: vdump3.rel vdip1.rel
 	vcpm link $@=vdump3,vdip1'[os,nr]'
 	cp $@ ../../bin
 
+vh8dutil.spr: vh8dutil.rel vdip1.rel
+	vcpm link $@=vh8dutil,vdip1'[os,nr]'
+	cp $@ ../../bin
+
 vdump3.sys: vdump3.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
