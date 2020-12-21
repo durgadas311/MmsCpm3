@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	005h
+VERN	equ	006h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -549,9 +549,11 @@ shwprm:
 	jmp	crlf
 
 ; Create the 10-sector interleave table for formatting
-; A = interleave factor
-mkmap:
-	push	psw
+; A = interleave factor (0 => 1)
+mkmap:	ora	a
+	jrnz	mkm4
+	inr	a
+mkm4:	push	psw
 	lxi	h,buffer
 	mvi	b,10
 	xra	a
