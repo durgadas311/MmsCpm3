@@ -46,6 +46,8 @@ test512k.sys: test512k.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 
+vh8dutil.rel: ram.lib core.lib vh8dutil.asm
+
 vdump3.rel: ram.lib core.lib vdump3.asm
 setrtc.rel: core.lib setrtc.asm
 

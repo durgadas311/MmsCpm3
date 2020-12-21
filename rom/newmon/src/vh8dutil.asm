@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	001h
+VERN	equ	002h
 
 ;	extrn	strcpy,strcmp
 ;	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,sync,runout
@@ -14,6 +14,8 @@ BS	equ	8
 
 	maclib	z180
 	maclib	core
+	aseg
+	maclib	ram
 
 ;...
 
@@ -56,10 +58,10 @@ drdb	equ	2082h
 	cseg
 	di
 	lxi	sp,spint
-	call	shwprm
+	lda	prodid	; LSB of product ID
+	ani	prnofp	; No FP?
+	sta	nofp
 
-mainint:
-	di
 	mvi	a,0c3h	; jmp
 	sta	uivec
 	lxi	h,clock
@@ -69,18 +71,59 @@ mainint:
 	mov	a,m
 	ori	00000001b
 	mov	m,a
+	call	ena2ms
 	ei
-; TODO: must turn on 2mS...
-;	call	dabort	; track 0
+	call	dabort	; (2mS intr must be ON) track 0
+	call	shwprm
 main1:
-	; Prompt for command and file
-	; perform command
-	; close file
+	; Prompt for command and params,
+	; perform command,
+	; close file...
 	call	comnd
 	jrnc	main1
 exit:
+	call	dis2ms
 	lhld	retmon
 	pchl
+
+; Turn on 2mS clock intrs, interrupts already disabled
+ena2ms:	lda	nofp
+	ora	a
+	jrnz	nfp2ms	; H89 and/or extended H8-Z80 boards
+	lxi	h,ctl$F0
+	mov	a,m
+	sta	sav$F0
+	ori	01000000b	; 2mS ON
+	mov	m,a
+	out	0f0h
+	ret
+nfp2ms:	lxi	h,ctl$F2
+	mov	a,m
+	sta	sav$F2
+	ori	00000010b	; 2mS ON
+	mov	m,a
+	out	0f2h
+	ani	00000010b	; unlock enable
+	out	0f3h		; special Z80 board extension
+	ret
+
+dis2ms:	lda	nofp
+	ora	a
+	jrnz	nfp0ms
+	lda	sav$F0
+	sta	ctl$F0
+	out	0f0h
+	ret
+nfp0ms:	lda	sav$F2
+	sta	ctl$F2
+	out	0f2h
+	ani	00000010b	; unlock enable
+	out	0f3h		; special Z80 board extension
+	ret
+
+nofp:	db	0
+sav$F0:	db	0
+sav$F2:	db	0
 
 ; format a single track
 ; B = track C = vol#
@@ -311,10 +354,6 @@ rddv1:	call	dsts	; skip sector
 	mvi	a,'t'
 	call	chrout
 	ret
-
-
-dskboot:
-	jmp	mainint
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Routines for interactive, VDIP1
