@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	004h
+VERN	equ	005h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -249,6 +249,9 @@ wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
 
 ; Copy tracks from image file onto H17
 wrimg:
+	lda	curdrv
+	sta	AIO$UNI
+	call	dsdp	; select unit number
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -305,6 +308,9 @@ wrbuf:
 
 ; Copy all tracks from H17 to image file
 rdimg:
+	lda	curdrv
+	sta	AIO$UNI
+	call	dsdp	; select unit number
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -447,7 +453,7 @@ cdrive:	call	skipb
 	call	parsnm
 	jrc	badcmd
 	mov	a,d
-	cpi	3
+	cpi	2	; only 2 drives supported by default ROM
 	jrnc	badcmd
 	sta	curdrv
 showup:	call	shwprm
