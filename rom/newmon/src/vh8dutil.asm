@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	006h
+VERN	equ	007h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -73,6 +73,10 @@ drdb	equ	2082h
 	mov	m,a
 	call	ena2ms
 	ei
+	lxi	d,signon
+	call	print
+	lxi	d,phelp
+	call	print
 	call	dabort	; (2mS intr must be ON) track 0
 	call	shwprm
 main1:
@@ -440,7 +444,10 @@ badcmd:
 	call	crlf
 	lxi	d,syntax
 	call	print
-chelp:	lxi	d,help
+chelp:
+	lxi	d,signon
+	call	print
+	lxi	d,help
 	call	print
 	jr	comnd
 
@@ -484,6 +491,7 @@ crestr:	call	skipb
 	lxi	h,opr
 	call	vdcmd
 	jc	failvd	; no need for close...
+	call	shwprm
 	call	wrimg
 	; CY if error
 	push	psw
@@ -503,6 +511,7 @@ csave:	call	skipb
 	call	vdcmd
 	jc	failvd	; no need for close...
 	; TODO: need to truncate?
+	call	shwprm
 	call	rdimg
 	; CY if error
 	push	psw
@@ -756,9 +765,9 @@ msgusg:	db	'Using drive ',0
 usg1:	db	', volume ',0
 usg2:	db	', secmap',0
 prompt:	db	'H8DUTIL> ',0
-help:	db	'H8DUTIL v'
-	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
-	db		' Commands:',CR,LF
+signon:	db	'H8DUTIL v',(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0',0
+phelp:	db		' - Type H(cr) for help',CR,LF,0
+help:	db		' Commands:',CR,LF
 	db	'  D n     set Drive number',CR,LF
 	db	'  V n     set Volume ID',CR,LF
 	db	'  I n     set sector Interleave',CR,LF
