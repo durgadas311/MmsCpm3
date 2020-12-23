@@ -1,15 +1,25 @@
 # Standalone programs
+# Requires that ~/git/cpnet-z80 exist and be current
+# (https://github.com/durgadas311/cpnet-z80.git).
+# Requires unix2dos utility (e.g. 'dos2unix' package).
+#
 export CPMDrive_D = $(shell pwd)
 export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vflash.sys test512k.sys mtest512.sys vdump3.sys wizcfg.sys setrtc.sys
+all: vflash.sys test512k.sys mtest512.sys \
+	vdump3.sys wizcfg.sys setrtc.sys vh8dutil.sys
+
+# not auto-built: diag512k, sdtest, vcpu
 
 %.lib: ../%.lib
 	unix2dos -n $< $@
 
-%.asm: ../%.asm
+vdip1.asm: ../vdip1.lib vdip1.pre vdip1.post
+	cat vdip1.pre ../vdip1.lib vdip1.post | unix2dos >$@
+
+%.asm:: ../standalone/%.asm
 	unix2dos -n $< $@
 
 %.rel: %.asm z80.lib z180.lib
