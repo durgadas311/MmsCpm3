@@ -1,6 +1,6 @@
 CP/M RMAC ASSEM 1.1	#001	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 2034 =         VERS EQU '4 ' ; May 28, 2018 12:31 drm "M320'3.ASM"
+ 2035 =         VERS EQU '5 ' ; December 31, 2020 15:55 drm "M320'3.ASM"
                 *************************************************************************
                 
                 	TITLE	'SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE'
@@ -98,16 +98,16 @@
  0000 4901      	dw	thread
  0002 3208      driv0	db	dev0,ndev
  0004 C3C910    	jmp	init$sasi
- 0007 C3E410    	jmp	login
- 000A C36C12    	JMP	READ$SASI
- 000D C37012    	JMP	WRITE$SASI
+ 0007 C3E710    	jmp	login
+ 000A C36F12    	JMP	READ$SASI
+ 000D C37312    	JMP	WRITE$SASI
  0010 1600      	dw	string
  0012 01004500  	dw	dphtbl,modtbl
                 
  0016 3737333230string: db	'77320 ',0,'SASI Interface ('
  002D 38        	db	ndev+'0'
  002E 2070617274	db	' partitions) ',0,'v3.10'
- 0041 34202400  	dw	VERS,'$'
+ 0041 35202400  	dw	VERS,'$'
                 
                 ; Mode byte table for SASI driver
                 
@@ -196,13 +196,13 @@
                 ;	ACTUAL READ-WRITE OF DATA
                 ;
                 SASIRW: 			; THIS ROUTINE IS FOR READING AND WRITING
- 010D 3A1D14    	LDA	CMBFR
+ 010D 3A2014    	LDA	CMBFR
  0110 D608      	SUI	RDBL		; IS COMMAND A READ ?
  0112 3EB2      	MVI	A,0B2H		; INIR FOR READS
  0114           	JRZ	NREAD
  0116 3EB3      	MVI	A,0B3H		; OUTIR FOR WRITES
  0118 324001    NREAD:	STA	HERE+1
- 011B 3A2F14    	LDA	BASE$PORT
+ 011B 3A3214    	LDA	BASE$PORT
  011E F5        	push	psw
  011F 3A0000    	lda	@dbnk
  0122 CD0000    	call	?bnksl
@@ -359,7 +359,7 @@
                 ;
                 
                 init$sasi:
- 10C9 CD9613    	call	initdata
+ 10C9 CD9913    	call	initdata
  10CC 067C      	MVI	B,7CH
  10CE DBF2      	IN	GPIO		; READ SWITCH 501
  10D0 E603      	ANI	00000011B	; WHAT'S PORT 7C SET FOR ?
@@ -369,463 +369,464 @@
  10D8 DBF2      	IN	GPIO		; READ SWITCH 501
  10DA E60C      	ANI	00001100B	; WHAT'S PORT 78 SET FOR ?
  10DC FE08      	CPI	00001000B	;  IF Z67, THEN THIS IS IT
- 10DE C0        	RNZ
- 10DF 78        GOTPRT: MOV	A,B
- 10E0 322F14    	STA	BASE$PORT	; SAVE BASE PORT ADDRESS
- 10E3 C9        	RET
+ 10DE           	JRZ	GOTPRT
+ 10E0 06BC      	mvi	b,0bch	; assume 274Q if none other
+ 10E2 78        GOTPRT: MOV	A,B
+ 10E3 323214    	STA	BASE$PORT	; SAVE BASE PORT ADDRESS
+ 10E6 C9        	RET
                 
- 10E4 CD7513    login:	call	getptr		; set dataptr & ix to current lun data
- 10E7           	bitx	7,+initflg	; CHECK INITIALIZATION BIT in lundata	
- 10EB CA5211    	jz	init$hard	; if = 0 read in magic sector
+ 10E7 CD7813    login:	call	getptr		; set dataptr & ix to current lun data
+ 10EA           	bitx	7,+initflg	; CHECK INITIALIZATION BIT in lundata	
+ 10EE CA5511    	jz	init$hard	; if = 0 read in magic sector
                 
- 10EE 3A0000    	lda	@rdrv		; See if loging in a drive that doesn't
- 10F1           	subx	+parstr 	;  exist on the magic sector of the drive
- 10F4           	cmpx	+numpar
- 10F7 D21C12    	jnc	init$err
+ 10F1 3A0000    	lda	@rdrv		; See if loging in a drive that doesn't
+ 10F4           	subx	+parstr 	;  exist on the magic sector of the drive
+ 10F7           	cmpx	+numpar
+ 10FA D21F12    	jnc	init$err
                 
- 10FA 3A0200    	lda	driv0
- 10FD           	addx	+parstr 	; b= starting physical drive number
- 1100 47        	mov	b,a		; c= # of partitions on logical unit
- 1101           	ldx	c,+numpar	
- 1104 210000    	LXI	H,0		; SEARCH MIXER TABLE FOR ANY
- 1107 1E10      	MVI	E,16		; LOGGED IN PARTITIONS FOR THE CURRENT LUN.
- 1109           	LXIX	@lptbl+15
- 110D           MLOOP	LDX	A,+0
- 1110 90        	SUB	B
- 1111 B9        	CMP	C		; SET CY IF IN RANGE  (C>x>B)
- 1112           	DADC	H
- 1114           	DCXIX	
- 1116 1D        	DCR	E
- 1117           	JRNZ	MLOOP
- 1119 EB        	XCHG			; PUT LOGIN MASK IN DE
- 111A 210000    	lxi	h,@login	; GET LOGIN VECTOR'S ADDRESS
- 111D 7E        	MOV	A,M		; COMPARE LSB FIRST
- 111E A3        	ANA	E
- 111F C23611    	jnz	endlog		; RETURN IF ONE OR MORE PARTITIONS ARE LOGIN.
- 1122 23        	INX	H
- 1123 7E        	MOV	A,M		; THEN COMPARE MSB
+ 10FD 3A0200    	lda	driv0
+ 1100           	addx	+parstr 	; b= starting physical drive number
+ 1103 47        	mov	b,a		; c= # of partitions on logical unit
+ 1104           	ldx	c,+numpar	
+ 1107 210000    	LXI	H,0		; SEARCH MIXER TABLE FOR ANY
+ 110A 1E10      	MVI	E,16		; LOGGED IN PARTITIONS FOR THE CURRENT LUN.
+ 110C           	LXIX	@lptbl+15
+ 1110           MLOOP	LDX	A,+0
+ 1113 90        	SUB	B
+ 1114 B9        	CMP	C		; SET CY IF IN RANGE  (C>x>B)
+ 1115           	DADC	H
+ 1117           	DCXIX	
+ 1119 1D        	DCR	E
+ 111A           	JRNZ	MLOOP
+ 111C EB        	XCHG			; PUT LOGIN MASK IN DE
+ 111D 210000    	lxi	h,@login	; GET LOGIN VECTOR'S ADDRESS
+ 1120 7E        	MOV	A,M		; COMPARE LSB FIRST
+ 1121 A3        	ANA	E
+ 1122 C23911    	jnz	endlog		; RETURN IF ONE OR MORE PARTITIONS ARE LOGIN.
+ 1125 23        	INX	H
 CP/M RMAC ASSEM 1.1	#008	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 1124 A2        	ANA	D
- 1125 C23611    	jnz	endlog
+ 1126 7E        	MOV	A,M		; THEN COMPARE MSB
+ 1127 A2        	ANA	D
+ 1128 C23911    	jnz	endlog
                 
- 1128 2A0000    	lhld	@cmode		; GET ADDRESS OF CURRENT MODE BYTES
- 112B           	bit	4,m		; IS IT REMOVABLE MEDIA ?
- 112D C25211    	jnz	init$hard	;  MUST INITIALIZE
- 1130 CD1F12    	call	init$drive
- 1133 C21C12    	jnz	init$err
+ 112B 2A0000    	lhld	@cmode		; GET ADDRESS OF CURRENT MODE BYTES
+ 112E           	bit	4,m		; IS IT REMOVABLE MEDIA ?
+ 1130 C25511    	jnz	init$hard	;  MUST INITIALIZE
+ 1133 CD2212    	call	init$drive
+ 1136 C21F12    	jnz	init$err
                 endlog:
                 	; TODO: removable requires MAX size?
                 	; Note: computation not needed if already set
- 1136 2A0000    	lhld	@dph
- 1139 110C00    	lxi	d,12	; offset of DPH.DPB
- 113C 19        	dad	d
- 113D 5E        	mov	e,m
- 113E 23        	inx	h
- 113F 56        	mov	d,m
- 1140 210700    	lxi	h,7	; offset of DPB.DRM
- 1143 19        	dad	d
- 1144 7E        	mov	a,m
- 1145 23        	inx	h
- 1146 66        	mov	h,m
- 1147 6F        	mov	l,a	; HL=DRM
+ 1139 2A0000    	lhld	@dph
+ 113C 110C00    	lxi	d,12	; offset of DPH.DPB
+ 113F 19        	dad	d
+ 1140 5E        	mov	e,m
+ 1141 23        	inx	h
+ 1142 56        	mov	d,m
+ 1143 210700    	lxi	h,7	; offset of DPB.DRM
+ 1146 19        	dad	d
+ 1147 7E        	mov	a,m
  1148 23        	inx	h
+ 1149 66        	mov	h,m
+ 114A 6F        	mov	l,a	; HL=DRM
+ 114B 23        	inx	h
                 	; TODO: check overflow? must be < 8192
- 1149 29        	dad	h
- 114A 29        	dad	h	; HL*=4: HASH size
- 114B 4D        	mov	c,l
- 114C 44        	mov	b,h
- 114D CD0000    	call	?halloc
- 1150 AF        	xra	a
- 1151 C9        	ret
+ 114C 29        	dad	h
+ 114D 29        	dad	h	; HL*=4: HASH size
+ 114E 4D        	mov	c,l
+ 114F 44        	mov	b,h
+ 1150 CD0000    	call	?halloc
+ 1153 AF        	xra	a
+ 1154 C9        	ret
                 
                 INIT$HARD:
- 1152 CDEB12    	call	getcon		; restore head
- 1155 212914    	lxi	h,rcmnd
- 1158 AF        	xra	a
- 1159 322E14    	sta	rcmnd+5
- 115C CC2513    	cz	outcm0
- 115F CC5213    	cz	chk$stat
- 1162 C21C12    	jnz	init$err
- 1165 3E08      	MVI	A,RDBL		; OP CODE TO READ A SECTOR
- 1167 321D14    	STA	CMBFR
- 116A AF        	XRA	A		; SECTOR 0
- 116B 321E14    	STA	CMBFR+1
- 116E 321F14    	STA	CMBFR+2
- 1171 322014    	STA	CMBFR+3
- 1174 320000    	sta	@dbnk		; set disk bank = 0
- 1177 3C        	INR	A
- 1178 322114    	STA	CMBFR+4 	; READ 1 SECTOR
- 117B 210000    	lxi	h,@scrbf	; use bios scratch buffer for magic sector
- 117E 220000    	shld	@dma
- 1181 CDEB12    	CALL	GETCON		; WAKE UP CONTROLLER
- 1184 CC2213    	CZ	OUTCOM		; OUTPUT READ COMMAND
- 1187 CC0D01    	CZ	SASIRW		; READ IN SECTOR
- 118A CC5213    	CZ	CHK$STAT	; CHECK STATUS OF READ
+ 1155 CDEE12    	call	getcon		; restore head
+ 1158 212C14    	lxi	h,rcmnd
+ 115B AF        	xra	a
+ 115C 323114    	sta	rcmnd+5
+ 115F CC2813    	cz	outcm0
+ 1162 CC5513    	cz	chk$stat
+ 1165 C21F12    	jnz	init$err
+ 1168 3E08      	MVI	A,RDBL		; OP CODE TO READ A SECTOR
+ 116A 322014    	STA	CMBFR
+ 116D AF        	XRA	A		; SECTOR 0
+ 116E 322114    	STA	CMBFR+1
+ 1171 322214    	STA	CMBFR+2
+ 1174 322314    	STA	CMBFR+3
+ 1177 320000    	sta	@dbnk		; set disk bank = 0
+ 117A 3C        	INR	A
+ 117B 322414    	STA	CMBFR+4 	; READ 1 SECTOR
+ 117E 210000    	lxi	h,@scrbf	; use bios scratch buffer for magic sector
+ 1181 220000    	shld	@dma
+ 1184 CDEE12    	CALL	GETCON		; WAKE UP CONTROLLER
+ 1187 CC2513    	CZ	OUTCOM		; OUTPUT READ COMMAND
+ 118A CC0D01    	CZ	SASIRW		; READ IN SECTOR
 CP/M RMAC ASSEM 1.1	#009	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 118D C21C12    	JNZ	INIT$ERR
+ 118D CC5513    	CZ	CHK$STAT	; CHECK STATUS OF READ
+ 1190 C21F12    	JNZ	INIT$ERR
                 
- 1190 3A1300    	lda	@scrbf+NPART	; COMPARE # OF PART. DRIVER & MAGIC SECTOR
- 1193           	lixd	dataptr
- 1197           	cmpx	+numpar
- 119A D2A011    	jnc	usemag		; USE THE SMALLEST ONE
- 119D           	stx	a,+numpar
+ 1193 3A1300    	lda	@scrbf+NPART	; COMPARE # OF PART. DRIVER & MAGIC SECTOR
+ 1196           	lixd	dataptr
+ 119A           	cmpx	+numpar
+ 119D D2A311    	jnc	usemag		; USE THE SMALLEST ONE
+ 11A0           	stx	a,+numpar
                 usemag:
- 11A0           	ldx	b,+parstr	; Calculate start of dpb for current lun
- 11A3 04        	inr	b
- 11A4 217400    	lxi	h,dpb-dpbl
- 11A7 111100    	lxi	d,dpbl
- 11AA 19        dpbloop dad	d
- 11AB           	djnz	dpbloop
+ 11A3           	ldx	b,+parstr	; Calculate start of dpb for current lun
+ 11A6 04        	inr	b
+ 11A7 217400    	lxi	h,dpb-dpbl
+ 11AA 111100    	lxi	d,dpbl
+ 11AD 19        dpbloop dad	d
+ 11AE           	djnz	dpbloop
                 
- 11AD EB        	xchg			; put to address in de
- 11AE 212F00    	lxi	h,@scrbf+DDPB	; PUT FROM ADDRESS IN HL
- 11B1           	ldx	a,+numpar	; Put number of partitions to be moved on stack
+ 11B0 EB        	xchg			; put to address in de
+ 11B1 212F00    	lxi	h,@scrbf+DDPB	; PUT FROM ADDRESS IN HL
+ 11B4           	ldx	a,+numpar	; Put number of partitions to be moved on stack
                 movdpblp:
- 11B4 F5        	push	psw
- 11B5 010F00    	lxi	b,dpbl-2	; Put length of dpb in BC minus psh & psm bytes
- 11B8           	ldir			; move dpb
- 11BA 7E        	mov	a,m		; Get old 2.2 mode byte 1 from magic sector
- 11BB E603      	ani	00000011b	; mask - leave phyiscal sector size
- 11BD 12        	stax	d		; 16th byte in cpm 3 dpb is block code (psh)
- 11BE 13        	inx	d
- 11BF FE02      	cpi	2
- 11C1           	jrc	gotit
- 11C3 3C        	inr	a
- 11C4 FE04      	cpi	4
- 11C6           	jrc	gotit
- 11C8 3E07      	mvi	a,7
- 11CA 12        gotit:	stax	d		; 17th byte in cpm 3 dpb (phm)
- 11CB 13        	inx	d		; Next dpb
- 11CC 010600    	lxi	b,6		; Skip over old mode bytes in magic sector
- 11CF 09        	dad	b
- 11D0 F1        	pop	psw		; dec partition count
- 11D1 3D        	dcr	a
- 11D2 C2B411    	jnz	movdpblp
+ 11B7 F5        	push	psw
+ 11B8 010F00    	lxi	b,dpbl-2	; Put length of dpb in BC minus psh & psm bytes
+ 11BB           	ldir			; move dpb
+ 11BD 7E        	mov	a,m		; Get old 2.2 mode byte 1 from magic sector
+ 11BE E603      	ani	00000011b	; mask - leave phyiscal sector size
+ 11C0 12        	stax	d		; 16th byte in cpm 3 dpb is block code (psh)
+ 11C1 13        	inx	d
+ 11C2 FE02      	cpi	2
+ 11C4           	jrc	gotit
+ 11C6 3C        	inr	a
+ 11C7 FE04      	cpi	4
+ 11C9           	jrc	gotit
+ 11CB 3E07      	mvi	a,7
+ 11CD 12        gotit:	stax	d		; 17th byte in cpm 3 dpb (phm)
+ 11CE 13        	inx	d		; Next dpb
+ 11CF 010600    	lxi	b,6		; Skip over old mode bytes in magic sector
+ 11D2 09        	dad	b
+ 11D3 F1        	pop	psw		; dec partition count
+ 11D4 3D        	dcr	a
+ 11D5 C2B711    	jnz	movdpblp
                 
- 11D5 1B        	dcx	d		; pointer back to psh
- 11D6 1B        	dcx	d
- 11D7 1A        	ldax	d
- 11D8           	stx	a,+bcode	; put bk code in lun data
+ 11D8 1B        	dcx	d		; pointer back to psh
+ 11D9 1B        	dcx	d
+ 11DA 1A        	ldax	d
+ 11DB           	stx	a,+bcode	; put bk code in lun data
                 
- 11DB           	ldx	b,+parstr	; partition start
- 11DE 04        	inr	b
- 11DF 110800    	lxi	d,modlen
- 11E2 213D00    	lxi	h,modtbl-modlen
- 11E5 19        modloop dad	d
- 11E6           	djnz	modloop
+ 11DE           	ldx	b,+parstr	; partition start
+ 11E1 04        	inr	b
+ 11E2 110800    	lxi	d,modlen
+ 11E5 213D00    	lxi	h,modtbl-modlen
+ 11E8 19        modloop dad	d
+ 11E9           	djnz	modloop
                 
- 11E8 EB        	xchg
- 11E9 211400    	lxi	h,@scrbf+SECTBL ; FROM ADDRESS
- 11EC           	ldx	b,+numpar
- 11EF C5        nxtdef	push	b		; MOVE PARTITION ADDRESS TABLE INTO DRIVER
+ 11EB EB        	xchg
+ 11EC 211400    	lxi	h,@scrbf+SECTBL ; FROM ADDRESS
+ 11EF           	ldx	b,+numpar
 CP/M RMAC ASSEM 1.1	#010	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 11F0 13        	inx	d		; skip over first mode byte
- 11F1 1A        	ldax	d		; DE = modtbl
- 11F2 B6        	ora	m		; HL = @scrbf+SECTBL (MAGIC SECTOR)
- 11F3 77        	mov	m,a
- 11F4 010300    	lxi	b,3		; length of partition address
- 11F7           	ldir
- 11F9 13        	inx	d		; skip over mask bytes (4) in modtbl
- 11FA 13        	inx	d
- 11FB 13        	inx	d
- 11FC 13        	inx	d
- 11FD C1        	pop	b
- 11FE           	djnz	nxtdef
+ 11F2 C5        nxtdef	push	b		; MOVE PARTITION ADDRESS TABLE INTO DRIVER
+ 11F3 13        	inx	d		; skip over first mode byte
+ 11F4 1A        	ldax	d		; DE = modtbl
+ 11F5 B6        	ora	m		; HL = @scrbf+SECTBL (MAGIC SECTOR)
+ 11F6 77        	mov	m,a
+ 11F7 010300    	lxi	b,3		; length of partition address
+ 11FA           	ldir
+ 11FC 13        	inx	d		; skip over mask bytes (4) in modtbl
+ 11FD 13        	inx	d
+ 11FE 13        	inx	d
+ 11FF 13        	inx	d
+ 1200 C1        	pop	b
+ 1201           	djnz	nxtdef
                 
- 1200           	lded	dataptr 	; put dataptr in de
- 1204 210300    	LXI	H,@scrbf+DCTYPE ; GET L.U.N. SPECIFIC DATA FROM MAGIC SECTOR
- 1207 011000    	LXI	B,16		; PUT IT INTO SPACE RESERVED FOR THIS L.U.N.
- 120A           	LDIR
+ 1203           	lded	dataptr 	; put dataptr in de
+ 1207 210300    	LXI	H,@scrbf+DCTYPE ; GET L.U.N. SPECIFIC DATA FROM MAGIC SECTOR
+ 120A 011000    	LXI	B,16		; PUT IT INTO SPACE RESERVED FOR THIS L.U.N.
+ 120D           	LDIR
                 
- 120C CD1F12    	call	init$drive	; Send initialization code
- 120F           	jrnz	init$err
+ 120F CD2212    	call	init$drive	; Send initialization code
+ 1212           	jrnz	init$err
                 
- 1211           	lixd	dataptr
- 1215           	setx	7,+initflg	; Set initialization bit
- 1219 C33611    	jmp	endlog
+ 1214           	lixd	dataptr
+ 1218           	setx	7,+initflg	; Set initialization bit
+ 121C C33911    	jmp	endlog
                 
                 INIT$ERR:
- 121C 3EFF      	mvi	a,0ffh		; error flag to bios
- 121E C9        	ret
+ 121F 3EFF      	mvi	a,0ffh		; error flag to bios
+ 1221 C9        	ret
                 
                 INIT$DRIVE:
- 121F 2A1A14    	LHLD	DATAPTR 	; SEE IF IT'S XEBEC
- 1222 7E        	MOV	A,M
- 1223 E6E0      	ANI	11100000B
- 1225           	JRNZ	NOTXBC		; SKIP IF NOT
- 1227 CDEB12    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
- 122A 212314    	LXI	H,ICMND 	; INITIALIZATION COMMAND STRING
- 122D CC2513    	CZ	OUTCM0		; OUTPUT COMMAND
- 1230 C0        	RNZ
- 1231 2A1A14    	LHLD	DATAPTR 	; DRIVE CHARACTERISTIC DATA
- 1234 23        	INX	H
- 1235 23        	INX	H
- 1236 0608      	MVI	B,8		; 8 BYTES LONG
- 1238 1EC8      	MVI	E,(REQ OR POUT OR BUSY)
- 123A CD3A13    	CALL	OUTCM1		; OUTPUT THE DATA
- 123D CC5213    	CZ	CHK$STAT	;  AND CHECK STATUS
- 1240 C35512    	JMP	ENDINIT
- 1243 2A1A14    NOTXBC: LHLD	DATAPTR
- 1246 110A00    	LXI	D,10		; NOW DO "ASSIGN DRIVE TYPE" COMMAND
- 1249 19        	DAD	D		;  ( FOR DATA PERIPHERALS DONTROLLERS )
- 124A E5        	PUSH	H
- 124B CDEB12    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
- 124E E1        	POP	H
- 124F CC2513    	CZ	OUTCM0		; SEND THE COMMAND
- 1252 CC5213    	CZ	CHK$STAT
- 1255 CDEB12    ENDINIT CALL	GETCON		; restore head
- 1258 212914    	LXI	H,RCMND
+ 1222 2A1D14    	LHLD	DATAPTR 	; SEE IF IT'S XEBEC
+ 1225 7E        	MOV	A,M
+ 1226 E6E0      	ANI	11100000B
+ 1228           	JRNZ	NOTXBC		; SKIP IF NOT
+ 122A CDEE12    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
+ 122D 212614    	LXI	H,ICMND 	; INITIALIZATION COMMAND STRING
+ 1230 CC2813    	CZ	OUTCM0		; OUTPUT COMMAND
+ 1233 C0        	RNZ
+ 1234 2A1D14    	LHLD	DATAPTR 	; DRIVE CHARACTERISTIC DATA
+ 1237 23        	INX	H
+ 1238 23        	INX	H
+ 1239 0608      	MVI	B,8		; 8 BYTES LONG
+ 123B 1EC8      	MVI	E,(REQ OR POUT OR BUSY)
+ 123D CD3D13    	CALL	OUTCM1		; OUTPUT THE DATA
+ 1240 CC5513    	CZ	CHK$STAT	;  AND CHECK STATUS
+ 1243 C35812    	JMP	ENDINIT
+ 1246 2A1D14    NOTXBC: LHLD	DATAPTR
+ 1249 110A00    	LXI	D,10		; NOW DO "ASSIGN DRIVE TYPE" COMMAND
+ 124C 19        	DAD	D		;  ( FOR DATA PERIPHERALS DONTROLLERS )
+ 124D E5        	PUSH	H
+ 124E CDEE12    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
+ 1251 E1        	POP	H
+ 1252 CC2813    	CZ	OUTCM0		; SEND THE COMMAND
+ 1255 CC5513    	CZ	CHK$STAT
+ 1258 CDEE12    ENDINIT CALL	GETCON		; restore head
 CP/M RMAC ASSEM 1.1	#011	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 125B           	lixd	dataptr
- 125F           	ldx	a,+1
- 1262 322E14    	sta	rcmnd+5
- 1265 CC2513    	CZ	OUTCM0
- 1268 CC5213    	CZ	CHK$STAT
- 126B C9        	RET
+ 125B 212C14    	LXI	H,RCMND
+ 125E           	lixd	dataptr
+ 1262           	ldx	a,+1
+ 1265 323114    	sta	rcmnd+5
+ 1268 CC2813    	CZ	OUTCM0
+ 126B CC5513    	CZ	CHK$STAT
+ 126E C9        	RET
                 
                 ;	READ - WRITE ROUTINES
                 ;
                 ;	READ A PHYSICAL SECTOR CODE
                 ;
                 READ$SASI:
- 126C 3E08      	MVI	A,RDBL		; READ COMMAND CODE
- 126E           	JR	DO$RW		; COMMON READ-WRITE ROUTINE
+ 126F 3E08      	MVI	A,RDBL		; READ COMMAND CODE
+ 1271           	JR	DO$RW		; COMMON READ-WRITE ROUTINE
                 ;
                 ;	WRITE A PHYSICAL SECTOR CODE
                 ;
                 WRITE$SASI:
- 1270 3E0A      	MVI	A,WRBL		; WRITE COMMAND CODE
+ 1273 3E0A      	MVI	A,WRBL		; WRITE COMMAND CODE
                 ;
                 ;	COMMON READ-WRITE CODE
                 ;
- 1272 321D14    DO$RW:	STA	CMBFR		; COMMAND BUFFER OP CODE
- 1275 CD7513    	call	getptr		; Set dataptr and ix to current lun data
- 1278 CD8D12    	CALL	SET$SEC 	; CALCULATE AND INSTALL ACTUAL SECTOR
- 127B CDDF12    	CALL	WAKE$UP 	; SETUP CONTROLLER
- 127E CC2213    	CZ	OUTCOM		; AND OUTPUT THE COMMAND
- 1281 CC0D01    	CZ	SASIRW		; DO READ OR WRITE
- 1284 CC5213    	CZ	CHK$STAT	; CHECK THE BUS RESPONSE
- 1287           	jrnz	error
- 1289 C9        	RET
+ 1275 322014    DO$RW:	STA	CMBFR		; COMMAND BUFFER OP CODE
+ 1278 CD7813    	call	getptr		; Set dataptr and ix to current lun data
+ 127B CD9012    	CALL	SET$SEC 	; CALCULATE AND INSTALL ACTUAL SECTOR
+ 127E CDE212    	CALL	WAKE$UP 	; SETUP CONTROLLER
+ 1281 CC2513    	CZ	OUTCOM		; AND OUTPUT THE COMMAND
+ 1284 CC0D01    	CZ	SASIRW		; DO READ OR WRITE
+ 1287 CC5513    	CZ	CHK$STAT	; CHECK THE BUS RESPONSE
+ 128A           	jrnz	error
+ 128C C9        	RET
                 
- 128A 3E01      error:	mvi	a,1
- 128C C9        	ret
+ 128D 3E01      error:	mvi	a,1
+ 128F C9        	ret
                 
                 ;	CALCULATE THE REQUESTED SECTOR
                 ;
                 SET$SEC:
- 128D 2A0000    	LHLD	@trk		; GET REQUESTED TRACK
- 1290 29        	DAD	H		; *2
- 1291 29        	DAD	H		; *4
- 1292 29        	DAD	H		; *8
- 1293 29        	DAD	H		; *16
- 1294 29        	DAD	H		; *32
- 1295 29        	DAD	H		; *64 (64 SECTORS/TRACK)
- 1296 E5        	PUSH	H
- 1297 2A0000    	LHLD	@cmode
- 129A 23        	inx	h		; second byte
- 129B 7E        	mov	a,m
- 129C E61F      	ani	00011111b	; mask off lun bits
- 129E 4F        	mov	c,a
- 129F 23        	INX	H
- 12A0 56        	MOV	D,M
- 12A1 23        	INX	H
- 12A2 5E        	MOV	E,M
- 12A3 E1        	POP	H
+ 1290 2A0000    	LHLD	@trk		; GET REQUESTED TRACK
+ 1293 29        	DAD	H		; *2
+ 1294 29        	DAD	H		; *4
+ 1295 29        	DAD	H		; *8
+ 1296 29        	DAD	H		; *16
+ 1297 29        	DAD	H		; *32
+ 1298 29        	DAD	H		; *64 (64 SECTORS/TRACK)
+ 1299 E5        	PUSH	H
+ 129A 2A0000    	LHLD	@cmode
+ 129D 23        	inx	h		; second byte
+ 129E 7E        	mov	a,m
+ 129F E61F      	ani	00011111b	; mask off lun bits
+ 12A1 4F        	mov	c,a
+ 12A2 23        	INX	H
+ 12A3 56        	MOV	D,M
+ 12A4 23        	INX	H
+ 12A5 5E        	MOV	E,M
 CP/M RMAC ASSEM 1.1	#012	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 12A4 19        	DAD	D		; ADD IN PARTITION OFFSET
- 12A5           	JRNC	NOCAR0		; CARRY FROM DAD (IF ANY) GOES INTO
- 12A7 0C        	INR	C		;  HIGH ORDER BYTE OF SECTOR NUMBER
- 12A8           NOCAR0: lixd	dataptr 	; get block code (psh)
- 12AC           	ldx	a,+bcode
- 12AF E603      	ani	00000011b
- 12B1 47        	mov	b,a
- 12B2 B7        	ORA	A
- 12B3           	JRZ	NODIV
- 12B5           NXDIV:	SRAR	C
- 12B7           	RARR	H
- 12B9           	RARR	L
- 12BB           	DJNZ	NXDIV
- 12BD 3A0000    NODIV:	LDA	@sect		; GET REQUESTED SECTOR
- 12C0 5F        	MOV	E,A
- 12C1 1600      	MVI	D,0
- 12C3 19        	DAD	D		; ADD IT IN
- 12C4           	JRNC	NOCAR1
- 12C6 0C        	INR	C
- 12C7 79        NOCAR1: MOV	A,C
- 12C8 321E14    	STA	CMBFR+1 	; MOVE TO COMMAND BUFFER
- 12CB 7C        	MOV	A,H
- 12CC 321F14    	STA	CMBFR+2 	; MOVE REST OF SECTOR NUMBER TO COMMAND BUFFER
- 12CF 7D        	MOV	A,L
- 12D0 322014    	STA	CMBFR+3
- 12D3 3E01      	MVI	A,1		; TRANSFER 1 SECTOR
- 12D5 322114    	STA	CMBFR+4
- 12D8           	ldx	a,+1		; GET CONTROL BYTE
- 12DB 322214    	STA	CMBFR+5 	; PUT INTO COMMAND BUFFER
- 12DE C9        	RET
+ 12A6 E1        	POP	H
+ 12A7 19        	DAD	D		; ADD IN PARTITION OFFSET
+ 12A8           	JRNC	NOCAR0		; CARRY FROM DAD (IF ANY) GOES INTO
+ 12AA 0C        	INR	C		;  HIGH ORDER BYTE OF SECTOR NUMBER
+ 12AB           NOCAR0: lixd	dataptr 	; get block code (psh)
+ 12AF           	ldx	a,+bcode
+ 12B2 E603      	ani	00000011b
+ 12B4 47        	mov	b,a
+ 12B5 B7        	ORA	A
+ 12B6           	JRZ	NODIV
+ 12B8           NXDIV:	SRAR	C
+ 12BA           	RARR	H
+ 12BC           	RARR	L
+ 12BE           	DJNZ	NXDIV
+ 12C0 3A0000    NODIV:	LDA	@sect		; GET REQUESTED SECTOR
+ 12C3 5F        	MOV	E,A
+ 12C4 1600      	MVI	D,0
+ 12C6 19        	DAD	D		; ADD IT IN
+ 12C7           	JRNC	NOCAR1
+ 12C9 0C        	INR	C
+ 12CA 79        NOCAR1: MOV	A,C
+ 12CB 322114    	STA	CMBFR+1 	; MOVE TO COMMAND BUFFER
+ 12CE 7C        	MOV	A,H
+ 12CF 322214    	STA	CMBFR+2 	; MOVE REST OF SECTOR NUMBER TO COMMAND BUFFER
+ 12D2 7D        	MOV	A,L
+ 12D3 322314    	STA	CMBFR+3
+ 12D6 3E01      	MVI	A,1		; TRANSFER 1 SECTOR
+ 12D8 322414    	STA	CMBFR+4
+ 12DB           	ldx	a,+1		; GET CONTROL BYTE
+ 12DE 322514    	STA	CMBFR+5 	; PUT INTO COMMAND BUFFER
+ 12E1 C9        	RET
                 
- 12DF CDEB12    WAKE$UP:CALL	GETCON
- 12E2 C8        	RZ
- 12E3 CD1F12    	CALL	INIT$DRIVE
- 12E6 C0        	RNZ
- 12E7 CDEB12    	CALL	GETCON
- 12EA C9        	RET
+ 12E2 CDEE12    WAKE$UP:CALL	GETCON
+ 12E5 C8        	RZ
+ 12E6 CD2212    	CALL	INIT$DRIVE
+ 12E9 C0        	RNZ
+ 12EA CDEE12    	CALL	GETCON
+ 12ED C9        	RET
                 
                 ;	GET THE BUS' ATTENTION
                 ;
                 GETCON:
- 12EB 3A2F14    	LDA	BASE$PORT
- 12EE 4F        	MOV	C,A
- 12EF 0C        	INR	C		; CONTROL PORT ADDRESS TO REG. C
- 12F0 3E00      	mvi	a,RUN
- 12F2           	outp	a		; clear sel bit
- 12F4 0600      	MVI	B,0		; TIMER COUNTER
- 12F6 0D        GETCN1: DCR	C
- 12F7 AF        	XRA	A
- 12F8           	OUTP	A		; CLEAR DATA REGISTER
- 12FA 3A0000    	LDA	CNUM		; GET CONTROLLER NUMBER
- 12FD 0C        	INR	C		; AND SEND IT TO THE CARD
- 12FE 0C        	INR	C		; -SENC- PORT
- 12FF           	OUTP	A
- 1301 0D        	DCR	C		; CONTROL PORT
- 1302           	INP	A		; READ CONTROL PORT
+ 12EE 3A3214    	LDA	BASE$PORT
+ 12F1 4F        	MOV	C,A
+ 12F2 0C        	INR	C		; CONTROL PORT ADDRESS TO REG. C
+ 12F3 3E00      	mvi	a,RUN
+ 12F5           	outp	a		; clear sel bit
+ 12F7 0600      	MVI	B,0		; TIMER COUNTER
+ 12F9 0D        GETCN1: DCR	C
+ 12FA AF        	XRA	A
+ 12FB           	OUTP	A		; CLEAR DATA REGISTER
+ 12FD 3A0000    	LDA	CNUM		; GET CONTROLLER NUMBER
+ 1300 0C        	INR	C		; AND SEND IT TO THE CARD
+ 1301 0C        	INR	C		; -SENC- PORT
+ 1302           	OUTP	A
+ 1304 0D        	DCR	C		; CONTROL PORT
 CP/M RMAC ASSEM 1.1	#013	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 1304 E608      	ANI	BUSY
- 1306           	JRZ	GETCN2
- 1308           	DJNZ	GETCN1
- 130A 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
- 130B C9        	RET
+ 1305           	INP	A		; READ CONTROL PORT
+ 1307 E608      	ANI	BUSY
+ 1309           	JRZ	GETCN2
+ 130B           	DJNZ	GETCN1
+ 130D 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+ 130E C9        	RET
                 GETCN2:
- 130C 3E40      	MVI	A,SEL
- 130E           	OUTP	A		; WAKE UP CONTROLER
- 1310 0600      	MVI	B,0
+ 130F 3E40      	MVI	A,SEL
+ 1311           	OUTP	A		; WAKE UP CONTROLER
+ 1313 0600      	MVI	B,0
                 GETCN3:
- 1312           	INP	A
- 1314 E608      	ANI	BUSY
- 1316           	JRNZ	GETCN4
- 1318           	DJNZ	GETCN3
- 131A 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
- 131B C9        	RET
+ 1315           	INP	A
+ 1317 E608      	ANI	BUSY
+ 1319           	JRNZ	GETCN4
+ 131B           	DJNZ	GETCN3
+ 131D 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+ 131E C9        	RET
                 GETCN4:
- 131C 3E00      	MVI	A,RUN
- 131E           	OUTP	A
- 1320 AF        	XRA	A		; NO ERROR
- 1321 C9        	RET
+ 131F 3E00      	MVI	A,RUN
+ 1321           	OUTP	A
+ 1323 AF        	XRA	A		; NO ERROR
+ 1324 C9        	RET
                 
                 ; OUTCOM: OUTPUT A COMMAND TO THE DRIVE
                 ;
- 1322 211D14    OUTCOM: LXI	H,CMBFR
- 1325 23        OUTCM0: INX	H
- 1326 7E        	mov	a,m		; Clear lun bits in command buffer
- 1327 E61F      	ani	00011111b
- 1329 77        	mov	m,a
- 132A 3A1C14    	LDA	LUN		; OR L.U.N. BITS INTO COMMAND
- 132D B6        	ORA	M
- 132E 77        	MOV	M,A
- 132F 2B        	DCX	H
- 1330 0606      	MVI	B,6		; COMMAND IS 6 BYTES LONG
- 1332 3A2F14    	LDA	BASE$PORT
- 1335 4F        	MOV	C,A		; DATA PORT TO REG. C
- 1336 3C        	INR	A
- 1337 57        	MOV	D,A		; CONTROL PORT TO REG. D
- 1338 1ED8      	MVI	E,(REQ OR CMND OR POUT OR BUSY)
- 133A C5        OUTCM1: PUSH	B
- 133B 0600      	MVI	B,0		; SET LOOP COUNTER
- 133D 4A        	MOV	C,D		; CONTROL PORT ADDRESS TO REG. C
- 133E           OUTLOP: INP	A
- 1340 E6D8      	ANI	(REQ OR CMND OR POUT OR BUSY)
- 1342 BB        	CMP	E
- 1343           	JRZ	OUTOK
- 1345           	DJNZ	OUTLOP
- 1347 05        	DCR	B		; SET ERROR (NZ)
- 1348 C1        	POP	B
- 1349 C9        	RET
- 134A C1        OUTOK:	POP	B		; RETURNS DATA PORT ADDRESS TO REG. C
- 134B           	OUTI			; OUTPUT COMMAND BYTE
- 134D C23A13    	JNZ	OUTCM1
- 1350 AF        	XRA	A		; SET SUCCESS (Z)
- 1351 C9        	RET
-                
+ 1325 212014    OUTCOM: LXI	H,CMBFR
+ 1328 23        OUTCM0: INX	H
+ 1329 7E        	mov	a,m		; Clear lun bits in command buffer
+ 132A E61F      	ani	00011111b
+ 132C 77        	mov	m,a
+ 132D 3A1F14    	LDA	LUN		; OR L.U.N. BITS INTO COMMAND
+ 1330 B6        	ORA	M
+ 1331 77        	MOV	M,A
+ 1332 2B        	DCX	H
+ 1333 0606      	MVI	B,6		; COMMAND IS 6 BYTES LONG
+ 1335 3A3214    	LDA	BASE$PORT
+ 1338 4F        	MOV	C,A		; DATA PORT TO REG. C
+ 1339 3C        	INR	A
+ 133A 57        	MOV	D,A		; CONTROL PORT TO REG. D
+ 133B 1ED8      	MVI	E,(REQ OR CMND OR POUT OR BUSY)
+ 133D C5        OUTCM1: PUSH	B
+ 133E 0600      	MVI	B,0		; SET LOOP COUNTER
+ 1340 4A        	MOV	C,D		; CONTROL PORT ADDRESS TO REG. C
+ 1341           OUTLOP: INP	A
+ 1343 E6D8      	ANI	(REQ OR CMND OR POUT OR BUSY)
+ 1345 BB        	CMP	E
+ 1346           	JRZ	OUTOK
+ 1348           	DJNZ	OUTLOP
+ 134A 05        	DCR	B		; SET ERROR (NZ)
+ 134B C1        	POP	B
+ 134C C9        	RET
+ 134D C1        OUTOK:	POP	B		; RETURNS DATA PORT ADDRESS TO REG. C
+ 134E           	OUTI			; OUTPUT COMMAND BYTE
+ 1350 C23D13    	JNZ	OUTCM1
+ 1353 AF        	XRA	A		; SET SUCCESS (Z)
+ 1354 C9        	RET
 CP/M RMAC ASSEM 1.1	#014	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
+                
                 ;	CHECK STATUS OF READ OR WRITE
                 ;
                 CHK$STAT:			; THIS ROUTINE CHECKS WHAT'S UP
- 1352 213014    	LXI	H,STAT		; STATUS BUFFER
- 1355 3A2F14    	LDA	BASE$PORT
- 1358 57        	MOV	D,A		; DATA PORT ADDRESS STORED IN REG. D
- 1359 3C        	INR	A
- 135A 5F        	MOV	E,A		; CONTROL PORT ADDRESS STORED IN REG. E
- 135B           	JR	CHK01
- 135D 4A        CHKNXT: MOV	C,D		; INPUT FROM DATA PORT
- 135E           	INP	A
- 1360 77        	MOV	M,A		; SAVE IN MEMORY
- 1361 4B        CHK01:	MOV	C,E		; INPUT FROM CONTROL PORT
- 1362           	INP	A
- 1364 E6F0      	ANI	(MSG OR REQ OR CMND OR POUT)
- 1366 FE90      	CPI	(REQ OR CMND)
- 1368           	JRZ	CHKNXT
- 136A FEB0      	CPI	(MSG OR REQ OR CMND)
- 136C           	JRNZ	CHK01
- 136E 4A        	MOV	C,D		; INPUT FROM DATA PORT
- 136F           	INP	A		; GET FINAL BYTE
- 1371 7E        	MOV	A,M		; AND THROW IT AWAY, GET STATUS
- 1372 E603      	ANI	03		; EITHER BIT SET IS AN ERROR
- 1374 C9        	RET
+ 1355 213314    	LXI	H,STAT		; STATUS BUFFER
+ 1358 3A3214    	LDA	BASE$PORT
+ 135B 57        	MOV	D,A		; DATA PORT ADDRESS STORED IN REG. D
+ 135C 3C        	INR	A
+ 135D 5F        	MOV	E,A		; CONTROL PORT ADDRESS STORED IN REG. E
+ 135E           	JR	CHK01
+ 1360 4A        CHKNXT: MOV	C,D		; INPUT FROM DATA PORT
+ 1361           	INP	A
+ 1363 77        	MOV	M,A		; SAVE IN MEMORY
+ 1364 4B        CHK01:	MOV	C,E		; INPUT FROM CONTROL PORT
+ 1365           	INP	A
+ 1367 E6F0      	ANI	(MSG OR REQ OR CMND OR POUT)
+ 1369 FE90      	CPI	(REQ OR CMND)
+ 136B           	JRZ	CHKNXT
+ 136D FEB0      	CPI	(MSG OR REQ OR CMND)
+ 136F           	JRNZ	CHK01
+ 1371 4A        	MOV	C,D		; INPUT FROM DATA PORT
+ 1372           	INP	A		; GET FINAL BYTE
+ 1374 7E        	MOV	A,M		; AND THROW IT AWAY, GET STATUS
+ 1375 E603      	ANI	03		; EITHER BIT SET IS AN ERROR
+ 1377 C9        	RET
                 
                 get$ptr:
- 1375 2A0000    	lhld	@cmode
- 1378 23        	inx	h		; Mode byte #1
- 1379 7E        	mov	a,m
- 137A E660      	ani	01100000b	; Isolate logical unit number bits
- 137C 321C14    	sta	lun
- 137F           	lxix	lundata
- 1383 B7        	ora	a		; if lun zero then exit
- 1384           	jrz	endptr
- 1386 07        	rlc
- 1387 07        	rlc
- 1388 07        	rlc			; move them down
- 1389 47        	mov	b,a
- 138A 111300    	lxi	d,datlen
- 138D           lunloop dadx	d
- 138F           	djnz	lunloop
- 1391           endptr	sixd	dataptr 	; set up pointer to current lun data
- 1395 C9        	ret
+ 1378 2A0000    	lhld	@cmode
+ 137B 23        	inx	h		; Mode byte #1
+ 137C 7E        	mov	a,m
+ 137D E660      	ani	01100000b	; Isolate logical unit number bits
+ 137F 321F14    	sta	lun
+ 1382           	lxix	lundata
+ 1386 B7        	ora	a		; if lun zero then exit
+ 1387           	jrz	endptr
+ 1389 07        	rlc
+ 138A 07        	rlc
+ 138B 07        	rlc			; move them down
+ 138C 47        	mov	b,a
+ 138D 111300    	lxi	d,datlen
+ 1390           lunloop dadx	d
+ 1392           	djnz	lunloop
+ 1394           endptr	sixd	dataptr 	; set up pointer to current lun data
+ 1398 C9        	ret
                 
                 initdata:
- 1396           	lxix	modtbl		; START OF MODE BYTE TABLE
- 139A 010800    	lxi	b,modlen
- 139D           	lxiy	lundata 	; start of lundata
- 13A1 111300    	lxi	d,datlen
- 13A4           	ldx	a,+1
- 13A7 E660      	ani	01100000b
- 13A9 67        	mov	h,a
- 13AA 3A0300    	lda	driv0+1 	; Get total number of partitions
+ 1399           	lxix	modtbl		; START OF MODE BYTE TABLE
+ 139D 010800    	lxi	b,modlen
+ 13A0           	lxiy	lundata 	; start of lundata
+ 13A4 111300    	lxi	d,datlen
+ 13A7           	ldx	a,+1
+ 13AA E660      	ani	01100000b
+ 13AC 67        	mov	h,a
+ 13AD 3A0300    	lda	driv0+1 	; Get total number of partitions
                 
- 13AD F5        iloop1	push	psw		; Put on stack
- 13AE           	ldx	a,+1
+ 13B0 F5        iloop1	push	psw		; Put on stack
 CP/M RMAC ASSEM 1.1	#015	SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE
 
- 13B1 E660      	ani	01100000b
- 13B3 BC        	cmp	h		; see if equal to previous lun
- 13B4 CAC313    	jz	nxtlun		; if equal next mode byte entry
- 13B7 67        	mov	h,a		; save new lun
- 13B8           	ldy	a,+numpar	; add number partitions and old part. start
- 13BB           	addy	+parstr 	;  equals new partition start.
- 13BE           	dady	d		; next lun data entry
- 13C0           	sty	a,+parstr
- 13C3           nxtlun	inry	+numpar 	; inc # of partitions
- 13C6           	dadx	b		; next mode byte table entry
- 13C8 F1        	pop	psw		; check if end of partitions
- 13C9 3D        	dcr	a
- 13CA C2AD13    	jnz	iloop1
- 13CD C9        	ret
+ 13B1           	ldx	a,+1
+ 13B4 E660      	ani	01100000b
+ 13B6 BC        	cmp	h		; see if equal to previous lun
+ 13B7 CAC613    	jz	nxtlun		; if equal next mode byte entry
+ 13BA 67        	mov	h,a		; save new lun
+ 13BB           	ldy	a,+numpar	; add number partitions and old part. start
+ 13BE           	addy	+parstr 	;  equals new partition start.
+ 13C1           	dady	d		; next lun data entry
+ 13C3           	sty	a,+parstr
+ 13C6           nxtlun	inry	+numpar 	; inc # of partitions
+ 13C9           	dadx	b		; next mode byte table entry
+ 13CB F1        	pop	psw		; check if end of partitions
+ 13CC 3D        	dcr	a
+ 13CD C2B013    	jnz	iloop1
+ 13D0 C9        	ret
                 
                 ;
                 ;	DATA BUFFERS AND STORAGE
@@ -835,10 +836,10 @@
                 ; from the magic sector, 3 bytes for system use.
                 
                 LUNDATA:
- 13CE 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
- 13E1 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
- 13F4 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
- 1407 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 13D1 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 13E4 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 13F7 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 140A 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
                 
                 ; BYTE 0		: DRIVE/CONTROLLER CODE
                 ; BYTE 1		: CONTROL BYTE
@@ -850,15 +851,15 @@
                 ; BYTE 17		: STARTING PARTITION # OF THE LUN (Set in findstr)
                 ; BYTE 18		: NUMBER OF PARTITIONS ON THE LUN (Set in findstr)
                 
- 141A 0000      DATAPTR:DW	0		; POINTER TO LUNDATA FOR THIS L.U.N.
- 141C 00        LUN:	DB	0		; CURRENT LUN  (Set when getptr is called)
+ 141D 0000      DATAPTR:DW	0		; POINTER TO LUNDATA FOR THIS L.U.N.
+ 141F 00        LUN:	DB	0		; CURRENT LUN  (Set when getptr is called)
                 
- 141D 0000000000CMBFR:	DB	0,0,0,0,0,0	; COMMAND BUFFER
- 1423 0C00000000ICMND:	DB	INIT,0,0,0,0,0	; INITIALIZE DRIVE CHARACTERISTICS COMMAND
- 1429 0100000000RCMND:	DB	RECAL,0,0,0,0,0 ; Restore head command buffer
+ 1420 0000000000CMBFR:	DB	0,0,0,0,0,0	; COMMAND BUFFER
+ 1426 0C00000000ICMND:	DB	INIT,0,0,0,0,0	; INITIALIZE DRIVE CHARACTERISTICS COMMAND
+ 142C 0100000000RCMND:	DB	RECAL,0,0,0,0,0 ; Restore head command buffer
                 BASE$PORT:
- 142F 00        	DB	0		; BASE PORT ADDRESS (Set in init$sasi)
- 1430 00        STAT:	DB	0
+ 1432 00        	DB	0		; BASE PORT ADDRESS (Set in init$sasi)
+ 1433 00        STAT:	DB	0
                 
- 1431           	END
-
+ 1434           	END
+

@@ -1,4 +1,4 @@
-VERS	EQU   '3 '  ; May 28, 2018 12:28 drm "ldr320.asm"
+VERS	EQU   '4 '  ; December 31, 2020 15:55 drm "ldr320.asm"
 ***************************************************
 ;	Loader disk I/O module for MMS CP/M 2.24
 ;	for the 77320 SASI bus interface 
@@ -283,7 +283,8 @@ DEFDRV	ADI	50
 	IN	GPIO		; READ SWITCH 501
 	ANI	00001100B	; WHAT'S PORT 78 SET FOR ?
 	CPI	00001000B	;  IF Z67, THEN THIS IS IT
-	RNZ
+	JRZ	GOTPRT
+	mvi	b,0bch	; assume 274Q if none other
 GOTPRT: MOV	A,B
 	STA	BASE$PORT	; SAVE BASE PORT ADDRESS
 	XRA	A

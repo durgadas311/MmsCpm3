@@ -1,4 +1,4 @@
-VERS EQU '4 ' ; May 28, 2018 12:31 drm "M320'3.ASM"
+VERS EQU '5 ' ; December 31, 2020 15:55 drm "M320'3.ASM"
 *************************************************************************
 
 	TITLE	'SASI- DRIVER FOR MMS CP/M 3 SASI BUS INTERFACE'
@@ -291,7 +291,8 @@ init$sasi:
 	IN	GPIO		; READ SWITCH 501
 	ANI	00001100B	; WHAT'S PORT 78 SET FOR ?
 	CPI	00001000B	;  IF Z67, THEN THIS IS IT
-	RNZ
+	JRZ	GOTPRT
+	mvi	b,0bch	; assume 274Q if none other
 GOTPRT: MOV	A,B
 	STA	BASE$PORT	; SAVE BASE PORT ADDRESS
 	RET
