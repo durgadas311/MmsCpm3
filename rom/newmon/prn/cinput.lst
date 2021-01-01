@@ -1,0 +1,191 @@
+		; Command module for I/O port input
+		
+			maclib	core
+**** core.lib ****
+**** cinput.asm ****
+			maclib	ram
+**** ram.lib ****
+**** cinput.asm ****
+			maclib	z80
+**** z80.lib ****
+**** cinput.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0008          	BS	equ	8
+0003          	CTLC	equ	3
+0007          	BEL	equ	7
+001B          	ESC	equ	27
+007F          	DEL	equ	127
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C31810  		jmp	init	; +4: init entry
+1007  C31A10  		jmp	exec	; +7: action entry
+		
+100A  49      		db	'I'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  496E7075		db	'Input X',0	; +16: mnemonic string
+      74205800
+		
+1018          	init:
+1018  AF      		xra	a	; NC
+1019  C9      		ret
+		
+101A          	exec:
+101A  21D510  		lxi	h,signon
+101D  CD4400  		call	msgout
+1020  CD6A10  		call	parshx
+1023  D8      		rc
+1024  7A      		mov	a,d
+1025  32E210  		sta	port
+1028  CDC010  		call	waitcr
+102B  D8      		rc
+102C  CD1B00  		call	crlf
+102F  3AE210  		lda	port
+1032  4F      		mov	c,a
+1033  0600    		mvi	b,0	; for Z180?
+1035  ED78    		inp	a
+1037  32E310  		sta	value
+103A          	show:
+103A  21DB10  		lxi	h,prefx
+103D  CD4400  		call	msgout
+1040  3AE210  		lda	port
+1043  CD5610  		call	hexout
+1046  21DF10  		lxi	h,prefx2
+1049  CD4400  		call	msgout
+104C  3AE310  		lda	value
+104F  CD5610  		call	hexout
+1052  C9      		ret
+		
+1053  C31B00  	fin:	jmp	crlf
+		
+1056          	hexout:
+1056  F5      		push	psw
+1057  07      		rlc
+1058  07      		rlc
+1059  07      		rlc
+105A  07      		rlc
+105B  CD5F10  		call	ho0
+105E  F1      		pop	psw
+105F          	ho0:
+105F  E60F    		ani	00fh
+1061  C690    		adi	090h
+1063  27      		daa
+1064  CE40    		aci	040h
+1066  27      		daa
+1067  C3D110  		jmp	chrout
+		
+		; Parse a 8-bit hex value.
+		; Returns CY if abort, else D=value
+106A  110000  	parshx:	lxi	d,0	; D=0, E=0
+106D  CD9510  	ph0:	call	hexdig
+1070  380F    		jrc	ph1	; might be CR...
+1072  4F      		mov	c,a
+1073  7A      		mov	a,d
+1074  07      		rlc
+1075  07      		rlc
+1076  07      		rlc
+1077  07      		rlc
+1078  81      		add	c	; A=(D<<4)+val
+1079  57      		mov	d,a
+107A  1C      		inr	e
+107B  7B      		mov	a,e
+107C  FE02    		cpi	2
+107E  38ED    		jrc	ph0
+1080  C9      		ret	; NC
+1081  FE0D    	ph1:	cpi	CR
+1083  280B    		jrz	ph2
+1085  FE7F    		cpi	DEL
+1087  37      		stc
+1088  C8      		rz
+1089  3E07    	phe:	mvi	a,BEL
+108B  CDD110  		call	chrout
+108E  18DD    		jr	ph0
+1090  7B      	ph2:	mov	a,e	; CR pressed
+1091  B7      		ora	a
+1092  28F5    		jrz	phe	; must enter at least one digit
+1094  C9      		ret
+		
+		; Get a hex digit value
+1095  CDA610  	hexdig:	call	hexin
+1098  D8      		rc	; A=char
+1099  CDD110  		call	chrout	; preserves A (all)
+109C  D630    		sui	'0'
+109E  FE0A    		cpi	10
+10A0  3F      		cmc
+10A1  D0      		rnc	; 0-9
+10A2  D607    		sui	'A'-'9'-1
+10A4  B7      		ora	a	; NC
+10A5  C9      		ret
+		
+		; Get a single hex character.
+		; Returns A=char (toupper), CY if error
+10A6          	hexin:
+10A6  CD4A00  		call	conin
+10A9          	hexchk:
+10A9  FE30    		cpi	'0'
+10AB  D8      		rc
+10AC  FE3A    		cpi	'9'+1
+10AE  3F      		cmc
+10AF  D0      		rnc
+10B0  FE7F    		cpi	DEL
+10B2  37      		stc
+10B3  C8      		rz
+10B4  FE41    		cpi	'A'
+10B6  D8      		rc
+10B7  E65F    		ani	05fh	; toupper
+10B9  FE41    		cpi	'A'
+10BB  D8      		rc
+10BC  FE47    		cpi	'F'+1
+10BE  3F      		cmc
+10BF  C9      		ret
+		
+		; wait for CR or DEL (cancel)
+10C0  CD4A00  	waitcr:	call	conin
+10C3  FE7F    		cpi	DEL
+10C5  37      		stc
+10C6  C8      		rz
+10C7  FE0D    		cpi	CR
+10C9  C8      		rz
+10CA  3E07    		mvi	a,BEL
+10CC  CDD110  		call	chrout
+10CF  18EF    		jr	waitcr
+		
+10D1  2A2600  	chrout:	lhld	conout
+10D4  E9      		pchl
+		
+10D5  6E707574	signon:	db	'nput ',0
+      2000
+10DB  494E2000	prefx:	db	'IN ',0
+10DF  3A2000  	prefx2:	db	': ',0
+10E2  00      	port:	db	0
+10E3  00      	value:	db	0
+		
+10E4  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   109	symbols
+   256	bytes
+
+    47	macro calls
+  3759	macro bytes
+     0	invented symbols

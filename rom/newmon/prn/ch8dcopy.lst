@@ -1,0 +1,275 @@
+		; Bootstrap for the H8DCopy utility.
+		; Uses the "LP" Serial Port, 0E0H / 340Q
+00E0          	sport	equ	0e0h
+00E0          	RBR	equ	sport+0
+00E0          	DLL	equ	sport+0
+00E1          	DLH	equ	sport+1
+00E1          	IER	equ	sport+1
+00E3          	LCR	equ	sport+3
+00E4          	MCR	equ	sport+4
+00E5          	LSR	equ	sport+5
+000C          	BAUD	equ	000ch	; 9600, high byte must be 00.
+		
+			maclib	ram
+**** ram.lib ****
+**** ch8dcopy.asm ****
+			maclib	core
+**** core.lib ****
+**** ch8dcopy.asm ****
+			maclib	z80
+**** z80.lib ****
+**** ch8dcopy.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0007          	BEL	equ	7
+0003          	CTLC	equ	3
+		
+2300          	bootadr	equ	2300H
+2329          	bootend	equ	2329H
+2662          	utilend	equ	2662H
+		
+1000          		org	1000h
+1000  02      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C32610  		jmp	init	; +4: init entry
+1007  C32F10  		jmp	exec	; +7: action entry
+		
+100A  68      		db	'h'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  48384420		db	'H8D Utility Bootstrap',0	; +16: mnemonic string
+      5574696C
+      69747920
+      426F6F74
+      73747261
+      7000
+		
+1026          	init:	; H17 must be installed, or this makes no sense.
+			; but we check later, for display purposes.
+1026  AF      		xra	a
+1027  C9      		ret
+		
+1028  212411  	error:	lxi	h,errmsg
+102B  CD4400  		call	msgout
+102E  C9      		ret
+		
+102F          	exec:
+102F  21B710  		lxi	h,signon
+1032  CD4400  		call	msgout
+1035  DBF2    		in	0f2h
+1037  E603    		ani	00000011b
+1039  20ED    		jrnz	error
+103B  210820  		lxi	h,MFlag
+103E  CBCE    		setb	1,m	; disable disp updates
+1040  215411  		lxi	h,fpmsg
+1043  110B20  		lxi	d,fpLeds
+1046  010900  		lxi	b,9
+1049  EDB0    		ldir
+			; TODO: print message?
+104B  21D010  		lxi	h,stmsg
+104E  CD4400  		call	msgout
+			; would be nice to re-use this from h8core, but it's
+			; pretty much carved in stone anyway.
+			; H17 initialization:
+1051  F3      		di
+1052  AF      		xra	a
+1053  D37F    		out	07fh
+1055  215A1F  		lxi	h,01f5ah	; H17 floppy ROM template
+1058  114820  		lxi	d,02048h	; RAM location of data
+105B  015800  		lxi	b,88		; length of "R$CONST"
+105E  EDB0    		ldir
+1060  6B      		mov	l,e		; next section filled with 0...
+1061  62      		mov	h,d
+1062  13      		inx	d
+1063  0E1E    		mvi	c,30
+1065  77      		mov	m,a
+1066  EDB0    		ldir	; fill l20a0h...
+1068  3E07    		mvi	a,7
+106A  211F20  		lxi	h,intvec	; vector area
+106D          	h17ini0:
+106D  36C3    		mvi	m,0c3h
+106F  23      		inx	h
+1070  3688    		mvi	m,LOW nulint
+1072  23      		inx	h
+1073  3610    		mvi	m,HIGH nulint
+1075  23      		inx	h
+1076  3D      		dcr	a
+1077  20F4    		jrnz	h17ini0
+			; H17 "front" should now be propped-up.
+1079  FB      		ei
+107A  215D11  		lxi	h,bootstrap
+107D  110023  		lxi	d,bootadr
+1080  012A00  		lxi	b,bootlen
+1083  EDB0    		ldir
+1085  C30023  		jmp	bootadr
+		
+1088  FB      	nulint:	ei
+1089  C9      		ret
+		
+		; wait for Rx data on sport, while checking for user abort
+108A  DBED    	check:	in	0edh
+108C  0F      		rrc
+108D  3010    		jrnc	chk0
+108F  DBE8    		in	0e8h
+1091  FE03    		cpi	CTLC
+1093  200A    		jrnz	chk0
+1095  E1      		pop	h	; discard local return adr
+1096  CD1B00  	abort:	call	crlf
+1099  210820  		lxi	h,MFlag
+109C  CB8E    		res	1,m	; enable disp updates
+109E  C9      		ret	; return (safely?) to monitor
+109F  DBE5    	chk0:	in	LSR
+10A1  1F      		rar
+10A2  30E6    		jrnc	check
+			; char is ready, see if the last one
+10A4  7B      		mov	a,e
+10A5  FE29    		cpi	LOW bootend
+10A7  C0      		rnz
+10A8  7A      		mov	a,d
+10A9  FE23    		cpi	HIGH bootend
+10AB  C0      		rnz
+			; on last char of boot...
+10AC  E5      		push	h
+10AD  D5      		push	d
+10AE  214911  		lxi	h,ready
+10B1  CD4400  		call	msgout
+10B4  D1      		pop	d
+10B5  E1      		pop	h
+10B6  C9      		ret
+		
+10B7  20483844	signon:	db	' H8D Utility bootstrap',CR,LF,0
+      20557469
+      6C697479
+      20626F6F
+      74737472
+      61700D0A
+      00
+10D0  5573696E	stmsg:	db	'Using serial port '
+      67207365
+      7269616C
+      20706F72
+      7420
+10E2  33      		db	(sport SHR 6)+'0'
+10E3  34      		db	((sport SHR 3) AND 7)+'0'
+10E4  30      		db	(sport AND 7)+'0'
+10E5  51206174		db	'Q at 9600 baud',CR,LF
+      20393630
+      30206261
+      75640D0A
+10F5  53746172		db	'Start the H8D Utility on host.',CR,LF
+      74207468
+      65204838
+      44205574
+      696C6974
+      79206F6E
+      20686F73
+      742E0D0A
+1115  43746C2D		db	'Ctl-C to quit ',0
+      4320746F
+      20717569
+      742000
+1124  074E6F20	errmsg:	db	BEL,'No H17 installed (dipswitch set?)',CR,LF,0
+      48313720
+      696E7374
+      616C6C65
+      64202864
+      69707377
+      69746368
+      20736574
+      3F290D0A
+      00
+1149  0D0A5265	ready:	db	CR,LF,'Ready.',CR,LF,0
+      6164792E
+      0D0A00
+		; pattern for Front Panel display...
+1154  9280C2  	fpmsg:	db	10010010b,10000000b,11000010b	; "H8d"
+1157  FFDE8C  		db	11111111b,11011110b,10001100b	; " rE"
+115A  90C2A2  		db	10010000b,11000010b,10100010b	; "Ady"
+		
+		; --------- bootstrap code --------
+		; This code is moved to 2300H and must end with the PCHL at 2329H
+		; WARNING: The booted code peeks into this code to get the port
+		; address.
+		;	org	bootadr
+115D          	bootstrap:
+115D  AF      		xra	a
+115E  D3E3    		out	LCR
+1160  D3E1    		out	IER
+1162  D3E4    		out	MCR
+1164  3D      		dcr	a	; want 80H but FF is OK
+1165  D3E3    		out	LCR
+1167  3E0C    		mvi	a,LOW BAUD
+1169  D3E0    		out	DLL
+116B  AF      		xra	a
+116C  D3E1    		out	DLH
+116E  3E07    		mvi	a,00000111b	; 8 bits, 2 stop
+1170  D3E3    		out	LCR
+1172  DBE5    		in	LSR
+1174  DBE0    		in	RBR
+1176  211F23  		lxi	h,(bs1-bootstrap)+bootadr
+1179  116126  		lxi	d,utilend-1
+117C  DBE5    	bs1:	in	LSR	; filler
+117E  1F      		rar		; filler
+117F  CD8A10  		call	check	; WAS: jnc (bs1-bootstrap)+bootadr
+			; returns when char available...
+1182  DBE0    		in	RBR
+1184  12      		stax	d
+1185  1B      		dcx	d
+0000          	 if (($-bootstrap)+bootadr <> bootend)
+		 endif
+1186  E9      		pchl
+002A          	bootlen	equ	$-bootstrap
+		; ----- end of bootstrap code -----
+		
+1187  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FF
+0000          	if ($ > 1800h)
+		endif
+		
+1200          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   113	symbols
+   512	bytes
+
+   142	macro calls
+  3759	macro bytes
+     0	invented symbols

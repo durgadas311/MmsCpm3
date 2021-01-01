@@ -42,6 +42,10 @@ vh8dutil.spr: vh8dutil.rel vdip1.rel
 	vcpm link $@=vh8dutil,vdip1'[os,nr]'
 	cp $@ ../../bin
 
+sasidump.sys: sasidump.spr
+	mknetboot -x -b 0x3000 -o $@ $^
+	cp $@ ../../bin
+
 vdump3.sys: vdump3.spr
 	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
@@ -61,6 +65,7 @@ test512k.sys: test512k.spr
 	cp $@ ../../bin
 
 vh8dutil.rel: ram.lib core.lib vh8dutil.asm
+sasidump.rel: core.lib setup.lib ram.lib z80.lib
 
 vdump3.rel: ram.lib core.lib vdump3.asm
 setrtc.rel: core.lib setrtc.asm
