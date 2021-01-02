@@ -8,6 +8,8 @@
 
 CR	equ	13
 LF	equ	10
+CTLC	equ	3
+DEL	equ	127
 
 	cseg
 ; get Z67 port...
@@ -29,26 +31,40 @@ init0:	xra	a	; NC
 	
 ; Now read 2 sectors into buffer...
 boot:
-	lda	cport
-	inr	a
-	mov	c,a
-	xra	a
-	outp	a
-
-	mvi	d,0	; controller number
-	mvi	a,4	; delay 8mS, also NZ
-	ora	a
-bsasi0:
-	call	delay
 	lxi	h,tur
 	call	sasi$cmd
 	jc	sserr0	; no retries(?)
 	lxi	h,recal
 	call	sasi$cmd
 	jc	sserr1
+	lxi	h,0
+	shld	count
+loop:
 	lxi	h,read16
 	call	sasi$cmd
 	jc	sserr2
+
+	lhld	count
+	inx	h
+	shld	count
+	mov	a,l
+	call	decwrd
+	mvi	a,CR
+	call	chrout
+
+	in	0edh	; check for key pressed...
+	ani	00000001b
+	jrz	loop
+	in	0e8h
+	ani	01111111b
+	cpi	CTLC
+	jrz	quit
+	cpi	DEL
+	jrz	quit
+	jr	loop
+
+quit:
+	call	crlf
 ; Now dump data...
 	lxi	h,buffer
 	lxi	d,512
@@ -99,6 +115,17 @@ nfp0ms:	lda	sav$F2
 ; HL=cmd buffer
 sasi$cmd:
 	shld	cmdptr
+	lda	cport
+	inr	a
+	mov	c,a
+	xra	a
+	outp	a
+
+	mvi	d,0	; controller number
+	mvi	a,4	; delay 8mS, also NZ
+	ora	a
+bsasi0:
+	call	delay
 	di
 	mvi	b,0	; wait for "not BUSY" first
 	mvi	e,6	;
@@ -284,6 +311,39 @@ hexdig:	ani	0fh
 chrout:	lixd	conout
 	pcix
 
+; Print out HL in decimal
+decwrd:
+	mvi	c,0	; leading zero suppression
+	lxi	d,10000
+	call	div16
+	lxi	d,1000
+	call	div16
+	lxi	d,100
+	call	div16
+	lxi	d,10
+	call	div16
+	mov	a,l
+	adi	'0'
+	call	chrout
+	ret
+
+div16:	mvi	b,0
+dv0:	ora	a
+	dsbc	d
+	inr	b
+	jrnc	dv0
+	dad	d
+	dcr	b
+	jrnz	dv1
+	bit	0,c
+	jrnz	dv1
+	ret
+dv1:	setb	0,c
+	mvi	a,'0'
+	add	b
+	call	chrout
+	ret
+
 spcs:	db	'    ',0
 nofp:	db	0
 sav$F0:	db	0
@@ -294,6 +354,7 @@ err1:	db	'Recal failed',CR,LF,0
 err2:	db	'Read failed',CR,LF,0
 
 cport:	db	0
+count:	dw	0
 tur:	db	00h,20h,00h,00h,00h,00h	; Test Unit Ready, unit 1
 recal:	db	01h,20h,00h,00h,00h,00h	; Recalibrate, unit 1
 read16:	db	08h,20h,00h,00h,02h,00h	; Read, unit 1, 2 sectors
