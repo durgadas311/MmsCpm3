@@ -40,12 +40,13 @@ boot:
 	ora	a
 bsasi0:
 	call	delay
-	mvi	e,0	; Test Drive Ready
+	lxi	h,tur
 	call	sasi$cmd
 	jc	sserr0	; no retries(?)
-	mvi	e,1	; Recalibrate (Home)
+	lxi	h,recal
 	call	sasi$cmd
 	jc	sserr1
+	lxi	h,read16
 	call	sasi$cmd
 	jc	sserr2
 ; Now dump data...
@@ -95,7 +96,9 @@ nfp0ms:	lda	sav$F2
 	ret
 
 ; send SASI read command, get results
+; HL=cmd buffer
 sasi$cmd:
+	shld	cmdptr
 	di
 	mvi	b,0	; wait for "not BUSY" first
 	mvi	e,6	;
@@ -132,7 +135,7 @@ sscmd1:
 sscmd2:
 	mvi	a,002h	; enable INTR
 	outp	a
-	lxi	h,cmdbuf
+	lhld	cmdptr
 sscmd3:
 	inp	a
 	bit	7,a	; REQ
@@ -291,7 +294,10 @@ err1:	db	'Recal failed',CR,LF,0
 err2:	db	'Read failed',CR,LF,0
 
 cport:	db	0
-cmdbuf:	db	08h,20h,00h,00h,02h,00h	; Read, unit 1, 2 sectors
+tur:	db	00h,20h,00h,00h,00h,00h	; Test Unit Ready, unit 1
+recal:	db	01h,20h,00h,00h,00h,00h	; Recalibrate, unit 1
+read16:	db	08h,20h,00h,00h,02h,00h	; Read, unit 1, 2 sectors
+cmdptr:	dw	0
 resbuf:	dw	0
 
 	ds	128
