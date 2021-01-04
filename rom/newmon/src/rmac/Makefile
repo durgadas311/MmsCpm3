@@ -42,37 +42,22 @@ vh8dutil.spr: vh8dutil.rel vdip1.rel
 	vcpm link $@=vh8dutil,vdip1'[os,nr]'
 	cp $@ ../../bin
 
-sasidump.sys: sasidump.spr
-	mknetboot -x -b 0x3000 -o $@ $^
+wizcfg.spr: wizcfg.rel libwiznt.rel libnvram.rel
+	vcpm link $@=wizcfg,libwiznt,libnvram'[os,nr]'
 	cp $@ ../../bin
 
-vdump3.sys: vdump3.spr
-	mknetboot -x -b 0x3000 -o $@ $^
+# these require custom placement in RAM...
+vflash.sys: vflash.spr
+	mknetboot -x -o $@ $^
 	cp $@ ../../bin
+
+# standard placement in RAM (0x3000) by default
 
 diag512k.rel: core.lib diag512k.asm
-
-diag512k.sys: diag512k.spr
-	mknetboot -x -b 0xc000 -o $@ $^
-	cp $@ ../../bin
-
-mtest512.sys: mtest512.spr
-	mknetboot -x -b 0x3000 -o $@ $^
-	cp $@ ../../bin
-
-test512k.sys: test512k.spr
-	mknetboot -x -b 0x3000 -o $@ $^
-	cp $@ ../../bin
-
 vh8dutil.rel: ram.lib core.lib vh8dutil.asm
 sasidump.rel: core.lib setup.lib ram.lib z80.lib
-
 vdump3.rel: ram.lib core.lib vdump3.asm
 setrtc.rel: core.lib setrtc.asm
-
-setrtc.sys: setrtc.spr
-	mknetboot -x -b 0x3000 -o $@ $^
-	cp $@ ../../bin
 
 libwiznt.asm: config.lib
 	unix2dos -n ~/git/cpnet-z80/src/w5500/libwiznt.asm $@
@@ -84,19 +69,7 @@ config.lib: ~/git/cpnet-z80/src/config.lib \
 	~/git/cpnet-z80/src/w5500/config.lib ~/git/cpnet-z80/src/h8xspi/config.lib
 	cat $^ | unix2dos >$@
 
-wizcfg.spr: wizcfg.rel libwiznt.rel libnvram.rel
-	vcpm link $@=wizcfg,libwiznt,libnvram'[os,nr]'
-	cp $@ ../../bin
-
-sdtest.sys: sdtest.spr
-	mknetboot -x -b 0x3000 -o $@ $^
-	cp $@ ../../bin
-
-wizcfg.sys: wizcfg.spr
-	mknetboot -x -b 0x3000 -o $@ $^
-	cp $@ ../../bin
-
 %.sys: %.spr
-	mknetboot -x -o $@ $^
+	mknetboot -x -b 0x3000 -o $@ $^
 	cp $@ ../../bin
 
