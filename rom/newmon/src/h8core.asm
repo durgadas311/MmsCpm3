@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	23
+beta	equ	24
 
 z180	equ	false
 h8nofp	equ	false
@@ -1357,15 +1357,17 @@ kpgo:
 	pop	h	; discard ret adr
 	jmp	intret	; execute
 
+; ABUSS L=port, H=value
 kpin:	lhld	ABUSS
-	mov	c,h	; port
-	inp	l	; get value
+	mov	c,l	; port
+	inp	h	; get value
 	shld	ABUSS
 	ret
 
+; ABUSS L=port, H=value
 kpout:	lhld	ABUSS
-	mov	c,h	; port
-	outp	l	; output value
+	mov	c,l	; port
+	outp	h	; output value
 kpabt:	ret
 
 kprw:	; switch between display/modify
