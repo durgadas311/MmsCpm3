@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	007h
+VERN	equ	008h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -89,6 +89,12 @@ exit:
 	call	dis2ms
 	lhld	retmon
 	pchl
+
+abort:	lxi	d,abrted
+	call	print
+	lxi	h,clf
+	call	vdcmd
+	jr	main1
 
 ; Turn on 2mS clock intrs, interrupts already disabled
 ena2ms:	lda	nofp
@@ -287,6 +293,8 @@ wrimg3:
 ;
 	mvi	a,'R'
 	call	chrout
+	call	ckctlc
+	jc	abort
 
 	lhld	secnum
 	lxi	d,10	; sec/trk
@@ -332,6 +340,8 @@ rdimg1:
 	rc
 	mvi	a,'S'
 	call	chrout
+	call	ckctlc
+	jc	abort
 
 	; next sector...
 	lhld	secnum
@@ -754,6 +764,16 @@ chrin:	in	0edh
 	ani	01111111b
 	ret
 
+ckctlc:	in	0edh
+	ani	00000001b
+	rz
+	in	0e8h
+	ani	01111111b
+	cpi	CTLC	; cancel
+	rnz
+	stc	; CY=cancel
+	ret
+
 print:	ldax	d
 	ora	a
 	rz
@@ -778,6 +798,7 @@ help:	db		' Commands:',CR,LF
 invld:	db	'Invalid command',CR,LF,0
 syntax:	db	'Syntax error',CR,LF,0
 failed:	db	'Command failed',CR,LF,0
+abrted:	db	' *aborted*',CR,LF,0
 
 curdrv:	db	0
 curvol:	db	0
