@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	008h
+VERN	equ	009h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -77,8 +77,10 @@ drdb	equ	2082h
 	call	print
 	lxi	d,phelp
 	call	print
-	call	dabort	; (2mS intr must be ON) track 0
+	; (2mS intr must be ON) track 0
 	call	shwprm
+	lda	curdrv
+	sta	AIO$UNI
 main1:
 	; Prompt for command and params,
 	; perform command,
@@ -259,9 +261,7 @@ wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
 
 ; Copy tracks from image file onto H17
 wrimg:
-	lda	curdrv
-	sta	AIO$UNI
-	call	dsdp	; select unit number
+	call	dsdp	; select unit number from AIO$UNI
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -320,9 +320,7 @@ wrbuf:
 
 ; Copy all tracks from H17 to image file
 rdimg:
-	lda	curdrv
-	sta	AIO$UNI
-	call	dsdp	; select unit number
+	call	dsdp	; select unit number from AIO$UNI
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -367,50 +365,6 @@ rdbuf:
 	cmc		; if carry, no error
 	sbb	a	; -1 if good read, else 0
 	sta	goodrd
-	ret
-
-chkv:
-	xra	a
-	sta	secnum
-	sta	secnum+1
-chkv1:
-	lxi	h,ddrvtb+1
-	mov	m,a
-	shld	dvolpt
-;
-	lxi	b,zbuf
-	lxi	d,buffer
-	lhld	secnum
-	call	rdbuf
-;
-	lda	buffer+900h
-	call	chrout
-	mvi	a,'c'
-	call	chrout
-	ret
-
-rddv:	; read disk volume
-	lxi	h,20h	; someplace off track 0
-	push	h
-	call	dsdp
-	pop	h
-	call	ddts
-	mvi	a,1
-	call	dudly
-rddv1:	call	dsts	; skip sector
-	lda	ddlyhs
-	ana	a
-	jnz	rddv1
-	di
-	call	dwsc
-	call	drdb
-	ei
-	push	psw
-	call	dabort	; track 0
-	pop	psw
-	call	chrout
-	mvi	a,'t'
-	call	chrout
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -473,6 +427,7 @@ cdrive:	call	skipb
 	cpi	2	; only 2 drives supported by default ROM
 	jrnc	badcmd
 	sta	curdrv
+	sta	AIO$UNI
 showup:	call	shwprm
 	jr	comnd
 
@@ -502,6 +457,7 @@ crestr:	call	skipb
 	call	vdcmd
 	jc	failvd	; no need for close...
 	call	shwprm
+	call	dinit
 	call	wrimg
 	; CY if error
 	push	psw
@@ -522,6 +478,7 @@ csave:	call	skipb
 	jc	failvd	; no need for close...
 	; TODO: need to truncate?
 	call	shwprm
+	call	dinit
 	call	rdimg
 	; CY if error
 	push	psw
@@ -530,6 +487,13 @@ csave:	call	skipb
 	pop	psw
 	jc	failvd
 	jmp	comnd
+
+dinit:	lxi	h,isinit
+	mov	a,m
+	sui	1
+	rnc
+	mov	m,a
+	jmp	dabort	; (2mS intr must be ON) track 0, select AIO$UNI
 
 clf:	db	'clf',CR,0
 opw:	db	'opw ','filename.typ',CR,0
@@ -800,6 +764,7 @@ syntax:	db	'Syntax error',CR,LF,0
 failed:	db	'Command failed',CR,LF,0
 abrted:	db	' *aborted*',CR,LF,0
 
+isinit:	db	0
 curdrv:	db	0
 curvol:	db	0
 sectbl:	db	0,1,2,3,4,5,6,7,8,9
