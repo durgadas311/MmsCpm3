@@ -11,6 +11,8 @@ LF	equ	10
 CTLC	equ	3
 DEL	equ	127
 
+normal	equ	0	; 'true' for original version
+
 	cseg
 ; get Z67 port...
 init:
@@ -40,9 +42,18 @@ boot:
 	lxi	h,0
 	shld	count
 loop:
+if normal
 	lxi	h,read16
 	call	sasi$cmd
 	jc	sserr2
+else
+	lxi	h,boot10
+	call	sasi$cmd
+	jc	sserr2
+	lxi	h,readb9
+	call	sasi$cmd
+	jc	sserr2
+endif
 
 	lhld	count
 	inx	h
@@ -66,6 +77,7 @@ loop:
 quit:
 	call	crlf
 ; Now dump data...
+	; in all cases, dump 512 bytes.
 	lxi	h,buffer
 	lxi	d,512
 	call	dump
@@ -112,7 +124,8 @@ nfp0ms:	lda	sav$F2
 	ret
 
 ; send SASI read command, get results
-; HL=cmd buffer
+; HL=cmd buffer (512 bytes)
+; Reads data until controller says stop...
 sasi$cmd:
 	shld	cmdptr
 	lda	cport
@@ -124,7 +137,7 @@ sasi$cmd:
 	mvi	d,0	; controller number
 	mvi	a,4	; delay 8mS, also NZ
 	ora	a
-bsasi0:
+;bsasi0:
 	call	delay
 	di
 	mvi	b,0	; wait for "not BUSY" first
@@ -245,6 +258,38 @@ dump:
 	jrnz	dump
 	ret
 
+; dump amount specified by cmdptr+4 (block count)
+; HL=buffer
+mdump:
+	push	h
+	lhld	cmdptr
+	inx	h
+	inx	h
+	inx	h
+	inx	h
+	mov	d,m	; number of 256-byte blocks
+	mvi	e,0
+	pop	h
+	jr	dump
+
+; fill buffer by amount specified by cmdptr+4 (block count)
+mfill:
+	lhld	cmdptr
+	inx	h
+	inx	h
+	inx	h
+	inx	h
+	mov	b,m	; number of 256-byte blocks
+	mvi	c,0
+	lxi	h,buffer
+	mov	e,l
+	mov	d,h
+	inx	d
+	dcx	b
+	mvi	m,0ffh
+	ldir
+	ret
+
 ; Dump 16 bytes at HL
 dmpline:
 	push	d
@@ -358,6 +403,8 @@ count:	dw	0
 tur:	db	00h,20h,00h,00h,00h,00h	; Test Unit Ready, unit 1
 recal:	db	01h,20h,00h,00h,00h,00h	; Recalibrate, unit 1
 read16:	db	08h,20h,00h,00h,02h,00h	; Read, unit 1, 2 sectors
+boot10:	db	08h,00h,00h,00h,0ah,80h	; Read, unit 0, 10 sectors, retry
+readb9:	db	08h,00h,00h,09h,01h,00h	; Read, unit 0, sector 9
 cmdptr:	dw	0
 resbuf:	dw	0
 
@@ -365,5 +412,6 @@ resbuf:	dw	0
 stack:	ds	0
 
 buffer:	ds	0	; 512
+	; possibly up to 2560 bytes...
 
 	end
