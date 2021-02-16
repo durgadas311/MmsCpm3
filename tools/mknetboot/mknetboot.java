@@ -42,22 +42,41 @@ public class mknetboot {
 	}
 
 	private void parseDrive(String arg) {
+		int d;
+		int rd;
+		int rs;
 		if (arg.equals("X:=X:")) {
 			// Special case for CP/NOS... map all remote
 			for (int x = 0; x < 16; ++x) {
 				drvs.put(x, (x << 8) | 0xff);
 			}
 		} else if (arg.matches("[A-P]:=[A-P]:[0-9A-F]*")) {
-			int d = arg.charAt(0) - 'A';
-			int rd = arg.charAt(3) - 'A';
-			int rs = 0xff;
+			d = arg.charAt(0) - 'A';
+			rd = arg.charAt(3) - 'A';
+			rs = 0xff;
 			if (arg.length() > 5) {
 				rs = Integer.valueOf(arg.substring(5), 16);
 			}
 			drvs.put(d, (rd << 8) | rs);
+		} else if (arg.matches("CON:=[0-9A-F]:[0-9A-F]*")) {
+			d = 16;
+			rd = Character.digit(arg.charAt(5), 16);
+			rs = 0xff;
+			if (arg.length() > 7) {
+				rs = Integer.valueOf(arg.substring(7), 16);
+			}
+			drvs.put(d, (rd << 8) | rs);
+		} else if (arg.matches("LST:=[0-9A-F]:[0-9A-F]*")) {
+			d = 17;
+			rd = Character.digit(arg.charAt(5), 16);
+			rs = 0xff;
+			if (arg.length() > 7) {
+				rs = Integer.valueOf(arg.substring(7), 16);
+			}
+			drvs.put(d, (rd << 8) | rs);
 		} else if (arg.matches("[A-P]:=[0-9]+")) {
-			int d = arg.charAt(0) - 'A';
-			int rs = Integer.valueOf(arg.substring(3));
+			d = arg.charAt(0) - 'A';
+			rs = Integer.valueOf(arg.substring(3));
 			drvs.put(d, 0x80 | rs);
 		} else {
 			System.err.format("Invalid drive specifier \"%s\"\n", arg);
