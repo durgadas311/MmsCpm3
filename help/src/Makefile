@@ -78,6 +78,8 @@ CPNET3 = \
 
 CPNET12 = \
 	cpnet12.help \
+	cpnboot.help \
+	cpnetldr.help \
 	cpnetsts.help \
 	dskreset.help \
 	endlist.help \
@@ -85,6 +87,7 @@ CPNET12 = \
 	local.help \
 	login.help \
 	logoff.help \
+	netboot.help \
 	netdown.help \
 	netstat.help \
 	network.help \
