@@ -63,6 +63,39 @@ HELPS = commands.help \
 	wizcfg.help \
 	xref.help
 
+# For Generic CP/M 3
+CPM3 = commands.help \
+	cntrlchars.help \
+	date.help \
+	device.help \
+	dir.help \
+	dump.help \
+	ed.help \
+	erase.help \
+	filespec.help \
+	gencom.help \
+	get.help \
+	help.help \
+	hexcom.help \
+	initdir.help \
+	lib.help \
+	link.help \
+	mac.help \
+	patch.help \
+	pip.help \
+	put.help \
+	rename.help \
+	rmac.help \
+	save.help \
+	set.help \
+	setdef.help \
+	show.help \
+	sid.help \
+	submit.help \
+	type.help \
+	user.help \
+	xref.help
+
 # For Generic CP/M 3 with CP/NET3
 CPM3NET = commands.help \
 	cntrlchars.help \
@@ -111,8 +144,27 @@ CPM3NET = commands.help \
 	wizcfg.help \
 	xref.help
 
+# For Generic CP/M 2.2
+CPM2 = asm2.help \
+	commands2.help \
+	cntrlchars2.help \
+	ddt2.help \
+	dir2.help \
+	dump.help \
+	ed.help \
+	era2.help \
+	filespec2.help \
+	help.help \
+	load2.help \
+	pip2.help \
+	ren2.help \
+	save2.help \
+	stat2.help \
+	submit2.help \
+	type2.help \
+	user2.help
+
 # For Generic CP/M 2.2 with CP/NET 1.2
-# TODO: finish this!
 CPM2NET = asm2.help \
 	commands2.help \
 	cntrlchars2.help \
@@ -192,9 +244,20 @@ CPNET12 = \
 all: makehelp ../bin/help.hlp
 
 everything: makehelp ../bin/help.hlp ../bin/cpnet3.hlp ../bin/cpnet12.hlp \
-	../bin/cpm3net.hlp ../bin/cpm2net.hlp
+	../bin/cpm3net.hlp ../bin/cpm2net.hlp \
+	../bin/cpm3.hlp ../bin/cpm2.hlp
 
 cpnet: makehelp ../bin/cpnet3.hlp ../bin/cpnet12.hlp
+
+../bin/cpm2.hlp: $(CPM2)
+	cat $^ | unix2dos >cpnet.raw
+	./makehelp cpnet.raw >$@
+	@rm cpnet.raw
+
+../bin/cpm3.hlp: $(CPM3)
+	cat $^ | unix2dos >cpnet.raw
+	./makehelp cpnet.raw >$@
+	@rm cpnet.raw
 
 ../bin/help.hlp: $(HELPS)
 	cat $^ | unix2dos >help.raw
