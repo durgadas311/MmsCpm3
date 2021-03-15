@@ -113,12 +113,14 @@ CPM3NET = commands.help \
 
 # For Generic CP/M 2.2 with CP/NET 1.2
 # TODO: finish this!
-CPM2NET = commands2.help \
+CPM2NET = asm2.help \
+	commands2.help \
 	cntrlchars2.help \
 	cpnet12.help \
 	cpnboot.help \
 	cpnetldr.help \
 	cpnetsts.help \
+	ddt2.help \
 	dir2.help \
 	dskreset.help \
 	dump.help \
