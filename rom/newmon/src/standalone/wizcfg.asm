@@ -76,7 +76,11 @@ save0:	push	b
 	push	h
 	mvi	b,32	; save all between, restore skips
 	call	wizget	; HL = next block
-	call	gkeep
+	push	h
+	push	d
+	call	gkeep	; trashes HL,E
+	pop	d
+	pop	h
 	popix
 	stx	a,NvKPALVTR
 	pop	b
