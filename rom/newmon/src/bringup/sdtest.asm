@@ -1,23 +1,31 @@
-; Stand-alone program to test initialization of an SDCard attached to an H8xSPI
+; CP/M program to test initialization of an SDCard attached to an MT011
 
 	maclib	z80
 
-TERSE	equ	1	; dump only part of sector
+TERSE	equ	0	; dump all of sector
 
-spi	equ	42h	; separate board from WizNet
+spi	equ	5ch
 
 spi?wr	equ	spi+0
-spi?rd	equ	spi+0
-spi?ctl	equ	spi+1
+spi?rd	equ	spi+1
+spi?ctl	equ	spi+2
 
-SDSCS	equ	01b	; SCS for SDCard
+CS0	equ	00001000b
+CS1	equ	00010000b
+CS2	equ	00100000b
+SDSCS	equ	CS2	; SCS for SDCard
 
 CMDST	equ	01000000b	; command start bits
+
+cpm	equ	0000h
+bdos	equ	0005h
+
+conout	equ	2
 
 CR	equ	13
 LF	equ	10
 
-	cseg
+	org	100h
 
 	di	; don't need/want interrupts
 	lxi	sp,stack
@@ -137,11 +145,8 @@ bad:	xra	a
 done:	lxi	d,donems
 	call	msgout
 exit:
-	lxi	d,reset
-	call	msgout
-	di
-	hlt
-	jmp	0
+	ei
+	jmp	cpm
 
 fail:	lxi	d,failms
 	call	msgout
@@ -386,11 +391,16 @@ msgout:	ldax	d
 	jr	msgout
 
 chrout:	push	psw
-cono0:	in	0edh
-	ani	00100000b
-	jrz	cono0
+	push	b
+	push	d
+	push	h
+	mov	e,a
+	mvi	c,conout
+	call	bdos
+	pop	h
+	pop	d
+	pop	b
 	pop	psw
-	out	0e8h
 	ret
 
 acmdms:	db	CR,LF,'ACMD',0
@@ -398,7 +408,6 @@ cmdmsg:	db	CR,LF,'CMD',0
 failms:	db	CR,LF,'*** failed ***',0
 donems:	db	CR,LF,'Done.',0
 elipss:	db	CR,LF,' ...',CR,LF,0
-reset:	db	CR,LF,'Press RESET',0
 
 ; run-out at least 74 clock cycles... with SCS off...
 run74:	mvi	b,10	; 80 cycles
