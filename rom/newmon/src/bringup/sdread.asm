@@ -15,6 +15,7 @@ spi?ctl	equ	spi+2
 CS0	equ	00001000b
 CS1	equ	00010000b
 CS2	equ	00100000b
+NUMCS	equ	3
 SDSCS	equ	CS2	; SCS for SDCard
 
 CMDST	equ	01000000b	; command start bits
@@ -29,9 +30,13 @@ CR	equ	13
 LF	equ	10
 
 	org	100h
+	jmp	start
 
-	lxi	sp,stack
-	; Parse LBA from command line (hex or dec?)
+cstab:	db	CS0,CS1,CS2
+
+start:	lxi	sp,stack
+	mvi	a,SDSCS	; default
+	sta	curcs
 	lxi	h,cmdlin
 	mov	c,m
 	inx	h
@@ -39,8 +44,12 @@ LF	equ	10
 	dad	b
 	mvi	m,0	; NUL term
 	lxi	h,cmdlin+1
-	call	parse
-	jrc	error
+	call	parcs	; curcs revised if needed
+	jrnc	st0
+	lxi	h,cmdlin+1
+	; Parse LBA from command line (dec)
+st0:	call	parlba	; 32-bit LBA in BC:DE
+	jrc	error	; different than "no entry"
 	; LBA is big-endian...
 	lxi	h,cmd17+1
 	mov	m,b
@@ -76,18 +85,18 @@ bad:	xra	a
 	out	spi?ctl	; SCS off
 	jr	fail
 done:	lxi	d,donems
-	call	msgout
+exit0:	call	msgout
 exit:
 	ei
 	jmp	cpm
 
 fail:	lxi	d,failms
-	call	msgout
-	jr	exit
+	jr	exit0
 
 error:	lxi	d,errmsg
-	call	msgout
-	jr	exit
+	jr	exit0
+
+curcs:	db	SDSCS
 
 ; command is always 6 bytes
 cmd17:	db	CMDST+17,0,0,0,0,0
@@ -178,10 +187,47 @@ chrout:	push	psw
 	pop	psw
 	ret
 
+; parse for "CS#" and update 'curcs'
+parcs:
+par9:	mov	a,m
+	ora	a
+	rz
+	inx	h
+	cpi	' '
+	jrz	par9
+	cpi	'C'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'S'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'0'
+	rc
+	cpi	'0'+NUMCS
+	cmc
+	rc
+	inx	h
+	; check for NUL?
+	sui	0
+	mov	c,a
+	mvi	b,0
+	xchg
+	lxi	h,cstab
+	dad	b
+	mov	a,m
+	sta	curcs
+	xchg
+	xra	a
+	ret
+
 ; Parse 32-bit decimal number from command line
 ; HL=command line (NUL terminated)
 ; Returns BC:DE = number, or 0 if none, CY if error
-parse:	lxi	d,0
+parlba:	lxi	d,0
 	lxi	b,0
 par0:	mov	a,m
 	ora	a

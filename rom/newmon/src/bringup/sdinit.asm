@@ -11,12 +11,14 @@ spi?ctl	equ	spi+2
 CS0	equ	00001000b
 CS1	equ	00010000b
 CS2	equ	00100000b
+NUMCS	equ	3
 SDSCS	equ	CS2	; SCS for SDCard
 
 CMDST	equ	01000000b	; command start bits
 
 cpm	equ	0000h
 bdos	equ	0005h
+cmdlin	equ	0080h
 
 conout	equ	2
 
@@ -24,9 +26,24 @@ CR	equ	13
 LF	equ	10
 
 	org	100h
+	jmp	start
+
+cstab:	db	CS0,CS1,CS2
+
+start:	lxi	sp,stack
+	mvi	a,SDSCS	; default
+	sta	curcs
+	lxi	h,cmdlin
+	mov	c,m
+	inx	h
+	mvi	b,0
+	dad	b
+	mvi	m,0	; NUL term
+	lxi	h,cmdlin+1
+	call	parcs	; curcs revised if needed
+	jc	error
 
 	di	; don't need/want interrupts
-	lxi	sp,stack
 	; waive 1mS delay... we are well past that...
 	call	run74	; must cycle >= 74 clocks
 
@@ -111,8 +128,13 @@ exit:
 	jmp	cpm
 
 fail:	lxi	d,failms
-	call	msgout
+exit0:	call	msgout
 	jr	exit
+
+error:	lxi	d,synerr
+	jr	exit0
+
+curcs:	db	SDSCS
 
 ; command is always 6 bytes (?)
 cmd0:	db	CMDST+0,0,0,0,0,95h
@@ -185,6 +207,44 @@ chrout:	push	psw
 	pop	psw
 	ret
 
+; parse for "CS#" and update 'curcs'
+parcs:
+par9:	mov	a,m
+	ora	a
+	rz
+	inx	h
+	cpi	' '
+	jrz	par9
+	cpi	'C'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'S'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'0'
+	rc
+	cpi	'0'+NUMCS
+	cmc
+	rc
+	inx	h
+	; check for NUL?
+	sui	0
+	mov	c,a
+	mvi	b,0
+	xchg
+	lxi	h,cstab
+	dad	b
+	mov	a,m
+	sta	curcs
+	xchg
+	xra	a
+	ret
+
+synerr:	db	CR,LF,'*** syntax ***',0
 failms:	db	CR,LF,'*** failed ***',0
 donems:	db	CR,LF,'Done.',0
 
@@ -214,7 +274,7 @@ doacmd:
 ; HL=command+response buffer, D=response length
 ; return A=response code (00=success), HL=idle length, DE=gap length
 sdcmd:
-	mvi	a,SDSCS
+	lda	curcs
 	out	spi?ctl	; SCS on
 	mvi	c,spi?rd
 	; wait for idle
@@ -256,7 +316,7 @@ sdcmd4:	mov	a,e	; SCS flag
 ; return CY on error (A=error), DE=gap length
 sdblk:
 	push	b
-	mvi	a,SDSCS
+	lda	curcs
 	out	spi?ctl	; SCS on
 	mvi	c,spi?rd
 	; wait for packet header (or error)
