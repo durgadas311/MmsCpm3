@@ -99,7 +99,7 @@ error:	lxi	d,errmsg
 curcs:	db	SDSCS
 
 ; command is always 6 bytes
-cmd17:	db	CMDST+17,0,0,0,0,0
+cmd17:	db	CMDST+17,0,0,0,0,0ffh
 	db	0
 
 ; dump sector buffer, first and last 16 bytes...

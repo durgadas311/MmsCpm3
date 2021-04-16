@@ -236,21 +236,25 @@ count:	dw	0,0
 curcs:	db	SDSCS
 
 ; command is always 6 bytes (?)
+; From RomWBW:
+;    AT LEAST ONE SD CARD IS KNOWN TO FAIL ANY COMMAND
+;    WHERE THE CRC POSITION IS NOT $FF
+; This explains the problems with "Samsung 32Pro"
 cmd0:	db	CMDST+0,0,0,0,0,95h
 	db	0
 cmd8:	db	CMDST+8,0,0,01h,0aah,87h
 	db	0,0,0,0,0
-cmd55:	db	CMDST+55,0,0,0,0,0
+cmd55:	db	CMDST+55,0,0,0,0,0ffh
 	db	0
-acmd41:	db	CMDST+41,40h,0,0,0,0
+acmd41:	db	CMDST+41,40h,0,0,0,0ffh
 	db	0
-cmd58:	db	CMDST+58,0,0,0,0,0
+cmd58:	db	CMDST+58,0,0,0,0,0ffh
 	db	0,0,0,0,0
-cmd17:	db	CMDST+17,0,0,0,0,0
+cmd17:	db	CMDST+17,0,0,0,0,0ffh
 	db	0
-cmd9:	db	CMDST+9,0,0,0,0,0
+cmd9:	db	CMDST+9,0,0,0,0,0ffh	; SEND_CSD
 	db	0
-cmd10:	db	CMDST+10,0,0,0,0,0
+cmd10:	db	CMDST+10,0,0,0,0,0ffh	; SEND_CID
 	db	0
 
 ; HL=command+response buffer, D=response length

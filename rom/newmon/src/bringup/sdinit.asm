@@ -141,17 +141,17 @@ cmd0:	db	CMDST+0,0,0,0,0,95h
 	db	0
 cmd8:	db	CMDST+8,0,0,01h,0aah,87h
 	db	0,0,0,0,0
-cmd55:	db	CMDST+55,0,0,0,0,0
+cmd55:	db	CMDST+55,0,0,0,0,0ffh
 	db	0
-acmd41:	db	CMDST+41,40h,0,0,0,0
+acmd41:	db	CMDST+41,40h,0,0,0,0ffh
 	db	0
-cmd58:	db	CMDST+58,0,0,0,0,0
+cmd58:	db	CMDST+58,0,0,0,0,0ffh
 ocr:	db	0,0,0,0,0
-cmd17:	db	CMDST+17,0,0,0,0,0
+cmd17:	db	CMDST+17,0,0,0,0,0ffh
 	db	0
-cmd9:	db	CMDST+9,0,0,0,0,0	; SEND_CSD
+cmd9:	db	CMDST+9,0,0,0,0,0ffh	; SEND_CSD
 	db	0
-cmd10:	db	CMDST+10,0,0,0,0,0	; SEND_CID
+cmd10:	db	CMDST+10,0,0,0,0,0ffh	; SEND_CID
 	db	0
 
 hexout:
