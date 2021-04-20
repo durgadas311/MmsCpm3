@@ -4,23 +4,44 @@
 
 TERSE	equ	1	; dump only part of sector
 
-spi	equ	42h	; separate board from WizNet
+spi	equ	40h	; same board as WizNet
 
 spi?wr	equ	spi+0
 spi?rd	equ	spi+0
 spi?ctl	equ	spi+1
 
-SDSCS	equ	01b	; SCS for SDCard
+CS0	equ	00000001b
+CS1	equ	00000010b
+CS2	equ	00000100b
+CS3	equ	00001000b
+NUMCS	equ	4
+SDSCS	equ	CS2	; SCS for SDCard
 
 CMDST	equ	01000000b	; command start bits
 
+CTLC	equ	3
 CR	equ	13
 LF	equ	10
 
+	dseg
+cstab:	db	CS0,CS1,CS2,CS3
+retry:	db	5
+
 	cseg
+start:	lxi	sp,stack
+	mvi	a,SDSCS	; default
+	sta	curcs
+	lxi	h,cmdlin
+	mov	c,m
+	inx	h
+	mvi	b,0
+	dad	b
+	mvi	m,0	; NUL term
+	lxi	h,cmdlin+1
+	call	parcs	; curcs revised if needed
+	jc	error
 
 	di	; don't need/want interrupts
-	lxi	sp,stack
 	; waive 1mS delay... we are well past that...
 	call	run74	; must cycle >= 74 clocks
 
@@ -48,7 +69,11 @@ LF	equ	10
 	sta	acmd41+1
 ok8:
 	call	zero
+	mvi	a,5
+	sta	retry
 init:	; this could take a long time... don't flood console
+	call	conbrk
+	jc	abrt41
 	call	iszero
 	mov	e,a
 	lxi	h,acmd41
@@ -56,10 +81,18 @@ init:	; this could take a long time... don't flood console
 	call	doacmd
 	jc	fail
 	call	incr
+	jc	fail41
 	lda	acmd41+6
 	cpi	00000000b	; READY?
+	jrz	init0
+	ani	01111110b	; any errors?
+	jrz	init
+	lda	retry
+	dcr	a
+	sta	retry
 	jrnz	init
-	; done with init
+	jmp	fail41
+init0:	; done with init
 	call	show	; print count
 	lxi	h,acmd41	; dump last command
 	mvi	d,1
@@ -135,7 +168,7 @@ bad:	xra	a
 	out	spi?ctl	; SCS off
 	jr	fail
 done:	lxi	d,donems
-	call	msgout
+exit0:	call	msgout
 exit:
 	lxi	d,reset
 	call	msgout
@@ -144,12 +177,26 @@ exit:
 	jmp	0
 
 fail:	lxi	d,failms
-	call	msgout
-	jr	exit
+	jr	exit0
+
+error:	lxi	d,synerr
+	jr	exit0
+
+fail41:	lxi	d,failms
+	jr	abrt0
+abrt41:	lxi	d,abrtms
+abrt0:	push	d
+	call	show	; print count
+	lxi	h,acmd41	; dump last command
+	mvi	d,1
+	call	dumpa
+	pop	d
+	jr	exit0
 
 incr:	lxi	h,count
 	inr	m
 	rnz
+	stc	; flag timeout at 256
 	inx	h
 	inr	m
 	rnz
@@ -191,22 +238,29 @@ show:	call	crlf
 
 count:	dw	0,0
 
+curcs:	db	SDSCS
+
 ; command is always 6 bytes (?)
+; From RomWBW:
+;    AT LEAST ONE SD CARD IS KNOWN TO FAIL ANY COMMAND
+;    WHERE THE CRC POSITION IS NOT $FF
+; This explains the problems with "Samsung 32Pro",
+; although that card only requires the end-command bit.
 cmd0:	db	CMDST+0,0,0,0,0,95h
 	db	0
 cmd8:	db	CMDST+8,0,0,01h,0aah,87h
 	db	0,0,0,0,0
-cmd55:	db	CMDST+55,0,0,0,0,0
+cmd55:	db	CMDST+55,0,0,0,0,1
 	db	0
-acmd41:	db	CMDST+41,40h,0,0,0,0
+acmd41:	db	CMDST+41,40h,0,0,0,1
 	db	0
-cmd58:	db	CMDST+58,0,0,0,0,0
-	db	0,0,0,0,0
-cmd17:	db	CMDST+17,0,0,0,0,0
+cmd58:	db	CMDST+58,0,0,0,0,1
+ocr:	db	0,0,0,0,0
+cmd17:	db	CMDST+17,0,0,0,0,1
 	db	0
-cmd9:	db	CMDST+9,0,0,0,0,0
+cmd9:	db	CMDST+9,0,0,0,0,1	; SEND_CSD
 	db	0
-cmd10:	db	CMDST+10,0,0,0,0,0
+cmd10:	db	CMDST+10,0,0,0,0,1	; SEND_CID
 	db	0
 
 ; HL=command+response buffer, D=response length
@@ -371,7 +425,7 @@ hexdig:
 	daa
 	aci	40h
 	daa
-	jmp	chrout
+	jr	chrout
 
 crlf:	mvi	a,CR
 	call	chrout
@@ -393,8 +447,58 @@ cono0:	in	0edh
 	out	0e8h
 	ret
 
+conbrk:	in 0edh
+	ani	00000001b
+	rz
+	in	0e8h
+	cpi	CTLC
+	jrnz	cb0
+	stc
+	ret
+cb0:	ora	a
+	ret
+
+; parse for "CS#" and update 'curcs'
+parcs:
+par9:	mov	a,m
+	ora	a
+	rz
+	inx	h
+	cpi	' '
+	jrz	par9
+	cpi	'C'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'S'
+	stc
+	rnz
+	inx	h
+	mov	a,m
+	cpi	'0'
+	rc
+	cpi	'0'+NUMCS
+	cmc
+	rc
+	inx	h
+	; check for NUL?
+	sui	0
+	mov	c,a
+	mvi	b,0
+	xchg
+	lxi	h,cstab
+	dad	b
+	mov	a,m
+	sta	curcs
+	xchg
+	xra	a
+	ret
+
 acmdms:	db	CR,LF,'ACMD',0
 cmdmsg:	db	CR,LF,'CMD',0
+abrtms:	db	CR,LF,'*** aborted ***',0
+synerr:	db	CR,LF,'*** syntax ***',0
 failms:	db	CR,LF,'*** failed ***',0
 donems:	db	CR,LF,'Done.',0
 elipss:	db	CR,LF,' ...',CR,LF,0
@@ -435,11 +539,17 @@ doacmd:
 	pop	h
 	push	h
 	push	d
-	mvi	e,1
+	mvi	e,1	; do turn off SCS
 	call	sdcmd
 	pop	d
 	pop	h
 	push	psw
+	; for some reason, this is required (at least for ACMD41)
+	; when certain cards (Flexon) are in-socket during power up.
+	; If the card is re-seated after power up, this is not needed.
+	; Unclear if this is a MT011 anomaly or universal.
+	in	spi?rd
+	in	spi?rd
 	mov	a,e
 	ora	a
 	cz	dumpa
@@ -450,7 +560,7 @@ doacmd:
 ; HL=command+response buffer, D=response length
 ; return A=response code (00=success), HL=idle length, DE=gap length
 sdcmd:
-	mvi	a,SDSCS
+	lda	curcs
 	out	spi?ctl	; SCS on
 	mvi	c,spi?rd
 	; wait for idle
@@ -520,7 +630,7 @@ sdcmd6:	lxi	h,-1
 ; return CY on error (A=error), DE=gap length
 sdblk:
 	push	b
-	mvi	a,SDSCS
+	lda	curcs
 	out	spi?ctl	; SCS on
 	mvi	c,spi?rd
 	; wait for packet header (or error)
