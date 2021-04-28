@@ -1,6 +1,6 @@
-; CP/M program to read an arbitrary block
-; from an SDCard attached to an MT011
-; Card must have been initialized separately (e.g. SDTEST.COM)
+; CP/M program to write an arbitrary block
+; to an SDCard attached to an MT011
+; Card must have been initialized separately (e.g. SDTEST.COM or SDINIT.COM)
 
 	maclib	z80
 
@@ -50,8 +50,9 @@ start:	lxi	sp,stack
 	; Parse LBA from command line (dec)
 st0:	call	parlba	; 32-bit LBA in BC:DE
 	jrc	error	; different than "no entry"
+	push	h
 	; LBA is big-endian...
-	lxi	h,cmd17+1
+	lxi	h,cmd24+1
 	mov	m,b
 	inx	h
 	mov	m,c
@@ -59,15 +60,18 @@ st0:	call	parlba	; 32-bit LBA in BC:DE
 	mov	m,d
 	inx	h
 	mov	m,e
+	pop	h
+
+	; TODO: parse pattern file/value
 
 	di	; don't need/want interrupts
-	; read block LBA in cmd17
-	lxi	h,cmd17
+	; read block LBA in cmd24
+	lxi	h,cmd24
 	mvi	d,1
 	mvi	e,0	; leave SCS on
 	call	docmd
 	jrc	bad
-	lda	cmd17+6
+	lda	cmd24+6
 	ora	a
 	jrnz	bad
 	lxi	h,buf
@@ -77,8 +81,6 @@ st0:	call	parlba	; 32-bit LBA in BC:DE
 	call	crlf
 	pop	psw
 	jrc	badblk
-	lxi	h,buf
-	call	dumpb
 	jr	done
 badblk:	call	hexout
 bad:	xra	a
@@ -99,52 +101,8 @@ error:	lxi	d,errmsg
 curcs:	db	SDSCS
 
 ; command is always 6 bytes
-cmd17:	db	CMDST+17,0,0,0,0,1
+cmd24:	db	CMDST+24,0,0,0,0,1
 	db	0
-
-; dump sector buffer, first and last 16 bytes...
-; HL=buffer
-dumpb:
-	lxi	d,0	; offset
-if TERSE
-	call	dump16
-	lxi	b,512-16-16
-	dad	b
-	xchg
-	dad	b
-	xchg
-	push	d
-	lxi	d,elipss
-	call	msgout
-	pop	d
-	call	dump16
-	call	crlf
-else
-	mvi	c,512/16
-db0:	call	dump16
-	call	crlf
-	dcr	c
-	jrnz	db0
-endif
-	ret
-
-; dump 16 bytes at HL, offset in DE
-dump16:
-	mov	a,d
-	call	hexout
-	mov	a,e
-	call	hexout
-	mvi	a,':'
-	call	chrout
-	mvi	b,16
-dumpb1:	mvi	a,' '
-	call	chrout
-	mov	a,m
-	inx	h
-	inx	d
-	call	hexout
-	djnz	dumpb1
-	ret
 
 hexout:
 	push	psw
@@ -339,31 +297,40 @@ sdcmd4:
 	out	spi?ctl	; SCS off
 	ret
 
-; read a 512-byte data block, with packet header and CRC (ignored).
-; READ command was already sent and responded to.
+; send a 512-byte data block, with packet header and CRC (ignored).
+; WRITE command was already sent and responded to.
 ; HL=buffer, BC=length*
 ; return CY on error (A=error)
 sdblk:
 	mov	d,b	; save length to DE
 	mov	e,c	; 
-	mvi	a,SDSCS
+	mvi	a,SDSCS	; should already be on...
 	out	spi?ctl	; SCS on
-	mvi	c,spi?rd
-	; wait for packet header (or error)
-	; TODO: timeout this loop
-sdblk0:	inp	a
-	cpi	0ffh
-	jrz	sdblk0
-	cpi	11111110b	; data start
-	stc	; else must be error
-	jrnz	sdblk2
+	mvi	c,spi?wr
+	mvi	a,11111110b	; data start token
+	outp	a
 	mov	b,e	; low byte of length, to B for INIR
-sdblk3:	inir
+sdblk3:	outir
 	dcr	d
 	jrnz	sdblk3
-	inp	a	; CRC 1
-	inp	a	; CRC 2
 	xra	a	; NC
+	outp	a	; CRC 1
+	outp	a	; CRC 2
+if spi?wr <> spi?rd
+	mvi	c,spi?rd
+endif
+	inp	a	; prime pump
+sdblk1:	inp	a
+	mov	b,a
+	ani	00010001b	; or, <> 0FFH
+	cpi	00000001b
+	jrnz	sdblk1
+	mov	a,b
+	ani	00001110b	; ani 1fh
+	cpi	00000100b	; cpi 05h
+	stc
+	jrnz	sdblk2
+	xra	a
 sdblk2:	push	psw
 	xra	a
 	out	spi?ctl	; SCS off

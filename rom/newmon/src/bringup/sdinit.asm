@@ -12,7 +12,7 @@ CS0	equ	00001000b
 CS1	equ	00010000b
 CS2	equ	00100000b
 NUMCS	equ	3
-SDSCS	equ	CS2	; SCS for SDCard
+SDSCS	equ	CS1	; SCS for SDCard
 
 CMDST	equ	01000000b	; command start bits
 
