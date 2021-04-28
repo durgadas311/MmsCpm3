@@ -121,6 +121,7 @@ CPM3NET = commands.help \
 	login.help \
 	logoff.help \
 	mac.help \
+	netdown.help \
 	netstat.help \
 	network.help \
 	ntpdate.help \
@@ -211,6 +212,7 @@ CPNET3 = \
 	local.help \
 	login.help \
 	logoff.help \
+	netdown.help \
 	netstat.help \
 	network.help \
 	ntpdate.help \
