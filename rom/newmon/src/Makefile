@@ -122,14 +122,14 @@ h8mon2.rom: $(H8MON)
 # TODO: H89 versions
 ship: rmac/vflash.sys $(ROMS) ../doc/H8-Monitor-2.pdf
 	rsync -uvW ../bin/*.sys ../doc/H8-Monitor-2.pdf \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/
 	rsync -uvW h8mon2.rom \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8mon2-v$(VERN).rom
 	rsync -uvW h8nmon2.rom \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8nmon2-v$(VERN).rom
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8nmon2-v$(VERN).rom
 	rsync -uvW h8mon2z180.rom \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8mon2z180-v$(VERN).rom
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8mon2z180-v$(VERN).rom
 	rsync -uvW h8nmon2z180.rom \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/h8nmon2z180-v$(VERN).rom
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8nmon2z180-v$(VERN).rom
 	rsync -uvW x.htaccess \
-		durgadas.com:/http/durgadas.com/sebhc/mms89/h8mon2/.htaccess
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/.htaccess

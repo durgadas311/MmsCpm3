@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	24
+beta	equ	25
 
 z180	equ	false
 h8nofp	equ	false
@@ -98,6 +98,8 @@ wr16k	equ	mmu+wr+pg16k
 wr32k	equ	mmu+wr+pg32k
 wr48k	equ	mmu+wr+pg48k
 endif
+
+rtc	equ	0a0h	; standard port address of RTC 72421
 
 memtest	equ	03000h
 ramboot	equ	0c000h
@@ -826,9 +828,10 @@ endif
 	ldir
 	lxi	h,re$entry
 	push	h
+	call	hwinit
 	call	coninit
 	call	meminit
-	rst	1	; kick-start clock
+	rst	1	; kick-start clock and EI
 	lxi	h,signon
 	call	msgout
 	; save registers on stack, for debugger access...
@@ -1299,6 +1302,18 @@ set$horn0:
 	di
 	call	set$horn
 	ei
+	ret
+
+; If this gets much bigger, needs to move
+hwinit:
+	; The RTC 72421 will be in an unknown state.
+	; If STD.P has been connected to /INTx,
+	; we must ensure interrupts are off.
+	mvi	a,00000001b ; mask pulse/intr, reset rest
+	out	rtc+14
+	xra	a
+	out	rtc+13	; clear pending intr, HOLD
+	; TODO: any other hardware needs init?
 	ret
 
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
