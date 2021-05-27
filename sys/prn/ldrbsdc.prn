@@ -1,0 +1,278 @@
+ 2031 =         VERS	EQU   '1 '  ; Mar 28, 2020 09:26 drm "ldrbsdc.asm"
+                
+                	MACLIB	z80
+                	$-MACRO
+                
+                	extrn cboot,btend,loader
+                
+                ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
+                *****					      *****
+                *****	   80 - 88 SDCard partitions	      *****
+                *****					      *****
+                ***************************************************
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+                
+ 00F0 =         ?H8PT	EQU	0F0H
+ 00F2 =         ?PORT	EQU	0F2H
+ 00F3 =         ?PORT2	EQU	0F3H
+                
+ 2036 =         ctl$F2	EQU	2036H		; last image of ?PORT
+ 2377 =         SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
+                				; SHOULD BE FOR BOOT LOADER TO PUT PARTITION
+                				; ADDRESS IN.
+ 2156 =         SEGOFF	EQU	2156H		; address where ROM put segment offset
+ 2131 =         AIO$UNI	EQU	2131h		; LUN from ROM
+                
+ 0040 =         spi	equ	40h	; same board as WizNet
+                
+ 0040 =         spi?dat	equ	spi+0
+ 0041 =         spi?ctl	equ	spi+1
+ 0041 =         spi?sts	equ	spi+1
+                
+ 0004 =         SD0SCS	equ	0100b	; SCS for SDCard 0
+ 0008 =         SD1SCS	equ	1000b	; SCS for SDCard 1
+                
+ 0040 =         CMDST	equ	01000000b	; command start bits
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK BOOT MODULE
+                *************************************************** 
+                	aseg
+ 2280           	org	2280H
+ 2280 C38B22    boot:	jmp	around
+                
+ 2283 0000      sysend: dw	btend
+ 2285 0000      systrt: dw	loader
+ 2287 00        drive:	db	0	;boot drive - calculated at run time
+ 2288 00        btmode: db	0	;not used by this hard disk loader
+ 2289 50        	db	80	;first drive
+ 228A 09        	db	9	;number of drives
+                
+ 228B E1        around: pop	h	;ADDRESS OF ERROR ROUTINE
+ 228C 31FF24    	lxi	sp,?stack
+ 228F E5        	push	h
+                
+                *****************************************
+                * Start of unique routine for booting 
+                *****************************************
+                
+ 2290 3A3121    	lda	AIO$UNI
+ 2293 3C        	inr	a	; 0->01b, 1->10b
+ 2294 07        	rlc
+ 2295 07        	rlc
+ 2296 323223    	sta	scs	; SD0SCS, SD1SCS
+ 2299 210000    	lxi	h,btend
+ 229C 110000    	lxi	d,loader
+ 229F B7        	ora	a
+ 22A0           	dsbc	d		;length of system in bytes
+ 22A2 227C23    	shld	syssiz
+ 22A5 0609      	mvi	b,9	; 2^9 = 512
+ 22A7           	srlr	h	; >>9 == >>8 (byte) and >>1
+ 22A9 24        	inr	h		; PHYSICAL SECTORS TO BE BOOTED (rounded up)
+ 22AA 7C        	mov	a,h	; 512B sector count
+ 22AB 323123    	sta	cnt
+                	; SYSADR already has SEGOFF and partition offset,
+                	; but must add 1 to skip bootloader (this).
+                	; Do that by placing 'incr' before read.
+ 22AE 2A7723    	lhld	SYSADR+0
+ 22B1 223423    	shld	cmd17+1
+ 22B4 2A7923    	lhld	SYSADR+2
+ 22B7 223623    	shld	cmd17+3
+                	; TODO: employ multi-block read?
+ 22BA 21002E    	lxi	h,3000h-512	; biased for first incr
+ 22BD 222F23    	shld	dma
+                load:
+ 22C0 CDFC22    	call	incr
+ 22C3 2A2F23    	lhld	dma
+ 22C6 CD1223    	call	read
+ 22C9 D8        	rc
+ 22CA 213123    	lxi	h,cnt
+ 22CD 35        	dcr	m
+ 22CE           	jrnz	load
+                
+ 22D0 F3        DONE:	DI
+ 22D1 3E9F      	mvi	a,10011111b	; H8 2mS off, display blank
+ 22D3 D3F0      	out	?H8PT		; H89 NMI here should be OK
+ 22D5 3E02      	mvi	a,00000010b	; aux 2mS enable
+ 22D7 D3F3      	out	?PORT2		; in case of H8 CPU
+ 22D9 3A3620    	lda	ctl$F2
+ 22DC E6FD      	ani	11111101b	; CLK off
+ 22DE D3F2      	out	?PORT
+ 22E0 E620      	ani	00100000b	; ORG0 already?
+ 22E2           	jrnz	done2
+ 22E4 213A23    	LXI	H,?CODE ;SEQUENCE TO MOVE MEMORY-MAP
+ 22E7 0607      	MVI	B,?CODE$LEN	;NUMBER OF BYTES IN SEQUENCE
+ 22E9 0EF2      	MVI	C,?PORT ;I/O PORT TO SEND SEQUENCE
+ 22EB           	OUTIR
+ 22ED 210030    done2:	lxi	h,3000h
+ 22F0 110000    	lxi	d,loader
+ 22F3           	lbcd	syssiz
+ 22F7           	ldir
+ 22F9 C30000    	jmp	cboot
+                
+                ; increment LBA in cmd17, and DMA
+                incr:
+ 22FC 2A2F23    	lhld	dma
+ 22FF 24        	inr	h	; +256
+ 2300 24        	inr	h	; +512
+ 2301 222F23    	shld	dma
+ 2304 213723    	lxi	h,cmd17+4
+ 2307 34        	inr	m
+ 2308 C0        	rnz
+ 2309 2B        	dcx	h
+ 230A 34        	inr	m
+ 230B C0        	rnz
+ 230C 2B        	dcx	h
+ 230D 34        	inr	m
+ 230E C0        	rnz
+ 230F 2B        	dcx	h
+ 2310 34        	inr	m
+ 2311 C9        	ret
+                
+                ; read LBA stored in cmd17...
+                ; HL=buffer
+                ; returns CY on error
+                read:
+ 2312 E5        	push	h
+ 2313 213323    	lxi	h,cmd17
+ 2316 1601      	mvi	d,1
+ 2318 1E00      	mvi	e,0	; leave SCS on
+ 231A CD7E23    	call	sdcmd
+ 231D E1        	pop	h
+ 231E           	jrc	badblk	; turn off SCS
+ 2320 3A3923    	lda	cmd17+6
+ 2323 B7        	ora	a
+ 2324           	jrc	badblk	; turn off SCS
+ 2326 CDC023    	call	sdblk	; turns off SCS
+ 2329 C9        	ret	; CY=error
+                badblk:
+ 232A AF        	xra	a
+ 232B D341      	out	spi?ctl	; SCS off
+ 232D 37        	stc
+ 232E C9        	ret
+                
+ 232F 0000      dma:	dw	0
+ 2331 00        cnt:	db	0
+ 2332 04        scs:	db	SD0SCS
+ 2333 5100000000cmd17:	db	CMDST+17,0,0,0,0,0
+ 2339 00        	db	0
+                
+ 233A 04        ?CODE	DB	0000$01$00B
+ 233B 0C        	DB	0000$11$00B
+ 233C 04        	DB	0000$01$00B
+ 233D 08        	DB	0000$10$00B
+ 233E 0C        	DB	0000$11$00B
+ 233F 08        	DB	0000$10$00B
+ 2340 20        	DB	0010$00$00B	;changes memory if "-FA" also
+ 0007 =         ?CODE$LEN	EQU	$-?CODE
+                
+                if $ > SYSADR
+                	.error	'Overflow SYSADR'
+                endif
+ 2377           	ORG	SYSADR
+ 2377 00000000  LBA:	DB	0,0,0,0	; synonymous with SYSADR
+ 237B 00        STAT:	DB	0
+ 237C 0000      syssiz	dw	0
+                
+                ; send (6 byte) command to SDCard, get response.
+                ; HL=command+response buffer, D=response length
+                ; return A=response code (00=success), HL=idle length, DE=gap length
+                sdcmd:
+ 237E 3A3223    	lda	scs
+ 2381 D341      	out	spi?ctl	; SCS on
+ 2383 0E40      	mvi	c,spi?dat
+                	; wait for idle
+                	; TODO: timeout this loop
+ 2385 E5        	push	h	; save command+response buffer
+ 2386 210001    	lxi	h,256	; idle timeout
+ 2389           sdcmd0:	inp	a
+ 238B FEFF      	cpi	0ffh
+ 238D           	jrz	sdcmd1
+ 238F 2B        	dcx	h
+ 2390 7C        	mov	a,h
+ 2391 B5        	ora	l
+ 2392           	jrnz	sdcmd0
+                	; timeout - error
+ 2394 E1        	pop	h
+ 2395 37        	stc
+ 2396 C9        	ret
+ 2397 E1        sdcmd1:	pop	h	; command buffer back
+ 2398 0606      	mvi	b,6
+ 239A           	outir
+ 239C           	inp	a	; prime the pump
+ 239E E5        	push	h	; points to response area...
+ 239F 210001    	lxi	h,256	; gap timeout
+ 23A2           sdcmd2:	inp	a
+ 23A4 FEFF      	cpi	0ffh
+ 23A6           	jrnz	sdcmd3
+ 23A8 2B        	dcx	h
+ 23A9 7C        	mov	a,h
+ 23AA B5        	ora	l
+ 23AB           	jrnz	sdcmd2
+ 23AD E1        	pop	h
+ 23AE 37        	stc
+ 23AF C9        	ret
+ 23B0 E1        sdcmd3:	pop	h	; response buffer back
+ 23B1 42        	mov	b,d
+ 23B2 77        	mov	m,a
+ 23B3 23        	inx	h
+ 23B4 05        	dcr	b
+ 23B5           	jrz	sdcmd4
+ 23B7           	inir	; rest of response
+ 23B9 7B        sdcmd4:	mov	a,e	; SCS flag
+ 23BA B7        	ora	a
+ 23BB C8        	rz
+ 23BC AF        	xra	a
+ 23BD D341      	out	spi?ctl	; SCS off
+ 23BF C9        	ret	; NC
+                
+                ; read a 512-byte data block, with packet header and CRC (ignored).
+                ; READ command was already sent and responded to.
+                ; HL=buffer
+                ; return CY on error (A=error), SCS always off, HL=next buf
+                sdblk:
+ 23C0 3A3223    	lda	scs
+ 23C3 D341      	out	spi?ctl	; SCS on
+ 23C5 0E40      	mvi	c,spi?dat
+                	; wait for packet header (or error)
+                	; TODO: timeout this loop
+ 23C7 110001    	lxi	d,256	; gap timeout
+ 23CA           sdblk0:	inp	a
+ 23CC FEFF      	cpi	0ffh
+ 23CE           	jrnz	sdblk1
+ 23D0 1B        	dcx	d
+ 23D1 7A        	mov	a,d
+ 23D2 B3        	ora	e
+ 23D3           	jrnz	sdblk0
+ 23D5 37        	stc
+ 23D6           	jr	sdblk2
+                sdblk1:	
+ 23D8 FEFE      	cpi	11111110b	; data start
+ 23DA 37        	stc	; else must be error
+ 23DB           	jrnz	sdblk2
+ 23DD 0600      	mvi	b,0	; 256 bytes at a time
+ 23DF           	inir
+ 23E1           	inir
+ 23E3           	inp	a	; CRC 1
+ 23E5           	inp	a	; CRC 2
+ 23E7 AF        	xra	a	; NC
+ 23E8 F5        sdblk2:	push	psw
+ 23E9 AF        	xra	a
+ 23EA D341      	out	spi?ctl	; SCS off
+ 23EC F1        	pop	psw
+ 23ED C9        	ret
+                
+                	REPT	512-($-BOOT)-1
+                	DB	0
+                	ENDM
+                if $ > 2480h
+                	.error	'Overflow boot sector'
+                endif
+                
+ 24FF =         ?stack: equ	$+128
+                
+ 247F           	END
+
