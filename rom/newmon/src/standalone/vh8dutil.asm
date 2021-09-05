@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	009h
+VERN	equ	010h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -34,8 +34,9 @@ dabort	equ	2061h	; jmp L1bf6
 dsdp	equ	2085h
 dsdt	equ	2076h
 dsts	equ	2088h
-clock	equ	1c19h
-wsp1	equ	1eedh
+clock	equ	1c19h	; 034.031 CLOCK
+rsdp	equ	1e32h	; 036.062 R.SDP
+wsp1	equ	1eedh	; 036.355 W.SP1
 dwnb	equ	2097h
 dxok	equ	205eh
 dwrite	equ	206dh
@@ -61,6 +62,10 @@ drdb	equ	2082h
 	lda	prodid	; LSB of product ID
 	ani	prnofp	; No FP?
 	sta	nofp
+
+	; hack R.SDP to work for 3 drives
+	lxi	h,m$sdp
+	shld	D$CONST+62
 
 	mvi	a,0c3h	; jmp
 	sta	uivec
@@ -157,7 +162,7 @@ ftrk:
 	shld	dvolpt
 	mov	m,c
 	ei
-	call	dsdp	; sdp
+	call	m$sdp	; hacked sdp
 	call	dsdt	; dis intrs
 	xra	a
 	out	7eh
@@ -261,7 +266,7 @@ wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
 
 ; Copy tracks from image file onto H17
 wrimg:
-	call	dsdp	; select unit number from AIO$UNI
+	call	m$sdp	; select unit number from AIO$UNI
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -320,7 +325,7 @@ wrbuf:
 
 ; Copy all tracks from H17 to image file
 rdimg:
-	call	dsdp	; select unit number from AIO$UNI
+	call	m$sdp	; select unit number from AIO$UNI
 	xra	a
 	sta	secnum
 	sta	secnum+1
@@ -424,7 +429,7 @@ cdrive:	call	skipb
 	call	parsnm
 	jrc	badcmd
 	mov	a,d
-	cpi	2	; only 2 drives supported by default ROM
+	cpi	3	; 3 drives supported by hacking ROM routine
 	jrnc	badcmd
 	sta	curdrv
 	sta	AIO$UNI
@@ -744,6 +749,16 @@ print:	ldax	d
 	call	chrout
 	inx	d
 	jr	print
+
+; hack to support 3 drives on H17
+m$sdp:
+	mvi	a,10
+	sta	DECNT
+	lda	AIO$UNI
+	push	psw	; 0,1,2
+	adi	-2	;
+	aci	3	; 1,2,4
+	jmp	rsdp+10	; hacked R.SDP for 3-drives
 
 msgusg:	db	'Using drive ',0
 usg1:	db	', volume ',0
