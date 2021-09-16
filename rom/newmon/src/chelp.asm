@@ -258,6 +258,7 @@ cmdtab:
 	db	'L' ! dw cmdlb	; List boot modules
 	db	'H' ! dw cmdhb	; long list (Help) boot modules
 ;	db	'X' ! dw cmdx	; extended command set X_
+	db	'Z' ! dw cmdsst	; single-step
 numcmd	equ	($-cmdtab)/3
 
 cmddmp:	db	'Dump [addr]',0
@@ -269,6 +270,7 @@ cmdmt:	db	'Mem test',0
 prtver:	db	'Version',0
 cmdlb:	db	'List boot modules',0
 cmdhb:	db	'Help boot',0
+cmdsst:	db	'Single-Step',0
 
 more:	db	   'Press RETURN to continue: ',0
 xmore:	db	CR,'                          ',CR,0

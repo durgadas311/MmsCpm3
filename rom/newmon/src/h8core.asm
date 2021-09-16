@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	25
+beta	equ	26
 
 z180	equ	false
 h8nofp	equ	false
@@ -330,6 +330,7 @@ cmdtab:
 ; TODO: vflash.sys does 'U', 'A' may require more complexity.
 ;	db	'A' ! dw cmdab	; Add boot module
 ;	db	'U' ! dw cmdur	; Update entire ROM
+	db	'Z' ! dw cmdsst	; Go Single-Step
 if not nofp
 	; front-panel commands    key(old)  command/action
 	db	80h ! dw kpubt	; [0]     - Universal Boot
@@ -360,7 +361,7 @@ nmi:	; only get here from I/O instructions on ports F0,F1,FA,FB
 	dcx	h	; should be I/O port number...
 	mov	a,m
 	cpi	0f0h	; H8 FP ctrl
-	jrz	nmi$f0
+	jz	nmi$f0
 	cpi	0f1h	; H8 FP disp
 	jrz	nmi$ign
 	cpi	0fah	; H8-5 console port
@@ -381,15 +382,6 @@ nmi$ign:	; ignore, but IN must get 00
 	pop	psw
 	mvi	a,0	; don't change flags...
 	jr	nmi$xit
-
-nmi$f0:
-	dcx	h
-	mov	a,m
-	cpi	0d3h	; OUT
-	jrz	nmi$out
-	cpi	0dbh	; IN
-	jrz	nmi$in
-	jr	nmi$xit2
 endif
 
 	rept	0137h-$
@@ -399,29 +391,6 @@ if	($ <> 0137h)
 	.error 'HDOS entry overrun 0137h'
 endif
 	jmp	0	; initialized by H47 boot module
-
-if nofp
-nmi$in:	; simulate IN returning FF
-	pop	psw
-	mvi	a,0ffh
-	jr	nmi$xit
-
-nmi$out:	; convert relevant F0 bits to F2 bits
-	pop	psw
-	push	psw	; _  7 6 5 4 3 2 1 0
-	ral		; 7  6 5 4 3 2 1 0 _
-	ral		; 6  5 4 3 2 1 0 _ 7
-	cma		; 6  5'4'3'2'1'0'_ 7'
-	ral		; 5' 4'3'2'1'0'_ 7'6
-	rlc		; 4' 3'2'1'0'_ 7'6 4'
-	ani	03h	; _  _ _ _ _ _ _ 6 4'
-	lxi	h,ctl$F2
-	ora	m	; this assumes ctl$F2 bits 0,1 are "0"
-	out	0f2h
-	ani	11111100b	; ensure bits are "0"
-	mov	m,a
-	jr	nmi$xit2
-endif
 
 docmd:
 	ora	a
@@ -457,47 +426,21 @@ cmdpc1:
 	jmp	adrin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Go command
-cmdgo:
-	lxi	h,goms
-	call	msgout
-	lhld	RegPtr
-	lxi	d,24	; Reg[PC]
-	dad	d	; HL=adr to store
-	call	inhexcr
-	cc	cmdpc1	; read HEX until CR, store in HL
-	call	crlf
-if not nofp
-	; TODO: make single-step work on H8
-	mvi	a,0d0h	; no-beep, 2mS, !MON, !single-step
-	jr	cmdgo0
-	di	; TODO: dead code? single-step...
-	lda	ctl$F0
-	xri	010h	; toggle single-step
-	out	0f0h
-else
-	; TODO: single-step on H89
-endif
-cmdgo0:
-	sta	ctl$F0
-	pop	h
-	jmp	intret
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 int2$cont:
 if not nofp
-	ori	010h	; disable single-step
+	ori	00010000b	; disable single-step
 	out	0f0h
 	stax	d
-	ani	020h	; MON active?
 else
-	; TODO: single-step on H89
-	xra	a
-	inr	a
+	lda	ctl$F2
+	ani	11111110b	; disable single-step
+	out	0f2h
+	sta	ctl$F2
+	ldax	d		;  ctl$F0
 endif
-	jnz	start	; break to monitor code
-	jmp	vrst2	; else chain to (possible) user code.
+	ani	00100000b	; MON active?
+	jnz	start		; break to monitor code
+	jmp	vrst2		; else chain to (possible) user code.
 
 take$5:
 	mvi	a,5	; 5 seconds
@@ -625,6 +568,21 @@ gotnum:	; Boot N... "N" in D
 	mov	e,a	; always zero?
 	jmp	goboot
 
+cmdboot:
+	lxi	h,bootms
+	call	msgout	; complete (B)oot
+	mvi	a,0c3h
+	sta	bootbf	; mark "no string"
+	xra	a
+	sta	cport
+	lxi	sp,bootbf
+	mvi	c,CR	; end input on CR
+	jr	boot0
+
+if z180
+trpms:	db	CR,LF,'*** TRAP ',TRM
+endif
+
 	rept	0260h-$
 	db	0ffh
 	endm
@@ -640,17 +598,6 @@ hhorn0:	cmp	m
 	jrnz	hhorn0
 	pop	h
 	ret
-
-cmdboot:
-	lxi	h,bootms
-	call	msgout	; complete (B)oot
-	mvi	a,0c3h
-	sta	bootbf	; mark "no string"
-	xra	a
-	sta	cport
-	lxi	sp,bootbf
-	mvi	c,CR	; end input on CR
-	jr	boot0
 bterr:
 	call	belout
 boot0:
@@ -1327,6 +1274,83 @@ endif
 	db	0
 	jmp	0	; initialized by H47 boot module
 
+if nofp
+nmi$f0:
+	dcx	h
+	mov	a,m
+	cpi	0d3h	; OUT
+	jrz	nmi$out
+	cpi	0dbh	; IN
+	jrz	nmi$in
+	jmp	nmi$xit2
+
+nmi$in:	; simulate IN returning FF
+	pop	psw
+	mvi	a,0ffh
+	jmp	nmi$xit
+
+nmi$out:	; convert relevant F0 bits to F2 bits
+	pop	psw
+	push	psw	; _  7 6 5 4 3 2 1 0
+	ral		; 7  6 5 4 3 2 1 0 _
+	ral		; 6  5 4 3 2 1 0 _ 7
+	cma		; 6  5'4'3'2'1'0'_ 7'
+	ral		; 5' 4'3'2'1'0'_ 7'6
+	rlc		; 4' 3'2'1'0'_ 7'6 4'
+	ani	03h	; _  _ _ _ _ _ _ 6 4'
+	lxi	h,ctl$F2
+	ora	m	; this assumes ctl$F2 bits 0,1 are "0"
+	out	0f2h
+	ani	11111100b	; ensure bits are "0"
+	mov	m,a
+	jmp	nmi$xit2
+endif
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Go command
+cmdgo:
+	lxi	h,goms
+	call	getpc
+	; Both H89 and H8-FP maintain MON flag internally
+kpgo:	; entry point for keypad GO command...
+	mvi	a,11010000b	; no-beep, 2mS, !MON, !single-step
+	sta	ctl$F0
+cmdgo1:
+	pop	h
+	jmp	intret
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Go Single-Step command
+cmdsst:
+	lxi	h,sstms
+	call	msgout
+kpsst:	; entry point for keypad SI command
+	di
+if not nofp
+	lda	ctl$F0
+	xri	00010000b	; toggle single-step = enable
+	out	0f0h
+	sta	ctl$F0
+else
+	lda	ctl$F2
+	ori	00000001b	; enable single-step
+	out	0f2h
+	sta	ctl$F2
+endif
+	jr	cmdgo1
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; HL=prompt message, ends with CRLF
+getpc:
+	call	msgout
+	lhld	RegPtr
+	lxi	d,24	; Reg[PC]
+	dad	d	; HL=adr to store
+	call	inhexcr
+	cc	cmdpc1	; read HEX until CR, store in HL
+	jmp	crlf
+
 if z180
 if use$dma
 ; DMA F8000-FA000 into 00000-02000
@@ -1366,12 +1390,6 @@ adrin3:	pop	h
 	ret
 
 if not nofp
-kpgo:
-	mvi	a,11010000b	; MON off
-	sta	ctl$F0
-	pop	h	; discard ret adr
-	jmp	intret	; execute
-
 ; ABUSS L=port, H=value
 kpin:	lhld	ABUSS
 	mov	c,l	; port
@@ -1390,15 +1408,6 @@ kprw:	; switch between display/modify
 	xri	1
 	sta	DspMod
 	ret
-
-kpsst:	; single-step one instruction
-	di
-	lda	ctl$F0
-	xri	00010000b	; disable SS inhibit
-	out	0f0h
-sst1:	sta	ctl$F0
-	pop	h	; discard ret adr
-	jmp	intret	; execute
 endif
 
 ; initialize monitor memory at 2000h
@@ -1445,6 +1454,7 @@ endif
 	db	': ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
+sstms:	db	'-Step',TRM
 subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
 mtms:	db	'em test',TRM
@@ -2204,6 +2214,13 @@ clrdisp:
 
 ; Front panel display refresh and keypad check
 int1$fp:
+	; if /INT1 caused by keypad (RTM), skip the rest (?)
+	; Should probably loop here until key released?
+	; De-bounce?
+	in	0f0h
+	cpi	2eh		; RTM: [0]+[#] a.k.a. [0]+[E]
+	jz	re$entry	; Return To Monitor...
+	;
 	mvi	c,0
 	lxi	h,horn
 	mov	a,m
@@ -2245,10 +2262,34 @@ fp3:
 endif
 int1$xx:
 	; not really FP related, but no space in low ROM...
+	lda	ctl$F0
+	bit	5,a	; MON mode?
+	jnz	intret	; skip if running monitor...
 	lda	MFlag
+	bit	7,a	; HLT processing enabled
+	cnz	chkhlt
 	rrc		; mfl$CLK private int1?
 	cc	vrst1
 	jmp	intret
+
+; NOTE: HLT processing is inherently unreliable.
+; It presumes that the current instruction was single-byte,
+; however it will mis-fire on things like JMP 76xxH
+; (any instr with a last byte of 76H)
+chkhlt:
+	push	psw
+	lhld	RegPtr
+	lxi	d,24	; Reg[PC]
+	dad	d
+	mov	e,m
+	inx	h
+	mov	d,m
+	dcx	d	; current instr, not next
+	ldax	d
+	cpi	76h	; HLT
+	jz	re$entry
+	pop	psw
+	ret
 
 ; match module by character (letter)
 ; C=letter, B=00:cmd,ff:boot
@@ -2618,8 +2659,6 @@ trap0:
 	call	adrout
 	call	crlf
 	jmp	init0
-
-trpms:	db	CR,LF,'*** TRAP ',TRM
 endif
 
 if z180
