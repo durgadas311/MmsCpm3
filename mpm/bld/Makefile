@@ -16,6 +16,13 @@ all: m3sdczrr.sys
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
 
+# MPMLDR with bootstrap (MBR) included
+#ldr%.com: ldr%.rel ldrb%.rel ldrprog.rel ldrbdos.rel ldrbios.rel
+#	vcpm link "ldr$*=ldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
+
+mldr%.com: ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
+	vcpm link "ldr$*=mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr]"
+
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[os,nr]"
 	setup30 $(SDCDRVS) $(DSO) $@
@@ -29,6 +36,7 @@ m3%.sys: m3%.spr
 
 syncdown:
 	unix2cpm -s ~/git/MmsCpm3/mpm/src/*.asm .
+	unix2cpm -s ~/git/MmsCpm3/sys/src/ldr*.asm .
 
 syncup:
 	rsync -Wurv --existing . ~/git/MmsCpm3/mpm/bin/.
