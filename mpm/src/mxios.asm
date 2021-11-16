@@ -324,7 +324,7 @@ snext:	xchg
 	ret
 
 ciomdl:	dw	0	;character device driver, filled at cold-start.
-cionum:	db	0	;
+cionum:	db	0	;max num cio devices
 
 cinit:	;C=device number (0-11)
 	lhld	ciomdl
@@ -344,13 +344,18 @@ nost:	xra	a	; never ready
 	ret
 
 ; D=device number
+listst:
+	inr	d	; LST: #0 = cio device 1
+	; TODO: check overflow/wrap?
 conost:
-listst: mvi	a,9
+	mvi	a,9
 	jr	devio
 
 ; D=device number, C=char
-conout: 
 list:
+	inr	d	; LST: #0 = cio device 1
+	; TODO: check overflow/wrap?
+conout: 
 	call	conost	; is ready now?
 	ora	a
 	jnz	co0

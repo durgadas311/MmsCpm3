@@ -29,6 +29,7 @@ m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 
 m3%.sys: m3%.spr
 	cp $? bnkxios.spr
+	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar'
 	mv mpm.sys $@
 
