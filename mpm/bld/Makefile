@@ -11,7 +11,7 @@ BASE = mxios.rel cio8250.rel end.rel lptbl.rel
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 DSO = -p def,a:
 
-all: m3sdczrr.sys
+all: m3sdczrr.sys mldrsdc.com
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'

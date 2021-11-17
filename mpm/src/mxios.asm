@@ -418,10 +418,16 @@ thread: equ	$	;must be last in dseg (common mem)
 
 	cseg	; rest is in banked memory...
 
+; Interrupts are disabled
 ; HL = BIOS JMP table
 ; DE = debug entry
 ; C = debug RST num
 boot:
+	; This is H89-specific...
+	mvi	a,20h	; ORG0 on, 2mS off
+	out	0f2h	; prevent undesirable intrs
+			; Console 8250 should already be off
+	;
 	sded	dbuga
 	shld	biosjmp
 	mov	a,c

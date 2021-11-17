@@ -48,6 +48,8 @@ signon:
 
 cboot:
 	lxi sp,stack
+	xra	a
+	out	0e9h	; make certain INS8250 intrs are off
 	mvi a,080h
 	sta xxbyte
 	out 07fh
