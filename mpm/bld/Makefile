@@ -1,3 +1,4 @@
+# MP/M for H89 with Z180 CPU
 # Assumes PWD = CPMDrive_D
 
 export CPMDrive_D = $(PWD)
@@ -16,12 +17,15 @@ all: m3sdczrr.sys mldrsdc.com
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
 
-# MPMLDR with bootstrap (MBR) included
-#ldr%.com: ldr%.rel ldrb%.rel ldrprog.rel ldrbdos.rel ldrbios.rel
-#	vcpm link "ldr$*=ldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
+# MPMLDR bootstrap image (1st stage at 2280H)
+# (bootstrap at 2280H is written to first sector(s) on boot track,
+#  then 0100H-... is written to following sectors of boot tracks)
+mldr%.img: ldr%.rel ldrb%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
+	vcpm link "$@=mldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr,l0,p0100]"
 
-mldr%.com: ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
-	vcpm link "ldr$*=mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr]"
+# MPMLDR.COM, runnable from CP/M
+mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
+	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr]"
 
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[os,nr]"
