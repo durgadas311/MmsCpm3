@@ -12,7 +12,7 @@ BASE = mxios.rel cio8250.rel end.rel lptbl.rel
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 DSO = -p def,a:
 
-all: m3sdczrr.sys mldrsdc.com
+all: m3sdczrr.sys mldrsdc.img
 
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
@@ -21,11 +21,12 @@ all: m3sdczrr.sys mldrsdc.com
 # (bootstrap at 2280H is written to first sector(s) on boot track,
 #  then 0100H-... is written to following sectors of boot tracks)
 mldr%.img: ldr%.rel ldrb%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
-	vcpm link "$@=mldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr,l0,p0100]"
+	vcpm link "$@=mldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
 
 # MPMLDR.COM, runnable from CP/M
-mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
-	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr]"
+# This still doesn't work... use of "org 0100h" in mldrprog ruins it.
+#mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
+#	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr,l0100,p0]"
 
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[os,nr]"

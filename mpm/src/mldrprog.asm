@@ -23,6 +23,7 @@ read	equ	20
 setdma	equ	26
 
 	cseg
+	org	0100h	; shouldn't be here, but for backward compat
 loader:
 	jmp	start
 
@@ -34,6 +35,9 @@ start:
 	; TODO: implement debug break?
 	; TODO: implement alternate MPM.SYS filename?
 	mvi	c,reset
+	call	bdos
+	lxi	d,signon
+	mvi	c,print
 	call	bdos
 	mvi	c,open
 	lxi	d,mpmsys
@@ -94,9 +98,8 @@ start:
 	jrz	mldr0
 	lda	sysbuf+15	; nmb$mem$seg
 	sui	2
-	ora	a
+	ani	11111100b
 	rrc
-	ora	a
 	rrc
 	inr	a
 	mov	h,a
@@ -281,6 +284,7 @@ display$OS:
 	mov	b,a
 	mov	c,e	; 0
 	call	printitems
+
 	lxi	h,xdos$spr
 	lda	sysbuf+11	; xdos$base
 	mov	d,a
@@ -290,12 +294,14 @@ display$OS:
 	mov	b,a
 	mov	c,e	; 0
 	call	printitems
+
 	lda	sysbuf+125	; nmb$rsps
 	ora	a
 	jz	no$rsps
 	lhld	sysbuf+254	; rspl
 	lda	sysbuf+11	; xdos$base
 	; HL=sysdat.rspl = first RSP in linked list
+	ora	a
 	call	printrsps
 no$rsps:
 	lxi	h,bnkxios
@@ -343,6 +349,7 @@ no$rsps:
 	lhld	sysbuf+250	; brspl
 	lda	sysbuf+247	; tmp$base
 	; HL=sysdat.rspl = first RSP in linked list
+	stc
 	call	printrsps
 	lda	sysbuf+249	; brsp$base
 	jr	so$brss
@@ -438,8 +445,12 @@ dmm1:
 
 ; Print RSP/BRS linked list
 ; HL=first RSP in linked list, A=end page (next item page)
+; CY=BRS
 printrsps:
 	mov	b,a
+	ral	; get CY
+	ani	1
+	sta	context
 	xchg
 	lxi	h,rspsadr	; array...
 	mvi	c,0
@@ -453,6 +464,12 @@ rsps0:
 	jz	rsps1
 	inr	c
 	xchg
+	lda	context
+	ora	a
+	jrz	rsps3
+	inx	h
+	inx	h
+rsps3:
 	mov	a,m
 	inx	h
 	mov	h,m
@@ -461,8 +478,7 @@ rsps0:
 	jmp	rsps0
 ; Got all, terminate list and print them backward
 rsps1:
-	mvi	m,0
-	inx	h
+	dcx	h
 	mov	m,b
 	dcx	h
 	push	h
@@ -482,8 +498,14 @@ rsps2:
 	mov	b,h
 	ldx	l,-2
 	ldx	h,-1
-	lxi	d,6+2
+	lda	context
+	ora	a
+	lxi	d,6+2	; if BRS, +4
+	jrz	rsps4
+	lxi	d,4
+rsps4:
 	dad	d	; point to RSP name
+	call	mvname	; returns HL=name-buffer
 	ldx	e,-2
 	ldx	d,-1	; rspsadr(cntr)
 	call	printitems
@@ -492,7 +514,31 @@ rsps2:
 	dcxix
 	dcxix
 	jmp	rsps2
+
+; move 8-chars (7-bit) from HL to (context)
+mvname:
+	push	b
+	mvi	b,8
+	lda	context
+	ora	a
+	lxi	d,xxxx$rsp
+	jrz	mvn1
+	lxi	d,xxxx$brs
+mvn1:	push	d
+mvn0:
+	mov	a,m
+	ani	01111111b
+	stax	d
+	inx	h
+	inx	d
+	djnz	mvn0
+	pop	h	; string in HL
+	pop	b
 	ret
+
+context: db	0
+xxxx$rsp:	db	'        RSP'
+xxxx$brs:	db	'        BRS'
 
 sysdat:		dw	0
 cur$top:	dw	0
