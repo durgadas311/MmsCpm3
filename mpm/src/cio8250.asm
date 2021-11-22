@@ -8,7 +8,7 @@ vers equ '0 ' ; Nov 14, 2021  13:47  drm  "CIO8250.ASM"
 
 false	equ	0
 true	equ	not false
- 
+
 crt	equ	0e8h	;CONSOLE
 lp	equ	0e0h	;PRINTER
 dte	equ	0d8h	;MODEM
@@ -45,9 +45,55 @@ chrtbl: 	; CP/M 3 char I/O table
 	db	'DTE   ',00000111b, 6 ;... 300 baud
 	db	'DCE   ',00000111b,14 ;... 9600
 
-thread	equ	$
+; It appears MP/M requires all of this in common memory
+; B=device number, relative to 200.
+input:
+inp0:	call	inst
+	jrz	inp0			; wait for character ready
+	mov	c,e			;get data register address
+	inp	a			; get data
+	ani	7Fh			; mask parity
+	ret
 
-	cseg	;banked memory.
+; B=device number, relative to 200.
+inst:
+	call	getx			;
+	inp	a			; read from status port
+	ani	1			; isolate RxRdy
+	rz				; return with zero
+	ori	true
+	ret
+
+; B=device number, relative to 200.
+; C=char
+output: mov	a,c
+	push	psw			; save character from <C>
+outp0:	call	outst
+	jrz	outp0			; wait for TxEmpty, HL->port
+	mov	c,e			; get port address
+	pop	psw
+	outp	a			; send data
+	ret
+
+; B=device number, relative to 200.
+outst:	call	getx	; character output status
+	dcx	h
+	inr	c		; get port+6
+	inp	a		; get handshake status
+	xra	m
+	dcx	h		;
+	ana	m		; [ZR] = ready
+	ani	11110000b
+	jrnz	nrdy
+	dcr	c		; line status register (+5)
+	inp	a
+	ani	20h		; test xmit holding register empty
+	rz			;
+	ori	true
+	ret			; return true if ready
+
+nrdy:	xra	a
+	ret
 
 ; B=device number, relative to 200.
 getx:	mov	a,b	;B=device #, 0-15
@@ -65,6 +111,10 @@ getx:	mov	a,b	;B=device #, 0-15
 	mov	c,a
 	dcx	h
 	ret		;HL => xmode(dev)+2 = line control register image
+
+thread	equ	$
+
+	cseg	;banked memory.
 
 ; B=device number, relative to 200.
 init:
@@ -111,55 +161,6 @@ init:
 	inr	c	;+1 = interupt control
 	xra	a
 	outp	a	;disable chip interupts
-	ret
-
-; B=device number, relative to 200.
-input:
-inp0:	call	inst
-	jrz	inp0			; wait for character ready
-	mov	c,e			;get data register address
-	inp	a			; get data
-	ani	7Fh			; mask parity
-	ret
-
-; B=device number, relative to 200.
-inst:
-	call	getx			;
-	inp	a			; read from status port
-	ani	1			; isolate RxRdy
-	rz				; return with zero
-	ori	true
-	ret
-
-; B=device number, relative to 200.
-; C=char
-output: mov	a,c
-	push	psw			; save character from <C>
-outp0:	call	outst
-	jrz	outp0			; wait for TxEmpty, HL->port
-	mov	c,e			; get port address
-	pop	psw
-	outp	a			; send data
-	ret
-
-; B=device number, relative to 200.
-outst:	call	getx	; character output status
-	dcx	h
-	inr	c		; get port+6
-	inp	a		; get handshake status
-	xra	m 
-	dcx	h		;
-	ana	m		; [ZR] = ready
-	ani	11110000b
-	jrnz	nrdy
-	dcr	c		; line status register (+5)
-	inp	a
-	ani	20h		; test xmit holding register empty
-	rz			;
-	ori	true
-	ret			; return true if ready
-
-nrdy:	xra	a
 	ret
 
 ; INS8250 BAUD based on 1.8432MHz crystal

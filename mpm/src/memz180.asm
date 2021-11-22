@@ -57,7 +57,6 @@ dcntl	equ	32h
 	ldax	b
 ?bnksl:	; BIOS/XIOS entry - A=bank#
 	sta	@cbnk	; remember current bank
-	push	psw
 	; assume banks 0..n are 64K regions, excluding common.
 	; convert to 4k-page number, 00000-7ffff = RAM
 	add	a
@@ -68,10 +67,21 @@ dcntl	equ	32h
 	ret
 
 ; B=dest bank, C=source bank
+; DE=source address, HL=dest address
+; Bank # directly translates to A16-A19
 ; TODO: do interrupts need to be disabled?
 ?xmove:
-	out0	b,dar0b
-	out0	c,sar0b
+	lda	@compg
+	cmp	h
+	jrz	xm0
+	jrnc	xm1
+xm0:	mvi	b,0
+xm1:	out0	b,dar0b
+	cmp	d
+	jrz	xm2
+	jrnc	xm3
+xm2:	mvi	c,0
+xm3:	out0	c,sar0b
 	ret
 
 ; DE=source address, HL=dest address, BC=length
@@ -79,8 +89,8 @@ dcntl	equ	32h
 ; Not efficient for small moves.
 ?move:
 xxmove:
-	out0	d,sar0l
-	out0	e,sar0h
+	out0	e,sar0l
+	out0	d,sar0h
 	out0	l,dar0l
 	out0	h,dar0h
 	out0	c,bcr0l

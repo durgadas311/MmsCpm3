@@ -137,7 +137,7 @@ loop:
 	jmp	loop
 break:
 	; done loading system...
-	lda	sysdat+11	; xdos$base
+	lda	sysbuf+11	; xdos$base
 	mov	h,a
 	mvi	l,0
 	shld	entry$point

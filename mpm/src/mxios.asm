@@ -15,9 +15,9 @@ true	equ	not false
 lrubuf	equ	true	;
 
 	public	@adrv,@pdrv,@rdrv,@side,@trk,@sect
-	public	@dma,@dbnk,@bbnk,@dirbf
+	public	@dma,@dbnk,@dirbf
 	public	@dstat,@cmode,@dph,@rcnfg,@eops
-	public	@cbnk,@scrcb,@scrbf,@vect,@secnd
+	public	@cbnk,@scrcb,@vect,@secnd
 
 	public	xdos,polltb,sysdat
 
@@ -53,6 +53,8 @@ hstmdl	equ	15	;host module entry
 hstlen	equ	17	;length of header
 
 ; Z180 registers
+itc	equ	34h
+rcr	equ	36h
 mmu$cbr	equ	38h
 mmu$bbr	equ	39h
 mmu$cbar equ	3ah
@@ -79,11 +81,11 @@ tcr	equ	10h
 	; Because LINK puts dseg after cseg, and 'combas' is
 	; at the beginning of dseg, GENSYS will enforce that
 	; all of dseg falls in common memory.
-	cseg
+	cseg		; Banked memory
 BIOS$0	equ	$
 	jmp combas	; initial entry on cold start, common base
 	jmp wboot	; reentry on program exit, warm start
- 
+
 	jmp const	; return console input status
 	jmp conin	; return console input character
 	jmp conout	; send console output character
@@ -118,6 +120,7 @@ BIOS$0	equ	$
 	jmp	search
 	ds	6
 
+; These are only static when accessed via XIOSJMP.TBL
 @dstat: ds	1
 @intby: ds	1	; Port F2 image
 
@@ -153,7 +156,8 @@ wbtrap: dw	0
 
 	dseg
 ;---------- COMMON MEMORY -----------
-
+; WARNING: must be on page boundary ('vect' alignment).
+; Use LINK 'B' option.
 combas: jmp	colds
 swtusr: jmp	$-$
 swtsys: jmp	$-$
@@ -176,30 +180,35 @@ vect:	dw	nulint	; 0 - /INT1
 	dw	nulint	; 3 - PRT1 (TMDR1 -> 0)
 	dw	nulint	; 4 - DMA0
 	dw	nulint	; 5 - DMA1
-	dw	nulint	; 6
-	dw	nulint	; 7
-	dw	nulint	; 8
-	dw	nulint	; 9
-	dw	nulint	; 10
-	dw	nulint	; 11
-	dw	nulint	; 12
-	dw	nulint	; 13
-	dw	nulint	; 14
-	dw	nulint	; 15
+	dw	nulint	; 6 - CSIO
+	dw	nulint	; 7 - ASCI0
+	dw	nulint	; 8 - ASCI1
+	dw	nulint	; 9 - unused by Z180
+	dw	nulint	; 10 - unused by Z180
+	dw	nulint	; 11 - unused by Z180
+	dw	nulint	; 12 - unused by Z180
+	dw	nulint	; 13 - unused by Z180
+	dw	nulint	; 14 - unused by Z180
+	dw	nulint	; 15 - unused by Z180
 
 @vect:	dw	$-$
 dbuga:	dw	$-$
 dbugv:	dw	$-$
 biosjmp:dw	$-$
 @dbnk:	ds	1	; bank for user I/O (user DMA addr)
-@bbnk:	ds	1	; bank for block I/O (buffers)
 @eops:	ds	1
 
-dpbs:	ds	17*16	;one for each drive, 272 bytes
-
-colds:
+colds:	; possible TRAP
+	in0	a,itc
+	tsti	10000000b	; TRAP bit
+	jrnz	trap
 wboot:	mvi	c,0
 	jmp	xdos
+
+trap:	lxi	h,trpmsg
+	jmp	errx
+
+trpmsg:	db	CR,LF,'*TRAP*',CR,LF,'$'
 
 nulint:	ei
 	reti
@@ -327,12 +336,8 @@ ciomdl:	dw	0	;character device driver, filled at cold-start.
 cionum:	db	0	;max num cio devices
 
 cinit:	;C=device number (0-11)
-	lhld	ciomdl
-	mov	e,m	; init routine
-	inx	h
-	mov	d,m
+	lhld	ciomdl	; init routine
 	mov	b,c
-	xchg
 	pchl		;jump to modules "init" with B=device #
 
 auxin:	mvi	a,1ah	; EOF
@@ -355,16 +360,20 @@ conost:
 list:
 	inr	d	; LST: #0 = cio device 1
 	; TODO: check overflow/wrap?
-conout: 
+conout
+	push	b
 	call	conost	; is ready now?
+	pop	b
 	ora	a
 	jnz	co0
 	push	d
+	push	b
 	mov	a,d
 	adi	4
 	mov	e,a
 	mvi	c,poll
 	call	xdos	; sleep until ready
+	pop	b
 	pop	d
 co0:	mvi	a,12
 	jr	devio
@@ -410,13 +419,19 @@ icall:	pchl		;indirect call
 @cbnk:	db	0	; bank for processor operations
 bnkflg: ds	1	;flag for enough memory installed.
 
-signon: db	13,10,7,'H8-Z180 MP/M-II v3.00'
-	dw	vers
-	db	'  (c) 1984 DRI and MMS',13,10,'$'
+getusrbnk:	;finds the bank number for calling process
+	call	swtusr		; would like better way...
+	lda	@cbnk
+	sta	@dbnk
+	jmp	swtsys
 
 thread: equ	$	;must be last in dseg (common mem)
 
 	cseg	; rest is in banked memory...
+
+signon: db	13,10,7,'H8-Z180 MP/M-II v3.00'
+	dw	vers
+	db	'  (c) 1984 DRI and MMS',13,10,'$'
 
 ; Interrupts are disabled
 ; HL = BIOS JMP table
@@ -427,6 +442,12 @@ boot:
 	mvi	a,20h	; ORG0 on, 2mS off
 	out	0f2h	; prevent undesirable intrs
 			; Console 8250 should already be off
+	; TODO: make WAIT states configurable...
+	; speed things up...
+	mvi	a,00$00$0000b
+	out0	a,dcntl	; no WAIT states
+	mvi	a,0$0$000000b
+	out0	a,rcr	; no RESFRESH cycles
 	;
 	sded	dbuga
 	shld	biosjmp
@@ -513,27 +534,25 @@ iin5:	dcr	c
 	pop	b
 	jr	iin5
 iin2:
- if 1
-	lxi	d,signon
-	mvi	c,9
-	call	xdos
- endif
+	lxi	h,signon
+	call	msgout
 	lda	bnkflg
 	ora	a	;is enough memory installed?
 	jz	ramerr
 	call	set$jumps  ;setup system jumps and put in all banks
 	call	?itime	; get (starting) TOD from RTC
 
+	im2
 	xra	a
 	ret
 
 set$jumps:
 	liyd	dbugv
 	mvi	a,(JMP)
-	sta	cpm 
+	sta	cpm
 	sty	a,+0      ; set up jumps in page zero
 	lhld	biosjmp ! shld cpm+1	; BIOS warm start entry
-	lhld	dbuga 
+	lhld	dbuga
 	sty	l,+1
 	sty	h,+2	; DEBUGGER entry point
 	lda	@nbnk
@@ -543,41 +562,33 @@ sj0:
 	dcr	b
 	rz
 	push	b
-	push	h
 	call	?xmove
+	lxi	h,0	; page 0 in all banks
 	mov	d,h
 	mov	e,l
 	lxi	b,64
 	call	?move
-	pop	h
 	pop	b
 	jr	sj0		;
 	ret
 
-ramerr: lxi	d,@mmerr
-errx:	mvi	c,9
-	call	xdos
+ramerr: lxi	h,@mmerr
+errx:	call	msgout
 	di ! hlt
 
-@dtbl:	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-
-; BC = PDAdr
-; Destroys BC, HL, A
-; Returns @dbnk set (A = bank #)
-getusrbnk:		;finds the bank number for calling process
-	lxi	h,9	; memseg
-	dad	b
-	mov	a,m	; memseg - index into mem seg tbl...
-	add	a
-	add	a	; 4 bytes / memsegtbl entry
-	adi	3	; bank number is at +3
-	mov	c,a
-	mvi	b,0
-	lhld	msegtbl
-	dad	b
+msgout:
 	mov	a,m
-	sta	@dbnk
-	ret
+	cpi	'$'
+	rz
+	push	h
+	mov	c,m
+	mvi	d,0
+	call	co0
+	pop	h
+	inx	h
+	jr	msgout
+
+@dtbl:	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 seldsk:
 	mov a,c ! sta @adrv			; save drive select code
@@ -629,14 +640,6 @@ seldsk:
 	add	a	;*16
 	add	c	;*17
 	mov	c,a	;B still = 0
-	lxi	h,dpbs
-	dad	b
-	xchg
-	lxi	b,+10
-	dad	b
-	mov	m,e
-	inx	h
-	mov	m,d
 	call	setup$dph
 	jrc	selerr
 	xra	a
@@ -871,10 +874,10 @@ sd5:
 	shld	hsttop
  endif
 	; BC is still PDAdr
-	call	getusrbnk
 	liyd	hsttop
 	lda	@pdrv		; Calculate physical sector, etc
 	sta	reqdsk
+	call	getusrbnk
 	lhld	@trk
 	shld	reqtrk
 	MVI	C,0		; CALCULATE PHYSICAL SECTOR
@@ -978,7 +981,9 @@ movit1: dcr	a
 	jm	movit2
 	dad	b
 	jr	movit1
-movit2: lded	@dma		; POINT TO DMA
+movit2:
+	; TODO: need to handle possible common memory DMA
+	lded	@dma		; POINT TO DMA
 	lda	@dbnk
 	xchg		;DE is source, HL is dest.
 	mov	b,a		;B=dest. bank
@@ -1031,6 +1036,8 @@ fls0:	lxi	h,hstpda
 	jnz	fls0
 	ret
 
+; TODO: could there be more than one?
+; might need to resume flushall...
 flush1: push	d
 	popiy
 	lhld	previous
@@ -1046,6 +1053,11 @@ flush1: push	d
  else
 	lxiy	xxhdr
  endif
+	call	flush	; must handle stupid stack tricks
+	ret
+
+; Requires 2 ret adrs on stack, returns to imm caller on success,
+; returns to caller's caller on error.
 flush:	ldy	a,pndwrt
 	ora	a
 	rz
@@ -1155,7 +1167,5 @@ xxhdr:	dw	0	;Link - initially last in list.
 	dw	@@	;hstbuf
 	db	@@bnk	;hstbnk
 	dw	0	;hstmdl
-
-@scrbf	equ	@@
 
 	end

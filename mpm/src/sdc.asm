@@ -6,7 +6,7 @@ VERS EQU '1 ' ; Apr 4, 2020 08:12 drm "SDC.ASM"
 	$*MACRO
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
-	extrn	@scrbf,@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
+	extrn	@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
 	extrn	?bnksl
 
 nsegmt	equ	004eh	; where to pass segment to CP/M 3, LUN is -1
@@ -196,12 +196,23 @@ login0:
 	xra	a
 	ret
 
+; A=offset into bdma (@scrcb+12)
+; Returns HL=bdma+A
+bufoff:
+	lhld	bdma
+	add	l
+	mov	l,a
+	mvi	a,0
+	adc	h
+	mov	h,a
+	ret
+
 init$hard:
 	; since we only have one disk, init partn table now.
 	; read "magic sector" - LBA 0 of chosen disk segment.
-	lxi	h,@scrbf	; use bios scratch buffer for magic sector
+	lhld	@scrcb+12	; hstbuf - use bios scratch buffer for magic sector
 	shld	bdma
-	lda	@scrcb+14
+	lda	@scrcb+14	; hstbnk
 	sta	bbnk
 	lhld	segoff
 	shld	curlba+0
@@ -210,14 +221,18 @@ init$hard:
 	call	stlba2
 	call	read$raw
 	rnz	; error
-	lda	@scrbf+NPART
+	mvi	a,NPART
+	call	bufoff
+	mov	a,m
 	cpi	numpar0
 	jrc	ih3
 	mvi	a,numpar0
 ih3:	sta	npart		; use all partitions (and no more)
 	; copy over all DPBs, add PSH,PSK
-	lxi	h,@scrbf+DDPB	; CP/M 2.2 DPBs in magic sector
+	mvi	a,DDPB		; CP/M 2.2 DPBs in magic sector
+	call	bufoff
 	lxi	d,dpb		; Our CP/M 3 DPBs
+	lda	npart
 ih0:
 	push	psw		; num partitions
 	lxi	b,15	; CP/M 2.2 DPB length
@@ -235,7 +250,8 @@ ih0:
 	jrnz	ih0
 	; copy over sector (partition) offsets,
 	; converting from LBA and 4-byte entries.
-	lxi	h,@scrbf+SECTBL
+	mvi	a,SECTBL
+	call	bufoff
 	lxix	partbl
 	lda	npart		; num entries
 	mov	b,a
@@ -314,14 +330,12 @@ write$sdc:
 	ret
 
 ;	CALCULATE THE REQUESTED SECTOR
-;
+; IY=buffer cb
 set$lba:
 	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
 	; so H,D are LSB and L,E are MSB.
-	lhld	@trk		; get requested track
-	mov	e,l	;
-	mov	l,h	;
-	mov	h,e	; bswap HL
+	ldy	h,+8		; get requested track, byte-swapped
+	ldy	l,+9		;
 	lxi	d,0
 	mvi	b,4		; shift 4 bits left (16 psec/trk)
 stlba0:
@@ -330,7 +344,7 @@ stlba0:
 	ralr	d	; can't carry out
 	djnz	stlba0
 	; sector can't carry - 0-15 into vacated bits
-	lda	@sect		; get requested sector
+	ldy	a,+10		; get requested sector (phy)
 	ora	h
 	mov	h,a
 	shld	curlba+2
@@ -494,7 +508,7 @@ sdcini:
 ;	DATA BUFFERS AND STORAGE
 ;
 
-cmd:	db	0,0,0,0,0,0 ; command buffer
+cmd:	db	0,0,0,0,0,1 ; command buffer w/end bit
 	db	0	; response
 scs:	db	0
 segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
