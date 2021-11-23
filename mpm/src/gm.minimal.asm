@@ -31,7 +31,7 @@ breakpoint$vector:	dw	0,0,0,0,0,0,0,0
 user$stacks:		dw	0,0,0,0,0,0,0,0
 			ds	24
 nmb$records:		dw	0
-ticks$per$second:	db	60
+ticks$per$second:	db	50
 system$drive:		db	1	; A:
 common$base:		db	0c0h
 nmb$rsps:		db	0

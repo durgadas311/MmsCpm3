@@ -1,0 +1,184 @@
+                ; MMS CPM3LDR BIOS core code
+                
+                	maclib	z80
+                
+                	extrn	bdos
+                	extrn	loader
+                
+                	public	biodma,biores,biotrk,biosec,biodsk,biotrn,d?read
+                	public	conout
+                
+                	public	wboot,cboot,dsksta,timeot,mixer,dirbuf
+                	public	newdsk,newtrk,phytrk,newsec,dmaa
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0009 =         TAB	equ	9
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 007F =         DEL	equ	127
+                
+                ; locations in page-0
+ 0008 =         rst1	equ	0008h	; 2mS clock interrupt vector
+ 000B =         ticker	equ	000bh	; 2mS counter
+ 000D =         gpbyte	equ	000dh	; image of curr GPP bits
+ 000E =         xxbyte	equ	000eh	; what device is this for?
+                
+ 0009 =         msgout	equ	9
+                
+                	cseg
+ 0000 00        dsksta:	db	0
+ 0001 FF        mixer:	db	-1
+                
+                ; patch space to hook into tick interrupt
+                timeot:
+ 0002 C9        	ret
+ 0003 00        	nop
+ 0004 00        	nop
+                
+ 0005 00        newdsk:	db	0
+ 0006 00        newtrk:	db	0
+ 0007 00        newsec:	db	0
+ 0008 0000      phytrk:	dw	0
+ 000A 0000      dmaa:	dw	0
+                
+                signon:
+ 000C 0D0A075A38	db	CR,LF,BEL,'Z89/Z90 Loader v2.241  (c) 1982,1983 Magnolia Microsystems'
+ 0049 0D0A24    	db	CR,LF,'$'
+                
+                cboot:
+ 004C 312801    	lxi sp,stack
+ 004F AF        	xra	a
+ 0050 D3E9      	out	0e9h	; make certain INS8250 intrs are off
+ 0052 3E80      	mvi a,080h
+ 0054 320E00    	sta xxbyte
+ 0057 D37F      	out 07fh
+ 0059 110C00    	lxi d,signon
+ 005C 0E09      	mvi c,msgout
+ 005E CD0000    	call bdos
+ 0061 F3        	di
+ 0062 3EC3      	mvi a,0c3h
+ 0064 320800    	sta rst1
+ 0067 21C600    	lxi h,tick
+ 006A 220900    	shld rst1+1
+ 006D 210000    	lxi h,0
+ 0070 220B00    	shld ticker
+ 0073 3E22      	mvi a,022h	; Org-0 and 2mS enable
+ 0075 320D00    	sta gpbyte
+ 0078 D3F2      	out 0f2h
+ 007A FB        	ei
+ 007B CDC901    	call driver
+ 007E C30000    	jmp loader
+                
+                wboot:	; never called normally
+ 0081 F3        	di
+ 0082 76        	hlt
+                
+                biores:
+ 0083 010000    	lxi b,0
+ 0086 C3A600    	jmp biotrk
+                
+                biodsk:
+ 0089 79        	mov a,c
+ 008A FE10      	cpi 16
+                	jrnc nosel
+ 008C+3008      	DB	30H,NOSEL-$-1
+ 008E 3A0100    	lda mixer
+ 0091 4F        	mov c,a
+ 0092 FEFF      	cpi 0ffh
+                	jrnz selok
+ 0094+2004      	DB	20H,SELOK-$-1
+                nosel:
+ 0096 210000    	lxi h,0
+ 0099 C9        	ret
+                
+                selok:
+ 009A 79        	mov a,c
+ 009B 320500    	sta newdsk
+ 009E CDCC01    	call d?sel
+ 00A1 3A0500    	lda newdsk
+ 00A4 4F        	mov c,a
+ 00A5 C9        	ret
+                
+                biotrk:
+ 00A6 79        	mov a,c
+ 00A7 320600    	sta newtrk
+                	sbcd phytrk
+ 00AA+ED43      	DB	0EDH,43H
+ 00AC+0800      	DW	PHYTRK
+ 00AE C9        	ret
+                
+                biotrn:
+ 00AF 69        	mov l,c
+ 00B0 60        	mov h,b
+ 00B1 23        	inx h
+ 00B2 7A        	mov a,d
+ 00B3 B3        	ora e
+ 00B4 C8        	rz 
+ 00B5 EB        	xchg 
+ 00B6 09        	dad b
+ 00B7 6E        	mov l,m
+ 00B8 2600      	mvi h,0
+ 00BA C9        	ret
+                
+                biosec:
+ 00BB 79        	mov a,c
+ 00BC 3D        	dcr a
+ 00BD 320700    	sta newsec
+ 00C0 C9        	ret
+                
+                biodma:
+                	sbcd dmaa
+ 00C1+ED43      	DB	0EDH,43H
+ 00C3+0A00      	DW	DMAA
+ 00C5 C9        	ret
+                
+                tick:
+                	sspd savstk
+ 00C6+ED73      	DB	0EDH,73H
+ 00C8+3C01      	DW	SAVSTK
+ 00CA 313C01    	lxi sp,intstk
+ 00CD F5        	push psw
+ 00CE E5        	push h
+ 00CF 3A0D00    	lda gpbyte
+ 00D2 D3F2      	out 0f2h
+ 00D4 2A0B00    	lhld ticker
+ 00D7 23        	inx h
+ 00D8 220B00    	shld ticker
+ 00DB 7D        	mov a,l
+ 00DC B7        	ora a
+ 00DD CC0200    	cz timeot
+ 00E0 E1        	pop h
+ 00E1 F1        	pop psw
+                	lspd savstk
+ 00E2+ED7B      	DB	0EDH,07BH
+ 00E4+3C01      	DW	SAVSTK
+ 00E6 FB        	ei
+ 00E7 C9        	ret
+                
+ 00E8           	ds	64
+ 0128           stack:	ds	0
+                
+                
+ 0128           	ds	20
+ 013C           intstk:	ds	0
+ 013C 0000      savstk:	dw	0
+                
+ 013E           dirbuf:	ds	128
+                
+                ; conout for standard INS8250 at 0E8H
+                ; TODO: make into module, for alternate console options
+                conout:
+ 01BE DBED      	in 0edh		; console 8250 line status
+ 01C0 E620      	ani 020h	; TxE
+ 01C2 CABE01    	jz conout
+ 01C5 79        	mov a,c
+ 01C6 D3E8      	out 0e8h	; send char to console
+ 01C8 C9        	ret
+                
+ 01C9 =         driver:	equ	$+0	; init entry for disk driver module
+ 01CC =         d?sel:	equ	$+3
+ 01CF =         d?read:	equ	$+6
+                
+ 01C9           	end
+

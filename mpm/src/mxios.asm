@@ -26,7 +26,8 @@ lrubuf	equ	true	;
 	extrn	@memstr,@mmerr,@nbnk
 	extrn	?time,?itime,@rtcstr			; RTC module
 
-tickrate	equ	1667	; about 1/60 second at 2MHz, 33340 clocks/tick
+tickrate	equ	2048	; 50 ticks/second at 2.048MHz
+				; *=2 for each 2x speed bump
 secsize		equ	512	; largest sector size supported/used
 
 cr	equ 13
