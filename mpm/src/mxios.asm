@@ -258,14 +258,10 @@ clock:	 db	0
 
 @secnd: dw	$-$	;used to do timeouts
 
-second: sspd	istk
-	lxi	sp,intstk
-	push	psw
-	push	h
-	push	d
-	push	b
-	mvi	a,true
-	sta	preempt
+tps:	db	0	; from system data page on boot
+tcnt:	db	0
+
+second:
 	lhld	@secnd
 	mov	a,h
 	ora	l
@@ -273,7 +269,7 @@ second: sspd	istk
 	mvi	e,2
 	mvi	c,flagset
 	call	xdos
-	jr	tk0
+	jr	tk1
 
 tick:	sspd	istk
 	lxi	sp,intstk
@@ -290,12 +286,20 @@ tick:	sspd	istk
 	mvi	e,1
 	mvi	c,flagset
 	call	xdos
-tk0:	mvi	a,false
+tk0:
+	lxi	h,tcnt
+	dcr	m
+	jrnz	tk1
+	lda	tps
+	mov	m,a
+	jr	second
+tk1:	mvi	a,false
 	sta	preempt
 	lxi	d,nexti
 	push	d
 	reti
-nexti:	pop	b
+nexti:
+	pop	b
 	pop	d
 	pop	h
 	pop	psw
@@ -439,7 +443,8 @@ signon: db	13,10,7,'H8-Z180 MP/M-II v3.00'
 ; C = debug RST num
 boot:
 	; This is H89-specific...
-	mvi	a,20h	; ORG0 on, 2mS off
+	mvi	a,20h	; ORG0 on, 2mS off, 2.048MHz clock
+	sta	@intby
 	out	0f2h	; prevent undesirable intrs
 			; Console 8250 should already be off
 	; TODO: make WAIT states configurable...
@@ -464,7 +469,11 @@ boot:
 	stai
 	out0	l,il
 	lhld	sysdat
-	mvi	l,0fch	;XDOS internal data page
+	mvi	l,122	;ticks/sec
+	mov	a,m
+	sta	tps
+	sta	tcnt
+	mvi	l,252	;XDOS internal data page
 	mov	e,m
 	inx	h
 	mov	d,m
