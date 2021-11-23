@@ -85,7 +85,7 @@
                 	cseg		; Banked memory
  0000 =         BIOS$0	equ	$
  0000 C30000    	jmp combas	; initial entry on cold start, common base
- 0003 C3D200    	jmp wboot	; reentry on program exit, warm start
+ 0003 C3CA00    	jmp wboot	; reentry on program exit, warm start
                 
  0006 C30C02    	jmp const	; return console input status
  0009 C31A02    	jmp conin	; return console input character
@@ -214,6 +214,7 @@
  00C8           @dbnk:	ds	1	; bank for user I/O (user DMA addr)
  00C9           @eops:	ds	1
                 
+                wboot:
                 colds:	; possible TRAP
                 	in0	a,itc
  00CA+ED3834    	DB	0EDH, A*8+00H, ITC
@@ -221,9 +222,10 @@
  00CD+ED6480    	DB	0EDH, 64H, 10000000B
                 	jrnz	trap
  00D0+2005      	DB	20H,TRAP-$-1
- 00D2 0E00      wboot:	mvi	c,0
- 00D4 C30C00    	jmp	xdos
+ 00D2 0E00      	mvi	c,0
+ 00D4 C30C00    	jmp	xdos
                 
+                ; For now, TRAP is fatal
  00D7 21DD00    trap:	lxi	h,trpmsg
  00DA C3C401    	jmp	errx
                 
@@ -276,9 +278,9 @@
  0129 C9        	 ret
                 
  012A 00        preempt: db	0
- 012B 00        clock:	 db	0
+ 012B 00        clock:	 db	0
                 
- 012C 0000      @secnd: dw	$-$	;used to do timeouts
+ 012C 0000      @secnd: dw	$-$	;used to do timeouts
                 
  012E 00        tps:	db	0	; from system data page on boot
  012F 00        tcnt:	db	0
@@ -332,9 +334,9 @@
  0178 C1        	pop	b
  0179 D1        	pop	d
  017A E1        	pop	h
- 017B F1        	pop	psw
+ 017B F1        	pop	psw
                 	lspd	istk
- 017C+ED7B      	DB	0EDH,07BH
+ 017C+ED7B      	DB	0EDH,07BH
  017E+C301      	DW	ISTK
  0180 C30900    	jmp	pdisp
                 
@@ -388,9 +390,9 @@
                 
                 ; D=device number
                 listst:
- 01EC 14        	inr	d	; LST: #0 = cio device 1
+ 01EC 14        	inr	d	; LST: #0 = cio device 1
                 	; TODO: check overflow/wrap?
-                conost:
+                conost:
  01ED 3E09      	mvi	a,9
                 	jr	devio
  01EF+181D      	DB	18H,DEVIO-$-1
@@ -444,9 +446,9 @@
  0225 CD0C00    	call	xdos	; sleep until ready
  0228 D1        	pop	d
  0229 3E06      ci0:	mvi	a,6
-                	jr	devio
+                	jr	devio
  022B+18E1      	DB	18H,DEVIO-$-1
-                
+                
                 ; char I/O driver function calls
                 ; A=offset (0,3,6,9,...), B=device number (0..N)
                 indjmp0:
@@ -500,9 +502,9 @@
  00D2+C200      	DW	DBUGA
  00D4 22C600    	shld	biosjmp
  00D7 79        	mov	a,c
- 00D8 87        	add	a
+ 00D8 87        	add	a
  00D9 87        	add	a
- 00DA 87        	add	a
+ 00DA 87        	add	a
  00DB 6F        	mov	l,a
  00DC 2600      	mvi	h,0
  00DE 22C400    	shld	dbugv
@@ -556,9 +558,9 @@
  0131+ED210F    	DB	0EDH, H*8+01H, RLDR0H
                 	in0	a,tcr
  0134+ED3810    	DB	0EDH, A*8+00H, TCR
- 0137 F611      	ori	00010001b	; TIE0, TDE0
+ 0137 F611      	ori	00010001b	; TIE0, TDE0
                 	out0	a,tcr		; start the timer
- 0139+ED3910    	DB	0EDH, A*8+01H, TCR
+ 0139+ED3910    	DB	0EDH, A*8+01H, TCR
                 ; Initialize all modules and build tables.
  013C 214502    	lxi	h,thread	;thread our way through the modules,
  013F 5E        iin0:	mov	e,m		;initializing as we go.
@@ -612,9 +614,9 @@
  0187+ED5E      	DB	0EDH,5EH
  0189 AF        	xra	a
  018A C9        	ret
-                
+                
                 set$jumps:
-                	liyd	dbugv
+                	liyd	dbugv
  018B+FD2A      	DB	0FDH,2AH
  018D+C400      	DW	DBUGV
  018F 3EC3      	mvi	a,(JMP)
@@ -634,10 +636,11 @@
  01AC 05        	dcr	b
  01AD C8        	rz
  01AE C5        	push	b
- 01AF CD0000    	call	?xmove
- 01B2 210000    	lxi	h,0	; page 0 in all banks
- 01B5 54        	mov	d,h
- 01B6 5D        	mov	e,l
+                	; must setup DE,HL before ?xmove
+ 01AF 210000    	lxi	h,0	; page 0 in all banks
+ 01B2 54        	mov	d,h
+ 01B3 5D        	mov	e,l
+ 01B4 CD0000    	call	?xmove
  01B7 014000    	lxi	b,64
  01BA CD0000    	call	?move
  01BD C1        	pop	b
@@ -667,10 +670,10 @@
                 seldsk:
  01F8 79326B00  	mov a,c ! sta @adrv			; save drive select code
  01FC 210000    	lxi	h,@lptbl
- 01FF 060009    	mvi b,0 ! dad b 	      ; create index from drive code
+ 01FF 060009    	mvi b,0 ! dad b 	      ; create index from drive code
  0202 7E        	mov	a,m
  0203 FEFF      	cpi	255
- 0205 CA8602    	jz	selerr
+ 0205 CA8602    	jz	selerr
  0208 326C00    	sta	@pdrv
  020B 4F        	mov	c,a
  020C 43        	mov	b,e	;save login flag thru "search" routine
@@ -723,10 +726,10 @@
  0251 329405    	sta	@rcnfg
  0254 2A6E00    	lhld	curmdl
                 	lxiy	@scrcb
- 0257+FD21      	DB	0FDH,21H
+ 0257+FD21      	DB	0FDH,21H
  0259+D406      	DW	@SCRCB
  025B 3A6C00    	lda	@pdrv
-                	sty	a,hstdsk
+                	sty	a,hstdsk
  025E+FD7707    	DB	0FDH,70H+A,HSTDSK
  0261 3E03      	mvi	a,3
  0263 CD8605    	call	calmod	;call module's "login" routine.
@@ -779,10 +782,10 @@
  02A7 210300    	lxi	h,+3
  02AA 09        	dad	b
  02AB 7E        	mov	a,m	;BSM
- 02AC 32A005    	sta	blkmsk
+ 02AC 32A005    	sta	blkmsk
  02AF 210D00    	lxi	h,+13	;point to track offset
  02B2 09        	dad	b
- 02B3 4E        	mov	c,m
+ 02B3 4E        	mov	c,m
  02B4 23        	inx	h
  02B5 46        	mov	b,m
  02B6 23        	inx	h
@@ -835,10 +838,10 @@
  02EF 3EFF      	mvi	a,true		; FLAG A READ OPERATION
  02F1 329A05    	sta	preread 	; forces FLUSH and Physical READ
  02F4 32A105    	sta	rdflg
- 02F7 329B05    	sta	defer		; never flush if reading (pointless)
+ 02F7 329B05    	sta	defer		; never flush if reading (pointless)
  02FA 2F        	cma	; false
  02FB 329C05    	sta	unalloc ;terminate any active unallocated-writing
- 02FE 2AA305    	LHLD	REQTRK
+ 02FE 2AA305    	LHLD	REQTRK
  0301 3A9605    	lda	OFFSET
  0304 95        	sub	l	; DIR track must be < 256
  0305 B4        	ora	h	; 00=on DIR track
@@ -891,10 +894,10 @@
  0351 19        	dad	d
  0352 229D05    	shld	urecord
  0355 3E00      	mvi	a,0
- 0357 88        	adc	b
+ 0357 88        	adc	b
  0358 329F05    	sta	urecord+2
  035B 3AA005    	LDA	BLKMSK
- 035E A5        	ana	l		; IS IT THE START OF A NEW BLOCK ?
+ 035E A5        	ana	l		; IS IT THE START OF A NEW BLOCK ?
                 	JRNZ	rwoper
  035F+2004      	DB	20H,RWOPER-$-1
  0361 AF        ALLOC:	XRA	A		; NO LONGER WRITING AN UNALLOCATED BLOCK
@@ -947,10 +950,10 @@
  03AB 7C        	mov	a,h
  03AC B5        	ora	l
  03AD CACC03    	jz	sd4
- 03B0 5E        sd1:	mov	e,m
+ 03B0 5E        sd1:	mov	e,m
  03B1 23        	inx	h
  03B2 56        	mov	d,m
- 03B3 2B        	dcx	h
+ 03B3 2B        	dcx	h
                 	sded	fretop
  03B4+ED53      	DB	0EDH,53H
  03B6+AD05      	DW	FRETOP
@@ -1003,10 +1006,10 @@
                 	shld	hsttop
                  endif
                 	; BC is still PDAdr
-                	liyd	hsttop
+                	liyd	hsttop
  03F8+FD2A      	DB	0FDH,2AH
  03FA+AB05      	DW	HSTTOP
- 03FC 3A6C00    	lda	@pdrv		; Calculate physical sector, etc
+ 03FC 3A6C00    	lda	@pdrv		; Calculate physical sector, etc
  03FF 32A205    	sta	reqdsk
  0402 CD3902    	call	getusrbnk
  0405 2A8E05    	lhld	@trk
@@ -1059,10 +1062,10 @@
                 	jrnz	chk1
  0445+20E6      	DB	20H,CHK1-$-1
  0447 23        	inx	h
- 0448 13        	inx	d
+ 0448 13        	inx	d
                 	djnz	chk0
  0449+10F8      	DB	10H,CHK0-$-1
- 044B CD6905    	call	flush	;an error bumps us out here.
+ 044B CD6905    	call	flush	;an error bumps us out here.
                 	siyd	previous	;save pointer
  044E+FD22      	DB	0FDH,22H
  0450+AF05      	DW	PREVIOUS
@@ -1115,10 +1118,10 @@
  049F EB        	xchg
  04A0 21A205    	lxi	h,reqdsk
  04A3 0605      	mvi	b,5
- 04A5 1A        chkbuf1:ldax	d
+ 04A5 1A        chkbuf1:ldax	d
  04A6 BE        	cmp	m
                 	jrnz	readit
- 04A7+2006      	DB	20H,READIT-$-1
+ 04A7+2006      	DB	20H,READIT-$-1
  04A9 23        	inx	h
  04AA 13        	inx	d
                 	djnz	chkbuf1
@@ -1171,10 +1174,10 @@
  04F8+FD4E0E    	DB	0FDH,C*8+46H,HSTBNK
  04FB 3AA105    	lda	rdflg		; IS IT A WRITE ?
  04FE B7        	ora	a
-                	jrnz	movit3
+                	jrnz	movit3
  04FF+2008      	DB	20H,MOVIT3-$-1
  0501 79        	mov	a,c
- 0502 48        	mov	c,b
+ 0502 48        	mov	c,b
  0503 47        	mov	b,a
  0504 EB        	xchg			; SWITCH DIRECTION OF MOVE FOR WRITE
                 	mviy	true,pndwrt	; FLAG A PENDING WRITE
@@ -1227,10 +1230,10 @@
  0549 D5        flush1: push	d
                 	popiy
  054A+FDE1      	DB	0FDH,0E1H
- 054C 2AAF05    	lhld	previous
+ 054C 2AAF05    	lhld	previous
                 	ldy	a,link
  054F+FD7E00    	DB	0FDH,A*8+46H,LINK
- 0552 77        	mov	m,a
+ 0552 77        	mov	m,a
  0553 23        	inx	h
                 	ldy	a,link+1
  0554+FD7E01    	DB	0FDH,A*8+46H,LINK+1
@@ -1283,10 +1286,10 @@
                 	ldy	h,hstmdl+1
  0583+FD6610    	DB	0FDH,H*8+46H,HSTMDL+1
                 calmod:
- 0586 85        	add	l
+ 0586 85        	add	l
  0587 6F        	mov	l,a
  0588 3E00      	mvi	a,0
- 058A 8C        	adc	h
+ 058A 8C        	adc	h
  058B 67        	mov	h,a
  058C E9        	pchl		; leap to driver
                 
@@ -1339,10 +1342,10 @@
                 	db	@@bnk	;hstbnk
                 	dw	0	;hstmdl
                 @@ set @@+secsize
-                	endm
+                	endm
  05B3+C405      	DW	$+HSTLEN ;LINK
  05B5+0000      	DW	0	;HSTPDA - PROCESS DESCRIPTOR ADDRESS
- 05B7+0000      	DW	0	;HSTMOD
+ 05B7+0000      	DW	0	;HSTMOD
  05B9+00        	DB	FALSE	;PNDWRT
  05BA+FF        	DB	-1	;HSTDSK
  05BB+0000      	DW	0	;HSTTRK
@@ -1395,10 +1398,10 @@
  060C+0000      	DW	0	;HSTMOD
  060E+00        	DB	FALSE	;PNDWRT
  060F+FF        	DB	-1	;HSTDSK
- 0610+0000      	DW	0	;HSTTRK
+ 0610+0000      	DW	0	;HSTTRK
  0612+0000      	DW	0	;HSTSEC
  0614+000B      	DW	@@	;HSTBUF
- 0616+00        	DB	@@BNK	;HSTBNK
+ 0616+00        	DB	@@BNK	;HSTBNK
  0617+0000      	DW	0	;HSTMDL
  0619+2A06      	DW	$+HSTLEN ;LINK
  061B+0000      	DW	0	;HSTPDA - PROCESS DESCRIPTOR ADDRESS
@@ -1451,10 +1454,10 @@
  066B+00        	DB	@@BNK	;HSTBNK
  066C+0000      	DW	0	;HSTMDL
  066E+7F06      	DW	$+HSTLEN ;LINK
- 0670+0000      	DW	0	;HSTPDA - PROCESS DESCRIPTOR ADDRESS
+ 0670+0000      	DW	0	;HSTPDA - PROCESS DESCRIPTOR ADDRESS
  0672+0000      	DW	0	;HSTMOD
  0674+00        	DB	FALSE	;PNDWRT
- 0675+FF        	DB	-1	;HSTDSK
+ 0675+FF        	DB	-1	;HSTDSK
  0676+0000      	DW	0	;HSTTRK
  0678+0000      	DW	0	;HSTSEC
  067A+0017      	DW	@@	;HSTBUF
@@ -1507,10 +1510,10 @@
  06C9 00        	db	false	;pndwrt
  06CA FF        	db	-1	;hstdsk
  06CB 0000      	dw	0	;hsttrk
- 06CD 0000      	dw	0	;hstsec
+ 06CD 0000      	dw	0	;hstsec
  06CF 0021      	dw	@@	;hstbuf
  06D1 00        	db	@@bnk	;hstbnk
- 06D2 0000      	dw	0	;hstmdl
+ 06D2 0000      	dw	0	;hstmdl
  2300 #         @@ set @@+secsize
                 
                 ; NOTE: this buffer can be used for reading only. (it is never flushed)
@@ -1526,4 +1529,4 @@
  06E3 0000      	dw	0	;hstmdl
                 
  06E5           	end
-
+

@@ -199,13 +199,15 @@ biosjmp:dw	$-$
 @dbnk:	ds	1	; bank for user I/O (user DMA addr)
 @eops:	ds	1
 
+wboot:
 colds:	; possible TRAP
 	in0	a,itc
 	tsti	10000000b	; TRAP bit
 	jrnz	trap
-wboot:	mvi	c,0
+	mvi	c,0
 	jmp	xdos
 
+; For now, TRAP is fatal
 trap:	lxi	h,trpmsg
 	jmp	errx
 
@@ -572,10 +574,11 @@ sj0:
 	dcr	b
 	rz
 	push	b
-	call	?xmove
+	; must setup DE,HL before ?xmove
 	lxi	h,0	; page 0 in all banks
 	mov	d,h
 	mov	e,l
+	call	?xmove
 	lxi	b,64
 	call	?move
 	pop	b
