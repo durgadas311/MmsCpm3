@@ -32,8 +32,16 @@ m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $(DSO) $@
 
+# assumes CP/NET RSP(s) present
+m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
+	cp $< bnkxios.spr
+	cp gm.cpnet.dat system.dat
+	vcpm gensys '$$ar'
+	mv mpm.sys $@
+
+# assumes CP/NET RSP(s) removed (no check)
 m3%.sys: m3%.spr
-	cp $? bnkxios.spr
+	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar'
 	mv mpm.sys $@
