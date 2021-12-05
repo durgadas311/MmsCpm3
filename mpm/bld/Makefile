@@ -9,6 +9,7 @@ RELS = $(subst .asm,.rel,$(SRCS))
 
 BASE = mxios.rel cio8250.rel end.rel lptbl.rel
 
+Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 DSO = -p def,a:
 
@@ -28,6 +29,10 @@ mldr%.img: ldr%.rel ldrb%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 #mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 #	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr,l0100,p0]"
 
+m3z67zrr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
+	vcpm link "m3z67zrr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
+	setup30 $(Z67DRVS) $(DSO) $@
+
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $(DSO) $@
@@ -42,7 +47,7 @@ m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 # assumes CP/NET RSP(s) removed (no check)
 m3%.sys: m3%.spr
 	cp $< bnkxios.spr
-	cp gm.cpnet.dat system.dat
+	cp gm.mpmii.dat system.dat
 	vcpm gensys '$$ar'
 	mv mpm.sys $@
 

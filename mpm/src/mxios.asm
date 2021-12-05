@@ -13,6 +13,8 @@ false	equ	0
 true	equ	not false
 
 lrubuf	equ	true	;
+z180	equ	false
+h89	equ	true
 
 	public	@adrv,@pdrv,@rdrv,@side,@trk,@sect
 	public	@dma,@dbnk,@dirbf
@@ -25,6 +27,21 @@ lrubuf	equ	true	;
 	extrn	?memsl,?bnksl,?bnkck,?xmove,?move	; MMU module
 	extrn	@memstr,@mmerr,@nbnk
 	extrn	?time,?itime,@rtcstr			; RTC module
+
+ if z180
+z180tick	equ	true
+h89tick		equ	false
+ else
+  if h89
+z180tick	equ	false
+h89tick		equ	true
+tick$tick	equ	10	; number of 2mS ticks per MP/M tick
+  else
+; TODO: what to use for tick?
+z180tick	equ	false
+h89tick		equ	false
+  endif
+ endif
 
 tickrate	equ	2048	; 50 ticks/second at 2.048MHz
 				; *=2 for each 2x speed bump
@@ -123,7 +140,7 @@ BIOS$0	equ	$
 
 ; These are only static when accessed via XIOSJMP.TBL
 @dstat: ds	1
-@intby: ds	1	; Port F2 image
+	ds	1	; former Port F2 image
 
 	dw	@lptbl	;logical/physical drive table
 	dw	thread	;module thread
@@ -198,20 +215,26 @@ dbugv:	dw	$-$
 biosjmp:dw	$-$
 @dbnk:	ds	1	; bank for user I/O (user DMA addr)
 @eops:	ds	1
+@intby: ds	1	; Port F2 image
 
 wboot:
-colds:	; possible TRAP
+colds:
+ if z180
+	; possible TRAP
 	in0	a,itc
 	tsti	10000000b	; TRAP bit
 	jrnz	trap
+ endif
 	mvi	c,0
 	jmp	xdos
 
-; For now, TRAP is fatal
+ if z180
+; For now, any TRAP is fatal
 trap:	lxi	h,trpmsg
 	jmp	errx
 
 trpmsg:	db	CR,LF,'*TRAP*',CR,LF,'$'
+ endif
 
 nulint:	ei
 	reti
@@ -262,7 +285,8 @@ clock:	 db	0
 @secnd: dw	$-$	;used to do timeouts
 
 tps:	db	0	; from system data page on boot
-tcnt:	db	0
+pcnt:	db	0	; pre-scale for interrupts to MP/M ticks
+tcnt:	db	0	; must immediately follow pcnt...
 
 second:
 	lhld	@secnd
@@ -280,7 +304,17 @@ tick:	sspd	istk
 	push	h
 	push	d
 	push	b
+ if z180tick
 	in0	a,tmdr0l	; reset INT
+ endif
+ if h89tick
+	lda	@intby
+	out	0f2h	; reset INT
+	lxi	h,pcnt
+	dcr	m
+	jrnz	iexit
+	mvi	m,tick$tick
+ endif
 	mvi	a,true
 	sta	preempt
 	lda	clock
@@ -298,16 +332,29 @@ tk0:
 	jr	second
 tk1:	mvi	a,false
 	sta	preempt
+ if z180tick
 	lxi	d,nexti
 	push	d
-	reti
+	reti	; required by Z180?
 nexti:
+ endif
 	pop	b
 	pop	d
 	pop	h
 	pop	psw
 	lspd	istk
 	jmp	pdisp
+
+ if h89tick
+iexit:
+	pop	b
+	pop	d
+	pop	h
+	pop	psw
+	lspd	istk
+	ei
+	ret
+ endif
 
 	ds	64	;32 levels of stack
 intstk: ds	0
@@ -436,7 +483,17 @@ thread: equ	$	;must be last in dseg (common mem)
 
 	cseg	; rest is in banked memory...
 
-signon: db	13,10,7,'H8-Z180 MP/M-II v3.00'
+signon: db	13,10,7
+ if h89
+	db	'H8'
+ endif
+	db	'-'
+ if z180
+	db	'Z180'
+ else
+	db	'Z80'
+ endif
+	db	' MP/M-II v3.00'
 	dw	vers
 	db	'  (c) 1984 DRI and MMS',13,10,'$'
 
@@ -445,17 +502,21 @@ signon: db	13,10,7,'H8-Z180 MP/M-II v3.00'
 ; DE = debug entry
 ; C = debug RST num
 boot:
+ if h89
 	; This is H89-specific...
 	mvi	a,20h	; ORG0 on, 2mS off, 2.048MHz clock
 	sta	@intby
 	out	0f2h	; prevent undesirable intrs
 			; Console 8250 should already be off
+ endif
+ if z180
 	; TODO: make WAIT states configurable...
 	; speed things up...
 	mvi	a,00$00$0000b
 	out0	a,dcntl	; no WAIT states
 	mvi	a,0$0$000000b
 	out0	a,rcr	; no RESFRESH cycles
+ endif
 	;
 	sded	dbuga
 	shld	biosjmp
@@ -466,11 +527,24 @@ boot:
 	mov	l,a
 	mvi	h,0
 	shld	dbugv
+ if z180tick
 	lxi	h,vect
 	shld	@vect
 	mov	a,h
 	stai
 	out0	l,il
+ endif
+ if h89tick
+	mvi	a,JMP
+	sta	0008h
+	lxi	h,tick
+	shld	0008h+1
+	lda	@intby
+	ori	02h
+	sta	@intby
+	out	0f2h
+ endif
+
 	lhld	sysdat
 	mvi	l,122	;ticks/sec
 	mov	a,m
@@ -497,6 +571,7 @@ iin50:	sta	maxcon+1
 ; Verify that we have banked RAM... A=compag from MP/M
 	call	?bnkck
 	sta	bnkflg
+ if z180tick
 ; initialize timer interrupts
 	lxi	h,tickrate	; phi/20/tickrate = ticks per sec
 	out0	l,tmdr0l
@@ -506,6 +581,7 @@ iin50:	sta	maxcon+1
 	in0	a,tcr
 	ori	00010001b	; TIE0, TDE0
 	out0	a,tcr		; start the timer
+ endif
 ; Initialize all modules and build tables.
 	lxi	h,thread	;thread our way through the modules,
 iin0:	mov	e,m		;initializing as we go.
@@ -554,10 +630,13 @@ iin2:
 	call	set$jumps  ;setup system jumps and put in all banks
 	call	?itime	; get (starting) TOD from RTC
 
+ if z180tick
 	im2
+ endif
 	xra	a
 	ret
 
+; Interrupts disabled, must not enable
 set$jumps:
 	liyd	dbugv
 	mvi	a,(JMP)
@@ -580,6 +659,7 @@ sj0:
 	mov	e,l
 	call	?xmove
 	lxi	b,64
+	xra	a	; interrupts are disabled
 	call	?move
 	pop	b
 	jr	sj0		;
@@ -894,7 +974,7 @@ sd5:
 	lhld	@trk
 	shld	reqtrk
 	MVI	C,0		; CALCULATE PHYSICAL SECTOR
-	LDA	BLCODE		; PHYSICAL SECTOR SIZE CODE
+	LDA	blcode		; PHYSICAL SECTOR SIZE CODE
 	ORA	A		; TEST FOR ZERO
 	MOV	B,A
 	lded	@sect
@@ -907,7 +987,7 @@ DBLOK1: srlr	d		; DIVIDE BY 2
 DBLOK2: RLCR	C		; NOW RESTORE THE OVERFLOW BY
 	DJNZ	DBLOK2		; ROTATING IT RIGHT
 DBLOK3: MOV	A,C
-	STA	BLKSEC		; STORE IT
+	sta	blksec		; STORE IT
 	sded	reqsec
 
 chk1:	ldy	e,link		; next buffer, or 0000
@@ -945,6 +1025,7 @@ chk4:	call	flush		; must flush our buffer BEFORE changing data.
 	ldx	e,hstbuf	; source
 	ldx	d,hstbuf+1	;
 	ldx	c,hstbnk	;
+	mvi	a,1	; interrupts are enabled
 	call	?xmove		;
 	lxi	b,secsize	; put requested sector data in our buffer
 	call	?move		;
@@ -1011,6 +1092,7 @@ movit2:
 	mviy	true,pndwrt	; FLAG A PENDING WRITE
 movit3: call	?xmove
 	lxi	b,128
+	mvi	a,1	; interrupts are enabled
 	call	?move		; MOVE IT
 	lda	defer		; CHECK FOR non-defered write
 	ora	a
