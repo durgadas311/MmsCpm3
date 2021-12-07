@@ -48,7 +48,8 @@ chrtbl: 	; CP/M 3 char I/O table
 ; It appears MP/M requires all of this in common memory
 ; B=device number, relative to 200.
 input:
-inp0:	call	inst
+	call	getx
+inp0:	call	inst0
 	jrz	inp0			; wait for character ready
 	mov	c,e			;get data register address
 	inp	a			; get data
@@ -58,7 +59,7 @@ inp0:	call	inst
 ; B=device number, relative to 200.
 inst:
 	call	getx			;
-	inp	a			; read from status port
+inst0:	inp	a			; read from status port
 	ani	1			; isolate RxRdy
 	rz				; return with zero
 	ori	true
@@ -68,7 +69,8 @@ inst:
 ; C=char
 output: mov	a,c
 	push	psw			; save character from <C>
-outp0:	call	outst
+	call	getx
+outp0:	call	outst0
 	jrz	outp0			; wait for TxEmpty, HL->port
 	mov	c,e			; get port address
 	pop	psw
@@ -77,7 +79,7 @@ outp0:	call	outst
 
 ; B=device number, relative to 200.
 outst:	call	getx	; character output status
-	dcx	h
+outst0:	dcx	h
 	inr	c		; get port+6
 	inp	a		; get handshake status
 	xra	m

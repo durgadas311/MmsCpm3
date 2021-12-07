@@ -7,14 +7,8 @@ vers equ '0a' ; Nov 14, 2021  13:49  drm "MXIOS.ASM"
 ; All memory segments are ORGed at 0000.
 ; Uses CP/M Plus format DPBs.
 
-	maclib z180
-
-false	equ	0
-true	equ	not false
-
-lrubuf	equ	true	;
-z180	equ	false
-h89	equ	true
+	maclib	z180
+	maclib	cfgmpm
 
 	public	@adrv,@pdrv,@rdrv,@side,@trk,@sect
 	public	@dma,@dbnk,@dirbf
@@ -43,8 +37,6 @@ h89tick		equ	false
   endif
  endif
 
-tickrate	equ	2048	; 50 ticks/second at 2.048MHz
-				; *=2 for each 2x speed bump
 secsize		equ	512	; largest sector size supported/used
 
 cr	equ 13
@@ -263,7 +255,7 @@ pd0:	mvi	b,0
 ; Devices 8..15, starting at +0...
 polltb:	dw	$-$,$-$,$-$,$-$,$-$,$-$,$-$,$-$ ; 8..15 unassigned (yet)
 
-maxcon: mvi	a,0	;filled in at init from SYSDAT
+maxcon: mvi	a,0	;filled in at init from SYSDAT and config
 	ret
 
 exitreg:
@@ -414,22 +406,22 @@ conost:
 list:
 	inr	d	; LST: #0 = cio device 1
 	; TODO: check overflow/wrap?
-conout
+conout:
 	push	b
+	push	d
 	call	conost	; is ready now?
-	pop	b
 	ora	a
 	jnz	co0
+	pop	d
 	push	d
-	push	b
 	mov	a,d
 	adi	4
 	mov	e,a
 	mvi	c,poll
 	call	xdos	; sleep until ready
+co0:	pop	d
 	pop	b
-	pop	d
-co0:	mvi	a,12
+	mvi	a,12
 	jr	devio
 
 ; D=device number
@@ -447,15 +439,17 @@ devio:	push	psw
 	jr	indjmp0
 
 ; D=device number
-conin:	call	const	; is ready now?
+conin:	push	d
+	call	const	; is ready now?
 	ora	a
 	jnz	ci0
+	pop	d
 	push	d
 	mov	e,d
 	mvi	c,poll
 	call	xdos	; sleep until ready
-	pop	d
-ci0:	mvi	a,6
+ci0:	pop	d
+	mvi	a,6
 	jr	devio
 
 ; char I/O driver function calls
@@ -497,6 +491,11 @@ signon: db	13,10,7
 	dw	vers
 	db	'  (c) 1984 DRI and MMS',13,10,'$'
 
+ if h89
+; ORG0 on, 2mS off, CPU clock rate selected
+cpuspd:	db	20h,30h,24h,34h
+ endif
+
 ; Interrupts are disabled
 ; HL = BIOS JMP table
 ; DE = debug entry
@@ -504,18 +503,17 @@ signon: db	13,10,7
 boot:
  if h89
 	; This is H89-specific...
-	mvi	a,20h	; ORG0 on, 2mS off, 2.048MHz clock
+	lda	cpuspd+defspd
 	sta	@intby
 	out	0f2h	; prevent undesirable intrs
 			; Console 8250 should already be off
  endif
  if z180
-	; TODO: make WAIT states configurable...
 	; speed things up...
-	mvi	a,00$00$0000b
-	out0	a,dcntl	; no WAIT states
-	mvi	a,0$0$000000b
-	out0	a,rcr	; no RESFRESH cycles
+	mvi	a,z$dcntl
+	out0	a,dcntl	; set WAIT states
+	mvi	a,z$rcr
+	out0	a,rcr	; set RESFRESH cycles
  endif
 	;
 	sded	dbuga
@@ -562,10 +560,10 @@ boot:
 	shld	msegtbl
 ; get common size from SYSDAT
 	lixd	sysdat
-	ldx	a,+1	;number of system consoles
-	cpi	1+1	;we can only support 1
+	ldx	a,+1	;number of system consoles (requested)
+	cpi	numcon+1	;can we support?
 	jrc	iin50
-	mvi	a,1	;if more than 1, only allow 1.
+	mvi	a,numcon	;if too many, set limit
 iin50:	sta	maxcon+1
 	ldx	a,+124		;common memory base page
 ; Verify that we have banked RAM... A=compag from MP/M

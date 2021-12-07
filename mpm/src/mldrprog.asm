@@ -77,9 +77,9 @@ start:
 	lda	sysbuf+1	; nmb$cns
 	dcr	a
 	ora	a
-	rrc
+	rar
 	ora	a
-	rrc
+	rar
 	inr	a
 	mov	h,a
 	mvi	l,0
