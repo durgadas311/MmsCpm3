@@ -67,7 +67,6 @@ bsasi0:
 	mvi	e,8	; Read
 	call	sasi$cmd
 	rc
-	pop	h
 	jmp	hwboot
 
 ; send SASI read command, get results
