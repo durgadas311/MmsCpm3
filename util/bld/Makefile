@@ -1,6 +1,6 @@
 # Assumes PWD = CPMDrive_D
 
-export CPMDrive_D = $(HOME)/CpmDev/util
+export CPMDrive_D = $(PWD)
 export CPMDefault = d:
 
 all: tr.com typecr.com spdsbc.com strs512k.com test512k.com tpa.com \

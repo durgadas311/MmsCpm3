@@ -31,6 +31,7 @@ vererr: lxi	d,verr
 thread: dw	0
 memstr: dw	0
 rtcstr: dw	0
+biospg:	db	0
 
 start:	sspd	savstk
 	lxi	sp,stack
@@ -46,13 +47,21 @@ start:	sspd	savstk
 	mov	a,h
 	lhld	cpm+1
 	cpi	1	;MP/M ?
+	mov	a,h	; BIOS page
 	jrnz	st0
 	inx	h
 	mov	e,m
 	inx	h
 	mov	d,m
-	xchg
-st0:	mvi	l,67h	;thread
+	; For MP/M, the strings won't be above BIOS JMP...
+	mov	l,e
+	mov	h,d
+	inx	h
+	inx	h
+	mov	a,m	; XIOS common page
+	xchg		; HL=BIOS JMP page
+st0:	sta	biospg
+	mvi	l,67h	;thread
 	mov	c,m
 	inx	h
 	mov	b,m
@@ -91,7 +100,7 @@ su3:	dad	d	;point to string address
 	pop	h
 	jmp	su2
 done:
-	lda	cpm+2	; compare page for sanity
+	lda	biospg	; compare page for sanity
 	lhld	memstr
 	cmp	h	; should be carry
 	jnc	nomem
@@ -99,7 +108,7 @@ done:
 	call	strout
 	call	crlf
 nomem:
-	lda	cpm+2	; compare page for sanity
+	lda	biospg	; compare page for sanity
 	lhld	rtcstr
 	cmp	h	; should be carry
 	jnc	nortc
