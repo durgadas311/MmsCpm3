@@ -42,7 +42,7 @@ dcntl	equ	32h
 @nbnk:	db	4	; not total, just for MP/M
 @compg:	db	0c0h	; must match GENSYS value?
 @mmerr: db	cr,lf,bell,'No Z180$'
-@memstr: db	'MMUZ180 ',0,'Z180 Native MMU ',0,'v3.10'
+@memstr: db	'MMUZ180 ',0,'Z180 Native MMU ',0,'v3.00'
 	dw	vers
 	db	'$'
 

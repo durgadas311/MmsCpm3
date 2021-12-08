@@ -80,7 +80,7 @@ driv0	db	dev0,ndev
 
 string: db	'SDC ',0,'SDCard Interface ('
 	db	ndev+'0'
-	db	' partitions) ',0,'v3.10'
+	db	' partitions) ',0,'v3.00'
 	dw	VERS,'$'
 
 ; Mode byte table for SDC driver

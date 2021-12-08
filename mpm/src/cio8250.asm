@@ -30,7 +30,7 @@ ndev	equ	4	;number of devices
 	dw	chrtbl
 	dw	xmodes
 
-string: db	'Z89 ',0,'Char I/O ',0,'v3.10'
+string: db	'Z89 ',0,'Char I/O ',0,'v3.00'
 	dw	vers
 	db	'$'
 

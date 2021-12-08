@@ -421,7 +421,7 @@ conout:
 	call	xdos	; sleep until ready
 co0:	pop	d
 	pop	b
-	mvi	a,12
+coo:	mvi	a,12
 	jr	devio
 
 ; D=device number
@@ -479,9 +479,9 @@ thread: equ	$	;must be last in dseg (common mem)
 
 signon: db	13,10,7
  if h89
-	db	'H8'
+	db	'H8-'
  endif
-	db	'-'
+; TODO: other platforms...
  if z180
 	db	'Z180'
  else
@@ -674,7 +674,7 @@ msgout:
 	push	h
 	mov	c,m
 	mvi	d,0
-	call	co0
+	call	coo
 	pop	h
 	inx	h
 	jr	msgout

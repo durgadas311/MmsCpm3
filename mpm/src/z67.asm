@@ -102,7 +102,7 @@ driv0	db	dev0,ndev
 
 string: db	'77320 ',0,'SASI Interface ('
 	db	ndev+'0'
-	db	' partitions) ',0,'v3.10'
+	db	' partitions) ',0,'v3.00'
 	dw	VERS,'$'
 
 ; Mode byte table for SASI driver
