@@ -62,6 +62,7 @@ hstbnk	equ	14	;host bank
 hstmdl	equ	15	;host module entry
 hstlen	equ	17	;length of header
 
+ if z180
 ; Z180 registers
 itc	equ	34h
 rcr	equ	36h
@@ -85,6 +86,7 @@ tmdr0h	equ	0dh
 rldr0l	equ	0eh
 rldr0h	equ	0fh
 tcr	equ	10h
+ endif
 
 ;-------- Start of Code-producing source -----------
 
@@ -176,8 +178,18 @@ pdisp:	jmp	$-$
 xdos:	jmp	$-$
 sysdat: dw	$-$
 
+; These locations are fixed, after combas block.
+@vect:	dw	$-$
+dbuga:	dw	$-$
+dbugv:	dw	$-$
+biosjmp:dw	$-$
+@dbnk:	ds	1	; bank for user I/O (user DMA addr)
+@eops:	ds	1
+@intby: ds	1	; Port F2 image
+
 @dirbf: ds	128
 
+ if z180
 	; Z180 internal devices interrupt vector table.
 	; If external devices also generate interrupts,
 	; this must be expanded/realigned to compensate.
@@ -201,14 +213,7 @@ vect:	dw	nulint	; 0 - /INT1
 	dw	nulint	; 13 - unused by Z180
 	dw	nulint	; 14 - unused by Z180
 	dw	nulint	; 15 - unused by Z180
-
-@vect:	dw	$-$
-dbuga:	dw	$-$
-dbugv:	dw	$-$
-biosjmp:dw	$-$
-@dbnk:	ds	1	; bank for user I/O (user DMA addr)
-@eops:	ds	1
-@intby: ds	1	; Port F2 image
+ endif
 
 wboot:
 colds:
@@ -226,7 +231,7 @@ colds:
 trap:	lxi	h,trpmsg
 	jmp	errx
 
-trpmsg:	db	CR,LF,'*TRAP*',CR,LF,'$'
+trpmsg:	db	cr,lf,'*TRAP*',cr,lf,'$'
  endif
 
 nulint:	ei
@@ -527,7 +532,7 @@ thread: equ	$	;must be last in dseg (common mem)
 
 	cseg	; rest is in banked memory...
 
-signon: db	13,10,7
+signon: db	cr,lf,bell
  if h89
 	db	'H8-'
  endif
@@ -539,7 +544,9 @@ signon: db	13,10,7
  endif
 	db	' MP/M-II v3.00'
 	dw	vers
-	db	'  (c) 1984 DRI and MMS',13,10,'$'
+	db	'  (c) 1984 DRI and MMS',cr,lf,'$'
+
+bnkerr:	db	cr,lf,bell,'Not enough memory banks$'
 
 ; Interrupts are disabled
 ; HL = BIOS JMP table
@@ -673,6 +680,9 @@ iin2:
 	lda	bnkflg
 	ora	a	;is enough memory installed?
 	jz	ramerr
+	call	segchk	; check memsegtbl (if banked RAM good)
+	ora	a
+	jz	segerr
 	call	set$jumps  ;setup system jumps and put in all banks
 	call	?itime	; get (starting) TOD from RTC
 
@@ -680,6 +690,26 @@ iin2:
 	im2
  endif
 	xra	a
+	ret
+
+; Verify that memsegtbl has no bank >= @nbnk
+segchk:
+	lhld	sysdat
+	mvi	l,15	; max$mem$seg
+	mov	b,m
+	lda	@nbnk	; num banks
+	dcr	a	; largest bank num allowed
+sgck0:
+	inx	h
+	inx	h
+	inx	h
+	inx	h	; memsegtbl[x].bank
+	cmp	m
+	jrc	sgck1
+	djnz	sgck0
+	ori	true
+	ret
+sgck1:	xra	a	; error - not enough banks
 	ret
 
 ; Interrupts disabled, must not enable
@@ -711,6 +741,8 @@ sj0:
 	jr	sj0		;
 	ret
 
+segerr: lxi	h,bnkerr
+	jr	errx
 ramerr: lxi	h,@mmerr
 errx:	call	msgout
 	di ! hlt

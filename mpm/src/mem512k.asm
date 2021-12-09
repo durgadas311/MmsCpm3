@@ -1,4 +1,4 @@
-vers equ '0 ' ; Dec 5, 2021  07:58   drm "MEM512K.ASM"
+vers equ '1 ' ; Dec 5, 2021  07:58   drm "MEM512K.ASM"
 ;****************************************************************
 ; Banked Memory BIOS module for MP/M              		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -30,7 +30,7 @@ map	equ	080h	; mmu flag to enable mapping...
 
 	dseg		; GENSYS results in DSEG stuff in common memory
 
-@nbnk:	db	4	; actually, 8 but we save 4 for ramdisk...
+@nbnk:	db	10	; use all 512K
 @compg:	db	0c0h
 @mmerr: db	cr,lf,bell,'No RAM512K$'
 @m512k:	db	mmu
@@ -86,10 +86,16 @@ bnksl2:
 ; Once memory is verified, these all have 'map' bit set.
 @t512k:
 table:
-	db	 0, 1, 2,3	; Bank 0 map pattern
+	db	 0, 1, 2,3	; Bank 0 map pattern (same as RESET)
 	db	 4, 5, 6,3	; Bank 1 map pattern
 	db	 7, 8, 9,3	; Bank 2 map pattern
 	db	10,11,12,3	; Bank 3 map pattern
+	db	13,14,15,3	; Bank 4
+	db	16,17,18,3	; Bank 5
+	db	19,20,21,3	; Bank 6
+	db	22,23,24,3	; Bank 7
+	db	25,26,27,3	; Bank 8
+	db	28,29,30,3	; Bank 9
 	db	0	; safety stop for RD512K'3
 tablez	equ	$-table
 

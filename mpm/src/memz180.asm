@@ -1,4 +1,4 @@
-vers equ '0 ' ; Nov 14, 2021  08:06   drm "MEMZ180.ASM"
+vers equ '1 ' ; Nov 14, 2021  08:06   drm "MEMZ180.ASM"
 ;****************************************************************
 ; Banked Memory BIOS module for MP/M              		*
 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -39,7 +39,7 @@ dcntl	equ	32h
 
 	dseg		; GENSYS results in DSEG in common memory
 
-@nbnk:	db	4	; not total, just for MP/M
+@nbnk:	db	8	; lazy use of all 512K
 @compg:	db	0c0h	; must match GENSYS value?
 @mmerr: db	cr,lf,bell,'No Z180$'
 @memstr: db	'MMUZ180 ',0,'Z180 Native MMU ',0,'v3.00'

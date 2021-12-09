@@ -53,6 +53,7 @@ m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar'
 	mv mpm.sys $@
+	mv system.dat m3sdcnet.dat
 
 # assumes CP/NET RSP(s) removed (no check)
 m3%.sys: m3%.spr
@@ -60,6 +61,7 @@ m3%.sys: m3%.spr
 	cp gm.mpmii.dat system.dat
 	vcpm gensys '$$ar'
 	mv mpm.sys $@
+	mv system.dat $*.dat
 
 .PRECIOUS: %.rel
 
