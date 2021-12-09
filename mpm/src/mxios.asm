@@ -128,11 +128,12 @@ BIOS$0	equ	$
 
 	ds	13	;this puts setup/mode info where they expect it
 	jmp	search
-	ds	6
+	jmp	setspd	; change CPU speed - platform dependent
+	ds	3
 
 ; These are only static when accessed via XIOSJMP.TBL
 @dstat: ds	1
-	ds	1	; former Port F2 image
+speed:	ds	1	; formerly Port F2 image "@intby"
 
 	dw	@lptbl	;logical/physical drive table
 	dw	thread	;module thread
@@ -473,6 +474,55 @@ getusrbnk:	;finds the bank number for calling process
 	sta	@dbnk
 	jmp	swtsys
 
+ if h89
+; CPU clock rate selected, ORG0+2mS handled by user
+cpuspd:	db	00h,10h,04h,14h
+ endif
+
+; A=0,1,2,3[...] speed index, FF=get current speed
+; Returns A: FF=error, FE=not supported, 0,1,2,3...=success
+; Called from user bank, must be in common mem.
+setspd:
+ if h89
+	cpi	0ffh
+	jrz	ssx
+	sta	speed
+	mov	e,a
+	cpi	4
+	mvi	a,0ffh
+	rnc
+	lxi	h,cpuspd
+	mvi	d,0
+	dad	d
+	mov	d,m
+	di
+	lda	@intby
+	ani	11101011b
+	ora	d
+	sta	@intby
+	out	0f2h	; speed changes now
+  if z180tick
+	; there will be a small error until next tick
+	lxi	h,maxclk
+	mov	a,e
+	cpi	3
+	jrz	ss0
+	lxi	h,minclk
+	ora	a
+	jrz	ss0
+ss1:	dad	h
+	dcr	a
+	jrnz	ss1
+ss0:	; HL=timer value for 50Hz tick
+	out0	l,rldr0l	; update timer reload count
+	out0	h,rldr0h	;
+  endif
+ssx:	lda	speed	; always return current speed
+ else
+	mvi	a,0feh	; not supported
+ endif
+	ret
+
 thread: equ	$	;must be last in dseg (common mem)
 
 	cseg	; rest is in banked memory...
@@ -491,11 +541,6 @@ signon: db	13,10,7
 	dw	vers
 	db	'  (c) 1984 DRI and MMS',13,10,'$'
 
- if h89
-; ORG0 on, 2mS off, CPU clock rate selected
-cpuspd:	db	20h,30h,24h,34h
- endif
-
 ; Interrupts are disabled
 ; HL = BIOS JMP table
 ; DE = debug entry
@@ -503,7 +548,10 @@ cpuspd:	db	20h,30h,24h,34h
 boot:
  if h89
 	; This is H89-specific...
+	mvi	a,defspd
+	sta	speed
 	lda	cpuspd+defspd
+	ori	00100000b	; ORG0 only, right now
 	sta	@intby
 	out	0f2h	; prevent undesirable intrs
 			; Console 8250 should already be off
