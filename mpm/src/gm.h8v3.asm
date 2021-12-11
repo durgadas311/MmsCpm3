@@ -1,9 +1,9 @@
-; default SYSTEM.DAT file for 4-console system, no printers.
+; default SYSTEM.DAT file for 2-console system, no printers.
 ; Based on default$system$data in GENSYS.PLM
 
 ; Start of MP/M system data area
 mem$top:		db	0ffh	; 64K address space
-nmb$cns:		db	4
+nmb$cns:		db	2
 brkpt$RST:		db	6
 sys$call$stks:		db	0ffh
 bank$switched:		db	0ffh

@@ -4,7 +4,8 @@ vers equ '0 ' ; Nov 14, 2021  13:47  drm  "CIO8250.ASM"
 ;   For INS8250 UARTS as in H89           		*
 ; Copyright (C) 1983 Magnolia Microsystems		*
 ;********************************************************
-	maclib Z80
+	maclib	z80
+	maclib	cfgmpm
 
 false	equ	0
 true	equ	not false
@@ -15,7 +16,10 @@ dte	equ	0d8h	;MODEM
 dce	equ	0d0h	;AUX
 
 dev0	equ	200	;first device
-ndev	equ	4	;number of devices
+ndev	set	4	;max number of devices
+ if numser LT ndev
+ndev	set	numser
+ endif
 
 	dseg	;common memory, other parts in banked.
 	dw	thread
@@ -34,16 +38,18 @@ string: db	'Z89 ',0,'Char I/O ',0,'v3.00'
 	dw	vers
 	db	'$'
 
-xmodes: db	00110000b,00111111b,00000011b,crt
+; INS8250:      xxxx      yyyy MCR  z    LCR
+xmodes: db	00110000b,00111111b,00000011b,crt	; (already init)
 	db	00110000b,00111111b,10000011b,lp
-	db	00110001b,00111111b,10000011b,dte
-	db	00110000b,00111111b,10000011b,dce
+	db	00110000b,00111111b,10000011b,dce	; ("aux")
+	db	00110001b,00111111b,10000011b,dte	; ("modem")
+; if (((MSR ^ yyyy) & xxxx) == 0) then ready for output
 
 chrtbl: 	; CP/M 3 char I/O table
 	db	'CRT   ',00000111b,14 ;I/O, soft-baud, no protocal, 9600
 	db	'LPT   ',00000111b,14 ;... 9600
-	db	'DTE   ',00000111b, 6 ;... 300 baud
-	db	'DCE   ',00000111b,14 ;... 9600
+	db	'DCE   ',00000111b,14 ;... 9600 ("aux")
+	db	'DTE   ',00000111b,14 ;... 9600 baud ("modem")
 
 ; It appears MP/M requires all of this in common memory
 ; B=device number, relative to 200.

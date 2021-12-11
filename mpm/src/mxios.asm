@@ -614,13 +614,9 @@ boot:
 	dad	d
 	shld	msegtbl
 ; get common size from SYSDAT
-	lixd	sysdat
-	ldx	a,+1	;number of system consoles (requested)
-	cpi	numcon+1	;can we support?
-	jrc	iin50
-	mvi	a,numcon	;if too many, set limit
-iin50:	sta	maxcon+1
-	ldx	a,+124		;common memory base page
+	lhld	sysdat
+	mvi	l,124		;common memory base page
+	mov	a,m
 ; Verify that we have banked RAM... A=compag from MP/M
 	call	?bnkck
 	sta	bnkflg
@@ -652,10 +648,18 @@ iin0:	mov	e,m		;initializing as we go.
 	; should only be one...
 	shld	ciomdl
 	push	d	;save NEXT module address
-	dcx	h
-	mov	a,m	;number of devices
-	sta	cionum
-	pop	h
+	dcx	h	;number of devices
+	mov	a,m
+	lhld	sysdat
+	inx	h
+	cmp	m
+	jrc	iin50	; min(nmbcns,cionum)
+	mov	a,m	;number of system consoles (requested)
+iin50:	sta	maxcon+1
+	; TODO: factor in number of printers: inx h; add m
+	; first need to make printer(s) 0+nmbcns
+	sta	cionum	; initialize only what is needed
+	pop	h	; next module
 	jmp	iin0
 
 notchr: 		;HL point to init entry

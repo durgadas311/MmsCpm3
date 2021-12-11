@@ -1,4 +1,4 @@
-; default SYSTEM.DAT file for single-console system.
+; default SYSTEM.DAT file for single-console system (e.g. CP/NET Server).
 ; Based on default$system$data in GENSYS.PLM
 
 ; Start of MP/M system data area
