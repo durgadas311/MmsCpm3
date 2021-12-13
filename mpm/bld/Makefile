@@ -19,6 +19,9 @@ all: m3sdczrr.sys mldrsdc.img
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZ'
 
+cio8250.rel: cio8250.asm cfgmpm.lib
+	vcpm rmac "$<" '$$SZ'
+
 mxios.rel: mxios.asm cfgmpm.lib
 	vcpm rmac "$<" '$$SZ'
 

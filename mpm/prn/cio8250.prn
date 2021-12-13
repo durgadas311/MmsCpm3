@@ -4,7 +4,8 @@
                 ;   For INS8250 UARTS as in H89           		*
                 ; Copyright (C) 1983 Magnolia Microsystems		*
                 ;********************************************************
-                	maclib Z80
+                	maclib	z80
+                	maclib	cfgmpm
                 
  0000 =         false	equ	0
  FFFF =         true	equ	not false
@@ -15,118 +16,125 @@
  00D0 =         dce	equ	0d0h	;AUX
                 
  00C8 =         dev0	equ	200	;first device
- 0004 =         ndev	equ	4	;number of devices
+ 0004 #         ndev	set	4	;max number of devices
+                 if numser LT ndev
+ 0002 #         ndev	set	numser
+                 endif
                 
                 	dseg	;common memory, other parts in banked.
- 0000 B000      	dw	thread
- 0002 C804      	db	dev0,ndev
+ 0000 B600      	dw	thread
+ 0002 C802      	db	dev0,ndev
                 
  0004 C30000    	jmp	init
- 0007 C36B00    	jmp	inst
+ 0007 C36E00    	jmp	inst
  000A C36000    	jmp	input
- 000D C38200    	jmp	outst
- 0010 C37600    	jmp	output
+ 000D C38800    	jmp	outst
+ 0010 C37900    	jmp	output
  0013 1900      	dw	string
  0015 4000      	dw	chrtbl
  0017 3000      	dw	xmodes
                 
- 0019 5A38392000string: db	'Z89 ',0,'Char I/O ',0,'v3.10'
+ 0019 5A38392000string: db	'Z89 ',0,'Char I/O ',0,'v3.00'
  002D 3020      	dw	vers
  002F 24        	db	'$'
                 
- 0030 303F03E8  xmodes: db	00110000b,00111111b,00000011b,crt
+                ; INS8250:      xxxx      yyyy MCR  z    LCR
+ 0030 303F03E8  xmodes: db	00110000b,00111111b,00000011b,crt	; (already init)
  0034 303F83E0  	db	00110000b,00111111b,10000011b,lp
- 0038 313F83D8  	db	00110001b,00111111b,10000011b,dte
- 003C 303F83D0  	db	00110000b,00111111b,10000011b,dce
+ 0038 303F83D0  	db	00110000b,00111111b,10000011b,dce	; ("aux")
+ 003C 313F83D8  	db	00110001b,00111111b,10000011b,dte	; ("modem")
+                ; if (((MSR ^ yyyy) & xxxx) == 0) then ready for output
                 
                 chrtbl: 	; CP/M 3 char I/O table
  0040 4352542020	db	'CRT   ',00000111b,14 ;I/O, soft-baud, no protocal, 9600
  0048 4C50542020	db	'LPT   ',00000111b,14 ;... 9600
- 0050 4454452020	db	'DTE   ',00000111b, 6 ;... 300 baud
- 0058 4443452020	db	'DCE   ',00000111b,14 ;... 9600
+ 0050 4443452020	db	'DCE   ',00000111b,14 ;... 9600 ("aux")
+ 0058 4454452020	db	'DTE   ',00000111b,14 ;... 9600 baud ("modem")
                 
                 ; It appears MP/M requires all of this in common memory
                 ; B=device number, relative to 200.
                 input:
- 0060 CD6B00    inp0:	call	inst
+ 0060 CDA100    	call	getx
+ 0063 CD7100    inp0:	call	inst0
                 	jrz	inp0			; wait for character ready
- 0063+28FB      	DB	28H,INP0-$-1
- 0065 4B        	mov	c,e			;get data register address
+ 0066+28FB      	DB	28H,INP0-$-1
+ 0068 4B        	mov	c,e			;get data register address
                 	inp	a			; get data
- 0066+ED78      	DB	0EDH,A*8+40H
- 0068 E67F      	ani	7Fh			; mask parity
- 006A C9        	ret
+ 0069+ED78      	DB	0EDH,A*8+40H
+ 006B E67F      	ani	7Fh			; mask parity
+ 006D C9        	ret
                 
                 ; B=device number, relative to 200.
                 inst:
- 006B CD9B00    	call	getx			;
-                	inp	a			; read from status port
- 006E+ED78      	DB	0EDH,A*8+40H
- 0070 E601      	ani	1			; isolate RxRdy
- 0072 C8        	rz				; return with zero
- 0073 F6FF      	ori	true
- 0075 C9        	ret
+ 006E CDA100    	call	getx			;
+                inst0:	inp	a			; read from status port
+ 0071+ED78      	DB	0EDH,A*8+40H
+ 0073 E601      	ani	1			; isolate RxRdy
+ 0075 C8        	rz				; return with zero
+ 0076 F6FF      	ori	true
+ 0078 C9        	ret
                 
                 ; B=device number, relative to 200.
                 ; C=char
- 0076 79        output: mov	a,c
- 0077 F5        	push	psw			; save character from <C>
- 0078 CD8200    outp0:	call	outst
+ 0079 79        output: mov	a,c
+ 007A F5        	push	psw			; save character from <C>
+ 007B CDA100    	call	getx
+ 007E CD8B00    outp0:	call	outst0
                 	jrz	outp0			; wait for TxEmpty, HL->port
- 007B+28FB      	DB	28H,OUTP0-$-1
- 007D 4B        	mov	c,e			; get port address
- 007E F1        	pop	psw
+ 0081+28FB      	DB	28H,OUTP0-$-1
+ 0083 4B        	mov	c,e			; get port address
+ 0084 F1        	pop	psw
                 	outp	a			; send data
- 007F+ED79      	DB	0EDH,A*8+41H
- 0081 C9        	ret
+ 0085+ED79      	DB	0EDH,A*8+41H
+ 0087 C9        	ret
                 
                 ; B=device number, relative to 200.
- 0082 CD9B00    outst:	call	getx	; character output status
- 0085 2B        	dcx	h
- 0086 0C        	inr	c		; get port+6
+ 0088 CDA100    outst:	call	getx	; character output status
+ 008B 2B        outst0:	dcx	h
+ 008C 0C        	inr	c		; get port+6
                 	inp	a		; get handshake status
- 0087+ED78      	DB	0EDH,A*8+40H
- 0089 AE        	xra	m
- 008A 2B        	dcx	h		;
- 008B A6        	ana	m		; [ZR] = ready
- 008C E6F0      	ani	11110000b
+ 008D+ED78      	DB	0EDH,A*8+40H
+ 008F AE        	xra	m
+ 0090 2B        	dcx	h		;
+ 0091 A6        	ana	m		; [ZR] = ready
+ 0092 E6F0      	ani	11110000b
                 	jrnz	nrdy
- 008E+2009      	DB	20H,NRDY-$-1
- 0090 0D        	dcr	c		; line status register (+5)
+ 0094+2009      	DB	20H,NRDY-$-1
+ 0096 0D        	dcr	c		; line status register (+5)
                 	inp	a
- 0091+ED78      	DB	0EDH,A*8+40H
- 0093 E620      	ani	20h		; test xmit holding register empty
- 0095 C8        	rz			;
- 0096 F6FF      	ori	true
- 0098 C9        	ret			; return true if ready
+ 0097+ED78      	DB	0EDH,A*8+40H
+ 0099 E620      	ani	20h		; test xmit holding register empty
+ 009B C8        	rz			;
+ 009C F6FF      	ori	true
+ 009E C9        	ret			; return true if ready
                 
- 0099 AF        nrdy:	xra	a
- 009A C9        	ret
-                
+ 009F AF        nrdy:	xra	a
+ 00A0 C9        	ret
+                
                 ; B=device number, relative to 200.
- 009B 78        getx:	mov	a,b	;B=device #, 0-15
- 009C D600      	sui	dev0-200
- 009E 87        	add	a	;*2
- 009F 87        	add	a	;*4
- 00A0 C603      	adi	3	;to point to port address
- 00A2 5F        	mov	e,a
- 00A3 1600      	mvi	d,0
- 00A5 213000    	lxi	h,xmodes
- 00A8 19        	dad	d
- 00A9 7E        	mov	a,m
- 00AA 5F        	mov	e,a
- 00AB C605      	adi	5
- 00AD 4F        	mov	c,a
- 00AE 2B        	dcx	h
- 00AF C9        	ret		;HL => xmode(dev)+2 = line control register image
+ 00A1 78        getx:	mov	a,b	;B=device #, 0-15
+ 00A2 D600      	sui	dev0-200
+ 00A4 87        	add	a	;*2
+ 00A5 87        	add	a	;*4
+ 00A6 C603      	adi	3	;to point to port address
+ 00A8 5F        	mov	e,a
+ 00A9 1600      	mvi	d,0
+ 00AB 213000    	lxi	h,xmodes
+ 00AE 19        	dad	d
+ 00AF 7E        	mov	a,m
+ 00B0 5F        	mov	e,a
+ 00B1 C605      	adi	5
+ 00B3 4F        	mov	c,a
+ 00B4 2B        	dcx	h
+ 00B5 C9        	ret		;HL => xmode(dev)+2 = line control register image
                 
- 00B0 =         thread	equ	$
+ 00B6 =         thread	equ	$
                 
                 	cseg	;banked memory.
                 
                 ; B=device number, relative to 200.
                 init:
- 0000 CD9B00    	call	getx
+ 0000 CDA100    	call	getx
  0003 4B        	mov	c,e
                 	bit	7,m	;is INIT allowed ??
  0004+CB7E      	DB	0CBH,7*8+M+40H
@@ -158,7 +166,7 @@
  002F E1        	pop	h	;point to BASE+3 initial value
  0030 7E        	mov	a,m	;disable divisor latch access.
  0031 E67F      	ani	01111111b
-                	outp	a	;and setup # bits, parity, etc...
+                	outp	a	;and setup # bits, parity, etc...
  0033+ED79      	DB	0EDH,A*8+41H
  0035 0C        	inr	c	;+4 = modem control
  0036 2B        	dcx	h	;next, handshake lines state
@@ -166,7 +174,7 @@
  0038 E60F      	ani	00001111b	;enable handshake lines
                 	outp	a
  003A+ED79      	DB	0EDH,A*8+41H
- 003C 0C        	inr	c	;+5 = line status
+ 003C 0C        	inr	c	;+5 = line status
                 	inp	a	;clear any pending activity
  003D+ED78      	DB	0EDH,A*8+40H
  003F 79        	mov	a,c
@@ -200,4 +208,4 @@
  0068 0600      	dw	6	;19200
                 
  006A           	end
-
+

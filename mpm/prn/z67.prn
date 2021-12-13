@@ -1,0 +1,865 @@
+CP/M RMAC ASSEM 1.1	#001	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+ 2030 =         VERS EQU '0 ' ; December 4, 2021 19:33 drm "Z67.ASM"
+                *************************************************************************
+                
+                	TITLE	'SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE'
+                	MACLIB	Z80
+                	$*MACRO
+                
+                	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
+                	extrn	@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
+                	extrn	?bnksl
+                
+                **************************************************************************
+                ; Configure the number of partitions (numparX) on each LUN in your system
+                ;  and if the LUN is removable (true) or not (false).
+                **************************************************************************
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                ; Logical Unit 0 characteristics
+                
+ 0008 =         numpar0 equ	8		; number of partitions on LUN
+ 0000 =         remov0	equ	false		; LUN removable if TRUE
+                
+                ; Logical Unit 1 characteristics
+                
+ 0000 =         numpar1 equ	0		; number of partitions on LUN
+ 0000 =         remov1	equ	false		; LUN removable if TRUE
+                
+                ; Logical Unit 2 characteristics
+                
+ 0000 =         numpar2 equ	0		; number of partitions on LUN
+ 0000 =         remov2	equ	false		; LUN removable if TRUE
+                
+                ; Logical Unit 3 characteristics
+                
+ 0000 =         numpar3 equ	0		; number of partitions on LUN
+ 0000 =         remov3	equ	false		; LUN removable if TRUE
+                
+ 0008 =         ndev	equ	numpar0+numpar1+numpar2+numpar3
+ 0032 =         dev0	equ	50
+                
+                *************************************************************************
+                **  PORTS AND CONSTANTS
+                *************************************************************************
+                
+ 00F2 =         GPIO	EQU	0F2H		; SWITCH 501
+                
+ 0001 =         ACK	EQU	00000001B
+ 0002 =         INT	EQU	00000010B
+ 0004 =         PER	EQU	00000100B
+ 0008 =         BUSY	EQU	00001000B
+ 0010 =         CMND	EQU	00010000B
+ 0020 =         MSG	EQU	00100000B
+ 0040 =         POUT	EQU	01000000B
+ 0080 =         REQ	EQU	10000000B
+CP/M RMAC ASSEM 1.1	#002	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                
+ 0000 =         RUN	EQU	00000000B
+ 0010 =         SWRS	EQU	00010000B
+ 0020 =         INTE	EQU	00100000B
+ 0040 =         SEL	EQU	01000000B
+                
+ 0001 =         RECAL	EQU	1
+ 0008 =         RDBL	EQU	8	; COMMAND OP CODES
+ 000A =         WRBL	EQU	10
+ 000C =         INIT	EQU	12
+                
+ 0011 =         dpbl	equ	17	; length of CP/M 3.0 dpb
+ 0200 =         alvl	equ	512	; size of allocation vector
+ 0100 =         csvl	equ	256	; size of check sum vector
+ 0008 =         modlen	equ	8	; length of each mode byte table entry
+ 0013 =         datlen	equ	19	; length of each lun data entry
+ 0010 =         bcode	equ	16	; offset in lun data of the blk code
+ 0010 =         initflg equ	16	;    "   "   "   "   of lun initialization flag
+ 0011 =         parstr	equ	17	;    "   "   "   "   of partition start of lun
+ 0012 =         numpar	equ	18	;    "   "   "   "   of the number of partitions
+                
+ 000D =         CSTRNG	EQU	13	; Offsets of data in magic sector
+ 0013 =         NPART	EQU	19
+ 0004 =         CBYTE	EQU	4
+ 0005 =         DDATA	EQU	5
+ 0003 =         DCTYPE	EQU	3
+ 0014 =         SECTBL	EQU	20
+ 002F =         DDPB	EQU	47
+                
+ 0000 =         WRALL	EQU	0	; WRITE TO ALLOCATED
+ 0001 =         WRDIR	EQU	1	; WRITE TO DIRECTORY
+ 0002 =         WRUNA	EQU	2	; WRITE TO UNALLOCATED
+ 0003 =         READOP	EQU	3	; READ OPERATION
+                
+                ***************************************************
+                	dseg	; common memory
+                
+ 0000 4C01      	dw	thread
+ 0002 3208      driv0	db	dev0,ndev
+ 0004 C38110    	jmp	init$sasi
+ 0007 C39F10    	jmp	login
+ 000A C3F511    	JMP	READ$SASI
+ 000D C3F911    	JMP	WRITE$SASI
+ 0010 1600      	dw	string
+ 0012 01004500  	dw	dphtbl,modtbl
+                
+ 0016 3737333230string: db	'77320 ',0,'SASI Interface ('
+ 002D 38        	db	ndev+'0'
+ 002E 2070617274	db	' partitions) ',0,'v3.00'
+ 0041 30202400  	dw	VERS,'$'
+                
+                ; Mode byte table for SASI driver
+                
+                modtbl:
+ 0000 #         drv	set	0
+                	rept	numpar0
+CP/M RMAC ASSEM 1.1	#003	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                	if	remov0
+                	db	1001$0000b+drv,000$00000b,00000000b,00000000b
+                	else
+                	db	1000$0000b+drv,000$00000b,00000000b,00000000b
+                	endif
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+                	endm
+ 0045+80000000
+ 0049+FFFFFFFF
+ 004D+81000000
+ 0051+FFFFFFFF
+ 0055+82000000
+ 0059+FFFFFFFF
+ 005D+83000000
+ 0061+FFFFFFFF
+ 0065+84000000
+ 0069+FFFFFFFF
+ 006D+85000000
+ 0071+FFFFFFFF
+ 0075+86000000
+ 0079+FFFFFFFF
+ 007D+87000000
+ 0081+FFFFFFFF
+                
+ 0000 #         drv	set	0
+                	rept	numpar1
+                	if	remov1
+                	db	1001$0000b+drv,001$00000b,00000000b,00000000b
+                	else
+                	db	1000$0000b+drv,001$00000b,00000000b,00000000b
+                	endif
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+                	endm
+                
+ 0000 #         drv	set	0
+                	rept	numpar2
+                	if	remov2
+                	db	1001$0000b+drv,010$00000b,00000000b,00000000b
+                	else
+                	db	1000$0000b+drv,010$00000b,00000000b,00000000b
+                	endif
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+                	endm
+                
+ 0000 #         drv	set	0
+                	rept	numpar3
+                	if	remov3
+                	db	1001$0000b+drv,011$00000b,00000000b,00000000b
+                	else
+                	db	1000$0000b+drv,011$00000b,00000000b,00000000b
+                	endif
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+CP/M RMAC ASSEM 1.1	#004	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                	endm
+                
+                ; Disk parameter tables
+                
+                dpb:
+                	rept	ndev
+                	ds	dpbl
+                	endm
+ 0085+
+ 0096+
+ 00A7+
+ 00B8+
+ 00C9+
+ 00DA+
+ 00EB+
+ 00FC+
+                
+ 010D 00        bbnk:	db	0
+ 010E 0000      bdma:	dw	0
+                
+                	$-MACRO
+                ;
+                ;	ACTUAL READ-WRITE OF DATA
+                ;
+                SASIRW: 			; THIS ROUTINE IS FOR READING AND WRITING
+ 0110 3AB813    	LDA	CMBFR
+ 0113 D608      	SUI	RDBL		; IS COMMAND A READ ?
+ 0115 3EB2      	MVI	A,0B2H		; INIR FOR READS
+ 0117           	JRZ	NREAD
+ 0119 3EB3      	MVI	A,0B3H		; OUTIR FOR WRITES
+ 011B 324301    NREAD:	STA	HERE+1
+ 011E 3ACA13    	LDA	BASE$PORT
+ 0121 F5        	push	psw
+ 0122 3A0D01    	lda	bbnk
+ 0125 CD0000    	call	?bnksl
+ 0128 F1        	pop	psw
+ 0129 2A0E01    	lhld	bdma		; data buffer address
+ 012C 4F        	MOV	C,A		; DATA PORT ADDRESS TO REG. C
+ 012D 0C        NXTSEC: INR	C		; INCREMENT TO CONTROL PORT
+ 012E           SASICK: INP	A		; FIRST CHECK FOR DRIVE READY
+ 0130 320000    	STA	@dstat		; STORE STATUS
+ 0133 E6D8      	ANI	(CMND OR BUSY OR REQ OR POUT)
+ 0135 FE98      	CPI	(CMND OR BUSY OR REQ)  ; IF POUT DROPS,
+ 0137           	jrz	done		;  WE ARE INTO STATUS PHASE
+ 0139 E698      	ANI	(CMND OR BUSY OR REQ)
+ 013B FE88      	CPI	(BUSY OR REQ)	; WHEN CMND DROPS, SEEK IS COMPLETE, AND WE ARE
+ 013D           	JRNZ	SASICK		;  READY FOR DATA TRANSFER
+ 013F 0D        	DCR	C		; DATA PORT ADDRESS TO REG. C
+ 0140 0680      	MVI	B,128
+ 0142           HERE:	INIR			; CHANGED TO OUTIR FOR WRITE
+ 0144           	JR	NXTSEC
+ 0146 AF        done:	xra	a
+ 0147 CD0000    	call	?bnksl		; re-select bank 0
+ 014A AF        	xra	a
+ 014B C9        	ret
+                
+CP/M RMAC ASSEM 1.1	#005	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+ 014C =         thread	equ	$
+                
+                	cseg
+                	$*MACRO
+                
+ 0000 00        CNUM:	DB	0
+                
+                ; Disk parameter headers for the SASI driver
+                
+ 0000 #         ncsv	set	0
+ 0000 #         drv	set	0
+                
+                dphtbl:
+                	rept	numpar0
+                	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
+                	if	remov0
+                	dw	csv+(ncsv*csvl)
+                ncsv	set	ncsv+1
+                	else
+                	dw	0
+                	endif
+                	dw	alv+(drv*alvl)
+                drv	set	drv+1
+                	endm
+ 0001+0000000000
+ 000D+0000
+ 000F+8100
+ 0011+0000000000
+ 001D+0000
+ 001F+8102
+ 0021+0000000000
+ 002D+0000
+ 002F+8104
+ 0031+0000000000
+ 003D+0000
+ 003F+8106
+ 0041+0000000000
+ 004D+0000
+ 004F+8108
+ 0051+0000000000
+ 005D+0000
+ 005F+810A
+ 0061+0000000000
+ 006D+0000
+ 006F+810C
+ 0071+0000000000
+ 007D+0000
+ 007F+810E
+                
+                	rept	numpar1
+                	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
+                	if	remov1
+                	dw	csv+(ncsv*csvl)
+                ncsv	set	ncsv+1
+                	else
+                	dw	0
+CP/M RMAC ASSEM 1.1	#006	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                	endif
+                	dw	alv+(drv*alvl)
+                drv	set	drv+1
+                	endm
+                
+                	rept	numpar2
+                	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
+                	if	remov2
+                	dw	csv+(ncsv*csvl)
+                ncsv	set	ncsv+1
+                	else
+                	dw	0
+                	endif
+                	dw	alv+(drv*alvl)
+                drv	set	drv+1
+                	endm
+                
+                	rept	numpar3
+                	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
+                	if	remov3
+                	dw	csv+(ncsv*csvl)
+                ncsv	set	ncsv+1
+                	else
+                	dw	0
+                	endif
+                	dw	alv+(drv*alvl)
+                drv	set	drv+1
+                	endm
+                
+                ; Allocation vectors
+                
+                alv:
+                	rept	ndev
+                	ds	alvl
+                	endm
+ 0081+
+ 0281+
+ 0481+
+ 0681+
+ 0881+
+ 0A81+
+ 0C81+
+ 0E81+
+                
+                ; Check sum vectors for removable media
+                
+                csv:
+                	rept	ncsv
+                	ds	csvl
+                	endm
+                
+                	$-MACRO
+                
+                ;
+                ;	DRIVER INITIALIZATION CODE
+                ;
+CP/M RMAC ASSEM 1.1	#007	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                
+                init$sasi:
+ 1081 CD3113    	call	initdata
+ 1084 067C      	MVI	B,7CH
+ 1086 DBF2      	IN	GPIO		; READ SWITCH 501
+ 1088 E603      	ANI	00000011B	; WHAT'S PORT 7C SET FOR ?
+ 108A FE02      	CPI	00000010B	;  IF Z67, THEN THIS IS IT
+ 108C           	JRZ	GOTPRT
+ 108E 0678      	MVI	B,78H
+ 1090 DBF2      	IN	GPIO		; READ SWITCH 501
+ 1092 E60C      	ANI	00001100B	; WHAT'S PORT 78 SET FOR ?
+ 1094 FE08      	CPI	00001000B	;  IF Z67, THEN THIS IS IT
+ 1096           	JRZ	GOTPRT
+ 1098 06BC      	mvi	b,0bch	; assume 274Q if none other
+ 109A 78        GOTPRT: MOV	A,B
+ 109B 32CA13    	STA	BASE$PORT	; SAVE BASE PORT ADDRESS
+ 109E C9        	RET
+                
+ 109F CD1013    login:	call	get$ptr		; set dataptr & ix to current lun data
+ 10A2           	bitx	7,+initflg	; CHECK INITIALIZATION BIT in lundata	
+ 10A6 CACF10    	jz	init$hard	; if = 0 read in magic sector
+                
+ 10A9 3A0000    	lda	@rdrv		; See if loging in a drive that doesn't
+ 10AC           	subx	+parstr 	;  exist on the magic sector of the drive
+ 10AF           	cmpx	+numpar
+ 10B2 D2A511    	jnc	init$err
+                 if 0 ; TODO: skip optimization until we have MP/M @login vector
+                	lda	driv0
+                	addx	+parstr 	; b= starting physical drive number
+                	mov	b,a		; c= # of partitions on logical unit
+                	ldx	c,+numpar	
+                	LXI	H,0		; SEARCH MIXER TABLE FOR ANY
+                	MVI	E,16		; LOGGED IN PARTITIONS FOR THE CURRENT LUN.
+                	LXIX	@lptbl+15
+                MLOOP	LDX	A,+0
+                	SUB	B
+                	CMP	C		; SET CY IF IN RANGE  (C>x>B)
+                	DADC	H
+                	DCXIX	
+                	DCR	E
+                	JRNZ	MLOOP
+                	XCHG			; PUT LOGIN MASK IN DE
+                	lxi	h,@login	; GET LOGIN VECTOR'S ADDRESS
+                	MOV	A,M		; COMPARE LSB FIRST
+                	ANA	E
+                	jnz	endlog		; RETURN IF ONE OR MORE PARTITIONS ARE LOGIN.
+                	INX	H
+                	MOV	A,M		; THEN COMPARE MSB
+                	ANA	D
+                	jnz	endlog
+                 endif
+ 10B5 2A0000    	lhld	@cmode		; GET ADDRESS OF CURRENT MODE BYTES
+ 10B8           	bit	4,m		; IS IT REMOVABLE MEDIA ?
+ 10BA C2CF10    	jnz	init$hard	;  MUST INITIALIZE
+ 10BD CDA811    	call	init$drive
+ 10C0 C2A511    	jnz	init$err
+CP/M RMAC ASSEM 1.1	#008	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                endlog:
+ 10C3 AF        	xra	a
+ 10C4 C9        	ret
+                
+                ; A=offset into bdma (@scrcb+12)
+                ; Returns HL=bdma+A
+                bufoff:
+ 10C5 2A0E01    	lhld	bdma
+ 10C8 85        	add	l
+ 10C9 6F        	mov	l,a
+ 10CA 3E00      	mvi	a,0
+ 10CC 8C        	adc	h
+ 10CD 67        	mov	h,a
+ 10CE C9        	ret
+                
+                
+                INIT$HARD:
+ 10CF CD8612    	call	getcon		; restore head
+ 10D2 21C413    	lxi	h,rcmnd
+ 10D5 AF        	xra	a
+ 10D6 32C913    	sta	rcmnd+5
+ 10D9 CCC012    	cz	outcm0
+ 10DC CCED12    	cz	chk$stat
+ 10DF C2A511    	jnz	init$err
+ 10E2 3E08      	MVI	A,RDBL		; OP CODE TO READ A SECTOR
+ 10E4 32B813    	STA	CMBFR
+ 10E7 AF        	XRA	A		; SECTOR 0
+ 10E8 32B913    	STA	CMBFR+1
+ 10EB 32BA13    	STA	CMBFR+2
+ 10EE 32BB13    	STA	CMBFR+3
+ 10F1 3C        	INR	A
+ 10F2 32BC13    	STA	CMBFR+4 	; READ 1 SECTOR
+ 10F5 3A0E00    	lda	@scrcb+14
+ 10F8 320D01    	sta	bbnk		; set disk bank = 0
+ 10FB 2A0C00    	lhld	@scrcb+12	; use bios scratch buffer for magic sector
+ 10FE 220E01    	shld	bdma
+ 1101 CD8612    	CALL	GETCON		; WAKE UP CONTROLLER
+ 1104 CCBD12    	CZ	OUTCOM		; OUTPUT READ COMMAND
+ 1107 CC1001    	CZ	SASIRW		; READ IN SECTOR
+ 110A CCED12    	CZ	CHK$STAT	; CHECK STATUS OF READ
+ 110D C2A511    	JNZ	INIT$ERR
+                
+ 1110 3E13      	mvi	a,NPART
+ 1112 CDC510    	call	bufoff
+ 1115 7E        	mov	a,m
+ 1116           	lixd	dataptr
+ 111A           	cmpx	+numpar
+ 111D D22311    	jnc	usemag		; USE THE SMALLEST ONE
+ 1120           	stx	a,+numpar
+                usemag:
+ 1123           	ldx	b,+parstr	; Calculate start of dpb for current lun
+ 1126 04        	inr	b
+ 1127 217400    	lxi	h,dpb-dpbl
+ 112A 111100    	lxi	d,dpbl
+ 112D 19        dpbloop dad	d
+ 112E           	djnz	dpbloop
+CP/M RMAC ASSEM 1.1	#009	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                
+ 1130 EB        	xchg			; put to address in de
+ 1131 3E2F      	mvi	a,DDPB
+ 1133 CDC510    	call	bufoff
+ 1136           	ldx	a,+numpar	; Put number of partitions to be moved on stack
+                movdpblp:
+ 1139 F5        	push	psw
+ 113A 010F00    	lxi	b,dpbl-2	; Put length of dpb in BC minus psh & psm bytes
+ 113D           	ldir			; move dpb
+ 113F 7E        	mov	a,m		; Get old 2.2 mode byte 1 from magic sector
+ 1140 E603      	ani	00000011b	; mask - leave phyiscal sector size
+ 1142 12        	stax	d		; 16th byte in cpm 3 dpb is block code (psh)
+ 1143 13        	inx	d
+ 1144 FE02      	cpi	2
+ 1146           	jrc	gotit
+ 1148 3C        	inr	a
+ 1149 FE04      	cpi	4
+ 114B           	jrc	gotit
+ 114D 3E07      	mvi	a,7
+ 114F 12        gotit:	stax	d		; 17th byte in cpm 3 dpb (phm)
+ 1150 13        	inx	d		; Next dpb
+ 1151 010600    	lxi	b,6		; Skip over old mode bytes in magic sector
+ 1154 09        	dad	b
+ 1155 F1        	pop	psw		; dec partition count
+ 1156 3D        	dcr	a
+ 1157 C23911    	jnz	movdpblp
+                
+ 115A 1B        	dcx	d		; pointer back to psh
+ 115B 1B        	dcx	d
+ 115C 1A        	ldax	d
+ 115D           	stx	a,+bcode	; put bk code in lun data
+                
+ 1160           	ldx	b,+parstr	; partition start
+ 1163 04        	inr	b
+ 1164 110800    	lxi	d,modlen
+ 1167 213D00    	lxi	h,modtbl-modlen
+ 116A 19        modloop dad	d
+ 116B           	djnz	modloop
+                
+ 116D EB        	xchg
+ 116E 3E14      	mvi	a,SECTBL
+ 1170 CDC510    	call	bufoff
+ 1173           	ldx	b,+numpar
+ 1176 C5        nxtdef	push	b		; MOVE PARTITION ADDRESS TABLE INTO DRIVER
+ 1177 13        	inx	d		; skip over first mode byte
+ 1178 1A        	ldax	d		; DE = modtbl
+ 1179 B6        	ora	m		; HL = @scrbf+SECTBL (MAGIC SECTOR)
+ 117A 77        	mov	m,a
+ 117B 010300    	lxi	b,3		; length of partition address
+ 117E           	ldir
+ 1180 13        	inx	d		; skip over mask bytes (4) in modtbl
+ 1181 13        	inx	d
+ 1182 13        	inx	d
+ 1183 13        	inx	d
+ 1184 C1        	pop	b
+ 1185           	djnz	nxtdef
+CP/M RMAC ASSEM 1.1	#010	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                
+ 1187           	lded	dataptr 	; put dataptr in de
+ 118B 3E03      	mvi	a,DCTYPE	; GET L.U.N. SPECIFIC DATA FROM MAGIC SECTOR
+ 118D CDC510    	call	bufoff
+ 1190 011000    	LXI	B,16		; PUT IT INTO SPACE RESERVED FOR THIS L.U.N.
+ 1193           	LDIR
+                
+ 1195 CDA811    	call	init$drive	; Send initialization code
+ 1198           	jrnz	init$err
+                
+ 119A           	lixd	dataptr
+ 119E           	setx	7,+initflg	; Set initialization bit
+ 11A2 C3C310    	jmp	endlog
+                
+                INIT$ERR:
+ 11A5 3EFF      	mvi	a,0ffh		; error flag to bios
+ 11A7 C9        	ret
+                
+                INIT$DRIVE:
+ 11A8 2AB513    	LHLD	DATAPTR 	; SEE IF IT'S XEBEC
+ 11AB 7E        	MOV	A,M
+ 11AC E6E0      	ANI	11100000B
+ 11AE           	JRNZ	NOTXBC		; SKIP IF NOT
+ 11B0 CD8612    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
+ 11B3 21BE13    	LXI	H,ICMND 	; INITIALIZATION COMMAND STRING
+ 11B6 CCC012    	CZ	OUTCM0		; OUTPUT COMMAND
+ 11B9 C0        	RNZ
+ 11BA 2AB513    	LHLD	DATAPTR 	; DRIVE CHARACTERISTIC DATA
+ 11BD 23        	INX	H
+ 11BE 23        	INX	H
+ 11BF 0608      	MVI	B,8		; 8 BYTES LONG
+ 11C1 1EC8      	MVI	E,(REQ OR POUT OR BUSY)
+ 11C3 CDD512    	CALL	OUTCM1		; OUTPUT THE DATA
+ 11C6 CCED12    	CZ	CHK$STAT	;  AND CHECK STATUS
+ 11C9 C3DE11    	JMP	ENDINIT
+ 11CC 2AB513    NOTXBC: LHLD	DATAPTR
+ 11CF 110A00    	LXI	D,10		; NOW DO "ASSIGN DRIVE TYPE" COMMAND
+ 11D2 19        	DAD	D		;  ( FOR DATA PERIPHERALS DONTROLLERS )
+ 11D3 E5        	PUSH	H
+ 11D4 CD8612    	CALL	GETCON		; GET CONTROLLER'S ATTENTION
+ 11D7 E1        	POP	H
+ 11D8 CCC012    	CZ	OUTCM0		; SEND THE COMMAND
+ 11DB CCED12    	CZ	CHK$STAT
+ 11DE CD8612    ENDINIT CALL	GETCON		; restore head
+ 11E1 21C413    	LXI	H,RCMND
+ 11E4           	lixd	dataptr
+ 11E8           	ldx	a,+1
+ 11EB 32C913    	sta	rcmnd+5
+ 11EE CCC012    	CZ	OUTCM0
+ 11F1 CCED12    	CZ	CHK$STAT
+ 11F4 C9        	RET
+                
+                ;	READ - WRITE ROUTINES
+                ;
+                ;	READ A PHYSICAL SECTOR CODE
+                ;
+CP/M RMAC ASSEM 1.1	#011	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                ; IY=buffer header
+                READ$SASI:
+ 11F5 3E08      	MVI	A,RDBL		; READ COMMAND CODE
+ 11F7           	JR	DO$RW		; COMMON READ-WRITE ROUTINE
+                ;
+                ;	WRITE A PHYSICAL SECTOR CODE
+                ;
+                ; IY=buffer header
+                WRITE$SASI:
+ 11F9 3E0A      	MVI	A,WRBL		; WRITE COMMAND CODE
+                ;
+                ;	COMMON READ-WRITE CODE
+                ;
+                ; IY=buffer header
+ 11FB 32B813    DO$RW:	STA	CMBFR		; COMMAND BUFFER OP CODE
+ 11FE           	ldy	a,+14	; buffer bank
+ 1201 320D01    	sta	bbnk
+ 1204           	ldy	l,+12	; buffer address
+ 1207           	ldy	h,+13
+ 120A 220E01    	shld	bdma
+ 120D CD1013    	call	get$ptr		; Set dataptr and ix to current lun data
+ 1210 CD2512    	CALL	SET$SEC 	; CALCULATE AND INSTALL ACTUAL SECTOR
+ 1213 CD7A12    	CALL	WAKE$UP 	; SETUP CONTROLLER
+ 1216 CCBD12    	CZ	OUTCOM		; AND OUTPUT THE COMMAND
+ 1219 CC1001    	CZ	SASIRW		; DO READ OR WRITE
+ 121C CCED12    	CZ	CHK$STAT	; CHECK THE BUS RESPONSE
+ 121F           	jrnz	error
+ 1221 C9        	RET
+                
+ 1222 3E01      error:	mvi	a,1
+ 1224 C9        	ret
+                
+                ;	CALCULATE THE REQUESTED SECTOR
+                ;
+                ; IY=buffer cb
+                SET$SEC:
+ 1225           	ldy	l,+8		; GET REQUESTED TRACK
+ 1228           	ldy	h,+9
+ 122B 29        	DAD	H		; *2
+ 122C 29        	DAD	H		; *4
+ 122D 29        	DAD	H		; *8
+ 122E 29        	DAD	H		; *16
+ 122F 29        	DAD	H		; *32
+ 1230 29        	DAD	H		; *64 (64 SECTORS/TRACK)
+ 1231 E5        	PUSH	H
+ 1232 2A0000    	LHLD	@cmode
+ 1235 23        	inx	h		; second byte
+ 1236 7E        	mov	a,m
+ 1237 E61F      	ani	00011111b	; mask off lun bits
+ 1239 4F        	mov	c,a
+ 123A 23        	INX	H
+ 123B 56        	MOV	D,M
+ 123C 23        	INX	H
+ 123D 5E        	MOV	E,M
+ 123E E1        	POP	H
+ 123F 19        	DAD	D		; ADD IN PARTITION OFFSET
+CP/M RMAC ASSEM 1.1	#012	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+ 1240           	JRNC	NOCAR0		; CARRY FROM DAD (IF ANY) GOES INTO
+ 1242 0C        	INR	C		;  HIGH ORDER BYTE OF SECTOR NUMBER
+ 1243           NOCAR0: lixd	dataptr 	; get block code (psh)
+ 1247           	ldx	a,+bcode
+ 124A E603      	ani	00000011b
+ 124C 47        	mov	b,a
+ 124D B7        	ORA	A
+ 124E           	JRZ	NODIV
+ 1250           NXDIV:	SRAR	C
+ 1252           	RARR	H
+ 1254           	RARR	L
+ 1256           	DJNZ	NXDIV
+ 1258           NODIV:	ldy	a,+10		; GET REQUESTED SECTOR
+ 125B 5F        	MOV	E,A
+ 125C 1600      	MVI	D,0
+ 125E 19        	DAD	D		; ADD IT IN
+ 125F           	JRNC	NOCAR1
+ 1261 0C        	INR	C
+ 1262 79        NOCAR1: MOV	A,C
+ 1263 32B913    	STA	CMBFR+1 	; MOVE TO COMMAND BUFFER
+ 1266 7C        	MOV	A,H
+ 1267 32BA13    	STA	CMBFR+2 	; MOVE REST OF SECTOR NUMBER TO COMMAND BUFFER
+ 126A 7D        	MOV	A,L
+ 126B 32BB13    	STA	CMBFR+3
+ 126E 3E01      	MVI	A,1		; TRANSFER 1 SECTOR
+ 1270 32BC13    	STA	CMBFR+4
+ 1273           	ldx	a,+1		; GET CONTROL BYTE
+ 1276 32BD13    	STA	CMBFR+5 	; PUT INTO COMMAND BUFFER
+ 1279 C9        	RET
+                
+ 127A CD8612    WAKE$UP:CALL	GETCON
+ 127D C8        	RZ
+ 127E CDA811    	CALL	INIT$DRIVE
+ 1281 C0        	RNZ
+ 1282 CD8612    	CALL	GETCON
+ 1285 C9        	RET
+                
+                ;	GET THE BUS' ATTENTION
+                ;
+                GETCON:
+ 1286 3ACA13    	LDA	BASE$PORT
+ 1289 4F        	MOV	C,A
+ 128A 0C        	INR	C		; CONTROL PORT ADDRESS TO REG. C
+ 128B 3E00      	mvi	a,RUN
+ 128D           	outp	a		; clear sel bit
+ 128F 0600      	MVI	B,0		; TIMER COUNTER
+ 1291 0D        GETCN1: DCR	C
+ 1292 AF        	XRA	A
+ 1293           	OUTP	A		; CLEAR DATA REGISTER
+ 1295 3A0000    	LDA	CNUM		; GET CONTROLLER NUMBER
+ 1298 0C        	INR	C		; AND SEND IT TO THE CARD
+ 1299 0C        	INR	C		; -SENC- PORT
+ 129A           	OUTP	A
+ 129C 0D        	DCR	C		; CONTROL PORT
+ 129D           	INP	A		; READ CONTROL PORT
+ 129F E608      	ANI	BUSY
+CP/M RMAC ASSEM 1.1	#013	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+ 12A1           	JRZ	GETCN2
+ 12A3           	DJNZ	GETCN1
+ 12A5 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+ 12A6 C9        	RET
+                GETCN2:
+ 12A7 3E40      	MVI	A,SEL
+ 12A9           	OUTP	A		; WAKE UP CONTROLER
+ 12AB 0600      	MVI	B,0
+                GETCN3:
+ 12AD           	INP	A
+ 12AF E608      	ANI	BUSY
+ 12B1           	JRNZ	GETCN4
+ 12B3           	DJNZ	GETCN3
+ 12B5 05        	DCR	B		; RESET PSW/Z TO INDICATE ERROR
+ 12B6 C9        	RET
+                GETCN4:
+ 12B7 3E00      	MVI	A,RUN
+ 12B9           	OUTP	A
+ 12BB AF        	XRA	A		; NO ERROR
+ 12BC C9        	RET
+                
+                ; OUTCOM: OUTPUT A COMMAND TO THE DRIVE
+                ;
+ 12BD 21B813    OUTCOM: LXI	H,CMBFR
+ 12C0 23        OUTCM0: INX	H
+ 12C1 7E        	mov	a,m		; Clear lun bits in command buffer
+ 12C2 E61F      	ani	00011111b
+ 12C4 77        	mov	m,a
+ 12C5 3AB713    	LDA	LUN		; OR L.U.N. BITS INTO COMMAND
+ 12C8 B6        	ORA	M
+ 12C9 77        	MOV	M,A
+ 12CA 2B        	DCX	H
+ 12CB 0606      	MVI	B,6		; COMMAND IS 6 BYTES LONG
+ 12CD 3ACA13    	LDA	BASE$PORT
+ 12D0 4F        	MOV	C,A		; DATA PORT TO REG. C
+ 12D1 3C        	INR	A
+ 12D2 57        	MOV	D,A		; CONTROL PORT TO REG. D
+ 12D3 1ED8      	MVI	E,(REQ OR CMND OR POUT OR BUSY)
+ 12D5 C5        OUTCM1: PUSH	B
+ 12D6 0600      	MVI	B,0		; SET LOOP COUNTER
+ 12D8 4A        	MOV	C,D		; CONTROL PORT ADDRESS TO REG. C
+ 12D9           OUTLOP: INP	A
+ 12DB E6D8      	ANI	(REQ OR CMND OR POUT OR BUSY)
+ 12DD BB        	CMP	E
+ 12DE           	JRZ	OUTOK
+ 12E0           	DJNZ	OUTLOP
+ 12E2 05        	DCR	B		; SET ERROR (NZ)
+ 12E3 C1        	POP	B
+ 12E4 C9        	RET
+ 12E5 C1        OUTOK:	POP	B		; RETURNS DATA PORT ADDRESS TO REG. C
+ 12E6           	OUTI			; OUTPUT COMMAND BYTE
+ 12E8 C2D512    	JNZ	OUTCM1
+ 12EB AF        	XRA	A		; SET SUCCESS (Z)
+ 12EC C9        	RET
+                
+                ;	CHECK STATUS OF READ OR WRITE
+CP/M RMAC ASSEM 1.1	#014	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+                ;
+                CHK$STAT:			; THIS ROUTINE CHECKS WHAT'S UP
+ 12ED 21CB13    	LXI	H,STAT		; STATUS BUFFER
+ 12F0 3ACA13    	LDA	BASE$PORT
+ 12F3 57        	MOV	D,A		; DATA PORT ADDRESS STORED IN REG. D
+ 12F4 3C        	INR	A
+ 12F5 5F        	MOV	E,A		; CONTROL PORT ADDRESS STORED IN REG. E
+ 12F6           	JR	CHK01
+ 12F8 4A        CHKNXT: MOV	C,D		; INPUT FROM DATA PORT
+ 12F9           	INP	A
+ 12FB 77        	MOV	M,A		; SAVE IN MEMORY
+ 12FC 4B        CHK01:	MOV	C,E		; INPUT FROM CONTROL PORT
+ 12FD           	INP	A
+ 12FF E6F0      	ANI	(MSG OR REQ OR CMND OR POUT)
+ 1301 FE90      	CPI	(REQ OR CMND)
+ 1303           	JRZ	CHKNXT
+ 1305 FEB0      	CPI	(MSG OR REQ OR CMND)
+ 1307           	JRNZ	CHK01
+ 1309 4A        	MOV	C,D		; INPUT FROM DATA PORT
+ 130A           	INP	A		; GET FINAL BYTE
+ 130C 7E        	MOV	A,M		; AND THROW IT AWAY, GET STATUS
+ 130D E603      	ANI	03		; EITHER BIT SET IS AN ERROR
+ 130F C9        	RET
+                
+                ; IY=buffer header
+                ; Returns IX=lundata[lun]
+                get$ptr:
+ 1310 2A0000    	lhld	@cmode
+ 1313 23        	inx	h		; Mode byte #1
+ 1314 7E        	mov	a,m
+ 1315 E660      	ani	01100000b	; Isolate logical unit number bits
+ 1317 32B713    	sta	lun
+ 131A           	lxix	lundata
+ 131E B7        	ora	a		; if lun zero then exit
+ 131F           	jrz	endptr
+ 1321 07        	rlc
+ 1322 07        	rlc
+ 1323 07        	rlc			; move them down
+ 1324 47        	mov	b,a
+ 1325 111300    	lxi	d,datlen
+ 1328           lunloop dadx	d
+ 132A           	djnz	lunloop
+ 132C           endptr	sixd	dataptr 	; set up pointer to current lun data
+ 1330 C9        	ret
+                
+                initdata:
+ 1331           	lxix	modtbl		; START OF MODE BYTE TABLE
+ 1335 010800    	lxi	b,modlen
+ 1338           	lxiy	lundata 	; start of lundata
+ 133C 111300    	lxi	d,datlen
+ 133F           	ldx	a,+1
+ 1342 E660      	ani	01100000b
+ 1344 67        	mov	h,a
+ 1345 3A0300    	lda	driv0+1 	; Get total number of partitions
+                
+ 1348 F5        iloop1	push	psw		; Put on stack
+CP/M RMAC ASSEM 1.1	#015	SASI- DRIVER FOR MMS MP/M SASI BUS INTERFACE
+
+ 1349           	ldx	a,+1
+ 134C E660      	ani	01100000b
+ 134E BC        	cmp	h		; see if equal to previous lun
+ 134F CA5E13    	jz	nxtlun		; if equal next mode byte entry
+ 1352 67        	mov	h,a		; save new lun
+ 1353           	ldy	a,+numpar	; add number partitions and old part. start
+ 1356           	addy	+parstr 	;  equals new partition start.
+ 1359           	dady	d		; next lun data entry
+ 135B           	sty	a,+parstr
+ 135E           nxtlun	inry	+numpar 	; inc # of partitions
+ 1361           	dadx	b		; next mode byte table entry
+ 1363 F1        	pop	psw		; check if end of partitions
+ 1364 3D        	dcr	a
+ 1365 C24813    	jnz	iloop1
+ 1368 C9        	ret
+                
+                ;
+                ;	DATA BUFFERS AND STORAGE
+                ;
+                
+                ; 16 bytes of data are pull from each logical unit
+                ; from the magic sector, 3 bytes for system use.
+                
+                LUNDATA:
+ 1369 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 137C 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 138F 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+ 13A2 0000000000	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                
+                ; BYTE 0		: DRIVE/CONTROLLER CODE
+                ; BYTE 1		: CONTROL BYTE
+                ; BYTES 2 - 9		: DRIVE CHARACTERISTIC DATA
+                ; BYTES 10 - 15 	: ASSIGN DRIVE TYPE COMMAND
+                
+                ; BYTE 16 - BITS 1,0	: BLK CODE Set in init$hard 0=128,1=256,2=512,3=1024
+                ;	  - BIT  7	: LOGICAL UNIT INITIALZATION FLAG (Set in init$hard)
+                ; BYTE 17		: STARTING PARTITION # OF THE LUN (Set in findstr)
+                ; BYTE 18		: NUMBER OF PARTITIONS ON THE LUN (Set in findstr)
+                
+ 13B5 0000      DATAPTR:DW	0		; POINTER TO LUNDATA FOR THIS L.U.N.
+ 13B7 00        LUN:	DB	0		; CURRENT LUN  (Set when get$ptr is called)
+                
+ 13B8 0000000000CMBFR:	DB	0,0,0,0,0,0	; COMMAND BUFFER
+ 13BE 0C00000000ICMND:	DB	INIT,0,0,0,0,0	; INITIALIZE DRIVE CHARACTERISTICS COMMAND
+ 13C4 0100000000RCMND:	DB	RECAL,0,0,0,0,0 ; Restore head command buffer
+                BASE$PORT:
+ 13CA 00        	DB	0		; BASE PORT ADDRESS (Set in init$sasi)
+ 13CB 00        STAT:	DB	0
+                
+ 13CC           	END
+
