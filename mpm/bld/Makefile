@@ -59,7 +59,7 @@ m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	mv system.dat m3sdcnet.dat
 
 # assumes CP/NET RSP(s) removed (no check)
-m3%.sys: m3%.spr
+m3%.sys: m3%.spr gm.mpmii.dat
 	cp $< bnkxios.spr
 	cp gm.mpmii.dat system.dat
 	vcpm gensys '$$ar'

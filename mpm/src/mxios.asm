@@ -385,7 +385,7 @@ snext:	xchg
 	ret
 
 ciomdl:	dw	0	;character device driver, filled at cold-start.
-cionum:	db	0	;max num cio devices
+cionum:	db	0	;max num cio devices (numcon+numlst)
 
 cinit:	;C=device number (0-11)
 	lhld	ciomdl	; init routine
@@ -402,16 +402,18 @@ nost:	xra	a	; never ready
 
 ; D=device number
 listst:
-	inr	d	; LST: #0 = cio device 1
-	; TODO: check overflow/wrap?
+	lda	maxcon+1
+	add	d
+	mov	d,a	; LST: #0 = con#N+1
 conost:
 	mvi	a,9
 	jr	devio
 
 ; D=device number, C=char
 list:
-	inr	d	; LST: #0 = cio device 1
-	; TODO: check overflow/wrap?
+	lda	maxcon+1
+	add	d
+	mov	d,a	; LST: #0 = con#N+1
 conout:
 	push	b
 	push	d
@@ -649,15 +651,32 @@ iin0:	mov	e,m		;initializing as we go.
 	shld	ciomdl
 	push	d	;save NEXT module address
 	dcx	h	;number of devices
-	mov	a,m
+	push	h
 	lhld	sysdat
-	inx	h
-	cmp	m
-	jrc	iin50	; min(nmbcns,cionum)
-	mov	a,m	;number of system consoles (requested)
-iin50:	sta	maxcon+1
-	; TODO: factor in number of printers: inx h; add m
-	; first need to make printer(s) 0+nmbcns
+	inx	h	;nmb$cns
+	mov	d,m	;E=nmb$cns
+	mvi	l,197
+	mov	e,m	;D=nmb$lst
+	pop	h	;HL=ciomdl.ndev
+	mov	a,e
+	add	d	;total ndev needed (never 0)
+	dcr	a
+	sub	m	; (nmb$cns+nmb$lst-1) - ciomdl.ndev
+	jrc	iin50	; OK, we have enough
+	inr	a	; num devs to drop
+	sub	e	; drop printers first
+	jrz	iin3
+	jrnc	iin1
+iin3:	neg
+	mov	e,a	; num$lst remaining
+	jr	iin50
+iin1:	mvi	e,0	; no printers left, must reduce nmb$cns
+	sub	d	; must be neg
+	neg
+	mov	d,a
+iin50:	mov	a,d	; adjusted nmb$cns
+	sta	maxcon+1
+	add	e	; adjusted nmb$lst
 	sta	cionum	; initialize only what is needed
 	pop	h	; next module
 	jmp	iin0
