@@ -1,5 +1,8 @@
-# MP/M for H89 with Z180 CPU
-# Assumes PWD = CPMDrive_D
+# MP/M for H89
+
+# Where to find CP/NET Server build
+CPNET = ~/cpnet-bld-test/w5500/h8xspi/bin/mpmnet
+
 SHELL = /bin/bash
 
 export CPMDrive_D = $(PWD)
@@ -54,17 +57,21 @@ m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
-	vcpm gensys '$$ar'
+	vcpm gensys '$$ar' | tee m3sdcnet.out
 	mv mpm.sys $@
 	mv system.dat m3sdcnet.dat
 
-# assumes CP/NET RSP(s) removed (no check)
+netservr.rsp netservr.brs:
+	cp $(CPNET)/$@ .
+
+# removes CP/NET RSP(s)
 m3%.sys: m3%.spr gm.mpmii.dat
+	rm -f netservr.*
 	cp $< bnkxios.spr
 	cp gm.mpmii.dat system.dat
-	vcpm gensys '$$ar'
+	vcpm gensys '$$ar' | tee m3$*.out
 	mv mpm.sys $@
-	mv system.dat $*.dat
+	mv system.dat m3$*.dat
 
 .PRECIOUS: %.rel
 
