@@ -29,7 +29,8 @@ mem$seg$tbl:		db	   0,0c0h,   0,   0
 breakpoint$vector:	dw	0,0,0,0,0,0,0,0
 			ds	16
 user$stacks:		dw	0,0,0,0,0,0,0,0
-			ds	24
+compat$attrs:		db	0	; enable compat attrs if 0ffh
+			ds	23
 nmb$records:		dw	0
 ticks$per$second:	db	50
 system$drive:		db	1	; A:
