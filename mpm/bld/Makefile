@@ -53,13 +53,21 @@ m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $(DSO) $@
 
-# assumes CP/NET RSP(s) present
+# SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
 m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar' | tee m3sdcnet.out
 	mv mpm.sys $@
 	mv system.dat m3sdcnet.dat
+
+# Z67-IDE MP/M+CP/NET - assumes CP/NET RSP(s) present
+m3z67net.sys: m3z67zrr.spr netservr.rsp netservr.brs
+	cp $< bnkxios.spr
+	cp gm.cpnet.dat system.dat
+	vcpm gensys '$$ar' | tee m3z67net.out
+	mv mpm.sys $@
+	mv system.dat m3z67net.dat
 
 netservr.rsp netservr.brs:
 	cp $(CPNET)/$@ .
