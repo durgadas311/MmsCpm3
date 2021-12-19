@@ -72,6 +72,9 @@ m3z67net.sys: m3z67zrr.spr netservr.rsp netservr.brs
 netservr.rsp netservr.brs:
 	cp $(CPNET)/$@ .
 
+unnet:
+	rm -f netservr.rsp netservr.brs
+
 # removes CP/NET RSP(s)
 m3%.sys: m3%.spr gm.mpmii.dat
 	rm -f netservr.*
