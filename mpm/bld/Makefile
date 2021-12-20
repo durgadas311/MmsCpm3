@@ -4,6 +4,7 @@
 CPNET = ~/cpnet-bld-test/w5500/h8xspi/bin/mpmnet
 
 SHELL = /bin/bash
+ZMAC = zmac
 
 export CPMDrive_D = $(PWD)
 export CPMDefault = d:
@@ -39,6 +40,13 @@ mxios.rel: mxios.asm cfgmpm.lib
 #  then 0100H-... is written to following sectors of boot tracks)
 mldr%.img: ldr%.rel ldrb%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 	vcpm link "$@=mldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
+
+# RomWBW/RC2014 boot images - must recompile SDC module for MT011!
+mldrwbw.img: ldrsdc.rel ldrbwbw.rel mldrprog.rel ldrbdos.rel ldrrc14.rel
+	vcpm link "$@=mldrprog,ldrbdos,ldrrc14,ldrsdc,ldrbwbw[oc,nr]"
+
+bwbwbot.cim: bwbwbot.asm
+	$(ZMAC) --dri -i -8 -c -s -n --od . --oo cim,lst $<
 
 # MPMLDR.COM, runnable from CP/M
 # This still doesn't work... use of "org 0100h" in mldrprog ruins it.
