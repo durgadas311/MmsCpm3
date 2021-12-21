@@ -8,7 +8,7 @@ vers equ '0a' ; Nov 14, 2021  13:49  drm "MXIOS.ASM"
 ; Uses CP/M Plus format DPBs.
 
 	maclib	z180
-	maclib	cfgmpm
+	maclib	cfgsys
 
 	public	@adrv,@pdrv,@rdrv,@side,@trk,@sect
 	public	@dma,@dbnk,@dirbf
@@ -65,28 +65,28 @@ hstlen	equ	17	;length of header
 
  if z180
 ; Z180 registers
-itc	equ	34h
-rcr	equ	36h
-mmu$cbr	equ	38h
-mmu$bbr	equ	39h
-mmu$cbar equ	3ah
-sar0l	equ	20h
-sar0h	equ	21h
-sar0b	equ	22h
-dar0l	equ	23h
-dar0h	equ	24h
-dar0b	equ	25h
-bcr0l	equ	26h
-bcr0h	equ	27h
-dstat	equ	30h
-dmode	equ	31h
-dcntl	equ	32h
-il	equ	33h
-tmdr0l	equ	0ch
-tmdr0h	equ	0dh
-rldr0l	equ	0eh
-rldr0h	equ	0fh
-tcr	equ	10h
+itc	equ	iobase+34h
+rcr	equ	iobase+36h
+mmu$cbr	equ	iobase+38h
+mmu$bbr	equ	iobase+39h
+mmu$cbar equ	iobase+3ah
+sar0l	equ	iobase+20h
+sar0h	equ	iobase+21h
+sar0b	equ	iobase+22h
+dar0l	equ	iobase+23h
+dar0h	equ	iobase+24h
+dar0b	equ	iobase+25h
+bcr0l	equ	iobase+26h
+bcr0h	equ	iobase+27h
+dstat	equ	iobase+30h
+dmode	equ	iobase+31h
+dcntl	equ	iobase+32h
+il	equ	iobase+33h
+tmdr0l	equ	iobase+0ch
+tmdr0h	equ	iobase+0dh
+rldr0l	equ	iobase+0eh
+rldr0h	equ	iobase+0fh
+tcr	equ	iobase+10h
  endif
 
 ;-------- Start of Code-producing source -----------
@@ -538,6 +538,9 @@ thread: equ	$	;must be last in dseg (common mem)
 signon: db	cr,lf,bell
  if h89
 	db	'H8-'
+ endif
+ if rc2014
+	db	'RC2014-'
  endif
 ; TODO: other platforms...
  if z180

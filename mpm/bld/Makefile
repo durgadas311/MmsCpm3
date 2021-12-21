@@ -23,17 +23,20 @@ all: m3sdczrr.sys mldrsdc.img
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZ'
 
-cio8250.rel: cio8250.asm cfgmpm.lib
+sdc.rel: sdc.asm cfgsys.lib
 	vcpm rmac "$<" '$$SZ'
 
-mxios.rel: mxios.asm cfgmpm.lib
+cio8250.rel: cio8250.asm cfgsys.lib
+	vcpm rmac "$<" '$$SZ'
+
+mxios.rel: mxios.asm cfgsys.lib
 	vcpm rmac "$<" '$$SZ'
 
 # Targets that setup configuration file.
 # One of these must be done before each mpm.sys build.
 # h8v4 h8z180
 %:	cfg%.lib
-	cp $< cfgmpm.lib
+	cp $< cfgsys.lib
 
 # MPMLDR bootstrap image (1st stage at 2280H)
 # (bootstrap at 2280H is written to first sector(s) on boot track,

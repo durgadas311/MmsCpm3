@@ -1,8 +1,9 @@
-VERS EQU '1 ' ; Apr 4, 2020 08:12 drm "SDC.ASM"
+VERS EQU '1 ' ; Dec 20, 2021 08:26 drm "SDC.ASM"
 *************************************************************************
 
 	TITLE	'SDC - DRIVER FOR MMS MP/M WITH SDCard INTERFACE'
-	MACLIB	Z80
+	maclib	z80
+	maclib	cfgsys
 	$*MACRO
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
@@ -29,17 +30,6 @@ dev0	equ	80
 *************************************************************************
 **  PORTS AND CONSTANTS
 *************************************************************************
-
-GPIO	EQU	0F2H		; SWITCH 501
-
-spi	equ	40h	; same board as WizNet
-
-spi?dat	equ	spi+0
-spi?ctl	equ	spi+1
-spi?sts	equ	spi+1
-
-SD0SCS	equ	0100b	; SCS for SDCard 0
-SD1SCS	equ	1000b	; SCS for SDCard 1
 
 CMDST	equ	01000000b	; command start bits
 
@@ -170,11 +160,12 @@ init$sdc:
 	; first drive access?
 if 1
 	; This only works if SDC was boot device
-	lda	nsegmt-1
-	inr	a	; 0->01b, 1->10b
-	rlc
-	rlc
-	sta	scs	; SD0SCS, SD1SCS
+	lda	nsegmt-1	; LUN, 0 or 1
+	ora	a
+	mvi	a,SD0SCS
+	jrz	is0
+	mvi	a,SD1SCS	; might be non-functional
+is0:	sta	scs	; SD0SCS, SD1SCS
 	call	sdcini
 	lhld	nsegmt		;grab this before it's gone...
 	shld	segoff
@@ -385,8 +376,12 @@ stlba2:	; setup controller regs from CURLBA
 ; return A=response code (00=success), HL=idle length, DE=gap length
 sdcmd:
 	lda	scs
+	; drop out here if no device...
+	ora	a
+	stc
+	rz
 	out	spi?ctl	; SCS on
-	mvi	c,spi?dat
+	mvi	c,spi?rd
 	; wait for idle
 	; TODO: timeout this loop
 	push	h	; save command+response buffer
@@ -406,8 +401,14 @@ sdcmd5:
 	stc
 	ret
 sdcmd1:	pop	h	; command buffer back
+ if spi?rd <> spi?wr
+	mvi	c,spi?wr
+ endif
 	mvi	b,6
 	outir
+ if spi?rd <> spi?wr
+	mvi	c,spi?rd
+ endif
 	inp	a	; prime the pump
 	push	h	; points to response area...
 	lxi	h,0	; gap timeout
@@ -438,7 +439,7 @@ sdcmd4:	mov	a,e	; SCS flag
 ; SCS must already be ON.
 ; return CY on error (A=error), SCS always off
 sdrblk:
-	mvi	c,spi?dat
+	mvi	c,spi?rd
 	; wait for packet header (or error)
 	lxi	d,0	; gap timeout
 sdrbk0:	inp	a
@@ -469,7 +470,7 @@ sdrbk2:	mvi	a,0	; don't disturb CY
 ; SCS must already be ON.
 ; return CY on error (A=error), SCS always off
 sdwblk:
-	mvi	c,spi?dat
+	mvi	c,spi?wr
 	; TODO: wait for idle?
 	mvi	a,11111110b	; data start token
 	outp	a
@@ -478,6 +479,9 @@ sdwblk:
 	call	sdcwr	; send 512B block
 	outp	a	; CRC-1
 	outp	a	; CRC-2
+ if spi?rd <> spi?wr
+	mvi	c,spi?rd
+ endif
 	inp	a	; prime the pump
 	; wait for response...
 	lxi	d,0	; gap timeout

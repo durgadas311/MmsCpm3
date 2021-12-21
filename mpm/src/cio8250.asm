@@ -5,7 +5,7 @@ vers equ '0 ' ; Nov 14, 2021  13:47  drm  "CIO8250.ASM"
 ; Copyright (C) 1983 Magnolia Microsystems		*
 ;********************************************************
 	maclib	z80
-	maclib	cfgmpm
+	maclib	cfgsys
 
 false	equ	0
 true	equ	not false

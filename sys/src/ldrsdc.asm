@@ -5,7 +5,10 @@ VERS	EQU   '1 '  ; Apr 03, 2020 18:46 drm "ldrsdc.asm"
 ;	Copyright (c) 1983 Magnolia Microsystems
 ***************************************************
 
-	MACLIB	z80
+; Must also work for RC2014/MT011
+
+	maclib	z80
+	maclib	cfgsys
 	$-MACRO
 
 	public	btend		;end of system (boot stops loading there)
@@ -19,15 +22,6 @@ NDRIV	EQU	9
 **  PORTS AND CONSTANTS
 ***************************************************
 GPIO	EQU	0F2H		; SWITCH 501
-
-spi	equ	40h	; same board as WizNet
-
-spi?dat	equ	spi+0
-spi?ctl	equ	spi+1
-spi?sts	equ	spi+1
-
-SD0SCS	equ	0100b	; SCS for SDCard 0
-SD1SCS	equ	1000b	; SCS for SDCard 1
 
 CMDST	equ	01000000b	; command start bits
 
@@ -220,6 +214,7 @@ ERREXT: mvi	a,1
 
 INIT$SDC:
 	; gather info from bootloader
+ if h89
 	lda	UNITNUM
 	sta	nsegmt-1	;hope it is safe here
 	inr	a	; 0->01b, 1->10b
@@ -229,6 +224,15 @@ INIT$SDC:
 	lda	BTDRV		;FROM BOOT LOADER
 	sta	MIXER
 	lhld	SEGOFF		;from ROM
+ else
+	mvi	a,SD0SCS
+	sta	scs
+	mvi	a,DRIV0
+	sta	MIXER
+	xra	a
+	sta	nsegmt-1	;hope it is safe here
+	lxi	h,0	; no segment selection - always 0
+ endif
 	shld	nsegmt		;hope it is safe here
 	; since we only have one disk, init partn table now.
 	; read "magic sector"
@@ -258,11 +262,11 @@ NXTLEN:	dad	d
 	lda	PARTLUN		; num entries
 	mov	b,a
 nxtdef:	push	b
-	lda	SEGOFF+0; LBA27:24,DRV is fixed
+	lda	nsegmt+0; LBA27:24,DRV is fixed
 	stx	a,+0
 	inxix
 	mvi	b,3
-	lda	SEGOFF+1; LBA23:19 is segment offset
+	lda	nsegmt+1; LBA23:19 is segment offset
 	mov	d,a	; carry-in, s0000000
 	mov	a,m
 	ani	00011111b	; must clear LUN bits
@@ -442,7 +446,7 @@ badblk:
 sdcmd:
 	lda	scs
 	out	spi?ctl	; SCS on
-	mvi	c,spi?dat
+	mvi	c,spi?rd
 	; wait for idle
 	; TODO: timeout this loop
 	push	h	; save command+response buffer
@@ -459,8 +463,14 @@ sdcmd0:	inp	a
 	stc
 	ret
 sdcmd1:	pop	h	; command buffer back
+ if spi?rd <> spi?wr
+	mvi	c,spi?wr
+ endif
 	mvi	b,6
 	outir
+ if spi?rd <> spi?wr
+	mvi	c,spi?rd
+ endif
 	inp	a	; prime the pump
 	push	h	; points to response area...
 	lxi	h,256	; gap timeout
@@ -495,7 +505,7 @@ sdcmd4:	mov	a,e	; SCS flag
 sdblk:
 	lda	scs
 	out	spi?ctl	; SCS on
-	mvi	c,spi?dat
+	mvi	c,spi?rd
 	; wait for packet header (or error)
 	; TODO: timeout this loop
 	lxi	d,256	; gap timeout
