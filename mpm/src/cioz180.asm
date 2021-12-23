@@ -1,3 +1,4 @@
+vers equ '0 '
 ;********************************************************
 ;   Character I/O module for MMS MP/M     		*
 ;   For Z180 ASC Ports                    		*

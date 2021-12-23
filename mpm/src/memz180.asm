@@ -6,28 +6,41 @@ vers equ '1 ' ; Nov 14, 2021  08:06   drm "MEMZ180.ASM"
 ; For Z180 MMU and at least 512K RAM at 00000
 
 	maclib z180
+	maclib cfgsys
 
 true	equ -1
 false	equ not true
+
+ if rc2014	; a.k.a. RomWBW
+test$bnk$0	equ	0f0h	; should be BBR on entry...
+test$bnk$1	equ	0e0h
+test$bnk$2	equ	0d0h
+test$bnk$3	equ	0c0h
+ else
+test$bnk$0	equ	00h
+test$bnk$1	equ	10h
+test$bnk$2	equ	20h
+test$bnk$3	equ	30h
+ endif
 
 cr	equ 13
 lf	equ 10
 bell	equ 7
 
-mmu$cbr	equ	38h
-mmu$bbr	equ	39h
-mmu$cbar equ	3ah
-sar0l	equ	20h
-sar0h	equ	21h
-sar0b	equ	22h
-dar0l	equ	23h
-dar0h	equ	24h
-dar0b	equ	25h
-bcr0l	equ	26h
-bcr0h	equ	27h
-dstat	equ	30h
-dmode	equ	31h
-dcntl	equ	32h
+mmu$cbr	equ	iobase+38h
+mmu$bbr	equ	iobase+39h
+mmu$cbar equ	iobase+3ah
+sar0l	equ	iobase+20h
+sar0h	equ	iobase+21h
+sar0b	equ	iobase+22h
+dar0l	equ	iobase+23h
+dar0h	equ	iobase+24h
+dar0b	equ	iobase+25h
+bcr0l	equ	iobase+26h
+bcr0h	equ	iobase+27h
+dstat	equ	iobase+30h
+dmode	equ	iobase+31h
+dcntl	equ	iobase+32h
 
 	extrn	@cbnk
 
@@ -58,11 +71,17 @@ dcntl	equ	32h
 ?bnksl:	; BIOS/XIOS entry - A=bank#
 	sta	@cbnk	; remember current bank
 	; assume banks 0..n are 64K regions, excluding common.
+ if rc2014	; a.k.a. RomWBW
+	; convert to 4k-page number, 80000-fffff = RAM
+	neg
+	adi	15	; 0,1,2,3,... => 15,14,13,...
+ else
 	; convert to 4k-page number, 00000-7ffff = RAM
+ endif
 	add	a
 	add	a
 	add	a
-	add	a	; 4K-page number, 00,10,20,...70
+	add	a	; 4K-page number, e.g. 00,10,20,...70
 	out0	a,mmu$bbr
 	ret
 
@@ -76,12 +95,22 @@ dcntl	equ	32h
 	jrz	xm0
 	jrnc	xm1
 xm0:	mvi	b,0
-xm1:	out0	b,dar0b
-	cmp	d
+xm1:	cmp	d
 	jrz	xm2
 	jrnc	xm3
 xm2:	mvi	c,0
-xm3:	out0	c,sar0b
+xm3:
+ if rc2014	; a.k.a. RomWBW
+	; convert 0,1,2,... to 15,14,13,... for both B, C
+	mvi	a,15
+	sub	b
+	mov	b,a
+	mvi	a,15
+	sub	c
+	mov	c,a
+ endif
+	out0	b,dar0b
+	out0	c,sar0b
 	ret
 
 ; DE=source address, HL=dest address, BC=length
@@ -112,8 +141,8 @@ xxmv0:	in0	a,dstat		; should be done before we get here...
 
 	cseg	; this part can be banked
 
-noram:	xra	a	; disable banked memory
-	out0	a,mmu$bbr
+noram:	out0	c,mmu$bbr	; restore orig banking
+noram0:	xra	a
 	ret		; A=0 no banked memory
 
 ; Verify MMU, and initialize it.
@@ -121,45 +150,51 @@ noram:	xra	a	; disable banked memory
 ?bnkck:
 	sta	@compg		; must be XXXX0000b
 	ani	00001111b
-	jrnz	noram
+	jrnz	noram0
+ if rc2014	; a.k.a. RomWBW
+	; ROM is 00000-7ffff, RAM is 80000-fffff
+	; we have f0000-fffff banked @ 8000
+	in0	c,mmu$bbr	; snapshot what RomWBW gave us.
+ else
 	; init MMU - this must not disturb current memory
 	xra	a		;
 	out0	a,mmu$cbr	; just to be sure...
 	out0	a,mmu$bbr	; ...
+	mov	c,a
 	; special com/bnk for test...
 	mvi	a,0010$0000b	; compag 2000, bnk base 0000
 	out0	a,mmu$cbar
+ endif
 	;
 	lxi	d,0040h	; a likely addr in low 16K
-	mvi	a,10h	; bank 1 map code
+	mvi	a,test$bnk$1
 	out0	a,mmu$bbr
 	mvi	a,1
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,20h	; bank 2 map code
+	mvi	a,test$bnk$2
 	out0	a,mmu$bbr
 	mvi	a,2
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,30h	; bank 3 map code
+	mvi	a,test$bnk$3
 	out0	a,mmu$bbr
 	mvi	a,3
 	stax	d	;put bank number in 40h of respective bank
-	mvi	a,10h	; bank 1 map code
+	mvi	a,test$bnk$1
 	out0	a,mmu$bbr
 	ldax	d
 	cpi	1
 	jnz	noram
-	mvi	a,20h	; bank 2 map code
+	mvi	a,test$bnk$2
 	out0	a,mmu$bbr
 	ldax	d
 	cpi	2
 	jnz	noram
-	mvi	a,30h	; bank 3 map code
+	mvi	a,test$bnk$3
 	out0	a,mmu$bbr
 	ldax	d
 	cpi	3
 	jnz	noram
-	xra	a		; restore "bank 0"
-	out0	a,mmu$bbr	; ...
+	out0	c,mmu$bbr	; restore "bank 0"
 	; the real com/bnk setup
 	lda	@compg	; must be XXXX0000b
 	ani	11110000b	;must already be on 4K boundary to work!

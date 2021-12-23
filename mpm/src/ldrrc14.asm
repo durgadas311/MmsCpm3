@@ -1,8 +1,7 @@
-; MMS CPM3LDR/MPMLDR BIOS core code for RC2014/Z180
-; Z180 I/O base used by RomWBW
-iobase	equ	000h
+; MMS CPM3LDR/MPMLDR BIOS core code for RC2014/Z180 and RomWBW
 
 	maclib	z180
+	maclib	cfgsys
 
 	extrn	bdos
 	extrn	loader
@@ -22,10 +21,16 @@ DEL	equ	127
 
 msgout	equ	9
 
-; Z180 ASC0 registers
-ctlb	equ	iobase+03h
-stat	equ	iobase+05h
-tdr	equ	iobase+07h
+; Z180 registers
+tcr	equ	iobase+10h
+; Z180 ASCI0 registers
+ctl0b	equ	iobase+02h
+stat0	equ	iobase+04h
+tdr0	equ	iobase+06h
+; Z180 ASCI1 registers
+ctl1b	equ	iobase+03h
+stat1	equ	iobase+05h
+tdr1	equ	iobase+07h
 
 	cseg
 dsksta:	db	0
@@ -49,6 +54,12 @@ signon:
 
 cboot:
 	lxi sp,stack
+	xra	a
+	out0	a,stat0	; ASCI0 interrupts off
+	out0	a,stat1	; ASCI1 interrupts off
+	out0	a,tcr	; counters off (interrupts off)
+	; TODO: anything else? (DMA is off)
+	; NOTE: interrupt vector values are no longer good.
 	lxi d,signon
 	mvi c,msgout
 	call bdos
@@ -117,16 +128,16 @@ stack:	ds	0
 
 dirbuf:	ds	128
 
-; conout for standard Z180 ASCx
+; conout for standard Z180 ASCI0
 ; TODO: make into module, for alternate console options
 conout:
-	in0	a,ctlb
+	in0	a,ctl0b
 	ani	00100000b	; /CTS
 	jrnz	conout
-	in0	a,stat
+	in0	a,stat0
 	ani	00000010b	; TDRE
 	jrz	conout
-	out0	c,tdr
+	out0	c,tdr0
 	ret
 
 driver:	equ	$+0	; init entry for disk driver module

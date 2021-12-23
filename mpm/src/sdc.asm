@@ -151,6 +151,8 @@ csv:
 
 	$-MACRO
 
+nparts:	db	0
+
 ;
 ;	DRIVER INITIALIZATION CODE
 ;
@@ -179,7 +181,7 @@ login:	lda	init
 	sta	init
 	call	init$hard
 login0:
-	lda	npart
+	lda	nparts
 	mov	e,a
 	lda	@rdrv
 	cmp	e	; See if loging in a drive that doesn't exist
@@ -218,12 +220,12 @@ init$hard:
 	cpi	numpar0
 	jrc	ih3
 	mvi	a,numpar0
-ih3:	sta	npart		; use all partitions (and no more)
+ih3:	sta	nparts		; use all partitions (and no more)
 	; copy over all DPBs, add PSH,PSK
 	mvi	a,DDPB		; CP/M 2.2 DPBs in magic sector
 	call	bufoff
 	lxi	d,dpb		; Our CP/M 3 DPBs
-	lda	npart
+	lda	nparts
 ih0:
 	push	psw		; num partitions
 	lxi	b,15	; CP/M 2.2 DPB length
@@ -244,7 +246,7 @@ ih0:
 	mvi	a,SECTBL
 	call	bufoff
 	lxix	partbl
-	lda	npart		; num entries
+	lda	nparts		; num entries
 	mov	b,a
 ih1:	push	b
 	lded	segoff+0; E = LBA31:24

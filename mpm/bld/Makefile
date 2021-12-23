@@ -1,7 +1,8 @@
 # MP/M for H89
 
 # Where to find CP/NET Server build
-CPNET = ~/cpnet-bld-test/w5500/h8xspi/bin/mpmnet
+HBA = h8xspi
+CPNET = ~/cpnet-bld-test/w5500/$(HBA)/bin/mpmnet
 
 SHELL = /bin/bash
 ZMAC = zmac
@@ -13,6 +14,7 @@ SRCS = $(wildcard *.asm)
 RELS = $(subst .asm,.rel,$(SRCS))
 
 BASE = mxios.rel cio8250.rel end.rel lptbl.rel
+RCBASE = mxios.rel cioz180.rel end.rel lptbl.rel
 
 Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
@@ -20,16 +22,7 @@ DSO = -p def,a:
 
 all: m3sdczrr.sys mldrsdc.img
 
-%.rel: %.asm
-	vcpm rmac "$?" '$$SZ'
-
-sdc.rel: sdc.asm cfgsys.lib
-	vcpm rmac "$<" '$$SZ'
-
-cio8250.rel: cio8250.asm cfgsys.lib
-	vcpm rmac "$<" '$$SZ'
-
-mxios.rel: mxios.asm cfgsys.lib
+%.rel: %.asm cfgsys.lib
 	vcpm rmac "$<" '$$SZ'
 
 # Targets that setup configuration file.
@@ -45,8 +38,8 @@ mldr%.img: ldr%.rel ldrb%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 	vcpm link "$@=mldrprog,ldrbdos,ldrbios,ldr$*,ldrb$*[oc,nr]"
 
 # RomWBW/RC2014 boot images - must recompile SDC module for MT011!
-mldrwbw.img: ldrsdc.rel ldrbwbw.rel mldrprog.rel ldrbdos.rel ldrrc14.rel
-	vcpm link "$@=mldrprog,ldrbdos,ldrrc14,ldrsdc,ldrbwbw[oc,nr]"
+mldrwbw.img: ldrsdc.rel bl_info.rel mldrprog.rel ldrbdos.rel ldrrc14.rel
+	vcpm link "$@=mldrprog,ldrbdos,ldrrc14,ldrsdc,bl_info[oc,nr]"
 
 bwbwbot.cim: bwbwbot.asm
 	$(ZMAC) --dri -i -8 -c -s -n --od . --oo cim,lst $<
@@ -64,6 +57,10 @@ m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $(DSO) $@
 
+m3rcz180.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
+	vcpm link "m3rcz180=mxios,cioz180,sdc,end,lptbl,memz180,nortc[b,os,nr]"
+	setup30 $(SDCDRVS) $(DSO) $@
+
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
 m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
@@ -79,6 +76,14 @@ m3z67net.sys: m3z67zrr.spr netservr.rsp netservr.brs
 	vcpm gensys '$$ar' | tee m3z67net.out
 	mv mpm.sys $@
 	mv system.dat m3z67net.dat
+
+# RC2014/MT011 MP/M+CP/NET - assumes CP/NET RSP(s) present
+m3rcznet.sys: m3rcz180.spr netservr.rsp netservr.brs
+	cp $< bnkxios.spr
+	cp gm.cpnet.dat system.dat
+	vcpm gensys '$$ar' | tee m3rcznet.out
+	mv mpm.sys $@
+	mv system.dat m3rcznet.dat
 
 netservr.rsp netservr.brs:
 	cp $(CPNET)/$@ .
