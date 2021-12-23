@@ -1,4 +1,4 @@
- 2030 =         vers equ '0 ' ; Nov 14, 2021  08:06   drm "MEMZ180.ASM"
+ 2031 =         vers equ '1 ' ; Nov 14, 2021  08:06   drm "MEMZ180.ASM"
                 ;****************************************************************
                 ; Banked Memory BIOS module for MP/M              		*
                 ; Copyright (c) 1983 Magnolia Microsystems			*
@@ -6,28 +6,41 @@
                 ; For Z180 MMU and at least 512K RAM at 00000
                 
                 	maclib z180
+                	maclib cfgsys
                 
  FFFF =         true	equ -1
  0000 =         false	equ not true
+                
+                 if rc2014	; a.k.a. RomWBW
+ 00F0 =         test$bnk$0	equ	0f0h	; should be BBR on entry...
+ 00E0 =         test$bnk$1	equ	0e0h
+ 00D0 =         test$bnk$2	equ	0d0h
+ 00C0 =         test$bnk$3	equ	0c0h
+                 else
+                test$bnk$0	equ	00h
+                test$bnk$1	equ	10h
+                test$bnk$2	equ	20h
+                test$bnk$3	equ	30h
+                 endif
                 
  000D =         cr	equ 13
  000A =         lf	equ 10
  0007 =         bell	equ 7
                 
- 0038 =         mmu$cbr	equ	38h
- 0039 =         mmu$bbr	equ	39h
- 003A =         mmu$cbar equ	3ah
- 0020 =         sar0l	equ	20h
- 0021 =         sar0h	equ	21h
- 0022 =         sar0b	equ	22h
- 0023 =         dar0l	equ	23h
- 0024 =         dar0h	equ	24h
- 0025 =         dar0b	equ	25h
- 0026 =         bcr0l	equ	26h
- 0027 =         bcr0h	equ	27h
- 0030 =         dstat	equ	30h
- 0031 =         dmode	equ	31h
- 0032 =         dcntl	equ	32h
+ 00F8 =         mmu$cbr	equ	iobase+38h
+ 00F9 =         mmu$bbr	equ	iobase+39h
+ 00FA =         mmu$cbar equ	iobase+3ah
+ 00E0 =         sar0l	equ	iobase+20h
+ 00E1 =         sar0h	equ	iobase+21h
+ 00E2 =         sar0b	equ	iobase+22h
+ 00E3 =         dar0l	equ	iobase+23h
+ 00E4 =         dar0h	equ	iobase+24h
+ 00E5 =         dar0b	equ	iobase+25h
+ 00E6 =         bcr0l	equ	iobase+26h
+ 00E7 =         bcr0h	equ	iobase+27h
+ 00F0 =         dstat	equ	iobase+30h
+ 00F1 =         dmode	equ	iobase+31h
+ 00F2 =         dcntl	equ	iobase+32h
                 
                 	extrn	@cbnk
                 
@@ -39,11 +52,11 @@
                 
                 	dseg		; GENSYS results in DSEG in common memory
                 
- 0000 04        @nbnk:	db	4	; not total, just for MP/M
+ 0000 08        @nbnk:	db	8	; lazy use of all 512K
  0001 C0        @compg:	db	0c0h	; must match GENSYS value?
- 0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No Z180$'
- 000D 4D4D555A31@memstr: db	'MMUZ180 ',0,'Z180 Native MMU ',0,'v3.10'
- 002C 3020      	dw	vers
+ 0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No Z180$'
+ 000D 4D4D555A31@memstr: db	'MMUZ180 ',0,'Z180 Native MMU ',0,'v3.00'
+ 002C 3120      	dw	vers
  002E 24        	db	'$'
                 
                 ; Translate bank # into Z180 MMU values
@@ -54,42 +67,59 @@
  002F 03        	inx	b
  0030 03        	inx	b
  0031 03        	inx	b
- 0032 0A        	ldax	b
+ 0032 0A        	ldax	b
                 ?bnksl:	; BIOS/XIOS entry - A=bank#
  0033 320000    	sta	@cbnk	; remember current bank
                 	; assume banks 0..n are 64K regions, excluding common.
+                 if rc2014	; a.k.a. RomWBW
+                	; convert to 4k-page number, 80000-fffff = RAM
+                	neg
+ 0036+ED44      	DB	0EDH,44H
+ 0038 C60F      	adi	15	; 0,1,2,3,... => 15,14,13,...
+                 else
                 	; convert to 4k-page number, 00000-7ffff = RAM
- 0036 87        	add	a
- 0037 87        	add	a
- 0038 87        	add	a
- 0039 87        	add	a	; 4K-page number, 00,10,20,...70
+                 endif
+ 003A 87        	add	a
+ 003B 87        	add	a
+ 003C 87        	add	a
+ 003D 87        	add	a	; 4K-page number, e.g. 00,10,20,...70
                 	out0	a,mmu$bbr
- 003A+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 003D C9        	ret
+ 003E+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 0041 C9        	ret
                 
                 ; B=dest bank, C=source bank
                 ; DE=source address, HL=dest address
                 ; Bank # directly translates to A16-A19
                 ; TODO: do interrupts need to be disabled?
                 ?xmove:
- 003E 3A0100    	lda	@compg
- 0041 BC        	cmp	h
+ 0042 3A0100    	lda	@compg
+ 0045 BC        	cmp	h
                 	jrz	xm0
- 0042+2802      	DB	28H,XM0-$-1
+ 0046+2802      	DB	28H,XM0-$-1
                 	jrnc	xm1
- 0044+3002      	DB	30H,XM1-$-1
- 0046 0600      xm0:	mvi	b,0
-                xm1:	out0	b,dar0b
- 0048+ED0125    	DB	0EDH, B*8+01H, DAR0B
- 004B BA        	cmp	d
+ 0048+3002      	DB	30H,XM1-$-1
+ 004A 0600      xm0:	mvi	b,0
+ 004C BA        xm1:	cmp	d
                 	jrz	xm2
- 004C+2802      	DB	28H,XM2-$-1
+ 004D+2802      	DB	28H,XM2-$-1
                 	jrnc	xm3
- 004E+3002      	DB	30H,XM3-$-1
- 0050 0E00      xm2:	mvi	c,0
-                xm3:	out0	c,sar0b
- 0052+ED0922    	DB	0EDH, C*8+01H, SAR0B
- 0055 C9        	ret
+ 004F+3002      	DB	30H,XM3-$-1
+ 0051 0E00      xm2:	mvi	c,0
+                xm3:
+                 if rc2014	; a.k.a. RomWBW
+                	; convert 0,1,2,... to 15,14,13,... for both B, C
+ 0053 3E0F      	mvi	a,15
+ 0055 90        	sub	b
+ 0056 47        	mov	b,a
+ 0057 3E0F      	mvi	a,15
+ 0059 91        	sub	c
+ 005A 4F        	mov	c,a
+                 endif
+                	out0	b,dar0b
+ 005B+ED01E5    	DB	0EDH, B*8+01H, DAR0B
+                	out0	c,sar0b
+ 005E+ED09E2    	DB	0EDH, C*8+01H, SAR0B
+ 0061 C9        	ret
                 
                 ; DE=source address, HL=dest address, BC=length
                 ; TODO: do interrupts need to be disabled?
@@ -97,107 +127,111 @@
                 ?move:
                 xxmove:
                 	out0	e,sar0l
- 0056+ED1920    	DB	0EDH, E*8+01H, SAR0L
+ 0062+ED19E0    	DB	0EDH, E*8+01H, SAR0L
                 	out0	d,sar0h
- 0059+ED1121    	DB	0EDH, D*8+01H, SAR0H
+ 0065+ED11E1    	DB	0EDH, D*8+01H, SAR0H
                 	out0	l,dar0l
- 005C+ED2923    	DB	0EDH, L*8+01H, DAR0L
+ 0068+ED29E3    	DB	0EDH, L*8+01H, DAR0L
                 	out0	h,dar0h
- 005F+ED2124    	DB	0EDH, H*8+01H, DAR0H
+ 006B+ED21E4    	DB	0EDH, H*8+01H, DAR0H
                 	out0	c,bcr0l
- 0062+ED0926    	DB	0EDH, C*8+01H, BCR0L
+ 006E+ED09E6    	DB	0EDH, C*8+01H, BCR0L
                 	out0	b,bcr0h
- 0065+ED0127    	DB	0EDH, B*8+01H, BCR0H
- 0068 3E02      	mvi	a,00000010b	; mem2mem, burst mode
+ 0071+ED01E7    	DB	0EDH, B*8+01H, BCR0H
+ 0074 3E02      	mvi	a,00000010b	; mem2mem, burst mode
                 	out0	a,dmode
- 006A+ED3931    	DB	0EDH, A*8+01H, DMODE
- 006D 3E60      	mvi	a,01100000b	; DE0,/DWE0 - start ch 0
+ 0076+ED39F1    	DB	0EDH, A*8+01H, DMODE
+ 0079 3E60      	mvi	a,01100000b	; DE0,/DWE0 - start ch 0
                 	out0	a,dstat		; DMA runs now...
- 006F+ED3930    	DB	0EDH, A*8+01H, DSTAT
+ 007B+ED39F0    	DB	0EDH, A*8+01H, DSTAT
                 xxmv0:	in0	a,dstat		; should be done before we get here...
- 0072+ED3830    	DB	0EDH, A*8+00H, DSTAT
- 0075 E640      	ani	01000000b
+ 007E+ED38F0    	DB	0EDH, A*8+00H, DSTAT
+ 0081 E640      	ani	01000000b
                 	jrnz	xxmv0
- 0077+20F9      	DB	20H,XXMV0-$-1
+ 0083+20F9      	DB	20H,XXMV0-$-1
                 	; Must return registers as if moved by CPU...?
- 0079 09        	dad	b
- 007A EB        	xchg
- 007B 09        	dad	b
- 007C EB        	xchg
- 007D 010000    	lxi	b,0
- 0080 C9        	ret
+ 0085 09        	dad	b
+ 0086 EB        	xchg
+ 0087 09        	dad	b
+ 0088 EB        	xchg
+ 0089 010000    	lxi	b,0
+ 008C C9        	ret
                 
                 	cseg	; this part can be banked
                 
- 0000 AF        noram:	xra	a	; disable banked memory
-                	out0	a,mmu$bbr
- 0001+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+                noram:	out0	c,mmu$bbr	; restore orig banking
+ 0000+ED09F9    	DB	0EDH, C*8+01H, MMU$BBR
+ 0003 AF        noram0:	xra	a
  0004 C9        	ret		; A=0 no banked memory
                 
                 ; Verify MMU, and initialize it.
                 ; A=compag from MP/M GENSYS
-                ?bnkck:
+                ?bnkck:
  0005 320100    	sta	@compg		; must be XXXX0000b
  0008 E60F      	ani	00001111b
-                	jrnz	noram
- 000A+20F4      	DB	20H,NORAM-$-1
+                	jrnz	noram0
+ 000A+20F7      	DB	20H,NORAM0-$-1
+                 if rc2014	; a.k.a. RomWBW
+                	; ROM is 00000-7ffff, RAM is 80000-fffff
+                	; we have f0000-fffff banked @ 8000
+                	in0	c,mmu$bbr	; snapshot what RomWBW gave us.
+ 000C+ED08F9    	DB	0EDH, C*8+00H, MMU$BBR
+                 else
                 	; init MMU - this must not disturb current memory
- 000C AF        	xra	a		;
+                	xra	a		;
                 	out0	a,mmu$cbr	; just to be sure...
- 000D+ED3938    	DB	0EDH, A*8+01H, MMU$CBR
                 	out0	a,mmu$bbr	; ...
- 0010+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+                	mov	c,a
                 	; special com/bnk for test...
- 0013 3E20      	mvi	a,0010$0000b	; compag 2000, bnk base 0000
+                	mvi	a,0010$0000b	; compag 2000, bnk base 0000
                 	out0	a,mmu$cbar
- 0015+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
+                 endif
                 	;
- 0018 114000    	lxi	d,0040h	; a likely addr in low 16K
- 001B 3E10      	mvi	a,10h	; bank 1 map code
+ 000F 114000    	lxi	d,0040h	; a likely addr in low 16K
+ 0012 3EE0      	mvi	a,test$bnk$1
                 	out0	a,mmu$bbr
- 001D+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0020 3E01      	mvi	a,1
- 0022 12        	stax	d	;put bank number in 40h of respective bank
- 0023 3E20      	mvi	a,20h	; bank 2 map code
+ 0014+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 0017 3E01      	mvi	a,1
+ 0019 12        	stax	d	;put bank number in 40h of respective bank
+ 001A 3ED0      	mvi	a,test$bnk$2
                 	out0	a,mmu$bbr
- 0025+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0028 3E02      	mvi	a,2
- 002A 12        	stax	d	;put bank number in 40h of respective bank
- 002B 3E30      	mvi	a,30h	; bank 3 map code
+ 001C+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 001F 3E02      	mvi	a,2
+ 0021 12        	stax	d	;put bank number in 40h of respective bank
+ 0022 3EC0      	mvi	a,test$bnk$3
                 	out0	a,mmu$bbr
- 002D+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0030 3E03      	mvi	a,3
- 0032 12        	stax	d	;put bank number in 40h of respective bank
- 0033 3E10      	mvi	a,10h	; bank 1 map code
+ 0024+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 0027 3E03      	mvi	a,3
+ 0029 12        	stax	d	;put bank number in 40h of respective bank
+ 002A 3EE0      	mvi	a,test$bnk$1
                 	out0	a,mmu$bbr
- 0035+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0038 1A        	ldax	d
- 0039 FE01      	cpi	1
- 003B C20000    	jnz	noram
- 003E 3E20      	mvi	a,20h	; bank 2 map code
+ 002C+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 002F 1A        	ldax	d
+ 0030 FE01      	cpi	1
+ 0032 C20000    	jnz	noram
+ 0035 3ED0      	mvi	a,test$bnk$2
                 	out0	a,mmu$bbr
- 0040+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0043 1A        	ldax	d
- 0044 FE02      	cpi	2
- 0046 C20000    	jnz	noram
- 0049 3E30      	mvi	a,30h	; bank 3 map code
+ 0037+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 003A 1A        	ldax	d
+ 003B FE02      	cpi	2
+ 003D C20000    	jnz	noram
+ 0040 3EC0      	mvi	a,test$bnk$3
                 	out0	a,mmu$bbr
- 004B+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 004E 1A        	ldax	d
- 004F FE03      	cpi	3
- 0051 C20000    	jnz	noram
- 0054 AF        	xra	a		; restore "bank 0"
-                	out0	a,mmu$bbr	; ...
- 0055+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 0042+ED39F9    	DB	0EDH, A*8+01H, MMU$BBR
+ 0045 1A        	ldax	d
+ 0046 FE03      	cpi	3
+ 0048 C20000    	jnz	noram
+                	out0	c,mmu$bbr	; restore "bank 0"
+ 004B+ED09F9    	DB	0EDH, C*8+01H, MMU$BBR
                 	; the real com/bnk setup
- 0058 3A0100    	lda	@compg	; must be XXXX0000b
- 005B E6F0      	ani	11110000b	;must already be on 4K boundary to work!
+ 004E 3A0100    	lda	@compg	; must be XXXX0000b
+ 0051 E6F0      	ani	11110000b	;must already be on 4K boundary to work!
                 	out0	a,mmu$cbar	;should be bank base 0000, combas X000
- 005D+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
- 0060 AF        	xra	a	; redundant?
- 0061 CD3300    	call	?bnksl	;
- 0064 3EFF      	mvi	a,true
- 0066 C9        	ret		; A<>0 banked memory available
+ 0053+ED39FA    	DB	0EDH, A*8+01H, MMU$CBAR
+ 0056 AF        	xra	a	; redundant?
+ 0057 CD3300    	call	?bnksl	;
+ 005A 3EFF      	mvi	a,true
+ 005C C9        	ret		; A<>0 banked memory available
                 
- 0067           	end
-
+ 005D           	end
+

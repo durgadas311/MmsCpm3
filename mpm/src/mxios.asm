@@ -37,7 +37,6 @@ h89tick		equ	false
   endif
  endif
 
-only$prot$A	equ	true	; Only worry about R/O A:
 secsize		equ	512	; largest sector size supported/used
 
 cr	equ 13
@@ -953,54 +952,6 @@ read:
 	jr	rwoper
 
 write:
-	; For CP/NET servers, check if drive R/O.
-	; must preserve DE, BC.
- if only$prot$A
-	lda	@adrv
-	ora	a
-	jrnz	wr2
-	lhld	rlr
-	mov	a,m
-	adi	29	; process compat attrs (and R/O vec)
-	inx	h
-	mov	h,m
-	mov	l,a
-	mvi	a,0
-	adc	h
-	mov	h,a
-	mov	a,m	; get R/O vec
-	ani	0001b
-	mvi	a,2	; error: disk read/only
-	rnz
- else
-	lhld	rlr
-	mov	a,m
-	adi	29	; process compat attrs (and R/O vec)
-	inx	h
-	mov	h,m
-	mov	l,a
-	mvi	a,0
-	adc	h
-	mov	h,a
-	mov	a,m	; get R/O vec
-	ani	00001111b
-	jrz	wr2
-	mov	l,a
-	lda	@adrv	; CP/M drive
-	cpi	4
-	jrnc	wr2
-	inr	a
-	mov	h,a
-	mvi	a,0001b
-wr0:	dcr	h
-	jrz	wr1
-	rlc
-	jr	wr0
-wr1:	ana	l	; test if selected drive is R/O
-	mvi	a,2	; error: disk read/only
-	rnz
- endif
-wr2:
 	xra	a
 	sta	dir0
 	sta	rdflg
