@@ -226,10 +226,25 @@ colds:
 	mvi	c,0
 	jmp	xdos
 
+msgout:
+	mov	a,m
+	cpi	'$'
+	rz
+	push	h
+	mov	c,m
+	mvi	d,0
+	call	coo
+	pop	h
+	inx	h
+	jr	msgout
+
+errx:	call	msgout
+	di ! hlt
+
  if z180
 ; For now, any TRAP is fatal
 trap:	lxi	h,trpmsg
-	jmp	errx
+	jr	errx
 
 trpmsg:	db	cr,lf,'*TRAP*',cr,lf,'$'
  endif
@@ -303,7 +318,10 @@ tick:	sspd	istk
 	push	d
 	push	b
  if z180tick
+	; It appears that ALL of these are required
+	in0	a,tcr		; reset INT
 	in0	a,tmdr0l	; reset INT
+	in0	a,tmdr0h	; reset INT
  endif
  if h89tick
 	lda	@intby
@@ -768,22 +786,9 @@ sj0:
 	ret
 
 segerr: lxi	h,bnkerr
-	jr	errx
+	jmp	errx
 ramerr: lxi	h,@mmerr
-errx:	call	msgout
-	di ! hlt
-
-msgout:
-	mov	a,m
-	cpi	'$'
-	rz
-	push	h
-	mov	c,m
-	mvi	d,0
-	call	coo
-	pop	h
-	inx	h
-	jr	msgout
+	jmp	errx
 
 @dtbl:	dw	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
