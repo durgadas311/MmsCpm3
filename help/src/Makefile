@@ -1,4 +1,4 @@
-VPATH = drm cpnet mms
+VPATH = drm cpnet mms mpm
 
 # If 'makehelp' doesn't produce a working HELP.HLP file, use HELP.COM:
 #	* copy help.raw => 0:HELP.DAT on a CP/M system
@@ -243,6 +243,31 @@ CPNET12 = \
 	tpa.help \
 	tr.help
 
+MPM = \
+	abort.help \
+	attach.help \
+	console.help \
+	dirm.help \
+	ed.help \
+	eram.help \
+	eraqm.help \
+	sdirm.help \
+	dskresetm.help \
+	mpmstat.help \
+	pip.help \
+	printer.help \
+	renm.help \
+	setm.help \
+	showm.help \
+	spool.help \
+	stat2.help \
+	stopsplr.help \
+	sum.help \
+	submit.help \
+	tod.help \
+	typem.help \
+	userm.help
+
 all: makehelp ../bin/help.hlp
 
 everything: makehelp ../bin/help.hlp ../bin/cpnet3.hlp ../bin/cpnet12.hlp \
@@ -285,6 +310,13 @@ cpnet: makehelp ../bin/cpnet3.hlp ../bin/cpnet12.hlp
 	cat $^ | unix2dos >cpnet.raw
 	./makehelp cpnet.raw >$@
 	@rm cpnet.raw
+
+../bin/mpm.hlp: $(MPM)
+	cat $^ | unix2dos >mpm.raw
+	./makehelp mpm.raw >$@
+	@rm mpm.raw
+
+../bin/mpmnet.hlp: $(CPM2NET)
 
 makehelp: makehelp.c
 	$(CC) -o $@ $^
