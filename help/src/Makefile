@@ -1,4 +1,4 @@
-VPATH = drm cpnet mms mpm
+VPATH = drm cpnet mms mpm mpmsrv
 
 # If 'makehelp' doesn't produce a working HELP.HLP file, use HELP.COM:
 #	* copy help.raw => 0:HELP.DAT on a CP/M system
@@ -163,7 +163,8 @@ CPM2 = asm2.help \
 	stat2.help \
 	submit2.help \
 	type2.help \
-	user2.help
+	user2.help \
+	wizcfg.help
 
 # For Generic CP/M 2.2 with CP/NET 1.2
 CPM2NET = asm2.help \
@@ -200,7 +201,8 @@ CPM2NET = asm2.help \
 	tpa.help \
 	tr.help \
 	type2.help \
-	user2.help
+	user2.help \
+	wizcfg.help
 
 # Generic CP/NET3 only
 CPNET3 = \
@@ -241,7 +243,8 @@ CPNET12 = \
 	rdate.help \
 	srvstat.help \
 	tpa.help \
-	tr.help
+	tr.help \
+	wizcfg.help
 
 MPM = \
 	abort.help \
@@ -267,6 +270,36 @@ MPM = \
 	tod.help \
 	typem.help \
 	userm.help
+
+MPMSRV = \
+	abort.help \
+	attach.help \
+	console.help \
+	dirm.help \
+	ed.help \
+	eram.help \
+	eraqm.help \
+	sdirm.help \
+	dskresetm.help \
+	mpmstat.help \
+	pip.help \
+	printer.help \
+	renm.help \
+	setm.help \
+	showm.help \
+	spool.help \
+	srvprot.help \
+	srvstart.help \
+	srvstat.help \
+	srvstop.help \
+	stat2.help \
+	stopsplr.help \
+	sum.help \
+	submit.help \
+	tod.help \
+	typem.help \
+	userm.help \
+	wizcfg.help
 
 all: makehelp ../bin/help.hlp
 
@@ -316,7 +349,10 @@ cpnet: makehelp ../bin/cpnet3.hlp ../bin/cpnet12.hlp
 	./makehelp mpm.raw >$@
 	@rm mpm.raw
 
-../bin/mpmnet.hlp: $(CPM2NET)
+../bin/mpmnet.hlp: $(MPMSRV)
+	cat $^ | unix2dos >mpmnet.raw
+	./makehelp mpmnet.raw >$@
+	@rm mpmnet.raw
 
 makehelp: makehelp.c
 	$(CC) -o $@ $^
