@@ -309,6 +309,8 @@ everything: makehelp ../bin/help.hlp ../bin/cpnet3.hlp ../bin/cpnet12.hlp \
 
 cpnet: makehelp ../bin/cpnet3.hlp ../bin/cpnet12.hlp
 
+mpm: makehelp ../bin/mpm.hlp ../bin/mpmnet.hlp
+
 ../bin/cpm2.hlp: $(CPM2)
 	cat $^ | unix2dos >cpnet.raw
 	./makehelp cpnet.raw >$@
