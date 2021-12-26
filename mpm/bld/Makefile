@@ -18,7 +18,6 @@ RCBASE = mxios.rel cioz180.rel end.rel lptbl.rel
 
 Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
-DSO = -p def,a:
 
 all: m3sdczrr.sys mldrsdc.img
 
@@ -51,15 +50,15 @@ bwbwbot.cim: bwbwbot.asm
 
 m3z67zrr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
 	vcpm link "m3z67zrr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
-	setup30 $(Z67DRVS) $(DSO) $@
+	setup30 $(Z67DRVS) $@
 
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
-	setup30 $(SDCDRVS) $(DSO) $@
+	setup30 $(SDCDRVS) $@
 
 m3rcz180.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
 	vcpm link "m3rcz180=mxios,cioz180,sdc,end,lptbl,memz180,nortc[b,os,nr]"
-	setup30 $(SDCDRVS) $(DSO) $@
+	setup30 $(SDCDRVS) $@
 
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
 m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
