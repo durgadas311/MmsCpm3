@@ -5,7 +5,7 @@
                 ; Copyright (C) 1983 Magnolia Microsystems		*
                 ;********************************************************
                 	maclib	z80
-                	maclib	cfgmpm
+                	maclib	cfgsys
                 
  0000 =         false	equ	0
  FFFF =         true	equ	not false
@@ -18,12 +18,12 @@
  00C8 =         dev0	equ	200	;first device
  0004 #         ndev	set	4	;max number of devices
                  if numser LT ndev
-                ndev	set	numser
+ 0002 #         ndev	set	numser
                  endif
                 
                 	dseg	;common memory, other parts in banked.
- 0000 B600      	dw	thread
- 0002 C804      	db	dev0,ndev
+ 0000 B800      	dw	thread
+ 0002 C802      	db	dev0,ndev
                 
  0004 C30000    	jmp	init
  0007 C36E00    	jmp	inst
@@ -54,7 +54,7 @@
                 ; It appears MP/M requires all of this in common memory
                 ; B=device number, relative to 200.
                 input:
- 0060 CDA100    	call	getx
+ 0060 CD9F00    	call	getx
  0063 CD7100    inp0:	call	inst0
                 	jrz	inp0			; wait for character ready
  0066+28FB      	DB	28H,INP0-$-1
@@ -66,7 +66,7 @@
                 
                 ; B=device number, relative to 200.
                 inst:
- 006E CDA100    	call	getx			;
+ 006E CD9F00    	call	getx			;
                 inst0:	inp	a			; read from status port
  0071+ED78      	DB	0EDH,A*8+40H
  0073 E601      	ani	1			; isolate RxRdy
@@ -78,134 +78,142 @@
                 ; C=char
  0079 79        output: mov	a,c
  007A F5        	push	psw			; save character from <C>
- 007B CDA100    	call	getx
+ 007B CD9F00    	call	getx
  007E CD8B00    outp0:	call	outst0
                 	jrz	outp0			; wait for TxEmpty, HL->port
  0081+28FB      	DB	28H,OUTP0-$-1
- 0083 4B        	mov	c,e			; get port address
+ 0083 4B        	mov	c,e			; get THR port address
  0084 F1        	pop	psw
                 	outp	a			; send data
  0085+ED79      	DB	0EDH,A*8+41H
  0087 C9        	ret
                 
-                ; B=device number, relative to 200.
- 0088 CDA100    outst:	call	getx	; character output status
- 008B 2B        outst0:	dcx	h
- 008C 0C        	inr	c		; get port+6
+                ; On entry, B=device number, relative to 200.
+ 0088 CD9F00    outst:	call	getx	; character output status
+                	; must preserve BC,DE (getx results) in all exit paths
+ 008B 0C        outst0:	inr	c		; get port+6
                 	inp	a		; get handshake status
- 008D+ED78      	DB	0EDH,A*8+40H
- 008F AE        	xra	m
- 0090 2B        	dcx	h		;
- 0091 A6        	ana	m		; [ZR] = ready
- 0092 E6F0      	ani	11110000b
+ 008C+ED78      	DB	0EDH,A*8+40H
+ 008E 0D        	dcr	c		; line status register (+5)
+ 008F AA        	xra	d
+ 0090 A0        	ana	b		; [ZR] = ready
+ 0091 E6F0      	ani	11110000b
                 	jrnz	nrdy
- 0094+2009      	DB	20H,NRDY-$-1
- 0096 0D        	dcr	c		; line status register (+5)
+ 0093+2008      	DB	20H,NRDY-$-1
                 	inp	a
- 0097+ED78      	DB	0EDH,A*8+40H
- 0099 E620      	ani	20h		; test xmit holding register empty
- 009B C8        	rz			;
- 009C F6FF      	ori	true
- 009E C9        	ret			; return true if ready
+ 0095+ED78      	DB	0EDH,A*8+40H
+ 0097 E620      	ani	20h		; test xmit holding register empty
+ 0099 C8        	rz			;
+ 009A F6FF      	ori	true
+ 009C C9        	ret			; return true if ready
                 
- 009F AF        nrdy:	xra	a
- 00A0 C9        	ret
-                
-                ; B=device number, relative to 200.
- 00A1 78        getx:	mov	a,b	;B=device #, 0-15
- 00A2 D600      	sui	dev0-200
- 00A4 87        	add	a	;*2
- 00A5 87        	add	a	;*4
- 00A6 C603      	adi	3	;to point to port address
- 00A8 5F        	mov	e,a
- 00A9 1600      	mvi	d,0
- 00AB 213000    	lxi	h,xmodes
- 00AE 19        	dad	d
- 00AF 7E        	mov	a,m
- 00B0 5F        	mov	e,a
- 00B1 C605      	adi	5
- 00B3 4F        	mov	c,a
- 00B4 2B        	dcx	h
- 00B5 C9        	ret		;HL => xmode(dev)+2 = line control register image
+ 009D AF        nrdy:	xra	a
+ 009E C9        	ret
                 
- 00B6 =         thread	equ	$
+                ; B=device number, relative to 200.
+                ; Returns: C=LSR, E=RBR/THR, D=XOR-mask, B=AND-mask (MSR)
+ 009F 78        getx:	mov	a,b	;B=device #, 0-15
+ 00A0 D600      	sui	dev0-200
+ 00A2 87        	add	a	;*2
+ 00A3 87        	add	a	;*4
+ 00A4 C603      	adi	3	;to point to port address
+ 00A6 5F        	mov	e,a
+ 00A7 1600      	mvi	d,0
+ 00A9 213000    	lxi	h,xmodes
+ 00AC 19        	dad	d
+ 00AD 7E        	mov	a,m	; port base
+ 00AE 5F        	mov	e,a
+ 00AF C605      	adi	5
+ 00B1 4F        	mov	c,a
+ 00B2 2B        	dcx	h	; LCR (only used for init)
+ 00B3 2B        	dcx	h	; MCR-XOR
+ 00B4 56        	mov	d,m	; XOR bits
+ 00B5 2B        	dcx	h	; MCR-AND
+ 00B6 46        	mov	b,m	; AND bits
+ 00B7 C9        	ret		;HL => xmode(dev)+0
+                
+ 00B8 =         thread	equ	$
                 
                 	cseg	;banked memory.
                 
                 ; B=device number, relative to 200.
                 init:
- 0000 CDA100    	call	getx
- 0003 4B        	mov	c,e
+ 0000 C5        	push	b
+ 0001 CD9F00    	call	getx
+ 0004 C1        	pop	b
+ 0005 4B        	mov	c,e	; port base
+ 0006 23        	inx	h
+ 0007 23        	inx	h	; back to LCR for init
                 	bit	7,m	;is INIT allowed ??
- 0004+CB7E      	DB	0CBH,7*8+M+40H
- 0006 C8        	rz
- 0007 E5        	push	h
- 0008 78        	mov	a,b
- 0009 87        	add	a
- 000A 87        	add	a
- 000B 87        	add	a	;*8
- 000C 6F2600    	mov l,a ! mvi h,0
- 000F 114700196E	lxi d,chrtbl+7 ! dad d ! mov l,m ; get baud rate
- 0014 260029114A	mvi h,0 ! dad h ! lxi d,speed$table ! dad d  ; point to counter entry
- 001B 5E2356    	mov e,m ! inx h ! mov d,m	; get and save count
- 001E 79        	mov	a,c	;DE=baud rate divisor
- 001F 47        	mov	b,a	;port base for INS8250 in question.
- 0020 C603      	adi	3
- 0022 4F        	mov	c,a	;+3 = access divisor latch bit
- 0023 3E80      	mvi	a,10000000b
+ 0008+CB7E      	DB	0CBH,7*8+M+40H
+ 000A C8        	rz
+ 000B E5        	push	h
+ 000C 78        	mov	a,b
+ 000D 87        	add	a
+ 000E 87        	add	a
+ 000F 87        	add	a	;*8
+ 0010 6F2600    	mov l,a ! mvi h,0
+ 0013 114700196E	lxi d,chrtbl+7 ! dad d ! mov l,m ; get baud rate
+ 0018 260029114E	mvi h,0 ! dad h ! lxi d,speed$table ! dad d  ; point to counter entry
+ 001F 5E2356    	mov e,m ! inx h ! mov d,m	; get and save count
+ 0022 79        	mov	a,c	;DE=baud rate divisor
+ 0023 47        	mov	b,a	;port base for INS8250 in question.
+ 0024 C603      	adi	3
+ 0026 4F        	mov	c,a	;+3 = access divisor latch bit
+ 0027 3E80      	mvi	a,10000000b
                 	outp	a	;access divisor latch
- 0025+ED79      	DB	0EDH,A*8+41H
- 0027 61        	mov	h,c
- 0028 48        	mov	c,b	;+0 = lo byte of baud rate divisor
+ 0029+ED79      	DB	0EDH,A*8+41H
+ 002B 61        	mov	h,c
+ 002C 48        	mov	c,b	;+0 = lo byte of baud rate divisor
                 	outp	e
- 0029+ED59      	DB	0EDH,E*8+41H
- 002B 0C        	inr	c
+ 002D+ED59      	DB	0EDH,E*8+41H
+ 002F 0C        	inr	c
                 	outp	d	;send divisor to divisor latch
- 002C+ED51      	DB	0EDH,D*8+41H
- 002E 4C        	mov	c,h	;get port+3 back into (C)
- 002F E1        	pop	h	;point to BASE+3 initial value
- 0030 7E        	mov	a,m	;disable divisor latch access.
- 0031 E67F      	ani	01111111b
-                	outp	a	;and setup # bits, parity, etc...
- 0033+ED79      	DB	0EDH,A*8+41H
- 0035 0C        	inr	c	;+4 = modem control
- 0036 2B        	dcx	h	;next, handshake lines state
- 0037 7E        	mov	a,m
- 0038 E60F      	ani	00001111b	;enable handshake lines
+ 0030+ED51      	DB	0EDH,D*8+41H
+ 0032 4C        	mov	c,h	;get port+3 back into (C)
+ 0033 E1        	pop	h	;point to BASE+3 initial value
+ 0034 7E        	mov	a,m	;disable divisor latch access.
+ 0035 E67F      	ani	01111111b
+                	outp	a	;and setup # bits, parity, etc...
+ 0037+ED79      	DB	0EDH,A*8+41H
+ 0039 0C        	inr	c	;+4 = modem control
+ 003A 2B        	dcx	h	;next, handshake lines state
+ 003B 7E        	mov	a,m
+ 003C E60F      	ani	00001111b	;enable handshake lines
                 	outp	a
- 003A+ED79      	DB	0EDH,A*8+41H
- 003C 0C        	inr	c	;+5 = line status
+ 003E+ED79      	DB	0EDH,A*8+41H
+ 0040 0C        	inr	c	;+5 = line status
                 	inp	a	;clear any pending activity
- 003D+ED78      	DB	0EDH,A*8+40H
- 003F 79        	mov	a,c
- 0040 E6F8      	ani	11111000b	;reset port to base
- 0042 4F        	mov	c,a
+ 0041+ED78      	DB	0EDH,A*8+40H
+ 0043 79        	mov	a,c
+ 0044 E6F8      	ani	11111000b	;reset port to base
+ 0046 4F        	mov	c,a
                 	inp	a	;clear any input data
- 0043+ED78      	DB	0EDH,A*8+40H
- 0045 0C        	inr	c	;+1 = interupt control
- 0046 AF        	xra	a
+ 0047+ED78      	DB	0EDH,A*8+40H
+ 0049 0C        	inr	c	;+1 = interupt control
+ 004A AF        	xra	a
                 	outp	a	;disable chip interupts
- 0047+ED79      	DB	0EDH,A*8+41H
- 0049 C9        	ret
+ 004B+ED79      	DB	0EDH,A*8+41H
+ 004D C9        	ret
                 
                 ; INS8250 BAUD based on 1.8432MHz crystal
                 speed$table:
- 004A 0000      	dw	0	;no baud rate
- 004C 0009      	dw	2304	;50 baud
- 004E 0006      	dw	1536	;75
- 0050 1704      	dw	1047	;110
- 0052 5803      	dw	856	;134.5
- 0054 0003      	dw	768	;150
- 0056 8001      	dw	384	;300
- 0058 C000      	dw	192	;600
- 005A 6000      	dw	96	;1200
- 005C 4000      	dw	64	;1800
- 005E 3000      	dw	48	;2400
- 0060 2000      	dw	32	;3600
- 0062 1800      	dw	24	;4800
- 0064 1000      	dw	16	;7200
- 0066 0C00      	dw	12	;9600
- 0068 0600      	dw	6	;19200
+ 004E 0000      	dw	0	;no baud rate
+ 0050 0009      	dw	2304	;50 baud
+ 0052 0006      	dw	1536	;75
+ 0054 1704      	dw	1047	;110
+ 0056 5803      	dw	856	;134.5
+ 0058 0003      	dw	768	;150
+ 005A 8001      	dw	384	;300
+ 005C C000      	dw	192	;600
+ 005E 6000      	dw	96	;1200
+ 0060 4000      	dw	64	;1800
+ 0062 3000      	dw	48	;2400
+ 0064 2000      	dw	32	;3600
+ 0066 1800      	dw	24	;4800
+ 0068 1000      	dw	16	;7200
+ 006A 0C00      	dw	12	;9600
+ 006C 0600      	dw	6	;19200
                 
- 006A           	end
-
+ 006E           	end
+

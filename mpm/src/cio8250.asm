@@ -78,22 +78,21 @@ output: mov	a,c
 	call	getx
 outp0:	call	outst0
 	jrz	outp0			; wait for TxEmpty, HL->port
-	mov	c,e			; get port address
+	mov	c,e			; get THR port address
 	pop	psw
 	outp	a			; send data
 	ret
 
-; B=device number, relative to 200.
+; On entry, B=device number, relative to 200.
 outst:	call	getx	; character output status
-outst0:	dcx	h
-	inr	c		; get port+6
+	; must preserve BC,DE (getx results) in all exit paths
+outst0:	inr	c		; get port+6
 	inp	a		; get handshake status
-	xra	m
-	dcx	h		;
-	ana	m		; [ZR] = ready
+	dcr	c		; line status register (+5)
+	xra	d
+	ana	b		; [ZR] = ready
 	ani	11110000b
 	jrnz	nrdy
-	dcr	c		; line status register (+5)
 	inp	a
 	ani	20h		; test xmit holding register empty
 	rz			;
@@ -104,6 +103,7 @@ nrdy:	xra	a
 	ret
 
 ; B=device number, relative to 200.
+; Returns: C=LSR, E=RBR/THR, D=XOR-mask, B=AND-mask (MSR)
 getx:	mov	a,b	;B=device #, 0-15
 	sui	dev0-200
 	add	a	;*2
@@ -113,12 +113,16 @@ getx:	mov	a,b	;B=device #, 0-15
 	mvi	d,0
 	lxi	h,xmodes
 	dad	d
-	mov	a,m
+	mov	a,m	; port base
 	mov	e,a
 	adi	5
 	mov	c,a
-	dcx	h
-	ret		;HL => xmode(dev)+2 = line control register image
+	dcx	h	; LCR (only used for init)
+	dcx	h	; MCR-XOR
+	mov	d,m	; XOR bits
+	dcx	h	; MCR-AND
+	mov	b,m	; AND bits
+	ret		;HL => xmode(dev)+0
 
 thread	equ	$
 
@@ -126,8 +130,12 @@ thread	equ	$
 
 ; B=device number, relative to 200.
 init:
+	push	b
 	call	getx
-	mov	c,e
+	pop	b
+	mov	c,e	; port base
+	inx	h
+	inx	h	; back to LCR for init
 	bit	7,m	;is INIT allowed ??
 	rz
 	push	h
