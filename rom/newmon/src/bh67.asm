@@ -67,6 +67,7 @@ bsasi0:
 	mvi	e,8	; Read
 	call	sasi$cmd
 	rc
+	pop	h	; DEVIANT: leave ghost of error return on stack
 	jmp	hwboot
 
 ; send SASI read command, get results
