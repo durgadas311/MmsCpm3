@@ -149,6 +149,7 @@ break:
 	lxi	b,256
 	ldir
 	; exec MP/M... TODO: setup a minimal stack?
+	di	; give them a fighting chance
 	lhld	entry$point
 	pchl
 
