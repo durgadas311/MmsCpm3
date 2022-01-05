@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	27
+beta	equ	28
 
 z180	equ	false
 h8nofp	equ	false
@@ -448,7 +448,7 @@ take$A:	; set a timeout for A seconds
 	lxi	h,timeout
 	shld	vrst1+1
 	sta	SEC$CNT
-	mvi	a,1
+	mvi	a,mfl$HLT+mfl$CLK
 	sta	MFlag
 	ei
 	ret
@@ -473,7 +473,8 @@ error:
 	call	msgout	; A=0 on return
 	lxi	h,nulint
 	shld	vrst1+1
-	sta	MFlag	; A=0 from msgout
+	mvi	a,mfl$HLT
+	sta	MFlag
 	in	0f2h
 	ani	00000011b
 	jrnz	error0
@@ -716,7 +717,7 @@ doboot:	; common boot path for console and keypad
 	jmp	btboot
 	; btboot effectively returns here on success
 	; (in most cases)
-hwboot:	xra	a
+hwboot:	mvi	a,mfl$HLT
 	sta	MFlag
 hxboot:	lxi	h,CLOCK
 	shld	vrst1+1
@@ -1432,7 +1433,7 @@ endif
 	out	0f2h	; enable RAM now...
 	mvi	a,0c9h	; RET
 	sta	PrsRAM
-	lxi	h,05000h	; 0, (beep, 2mS, !MON, !SI)
+	lxi	h,(50h SHL 8)+(mfl$HLT) ; 50h = (beep, 2mS, !MON, !SI)
 	shld	MFlag	; MFlag, CtlFlg
 	lxi	h,0ffffh	; top of memory
 	shld	ABUSS
@@ -2267,7 +2268,7 @@ int1$xx:
 	jnz	intret	; skip if running monitor...
 	lda	MFlag
 	bit	7,a	; HLT processing enabled
-	cnz	chkhlt
+	cz	chkhlt
 	rrc		; mfl$CLK private int1?
 	cc	vrst1
 	jmp	intret
