@@ -1,0 +1,104 @@
+$title('MP/M II V2.0 Status Process - Banked Portion')
+status:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+$include (dpgos.lit)
+$include (proces.lit)
+$include (queue.lit)
+$include (memmgr.lit)
+$include (xdos.lit)
+
+  declare restarts literally
+    '0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H';
+
+/*
+  Status Process Data Segment
+*/
+  declare os address public
+    data (0);
+
+  declare status$stack$pointer address
+    data (.status$stk+38);
+
+  declare nrs$name (8) byte data (
+    'Mpmstat ');
+
+  declare status$pd$adr address;
+  declare status$pd based status$pd$adr process$descriptor;
+
+  declare status$stk (20) address
+    initial (restarts,.status);
+
+  declare status$cqcb$adr address;
+  declare status$cqcb based status$cqcb$adr structure (
+    cqueue,
+    buf (2) byte );
+  declare status$uqcb userqcbhead public
+    initial (0,.field);
+  declare field (2) byte;
+  declare console byte at (.field(1));
+
+$include (mscmn.plm)
+
+  declare last$dseg$byte byte
+    initial (0);
+
+/*
+  status:
+          The purpose of the status process is to display
+        the status of the MP/M II V2.0 operating system.
+
+  Entry Conditions:
+        None
+
+  Exit Conditions:
+        None
+
+*/
+
+  status:
+    procedure public;
+      declare ret byte;
+
+      status$pd$adr = os + 2;
+      status$cqcb$adr = status$pd$adr + 52;
+      status$uqcb.pointer = .status$cqcb;
+
+      ret = xdos (make$queue,.status$cqcb);
+      call setup;
+      do forever;
+        ret = xdos (read$queue,.status$uqcb);
+        rlrpd.console = console;
+        call crlf;
+        call crlf;
+        call display$text (0,
+          .('****** MP/M II V2.0 Status Display ******','$'));
+        call display$config;
+        call display$ready;
+        call display$DQ;
+        call display$NQ;
+        call display$delay;
+        call display$poll;
+        call display$flag$wait;
+        call display$flag$set;
+        call display$queues;
+        call display$consoles;
+        call display$printers;
+        call display$mem$seg;
+        ret = xdos (detach,0);
+        ret = xdos (detach$list,0);
+      end; /* forever */
+    end status;
+
+end status;
+

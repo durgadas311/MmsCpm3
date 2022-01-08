@@ -1,0 +1,500 @@
+
+/*
+    Common Literals
+*/
+
+  declare true literally '0FFFFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon2a:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon2a;
+
+  co:
+    procedure (char);
+      declare char byte;
+      call mon1 (2,char);
+    end co;
+
+  print$buffer:
+    procedure (bufferadr);
+      declare bufferadr address;
+      call mon1 (9,bufferadr);
+    end print$buffer;
+
+  read$buffer:
+    procedure (bufferadr);
+      declare bufferadr address;
+      call mon1 (10,bufferadr);
+    end read$buffer;
+
+  crlf:
+    procedure;
+      call co (0DH);
+      call co (0AH);
+    end crlf;
+
+  declare xdos literally 'mon2a';
+
+  declare datapgadr address;
+  declare datapg based datapgadr address;
+
+  declare param$adr address;
+  declare param based param$adr structure (
+    mem$top byte,
+    nmbcns byte,
+    breakpoint$restart byte,
+    add$sys$stack byte,
+    bank$switching byte,
+    Z80 byte,
+    banked$BDOS byte );
+
+  declare rlradr address;
+  declare rlr based rlradr address;
+  declare rlrcont address;
+  declare rlrpd based rlrcont process$descriptor;
+
+  declare dlradr address;
+  declare dlr based dlradr address;
+
+  declare drladr address;
+  declare drl based drladr address;
+
+  declare plradr address;
+  declare plr based plradr address;
+
+  declare slradr address;
+  declare slr based slradr address;
+
+  declare qlradr address;
+  declare qlr based qlradr address;
+
+  declare nmb$cns$adr address;
+  declare nmb$consoles based nmb$cns$adr byte;
+
+  declare cns$att$adr address;
+  declare console$attached based cns$att$adr (1) address;
+
+  declare cns$que$adr address;
+  declare console$queue based cns$que$adr (1) address;
+
+  declare nmb$lst$adr address;
+  declare nmb$printers based nmb$lst$adr byte;
+
+  declare lst$att$adr address;
+  declare list$attached based lst$att$adr (1) address;
+
+  declare lst$que$adr address;
+  declare list$queue based lst$que$adr (1) address;
+
+  declare nmbflags$adr address;
+  declare nmbflags based nmbflags$adr byte;
+
+  declare sys$flg$adr address;
+  declare sys$flag based sys$flg$adr (1) address;
+
+  declare nmb$seg$adr address;
+  declare nmb$segs based nmb$seg$adr byte;
+
+  declare mem$seg$tbl$adr address;
+  declare mem$seg$tbl based mem$seg$tbl$adr (1) memory$descriptor;
+
+  declare pdtbl$adr address;
+  declare pdtbl based pdtbl$adr (1) process$descriptor;
+
+  declare hex$digit (*) byte data ('0123456789ABCDEF');
+
+  declare queue$adr address;
+
+  declare queue based queue$adr structure (
+    cqueue,
+    owner$adr address );
+
+  display$hex$byte:
+    procedure (value);
+      declare value byte;
+
+      call co (hex$digit(shr(value,4)));
+      call co (hex$digit(value mod 16));
+    end display$hex$byte;
+
+  display$text:
+    procedure (count,text$adr);
+      declare count byte;
+      declare text$adr address;
+      declare char based text$adr byte;
+      declare i byte;
+
+      if count+char = 0 then return;
+      if count = 0 then
+      do;
+        call print$buffer (text$adr);
+      end;
+      else
+      do i = 1 to count;
+        call co (char and 7fh);
+        text$adr = text$adr + 1;
+      end;
+    end display$text;
+
+  display$links:
+    procedure (count,title$adr,root$adr);
+      declare count byte;
+      declare (title$adr,root$adr) address;
+      declare char based title$adr byte;
+      declare pd based root$adr process$descriptor;
+      declare i byte;
+      declare link$list (64) address;
+      declare (n,k) byte;
+
+      if count+char <> 0 then call crlf;
+      call display$text (count,title$adr);
+      if count+char = 0
+        then i = 0;
+        else i = 7;
+      n = -1;
+      disable;  /* critical section required to obtain list */
+        do while (root$adr <> 0) and (n <> 63) and (high(root$adr) <> 0ffh);
+          link$list(n:=n+1) = root$adr;
+          root$adr = pd.pl;
+        end;
+      call mon1 (dispatch,0);  /* enable interrupts by dispatching */
+      if n = -1 then return;
+      do k = 0 to n;
+        root$adr = link$list(k);
+        i = i + 1;
+        if i >= 8 then
+        do;
+          call crlf;
+          call co (' ');
+          i = 1;
+        end;
+        call co (' ');
+        call display$text (8,.pd.name);
+        if pd.memseg <> 0ffh then
+        do;
+          call co ('[');
+          call co (hex$digit(pd.console and 0fh));
+          call co (']');
+        end;
+      end;
+    end display$links;
+
+  display$config:
+    procedure;
+
+      call display$text (0,
+        .(0dh,0ah,0dh,0ah,'Top of memory = ','$'));
+      call display$hex$byte (param.mem$top);
+      call display$text (0,
+        .('FFH',0dh,0ah,'Number of consoles = ','$'));
+      call display$hex$byte (nmb$consoles);
+      call display$text (0,
+        .(0dh,0ah,'Debugger breakpoint restart # = ','$'));
+      call display$hex$byte (param.breakpoint$restart);
+      if param.add$sys$stack then
+      do;
+        call display$text (0,
+          .(0dh,0ah,'Stack is swapped on BDOS calls','$'));
+      end;
+      if param.bank$switching then
+      do;
+        call display$text (0,
+          .(0dh,0ah,'Memory is bank switched','$'));
+        if param.banked$BDOS then
+        do;
+          call display$text (0,
+            .(0dh,0ah,'BDOS disk file management is bank switched','$'));
+        end;
+      end;
+      if param.Z80 then
+      do;
+        call display$text (0,
+          .(0dh,0ah,'Z80 complementary registers managed by dispatcher','$'));
+      end;
+      call crlf;
+    end display$config;
+
+  display$ready:
+    procedure;
+
+      call display$links (0,
+        .('Ready Process(es):','$'),rlr);
+    end display$ready;
+
+  display$DQ:
+    procedure;
+
+      call crlf;
+      call display$text (0,
+        .('Process(es) DQing:','$'));
+      queue$adr = qlr;
+      do while queue$adr <> 0;
+        if queue.dqph <> 0 then
+        do;
+          call display$text (4,.(0DH,0AH,' ['));
+          call display$text (8,.queue.name);
+          call co (']');
+          call display$links (0,.(0),queue.dqph);
+        end;
+        queue$adr = queue.ql;
+      end;
+    end display$DQ;
+
+  display$NQ:
+    procedure;
+
+      call crlf;
+      call display$text (0,
+        .('Process(es) NQing:','$'));
+      queue$adr = qlr;
+      do while queue$adr <> 0;
+        if queue.nqph <> 0 then
+        do;
+          call display$text (4,.(0DH,0AH,' ['));
+          call display$text (8,.queue.name);
+          call co (']');
+          call display$links (0,.(0),queue.nqph);
+        end;
+        queue$adr = queue.ql;
+      end;
+    end display$NQ;
+
+  display$delay:
+    procedure;
+
+      call display$links (0,
+        .('Delayed Process(es):','$'),dlr);
+    end display$delay;
+
+  display$poll:
+    procedure;
+
+      call display$links (0,
+        .('Polling Process(es):','$'),plr);
+    end display$poll;
+
+  display$flag$wait:
+    procedure;
+      declare i byte;
+
+      call crlf;
+      call display$text (0,
+        .('Process(es) Flag Waiting:','$'));
+      do i = 0 to nmbflags-1;
+        if sys$flag(i) < 0FFFEH then
+        do;
+           call crlf;
+           call co (' ');
+           call co (' ');
+           call display$hex$byte (i);
+           call display$text (3,.(' - '));
+           call display$links (0,.(0),sys$flag(i));
+        end;
+      end;
+    end display$flag$wait;
+
+  display$flag$set:
+    procedure;
+      declare i byte;
+
+      call crlf;
+      call display$text (0,
+        .('Flag(s) Set:','$'));
+      do i = 0 to nmbflags-1;
+        if sys$flag(i) = 0FFFEH then
+        do;
+          call crlf;
+          call co (' ');
+          call co (' ');
+          call display$hex$byte (i);
+        end;
+      end;
+    end display$flag$set;
+
+  display$queues:
+    procedure;
+      declare i byte;
+
+      queue$adr = qlr;
+      call crlf;
+      call display$text (0,
+        .('Queue(s):','$'));
+      i = 7;
+      do while queue$adr <> 0;
+        i = i + 1;
+        if i >= 8 then
+        do;
+          call crlf;
+          call co (' ');
+          i = 1;
+        end;
+        call co (' ');
+        call display$text (8,.queue.name);
+        if (queue.name(0) = 'M') and
+           (queue.name(1) = 'X') and
+           (queue.msglen  =  0 ) and
+           (queue.nmbmsgs =  1 ) and
+           (queue.msgcnt  =  0 ) then
+        do;
+          call co ('[');
+          call display$text (8,queue.owner$adr+6);
+          call co (']');
+          i = i + 1;
+        end;
+        queue$adr = queue.ql;
+      end;
+      call crlf;
+    end display$queues;
+
+  display$consoles:
+    procedure;
+      declare i byte;
+      declare name$offset literally '6';
+
+      call display$text (0,
+        .('Process(es) Attached to Consoles:','$'));
+      if nmb$consoles <> 0 then
+      do i = 0 to nmb$consoles-1;
+        call display$text (5,.(0dh,0ah,'  ['));
+        call co (hex$digit(i));
+        call display$text (4,.('] - '));
+        if console$attached(i) = 0
+          then call display$text (0,
+                 .('Unattached','$'));
+          else call display$text (8,
+                 console$attached(i) + name$offset);
+      end;
+      call display$text (0,.(0dh,0ah,
+        'Process(es) Waiting for Consoles:','$'));
+      if nmb$consoles <> 0 then
+      do i = 0 to nmb$consoles-1;
+        if console$queue(i) <> 0 then
+        do;
+          call display$text (5,.(0dh,0ah,'  ['));
+          call co (hex$digit(i));
+          call display$text (4,.('] - '));
+          call display$links (0,.(0),console$queue(i));
+        end;
+      end;
+    end display$consoles;
+
+  display$printers:
+    procedure;
+      declare i byte;
+      declare name$offset literally '6';
+
+      call display$text (0,
+        .(0dh,0ah,'Process(es) Attached to Printers:','$'));
+      if nmb$printers <> 0 then
+      do i = 0 to nmb$printers-1;
+        call display$text (5,.(0dh,0ah,'  ['));
+        call co (hex$digit(i));
+        call display$text (4,.('] - '));
+        if list$attached(i) = 0
+          then call display$text (0,
+                 .('Unattached','$'));
+          else call display$text (8,
+                 list$attached(i) + name$offset);
+      end;
+      call display$text (0,.(0dh,0ah,
+        'Process(es) Waiting for Printers:','$'));
+      if nmb$printers <> 0 then
+      do i = 0 to nmb$printers-1;
+        if list$queue(i) <> 0 then
+        do;
+          call display$text (5,.(0dh,0ah,'  ['));
+          call co (hex$digit(i));
+          call display$text (4,.('] - '));
+          call display$links (0,.(0),list$queue(i));
+        end;
+      end;
+    end display$printers;
+
+  display$mem$seg:
+    procedure;
+      declare i byte;
+
+      call display$text (0,.(0dh,0ah,
+        'Memory Allocation:','$'));
+      do i = 0 to nmbsegs-1;
+        call display$text (0,
+          .(0dh,0ah,'  Base = ','$'));
+        call display$hex$byte (memsegtbl(i).base);
+        call display$text (0,
+          .('00H  Size = ','$'));
+        call display$hex$byte (memsegtbl(i).size);
+        call display$text (0,.('00','$'));
+        if param.bank$switching then
+        do;
+          call display$text (0,
+            .('H  Bank = ','$'));
+          call display$hex$byte (memsegtbl(i).bank);
+        end;
+        if (memsegtbl(i).attrib and allocated) = 0 then
+        do;
+          call display$text (0,
+            .('H  * Free *','$'));
+        end;
+        else
+        do;
+          if memsegtbl(i).attrib = 0ffh then
+          do;
+            call display$text (0,
+              .('H  * Reserved *','$'));
+          end;
+          else
+          do;
+            call display$text (0,
+              .('H  Allocated to ','$'));
+            call display$text (8,.pdtbl(i).name);
+            call co ('[');
+            call co (hex$digit(pdtbl(i).console and 0fh));
+            call co (']');
+          end;
+        end;
+      end;
+    end display$mem$seg;
+
+  setup:
+    procedure;
+
+      datapgadr = (param$adr:=xdos (system$data$adr,0)) + 252;
+      datapgadr = datapg;
+      rlradr = datapgadr + osrlr;
+      rlrcont = rlr;
+      dlradr = datapgadr + osdlr;
+      drladr = datapgadr + osdrl;
+      plradr = datapgadr + osplr;
+      slradr = datapgadr + osslr;
+      qlradr = datapgadr + osqlr;
+      nmb$cns$adr = datapgadr + osnmbcns;
+      cns$att$adr = datapgadr + oscnsatt;
+      cns$que$adr = datapgadr + oscnsque;
+      nmb$lst$adr = datapgadr + osnmblst;
+      lst$att$adr = datapgadr + oslstatt;
+      lst$que$adr = datapgadr + oslstque;
+      nmbflags$adr = datapgadr + osnmbflags;
+      sys$flg$adr = datapgadr + ossysfla;
+      nmb$seg$adr = datapgadr + osnmbsegs;
+      mem$seg$tbl$adr = datapgadr + osmsegtbl;
+      pdtbl$adr = datapgadr + ospdtbl;
+    end setup;
+
+

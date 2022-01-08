@@ -1,0 +1,422 @@
+$ TITLE('MP/M II --- ERA 2.0')
+erase:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    19 Jan  80  by Thomas Rolander
+    14 Sept 81  by Doug Huskey
+*/
+declare
+    mpmproduct literally '01h', /* requires mp/m */
+    cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+declare
+    true    literally '1',
+    false   literally '0',
+    forever literally 'while true',
+    lit     literally 'literally',
+    proc    literally 'procedure',
+    dcl     literally 'declare',
+    addr    literally 'address',
+    cr      literally '13',
+    lf      literally '10',
+    ctrlc   literally '3',
+    ctrlx   literally '18h',
+    bksp    literally '8';
+
+$include (proces.lit)
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0C3H,
+    .start-3);
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   INTERFACE          *
+   *                                    *
+   **************************************/
+
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon3:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon3;
+
+  declare cmdrv     byte    external;	/* command drive      */
+  declare fcb (1)   byte    external;	/* 1st default fcb    */
+  declare fcb16 (1) byte    external;	/* 2nd default fcb    */
+  declare pass0     address external;	/* 1st password ptr   */
+  declare len0      byte    external;	/* 1st passwd length  */
+  declare pass1     address external;	/* 2nd password ptr   */
+  declare len1      byte    external;	/* 2nd passwd length  */
+  declare tbuff (1) byte    external;	/* default dma buffer */
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   Externals          *
+   *                                    *
+   **************************************/
+
+  read$console:
+    procedure byte;
+      return mon2 (1,0);
+    end read$console;
+
+
+  printchar: 
+    procedure(char);
+    declare char byte;
+    call mon1(2,char);
+    end printchar;
+
+  conin: 
+    procedure byte;
+    return mon2(6,0fdh);
+    end conin;
+
+  print$buf:
+    procedure (buffer$address);
+      declare buffer$address address;
+      call mon1 (9,buffer$address);
+    end print$buf;
+
+
+  check$con$stat:
+    procedure byte;
+      return mon2 (11,0);
+    end check$con$stat;
+
+  version: procedure address;
+    /* returns current cp/m version # */
+    return mon3(12,0);
+    end version;
+
+  setdma: procedure(dma);
+    declare dma address;
+    call mon1(26,dma);
+    end setdma;
+
+  search:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (17,fcb$address);
+    end search;
+
+  searchn:
+    procedure byte;
+      return mon2 (18,0);
+    end searchn;
+
+  delete$file:
+    procedure (fcb$address) address;
+      declare fcb$address address;
+      return mon3 (19,fcb$address);
+    end delete$file;
+
+  get$user$code:
+    procedure byte;
+      return mon2 (32,0ffh);
+    end get$user$code;
+
+  /* 0ff => return BDOS errors */
+  return$errors:
+    procedure;
+      call mon1 (45,0ffh);	
+    end return$errors;
+
+
+  terminate:
+    procedure;
+      call mon1 (143,0);
+    end terminate;
+
+  declare
+    parse$fn structure (
+      buff$adr  address,
+      fcb$adr   address);
+
+  parse: procedure;
+    call mon1(152,.parse$fn);
+    end parse;
+
+
+declare
+    pdadr      addr,
+    pd         based pdadr process$descriptor;
+
+getpd: procedure;
+
+    pdadr = mon3(156,0);
+    end getpd;
+
+  /**************************************
+   *                                    *
+   *         GLOBAL VARIABLES           *
+   *                                    *
+   **************************************/
+
+  declare xfcb     byte initial(0);
+  declare successful lit '0FFh';
+
+  /**************************************
+   *                                    *
+   *       S U B R O U T I N E S        *
+   *                                    *
+   **************************************/
+
+
+                  /* upper case character from console */
+crlf:   proc;
+    call printchar(cr);
+    call printchar(lf);
+    end crlf;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* fill string @ s for c bytes with f */
+fill:   proc(s,f,c);
+    dcl s addr,
+        (f,c) byte,
+        a based s byte;
+
+        do while (c:=c-1)<>255;
+        a = f;
+        s = s+1;
+        end;
+    end fill;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* error message routine */
+error:   proc(code);
+   declare
+      code byte;
+
+    call printchar(' ');
+    if code=1 then 
+        call print$buf(.(cr,lf,'BDOS Bad Sector$'));
+    if code=2 then 
+        call print$buf(.(cr,lf,'Drive $'));
+    if code = 3 or code = 2 then
+        call print$buf(.('Read Only$'));
+    if code = 5 then      
+        call print$buf(.('Currently Opened$'));
+    if code = 7 then
+        call print$buf(.('Password Error$'));
+    if code < 3 then 
+        call terminate;
+    end error;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                 /* print file name */
+print$file: procedure(fcbp);
+        declare k byte;
+        declare typ lit '9';        /* file type */
+        declare fnam lit '11';        /* file type */
+        declare
+            fcbp   addr,
+            fcbv   based fcbp (32) byte;
+
+            do k = 1 to fnam;
+            if k = typ then 
+	       call printchar('.');
+            call printchar(fcbv(k) and 7fh);
+            end;
+        end print$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+  /* try to delete fcb at fcb$address
+            return error code if unsuccessful */
+  delete:
+    procedure(fcb$address) byte;
+    declare
+       fcb$address address,
+       fcbv based  fcb$address (32) byte,
+       error$code  address,
+       code        byte;
+       
+    if xfcb then 
+        fcbv(5) = fcbv(5) or 80h;
+    call setdma(.fcb16);                   /* password */
+    fcbv(0) = fcb(0);                      /* drive */
+    error$code = delete$file(fcb$address);
+    fcbv(5) = fcbv(5) and 7fh;             /* reset xfcb bit */
+    if low(error$code) = 0FFh then do;
+        code = high(error$code);
+        if (code=1) or (code=2) then 
+            call error(code);
+        return code;
+        end;
+    return successful;      
+    end delete;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* upper case character from console */
+ucase:   proc byte;
+    dcl c byte;
+
+    if (c:=conin) >= 'a' then
+       if c < '{' then
+          return(c-20h);
+    return c;
+    end ucase;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* get password and place at fcb + 16 */
+getpasswd:   proc;
+    dcl (i,c) byte;
+
+    call crlf;
+    call print$buf(.('Password ? ','$'));
+retry:
+    call fill(.fcb16,' ',8);
+        do i = 0 to 7;
+nxtchr:
+        if (c:=ucase) >= ' ' then 
+            fcb16(i)=c;
+        if c = cr then do;
+            call crlf;
+            go to exit;
+            end;
+        if c = ctrlx then
+            goto retry;
+        if c = bksp then do;
+            if i<1 then
+                goto retry;
+            else do;
+                fcb16(i:=i-1)=' ';
+                goto nxtchr;
+                end;
+            end;
+        if c = 3 then
+            call terminate;
+        end;
+exit:
+    c = check$con$stat;             /* clear raw I/O mode */
+    end getpasswd;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* try deleting files one at a time */
+  single$file:
+    procedure;
+    declare (code,dcnt,sav$searchl) byte;
+    declare (fcba,sav$dcnt) addr;
+
+    file$err: procedure;
+        call crlf;
+        call print$buf(.('Not erased: $'));
+        call print$file(fcba);
+        call error(code);
+        end file$err;
+
+    call setdma(.tbuff);
+    dcnt = search(.fcb);
+        do while dcnt <> 0ffh;
+        fcba = shl(dcnt,5) + .tbuff;
+        sav$dcnt = pd.dcnt;
+        sav$searchl = pd.searchl;
+        if (code:=delete(fcba)) = 7 then do;
+            call file$err;
+            call getpasswd;
+            code = delete(fcba);
+            end;
+        if code <> successful then 
+            call file$err;
+        call setdma(.tbuff);
+        /* restore dcnt and search length of 11 */
+        pd.dcnt = sav$dcnt;
+        pd.searchl = sav$searchl;
+        dcnt = searchn;
+        end;
+    end single$file;
+
+  /**************************************
+   *                                    *
+   *       M A I N  P R O G R A M       *
+   *                                    *
+   **************************************/
+
+
+declare (i,response,user,code) byte;
+declare ver address;
+declare last$dseg$byte byte
+  initial (0);
+
+start:
+  do;
+    ver = version;
+    if low(ver) <> cpmversion or high(ver) <> mpmproduct then do;
+      call print$buf (.(
+        'Requires MP/M 2.0','$'));
+      call mon1(0,0);
+      end;
+
+    parse$fn.buff$adr = .tbuff(1);
+    parse$fn.fcb$adr = .fcb;
+    user = get$user$code;
+    call getpd;             /* process descriptor */
+    call return$errors;
+    if fcb(17) <> ' ' then 
+        if fcb(17) = 'X' then 
+            xfcb = true;
+        else do;
+            call print$buf (.(
+              'Invalid Parameter$'));
+            call terminate;
+            end;
+
+    i = 0;
+      do while fcb(i:=i+1) = '?';
+      ;
+      end;
+    if i > 11 then
+      if not xfcb then 
+        do;
+        call print$buf (.(
+          'Confirm delete all user files (Y/N)?','$'));
+        response = read$console;
+        if not ((response = 'y') or
+              (response = 'Y'))
+        then call terminate;
+        end;
+    call parse;
+    if (code:=delete(.fcb)) <> successful then do;
+        if code = 0 then 
+            call print$buf (.(cr,lf,
+            'No file','$'));
+        else if code < 3 then 
+            call error(code);            /* fatal errors */
+        else 
+            call single$file;       /* single file error */
+        end;
+    call terminate;
+  end;
+
+end erase;
+

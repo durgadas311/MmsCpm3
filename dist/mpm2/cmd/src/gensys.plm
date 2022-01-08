@@ -1,0 +1,1257 @@
+$title('MP/M II V2.0 System Generation')
+gensys:
+do;
+
+/* $include (copyrt.lit) */
+
+/*
+  Copyright (C) 1979,1980,1981
+  Digital Research
+  P.O. Box 579
+  Pacific Grove, CA 93950
+*/
+
+/*
+    Revised:
+      14 Sept 81  by Thomas Rolander
+*/
+
+  declare true literally '0FFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0C3H,
+    .start-3);
+
+  declare copyright (*) byte data (
+    'COPYRIGHT (C) 1981, DIGITAL RESEARCH ');
+  declare serial$number (6) byte data (
+    '654321');
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  Ld$Rl:
+    procedure byte external;
+    end Ld$Rl;
+
+  Fx$Wr:
+    procedure external;
+    end Fx$Wr;
+
+  declare fcb (1) byte external;
+  declare fcb16 (1) byte external;
+  declare tbuff (1) byte external;
+  declare maxb address external;
+
+/*
+     B D O S    P r o c e d u r e   &   F u n c t i o n    C a l l s
+*/
+
+  system$reset:
+    procedure;
+      call mon1 (0,0);
+    end system$reset;
+
+  write$console:
+    procedure (char);
+      declare char byte;
+      call mon1 (2,char);
+    end write$console;
+
+  print$console$buffer:
+    procedure (buffer$address);
+      declare buffer$address address;
+      call mon1 (9,buffer$address);
+    end print$console$buffer;
+
+  read$console$buffer:
+    procedure (buffer$address);
+      declare buffer$address address;
+      declare buf based buffer$address (1) byte;
+      buf(1) = 0;
+      if automatic then return;
+      call mon1 (10,buffer$address);
+      buf(buf(1)+2) = 0;
+    end read$console$buffer;
+
+  open$file:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      declare fcb based fcb$address (1) byte;
+      fcb(12),      /* ex = 0 */
+      fcb(32) = 0;  /* cr = 0 */
+      return mon2 (15,fcb$address);
+    end open$file;
+
+  close$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (16,fcb$address);
+    end close$file;
+
+  search$first:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (17,fcb$address);
+    end search$first;
+
+  search$next:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (18,fcb$address);
+    end search$next;
+
+  delete$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (19,fcb$address);
+    end delete$file;
+
+  read$record:
+    procedure (fcb$address);
+      declare fcb$address address;
+      if mon2 (20,fcb$address) <> 0 then
+      do;
+        call print$console$buffer (.(
+          'Disk read error','$'));
+        call system$reset;
+      end;
+    end read$record;
+
+  write$record:
+    procedure (fcb$address);
+      declare fcb$address address;
+      if mon2 (21,fcb$address) <> 0 then
+      do;
+        call print$console$buffer (.(
+          'Disk write error','$'));
+        call system$reset;
+      end;
+    end write$record;
+
+  create$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      declare fcb based fcb$address (1) byte;
+      if mon2 (22,fcb$address) = 255 then
+      do;
+        call print$console$buffer (.(
+          'Directory full','$'));
+        call system$reset;
+      end;
+      fcb(32) = 0;  /* set cr = 0 */
+    end create$file;
+
+  set$DMA$address:
+    procedure (DMA$address);
+      declare DMA$address address;
+      call mon1 (26,DMA$address);
+    end set$DMA$address;
+
+  read$random$record:
+    procedure (fcb$address);
+      declare fcb$address address;
+      if mon2 (33,fcb$address) <> 0 then
+      do;
+        call print$console$buffer (.(
+          'Disk read error','$'));
+        call system$reset;
+      end;
+    end read$random$record;
+
+  write$random$record:
+    procedure (fcb$address);
+      declare fcb$address address;
+      if mon2 (34,fcb$address) <> 0 then
+      do;
+        call print$console$buffer (.(
+          'Disk write error','$'));
+        call system$reset;
+      end;
+    end write$random$record;
+
+  compute$file$size:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (35,fcb$address);
+    end compute$file$size;
+
+  set$random$record:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (36,fcb$address);
+    end set$random$record;
+
+
+/*
+    D a t a    S t r u c t u r e s
+*/
+  
+declare automatic boolean;
+declare autoRSP boolean;
+declare systemdat boolean;
+
+declare err$msg$adr address;
+
+declare hexASCII (16) byte data (
+    '0123456789ABCDEF');
+
+declare bit$mask (8) byte data (
+    0000$0001b,
+    0000$0010b,
+    0000$0100b,
+    0000$1000b,
+    0001$0000b,
+    0010$0000b,
+    0100$0000b,
+    1000$0000b);
+
+  declare brsps (16) structure (
+    record address,
+    base address,
+    stkptr address,
+    name (8) byte);
+
+  declare FCBin (33) byte public;
+  declare FCBout (36) byte public initial (
+    0,'MPM     ','SYS',0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+  declare system$dat$fcb (33) byte initial (
+    0,'SYSTEM  ','DAT',0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+  declare rsp$filename (*) byte initial (
+    '        RSP',' $');
+  declare brsp$filename (*) byte initial (
+    '        BRS','$');
+
+  declare nmb$sect address;
+  declare sctbfr (1) structure (
+    record (128) byte) public at (.memory);
+
+  declare link address at (.memory);
+
+  declare offset byte public;
+  declare prgsiz address public;
+  declare bufsiz address public;
+
+  declare cur$top address initial (0);
+  declare cur$overlay (2) byte at (.cur$top);
+  declare cur$base byte at (.cur$overlay(1));
+  declare rsp structure (
+    OSadr address,
+    link address,
+    status byte,
+    priority byte,
+    stkptr address,
+    name (8) byte,
+    console byte,
+    memseg byte     ) at (.sctbfr);
+
+  declare prev$top byte;
+
+  declare memory$bit$map (8) structure (
+    page (32) byte) initial (
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+  declare system$data (256) byte;
+
+  declare default$system$data (256) byte data (
+  /*
+      System Data: default byte assignments
+      -----------------------------
+  */
+  0ffh,  /* 000-000 Mem$top, top page of memory */
+  4,     /* 001-001 Nmb$cns, number of consoles */
+  6,     /* 002-002 Brkpt$RST, breakpoint RST # */
+  0ffh,  /* 003-003 Add system call user stacks, boolean */
+  0ffh,  /* 004-004 Bank switched memory, boolean */
+  0ffh,  /* 005-005 Z80 version, boolean */
+  0ffh,  /* 006-006 banked bdos, boolean */
+  0,     /* 007-007 ODOS/BDOS top+1 (BNKBDOS XIOS jmp tbl) base page */
+  0,     /* 008-008 ODOS/BDOS base page */
+  0,0,   /* 009-010 used by CP/NET for mstr cfg tbl addr */
+  0,     /* 011-011 XDOS base page */
+  0,     /* 012-012 RSP's (BNKXIOS top+1) base page */
+  0,     /* 013-013 BNKXIOS base page */
+  0,     /* 014-014 BNKBDOS base page */
+  4,     /* 015-015 Max$mem$seg, max memory segment number */
+         /* 016-047 Memory segment table, filled in by GENSYS if */
+         /*           memory bank switched, otherwise by MPMLDR */
+  0,0c0h,0,0,
+  0,0c0h,0,1,
+  0,0c0h,0,2,
+  0,0c0h,0,3,
+  0,0c0h,0,4,
+  0,0c0h,0,5,
+  0,0c0h,0,6,
+  0,0c0h,0,7,
+         /* 048-063 Breakpoint vector table, filled in by DDTs */
+  0,0, 0,0,
+  0,0, 0,0,
+  0,0, 0,0,
+  0,0, 0,0,
+         /* 064-079 Unassigned */
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+         /* 080-095 System call user stacks */
+  0,0, 0,0,
+  0,0, 0,0,
+  0,0, 0,0,
+  0,0, 0,0,
+         /* 096-119 Unassigned */
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,   /* 120-121 Nmb records in MPM.SYS */
+  60,    /* 122-122 # ticks/sec */
+  1,     /* 123-123 System Drive */
+  0c0h,  /* 124-124 Common Memory Base */
+  0,     /* 125-125 Number of Rsp's */
+  0,0,   /* 126-127 Listcp address */
+         /* 128-143 Subflg, submit flag array */
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+  0,0,0,0,
+         /* 144-180 Copyright message */
+  'COPYRIGHT (C) 1981, DIGITAL RESEARCH ',
+         /* 181-186 Serial # */
+  '654321',
+  16,    /* 187-187 Max locked records/process */
+  16,    /* 188-188 Max open files/process */
+  0,0,   /* 189-190 # list items */
+  0,0,   /* 191-192 Pointer to base of lock table free space */
+  32,    /* 193-193 Total system locked records */
+  32,    /* 194-194 Total system open files */
+  0ffh,  /* 195-195 Dayfile logging */
+  1,     /* 196-196 Temporary file drive */
+  1,     /* 197-197 Number of printers */
+         /* 198-240 Unassigned */
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  0,0,0,0,0,0,0,0,0,0,0,
+  0,     /* 241-241 Common Xdos base */
+  0,     /* 242-242 Banked Xdos base */
+  0,     /* 243-243 Tmp pd base */
+  0,     /* 244-244 Console dat base */
+  0,0,   /* 245-246 Bdos/Xdos base */
+  0,     /* 247-247 Tmp base address */
+  0,     /* 248-248 Nmb brsps */
+  0,     /* 249-249 Nrsp base address */
+  0,0,   /* 250-251 Nrspl, non-resident rsp process link */
+  0,0,   /* 252-253 Sysdatadr, MP/M data page address */
+  0,0    /* 254-255 Rspl, resident system process link, the address */
+         /*           of the next Rsp, list terminates with a zero. */
+  );
+
+$include (sysdat.lit)
+
+  declare lnbfr (14) byte initial (12);
+
+  declare xdos003    (6)   byte; /* to actxioscommonbase009 */
+  declare resbdos009 (3)   byte; /* to xdos009              */
+  declare sysdatadr  (2)   byte; /* to xdos012              */
+                                 /* to actxioscommonbase015 */
+  declare resbdos012 (6)   byte; /* to actxioscommonbase003 */
+  declare bnkxios000 (256) byte; /* to xiosjmptbl000        */
+
+  declare wordadr address;
+  declare word based wordadr address;
+  declare act$xios$common$base address;
+
+  declare cmn$xdos$record address;
+  declare cmn$xdos$jmp$tbl (20) address;
+  declare cmn$buffer$adr address;
+
+/*
+      L o c a l    P r o c e d u r e s
+*/
+
+  crlf:
+    procedure;
+      call write$console (0dh);
+      call write$console (0ah);
+    end crlf;
+
+  upper:
+    procedure(b) byte;
+      declare b byte;
+  
+      if b < ' ' then return 0dh; /* all non-graphics */
+      /* translate alpha to upper case */
+      if b >= 'a' and b <= 'z' then
+        b = b and 101$1111b; /* upper case */
+      return b;
+    end upper;
+
+  set$bit:
+    procedure (bank,page);
+      declare (bank,page,i) byte;
+      i = shr (page,3);
+      memory$bit$map(bank).page(i) =
+        memory$bit$map(bank).page(i) or bit$mask(page and 07h);
+    end set$bit;
+
+  reset$bit:
+    procedure (bank,page);
+      declare (bank,page,i) byte;
+      i = shr (page,3);
+      memory$bit$map(bank).page(i) =
+        memory$bit$map(bank).page(i) and (not(bit$mask(page and 07h)));
+    end reset$bit;
+
+  test$bit:
+    procedure (bank,page) boolean;
+      declare (bank,page) byte;
+      return ((memory$bit$map(bank).page(shr (page,3)) and
+             bit$mask(page and 07h)) <> 0);
+    end test$bit;
+
+  get$response:
+    procedure (val$adr);
+      declare val$adr address;
+      declare val based val$adr byte;
+      call write$console ('(');
+      if val = 0ffh
+        then call write$console ('Y');
+        else call write$console ('N');
+      call print$console$buffer (.(') ? ','$'));
+      call read$console$buffer (.lnbfr);
+      if lnbfr(1) = 0
+        then return;  /* accept default */
+      val = (upper(lnbfr(2)) = 'Y');
+    end get$response;
+
+  dsply$hex:
+    procedure (val);
+      declare val byte;
+      call write$console (hexASCII(shr (val,4)));
+      call write$console (hexASCII(val and 0fh));
+    end dsply$hex;
+
+  dsply$hex$adr:
+    procedure (val);
+      declare val address;
+      call write$console (' ');
+      call write$console (' ');
+      call dsply$hex (high (val));
+      call dsply$hex (low (val));
+      call write$console ('H');
+    end dsply$hex$adr;
+
+  dsply$hex$high$adr:
+    procedure (val);
+      declare val byte;
+      call dsply$hex$adr (double (val)*256);
+    end dsply$hex$high$adr;
+
+  dsply$param:
+    procedure (val,base);
+      declare (val,base) byte;
+      declare (digit,pdigit) byte;
+      call write$console ('(');
+      pdigit = false;
+      if base = 10 then
+      do;
+        call write$console ('#');
+        digit = '0';
+        do while val >= 100;
+          pdigit = true;
+          digit = digit + 1;
+          val = val - 100;
+        end;
+        if pdigit then
+        do;
+          call write$console (digit);
+          digit = '0';
+        end;
+        do while val >= 10;
+          pdigit = true;
+          digit = digit + 1;
+          val = val - 10;
+        end;
+        if pdigit
+          then call write$console (digit);
+        call write$console ('0'+val);
+      end;
+      else
+      do;
+        call dsply$hex (val);
+      end;
+      call print$console$buffer (.(') ? ','$'));
+    end dsply$param;
+
+  get$param:
+    procedure (string$adr,val$adr,pbase);
+      declare (string$adr,val$adr) address;
+      declare pbase byte;
+      declare base byte;
+      declare val based val$adr byte;
+      declare string based string$adr (1) byte;
+      declare char byte;
+      declare lbindx byte;
+
+      prompt$read:
+        procedure;
+          call print$console$buffer (string$adr);
+          if string(0) = ' ' then
+          do;
+            call write$console ('(');
+            call dsply$hex (val);
+            do lbindx = 1 to 3;
+              val$adr = val$adr + 1;
+              if (lbindx=3) and (not bank$switched) then
+              do;
+                val = 0;
+              end;
+              else
+              do;
+                call write$console (',');
+                call dsply$hex (val);
+              end;
+            end;
+            val$adr = val$adr - 3;
+            call print$console$buffer (.(') ? ','$'));
+          end;
+          else
+          do;
+            call dsply$param (val,pbase);
+          end;
+          base = 16;
+          lbindx = 1;
+          call read$console$buffer (.lnbfr);
+        end prompt$read;
+
+      call prompt$read;
+      if lnbfr(1) = 0 then
+      do;
+        /* accept default value */
+        call crlf;
+        return;
+      end;
+      val = 0;
+      do while (char := upper(lnbfr(lbindx:=lbindx+1))) <> 0dh;
+        if char = ',' then
+        do;
+          val$adr = val$adr + 1;
+          val = 0;
+          base = 16;
+        end;
+        else
+        do;
+          if char = '#' then
+          do;
+            base = 10;
+          end;
+          else
+          do;
+            char = char - '0';
+            if (base = 16) and (char > 9) then
+            do;
+              if char > 16
+                then char = char - 7;
+                else char = 255;
+            end;
+            if char < base then
+            do;
+              val = val*base + char;
+            end;
+            else
+            do;
+              char,
+              val = 0;
+              call print$console$buffer (.(0ah,0dh,
+                '<- bad character, re-enter',0ah,0dh,'$'));
+              call prompt$read;
+              val = 0;
+            end;
+          end;
+        end;
+      end;
+      call crlf;
+    end get$param;
+
+  write$system$dat:
+    procedure;
+      call close$file (.FCBout);
+      call compute$file$size (.FCBout);
+      wordadr = .FCBout(33);
+      nmb$records = word;
+      if open$file (.FCBout) = 0ffh then
+      do;
+        go to error;
+      end;
+      word = 0;
+      calì set$DMA$addresó (.system$data);
+      call write$random$record (.FCBout);
+      call set$DMA$address (.system$data(128));
+      word = 1;
+      call write$random$record (.FCBout);
+      word = 2*(mem$top-xios$jmp$tbl$base);
+      call set$DMA$address (.bnkxios000+128);
+      call write$random$record (.FCBout);
+      call set$DMA$address (.bnkxios000);
+      word = word + 1;
+      calì write$random$recorä (.FCBout);
+      call set$DMA$address (.sctbfr(0));
+      word = cmn$xdos$record;
+      call read$random$record (.FCBout);
+      call move (40,.cmn$xdos$jmp$tbl,.sctbfr(0).record(14));
+      call write$random$record (.FCBout);
+      call close$file (.FCBout);
+
+      system$dat$fcb(32) = 0; /* cr = 0 */
+      calì set$DMA$addresó (.system$data);
+      call write$record (.system$dat$fcb);
+      call set$DMA$address (.system$data(128));
+      call write$record (.system$dat$fcb);
+      call close$file (.system$dat$fcb);
+    end write$system$dat;
+
+  setup$mem$seg$tbl:
+    procedure;
+      declare (i,j,k,l,ok,accept) byte;
+      /* Fill common memory bits of non-bank zero */
+      do i = 1 to 7;
+        do j = common$base to 0ffh;
+          call set$bit (i,j);
+        end;
+      end;
+      /* Fill lock table region */
+      i = cur$base - 1;
+      cur$base = cur$base - high (total$list$items*10+255);
+      do j = cur$base to i;
+        call set$bit (0,j);
+      end;
+      call print$console$buffer (.(0dh,0ah,0ah,
+        ' LCKLSTS DAT','$'));
+      call dsply$hex$high$adr (cur$base);
+      call dsply$hex$high$adr (i-cur$base+1);
+      lock$free$space$adr = double (cur$base)*256;
+      /* Fill Console dat region */
+      if nmb$cns <> 0 then
+      do;
+        i = cur$base - 1;
+        cur$base = cur$base - nmb$cns;
+        do j = cur$base to i;
+          call set$bit (0,j);
+        end;
+        call print$console$buffer (.(0dh,0ah,
+          ' CONSOLE DAT','$'));
+        call dsply$hex$high$adr (cur$base);
+        call dsply$hex$high$adr (i-cur$base+1);
+        console$dat$base = cur$base;
+      end;
+      /* Create first memory segment table entry */
+      system$data(16) = cur$base;
+      system$data(17) = 0ffh - cur$base + 1;
+      system$data(18) = 80h;  /* Attrib set to pre-alloc */
+      system$data(19) = 0;    /* Bank zero forced */
+      nmb$mem$seg = nmb$mem$seg + 1;
+      accept = false;
+      do while not accept;  
+        /* Bank switched memory segment table input */
+        call print$console$buffer (.(0dh,0ah,0ah,
+          'Enter memory segment table:',0ah,0dh,'$'));
+        i = 16;
+        j = 0;
+        do while j < nmb$mem$seg;
+          if bank$switched then
+          do;
+            call get$param (.(' Base,size,attrib,bank ','$'),
+                            .system$data(i),16);
+          end;
+          else
+          do;
+            call get$param (.(' Base,size,attrib ','$'),
+                            .system$data(i),16);
+          end;
+          if (system$data(i+2) and 80h) = 0 then
+          do;
+            if test$bit (system$data(i+3),system$data(i)) then
+            do;
+              call print$console$buffer (.(
+                '*** Memory conflict - cannot trim segment ***',
+                0dh,0ah,'$'));
+              if automatic then
+              do;
+                fcb(1) = ' ';
+                go to start;
+              end;
+            end;
+            else
+            do;
+              if system$data(i+1) = 0 then
+              do;
+                call print$console$buffer (.(
+                  '*** Entry error - zero length segment ***',
+                  0dh,0ah,'$'));
+              end;
+              else
+              do;
+                ok = true;
+                k = system$data(i);
+                l = system$data(i+1) + 1;
+                do while ok and ((l:=l-1) <> 0);
+                  if test$bit (system$data(i+3),k)
+                    then ok = false;
+                    else k = k + 1;
+                end;
+                if ok then
+                do;
+                  do k = system$data(i) to system$data(i)+
+                                           system$data(i+1) - 1;
+                    call set$bit (system$data(i+3),k);
+                  end;
+                  j = j + 1;
+                  i = i + 4;
+                end;
+                else
+                do;
+                  system$data(i+1) = k - system$data(i);
+                  call print$console$buffer (.(
+                    '*** Memory conflict - segment trimmed ***',
+                    0dh,0ah,'$'));
+                end;
+              end;
+            end;
+          end;
+          else
+          do;
+            do k = system$data(i) to system$data(i)+
+                                     system$data(i+1) - 1;
+              call set$bit (system$data(i+3),k);
+            end;
+            j = j + 1;
+            i = i + 4;
+          end;
+        end;
+        call crlf;
+        i = 16;
+        do j = 1 to nmb$mem$seg;
+          if j = 1
+            then call print$console$buffer (.(' MP/M II Sys','$'));
+            else call print$console$buffer (.(' Memseg  Usr','$'));
+          call dsply$hex$high$adr (system$data(i));
+          call dsply$hex$high$adr (system$data(i+1));
+          if bank$switched then
+          do;
+            call print$console$buffer (.('  Bank ','$'));
+            call dsply$hex (system$data(i+3));
+          end;
+          call crlf;
+          i = i + 4;
+        end;
+        accept = true;
+        call print$console$buffer (.(0dh,0ah,
+          'Accept new memory segment table entries ','$'));
+        call get$response (.accept);
+        if not accept then
+        do;
+          i = 16;
+          do k = 1 to nmb$mem$seg;
+            do j = system$data(i) to system$data(i)+
+                                     system$data(i+1) - 1;
+              call reset$bit (system$data(i+3),j);
+            end;
+            i = i + 4;
+          end;
+        end;
+      end; /* do while not accept */
+    end setup$mem$seg$tbl;
+
+  load$reloc:
+    procedure (file$name$adr,sys$dat$param$adr);
+      declare (file$name$adr,sys$dat$param$adr) address;
+      declare sys$dat$param based sys$dat$param$adr byte;
+      declare header$record structure (
+        fill1 byte,
+        psize address,
+        fill2 byte,
+        dsize address,
+        fill3 (122) byte);
+      declare (i,j) byte;
+      call move (11,(err$msg$adr:=file$name$adr),.FCBin(1));
+      if open$file (.FCBin) = 0ffh then
+      do;
+        go to error;
+      end;
+      call set$DMA$address (.header$record);
+      call read$record (.FCBin);
+      prgsiz = header$record.psize;
+      bufsiz = header$record.dsize;
+      if shr(prgsiz+255,7) > nmb$sect then
+      do;
+        call print$console$buffer (.(0dh,0ah,
+          '*** File cannot fit into GENSYS buffer ***','$'));
+        go to error;
+      end;
+      i = cur$base - 1;
+      prev$top = cur$base;
+      cur$base = cur$base - high (prgsiz +
+                                  bufsiz + 255);
+      do j = i to cur$base-1;
+        call set$bit (0,j);
+      end;
+      sys$dat$param = cur$base;
+      offset = cur$base;
+      call read$record (.FCBin);
+      call print$console$buffer (.(0dh,0ah,' ','$'));
+      call print$console$buffer (err$msg$adr);
+      call dsply$hex$adr (cur$top);
+      call dsply$hex$high$adr (prev$top-cur$base);
+      if Ld$Rl <> 0 then
+      do;
+        go to error;
+      end;
+    end load$reloc;
+
+  load$reloc$write$bnkrsps:
+    procedure;
+      declare cntr byte;
+      if nmb$brsps = 0
+        then return;
+      cntr = 0;
+      call crlf;
+      do while cntr <> nmb$brsps;
+        call move (8,.brsps(cntr).name,.brsp$filename);
+        call load$reloc (.brsp$filename,.brsp$base);
+        wordadr = .sctbfr + 2;
+        brsps(cntr).stkptr = word;
+        link = brsps(cntr).base;
+        word = brspl;
+        brspl = cur$top;
+        call FxWr;
+        cntr = cntr + 1;
+      end;
+      cntr = 0;
+      wordadr = .FCBout(33);
+      call set$DMA$address (.sctbfr);
+      do while cntr <> nmb$brsps;
+        word = brsps(cntr).record;
+        call read$random$record (.FCBout);
+        rsp.stkptr = brsps(cntr).stkptr;        
+        call write$random$record (.FCBout);
+        cntr = cntr + 1;
+      end;
+    end load$reloc$write$bnkrsps;
+
+  load$reloc$write$rsps:
+    procedure;
+      declare rspnames (16) structure (
+        char (8) byte);
+      declare (i,cntr,ret) byte;
+      nmb$rsps = 0;
+      nmb$brsps = 0;
+      rspl = 0;
+      brspl = 0;
+      rsp$base = 0;
+      brsp$base = 0;
+      call move (13,.(0,'????????RSP',0),.fcbin(0));
+      ret = search$first (.fcbin);
+      if ret <> 255 then
+      do;
+        rsp$filename(11) = ' ';
+        call print$console$buffer (.(0dh,0ah,0ah,
+          'Select Resident and Banked System Processes:',0dh,0ah,'$'));
+        do while ret <> 255;
+          call move (8,(.sctbfr+(ret mod 4)*32+1),.rsp$filename);
+          call write$console (' ');
+          call print$console$buffer (.rsp$filename);
+          ret = 0;
+          call get$response (.ret);
+          if (ret or autoRSP) then
+          do;
+            call move (8,.rsp$filename,.rspnames(nmb$rsps));
+            nmb$rsps = nmb$rsps + 1;
+          end;
+          if autoRSP
+            then call write$console ('Y');
+          call crlf;
+          ret = search$next (.fcbin);
+        end;
+        if nmb$rsps <> 0 then
+        do;
+          rsp$filename(11) = '$';
+          cntr = 0;
+          do while cntr <> nmb$rsps;
+            call move (8,.rspnames(cntr),.rsp$filename);
+            call load$reloc (.rsp$filename,.rsp$base);
+            if cur$base < common$base then
+            do;
+              call print$console$buffer (.(0dh,0ah,
+                '*** GENSYS Failure - RSP extends below ',
+                'the common base ***','$'));
+              go to start;
+            end;
+            else
+            do;
+              link = rspl;
+              rspl = cur$top;
+              call FxWr;
+              if rsp.memseg = 0 then
+              do;
+                wordadr = .FCBout(33);
+                call set$random$record (.FCBout);
+                brsps(nmb$brsps).record = word - 1;
+                brsps(nmb$brsps).base = cur$top;
+                do i = 0 to 7;
+                  ret = (rsp.name(i) and 0111$1111b);
+                  if (ret >= 'a') and (ret <= 'z')
+                    then ret = (ret and 101$1111b);
+                  brsps(nmb$brsps).name(i) = ret;
+                end;
+                nmb$brsps = nmb$brsps + 1;
+              end;
+            end;
+            cntr = cntr + 1;
+          end;
+          call crlf;
+        end;
+      end;
+      rsp$base = high (cur$top);
+    end load$reloc$write$rsps;
+
+  write$preamble:
+    procedure;
+      declare i byte;
+      do i = 0 to 127;
+        sctbfr(0).record(i) = 0;
+      end;
+      call set$DMA$address (.sctbfr);
+      /* start with zeroed system data page */
+      i = (mem$top-cur$base+1)*2 + 1;
+      do while (i:=i-1) <> 0;
+        call write$record (.FCBout);
+      end;
+    end write$preamble;
+
+  get$default$file:
+    procedure;
+      declare ret byte;
+      call print$console$buffer (.(0dh,0ah,0ah,
+          'Default entries are shown in (parens).',0dh,0ah,
+          'Default base is Hex, precede entry with # for decimal',
+          0dh,0ah,0ah,'$'));
+  
+        if (ret:=open$file (.system$dat$fcb)) <> 255 then
+        do;
+          call print$console$buffer (.(
+            'Use SYSTEM.DAT for defaults ','$'));
+          ret = 0ffh;
+          call get$response (.ret);
+          if ret then
+          do;
+            call set$DMA$address (.system$data(0));
+            call read$record (.system$dat$fcb);
+            call set$DMA$address (.system$data(128));
+            call read$record (.system$dat$fcb);
+            return;
+          end;
+        end;
+        else
+        do;
+          call create$file (.system$dat$fcb);
+        end;
+        call move (256,
+                   .default$system$data,
+                   .system$data);
+    end get$default$file;
+
+  setup$system$dat:
+    procedure;
+      declare (i,j,ok) byte;
+      call get$default$file;
+      ok = false;
+      do while not ok;
+        system$dat$fcb(32) = 0;
+        call move (43,.copyright,.system$data(144));
+        call crlf;
+        call get$param (.('Top page of operating system ','$'),
+                        .mem$top,16);
+        call get$param (.('Number of TMPs (system consoles) ','$'),
+                        .nmb$cns,10);
+        call get$param (.('Number of Printers ','$'),
+                        .nmb$printers,10);
+        call get$param (.('Breakpoint RST ','$'),
+                        .brkpt$RST,16);
+        call print$console$buffer (
+                        .('Add system call user stacks ','$'));
+        call get$response (.sys$call$stks);
+        call print$console$buffer (.(0dh,0ah,
+                        'Z80 CPU ','$'));
+        call get$response (.z80$cpu);
+        call crlf;
+        call get$param (.('Number of ticks/second ','$'),
+                        .ticks$per$second,10);
+        call print$console$buffer (
+                        .('System Drive (','$'));
+        call write$console ('A'+system$drive-1);
+        call print$console$buffer (.(':) ? ','$'));
+        call read$console$buffer (.lnbfr);
+        if lnbfr(1) <> 0 then
+          system$drive = ((upper(lnbfr(2))-'A'+1) and 0fh);
+        call crlf;
+        call print$console$buffer (
+                        .('Temporary file drive (','$'));
+        call write$console ('A'+temp$file$drive-1);
+        call print$console$buffer (.(':) ? ','$'));
+        call read$console$buffer (.lnbfr);
+        if lnbfr(1) <> 0 then
+          temp$file$drive = ((upper(lnbfr(2))-'A'+1) and 0fh);
+        call crlf;
+        call get$param (.('Maximum locked records/process ','$'),
+                        .max$locked$records,10);
+        call get$param (.('Total locked records/system ','$'),
+                        .total$system$locked$records,10);
+        call get$param (.('Maximum open files/process ','$'),
+                        .max$open$files,10);
+        call get$param (.('Total open files/system ','$'),
+                        .total$system$open$files,10);
+        total$list$items = double(total$system$locked$records)
+                         + double(total$system$open$files);
+        call print$console$buffer (.('Bank switched memory ','$'));
+        call get$response (.bank$switched);
+        call crlf;
+        nmb$mem$seg = nmb$mem$seg - 1;
+        call get$param (.('Number of user memory segments ','$'),
+                        .nmb$mem$seg,10);
+        if bank$switched then
+        do;
+          call get$param (.('Common memory base page ','$'),
+                          .common$base,16);
+        end;
+        else
+        do;
+          common$base = 0;
+        end;
+
+/*      call print$console$buffer (.(
+                         'Banked BDOS file manager ','$'));
+        call get$response (.banked$bdos);
+        call crlf;
+*/
+        banked$bdos = 0ffh;
+        call print$console$buffer (.(
+                         'Dayfile logging at console ','$'));
+        call get$response (.day$file);
+        call crlf;
+
+        if mem$top <> 0ffh then
+        do;
+          call print$console$buffer (.(0dh,0ah,0ah,
+            ' RESERVED   ','$'));
+          call dsply$hex$high$adr (mem$top+1);
+          call dsply$hex$high$adr ((0ffh-(mem$top+1))+1);
+        end;
+        call print$console$buffer (.(0dh,0ah,
+          ' SYSTEM  DAT','$'));
+        call dsply$hex$high$adr (mem$top);
+        call dsply$hex$adr (0100h);
+
+        i = mem$top;
+        if nmb$cns <> 0 then
+        do;
+          call print$console$buffer (.(0dh,0ah,
+            ' TMPD    DAT','$'));
+          i = i - 1;
+          if nmb$cns > 4
+            then i = i - 1;
+          call dsply$hex$high$adr (i);
+          call dsply$hex$high$adr (shr(nmb$cns+3,2));
+          tmpd$base = i;
+        end;
+
+        if sys$call$stks then
+        do;
+          call print$console$buffer (.(0dh,0ah,
+            ' USERSYS STK','$'));
+          do j = 0 to nmb$mem$seg-1;
+            user$stacks(j) = double(i)*256 - double(j)*64;
+          end;
+          i = i - 1;
+          if nmb$mem$seg > 4
+            then i = i - 1;
+          call dsply$hex$high$adr (i);
+          call dsply$hex$high$adr (shr(nmb$mem$seg+3,2));
+        end;
+        call print$console$buffer (.(0dh,0ah,
+          ' XIOSJMP TBL','$'));
+        xios$jmp$tbl$base = i - 1;
+        call dsply$hex$high$adr (xios$jmp$tbl$base);
+        call dsply$hex$adr (0100h);
+
+        call print$console$buffer (.(0dh,0ah,0ah,
+          'Accept new system data page entries ','$'));
+        ok = true;
+        call get$response (.ok);
+        if not ok
+          then nmb$mem$seg = nmb$mem$seg + 1;
+        call crlf;
+      end; /* of do while not ok */
+      /* Fill system data page to top of memory */
+      do cur$base = mem$top to 0ffh;
+        call set$bit (0,cur$base);
+      end;
+      cur$base = mem$top;
+      /* Fill tmpd.dat region */
+      if nmb$cns <> 0 then
+      do;
+        cur$base = cur$base - 1;
+        call set$bit (0,cur$base);
+        if nmb$cns > 4 then
+        do;
+          cur$base = cur$base - 1;
+          call set$bit (0,cur$base);
+        end;
+      end;
+      /* Fill usersys.stk region */
+      if sys$call$stks then
+      do;
+        cur$base = cur$base - 1;
+        call set$bit (0,cur$base);
+        if nmb$mem$seg > 4 then
+        do;
+          cur$base = cur$base - 1;
+          call set$bit (0,cur$base);
+        end;
+      end;
+      /* Fill xiosjmp.tbl page */
+      cur$base = cur$base - 1;
+      call set$bit (0,cur$base);
+      xios$jmp$tbl$base = cur$base;
+    end setup$system$dat;
+
+  setup$MPM$sys:
+    procedure;
+      call print$console$buffer (.(  0dh,0ah,0ah,
+        'MP/M II V2.0 System Generation',0dh,0ah,
+        'Copyright (C) 1981, Digital Research',
+        0dh,0ah,'$'));
+      if open$file (.fcbout) <> 0ffh
+        then call delete$file (.fcbout);
+      call create$file (.fcbout);
+    end setup$MPM$sys;
+
+  initialization:
+    procedure;
+      nmb$sect = shr ((maxb-.sctbfr+1),7);
+      if fcb(1) = '$' then
+      do;
+        automatic = (upper (fcb(2)) = 'A');
+        autoRSP = (upper (fcb(3)) = 'R');
+      end;
+      else
+      do;
+        automatic = false;
+        autoRSP = false;
+      end;
+    end initialization;
+
+
+/*
+     G e n s y s    M a i n    P r o g r a m
+*/
+
+start:
+  call initialization;
+  call setup$MPM$sys;
+  call setup$system$dat;
+  sysdatadr(0) = 0;
+  sysdatadr(1) = mem$top;
+  call write$preamble;
+  call load$reloc (.('RESBDOS SPR$'),.resbdos$base);
+  call Fx$Wr;
+  call move (3,.sctbfr(0).record(009),.resbdos009);
+  call move (6,.sctbfr(0).record(012),.resbdos012);
+  call load$reloc (.('XDOS    SPR$'),.xdos$base);
+  call move (3,.resbdos009,.sctbfr(0).record(009));
+  call move (2,.sysdatadr,.sctbfr(0).record(012));
+  call Fx$Wr;
+  call move (6,.sctbfr(0).record(003),.xdos003);
+  wordadr = .FCBout(33);
+  call set$random$record (.FCBout);
+  cmn$xdos$record = word - 1;
+  call load$reloc$write$rsps;
+  if bank$switched
+    then call load$reloc (.('BNKXIOS SPR$'),.bnkxios$base);
+    else call load$reloc (.('RESXIOS SPR$'),.bnkxios$base);
+  wordadr = .sctbfr(0).record(001);
+  act$xios$common$base = word;
+  if act$xios$common$base < (double (common$base)*256) then
+  do;
+    call print$console$buffer (.(0dh,0ah,
+      '***  Gensys Failure - XIOS common base below ',
+      'the actual common base ***','$'));
+    fcb(1) = ' ';
+    go to start;
+  end;
+  call move (6,.resbdos012,(act$xios$common$base-cur$top)+.sctbfr(0).record(003));
+  call move (6,.xdos003,(act$xios$common$base-cur$top)+.sctbfr(0).record(009));
+  call move (2,.sysdatadr,(act$xios$common$base-cur$top)+.sctbfr(0).record(015));
+  call move (256,.sctbfr(0).record(000),.bnkxios000);
+  call Fx$Wr;
+  call load$reloc (.('BNKBDOS SPR$'),.bnkbdos$base);
+  call Fx$Wr;
+  call load$reloc (.('BNKXDOS SPR$'),.bnkxdos$base);
+  call move (2,.sysdatadr,.sctbfr(0).record(0));
+  call move (2,.cmn$buffer$adr,.sctbfr(0).record(2));
+  call Fx$Wr;
+  call move (40,.sctbfr(0).record(4),.cmn$xdos$jmp$tbl);
+  if nmb$cns <> 0 then
+  do;
+    call load$reloc (.('TMP     SPR$'),.tmp$base);
+    call move (2,.sysdatadr,.sctbfr(0).record(0));
+    call Fx$Wr;
+  end;
+  call load$reloc$write$bnkrsps;
+  call setup$mem$seg$tbl;
+  call write$system$dat;
+  call print$console$buffer (.(0dh,0ah,0ah,
+    '** GENSYS DONE **','$'));
+  call system$reset;
+  
+error:
+  call print$console$buffer (.(0dh,0ah,
+    'GENSYS error: ','$'));
+  call print$console$buffer (err$msg$adr);
+  call system$reset;
+
+end gensys;
+

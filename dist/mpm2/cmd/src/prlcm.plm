@@ -1,0 +1,235 @@
+$title ('MP/M II V2.0  PRL to COM File')
+prlcom:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+  declare true literally '0FFFFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address  ) data (
+      0C3H,.start-3);
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  declare fcb (1) byte external;
+  declare fcb16 (1) byte external;
+  declare tbuff (1) byte external;
+
+  /**************************************
+   *                                    *
+   *       B D O S   Externals          *
+   *                                    *
+   **************************************/
+
+  system$reset:
+    procedure;
+      declare dummy address;
+      dummy = 0;
+      stackptr = .dummy;
+    end system$reset;
+
+  read$console:
+    procedure byte;
+      return mon2 (1,0);
+    end read$console;
+
+  print$buffer:
+    procedure (buffer$address);
+      declare buffer$address address;
+      call mon1 (9,buffer$address);
+    end print$buffer;
+
+  open$file:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (15,fcb$address);
+    end open$file;
+
+  close$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (16,fcb$address);
+    end close$file;
+
+  delete$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (19,fcb$address);
+    end delete$file;
+
+  read$record:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (20,fcb$address);
+    end read$record;
+
+  write$record:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (21,fcb$address);
+    end write$record;
+
+  make$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (22,fcb$address);
+    end make$file;
+
+  set$DMA$address:
+    procedure (DMA$address);
+      declare DMA$address address;
+      call mon1 (26,DMA$address);
+    end set$DMA$address;
+  
+
+  declare nrec address;
+  declare errmsg address;
+  declare (i,n,cnt,ret) byte;
+
+  declare fcbout (33) byte initial (
+    1,'        ','   ',0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+
+
+  declare sector$size literally '128';
+  declare n$sect literally '8';
+  declare buffer (n$sect) structure (
+    sector (sector$size) byte );
+  declare code$size address at (.buffer(0).sector(1));
+  declare last$DSEG$byte byte initial (0);
+
+  write$buffer:
+    procedure (n);
+      declare (i,n) byte;
+
+      /* write COM file from memory */
+      do i = 0 to n-1;
+        call set$DMA$address (.buffer(i));
+        if (ret := write$record (.fcbout)) <> 0 then
+        do;
+          errmsg = .('Error during writing COM output file.','$');
+          go to error;
+        end;
+      end;
+    end write$buffer;
+
+  copy$PRL$to$COM:
+    procedure;
+
+      call set$DMA$address (.buffer(0));
+      if (ret := read$record (.fcb)) <> 0 then
+      do;
+        errmsg = .('Unable to read header record.','$');
+        go to error;
+      end;
+      call set$DMA$address (.buffer(1));
+      if (ret := read$record (.fcb) <> 0) then
+      do;
+        errmsg = .('Unable to read header record.','$');
+        go to error;
+      end;
+      nrec = shr(code$size+7FH,7);
+
+      /* read PRL file into buffer and write to COM file */
+      cnt = 0;
+      do while nrec <> 0;
+        call set$DMA$address (.buffer(cnt));
+        if (ret := read$record (.fcb)) <> 0 then
+        do;
+          errmsg = .('Bad data record in PRL file.','$');
+          go to error;
+        end;
+        if (cnt := cnt+1) = n$sect then
+        do;
+          call write$buffer (n$sect);
+          cnt = 0;
+        end;
+        nrec = nrec - 1;
+      end;
+      if cnt <> 0
+        then call write$buffer (cnt);
+
+      call close$file (.fcbout);
+
+    end copy$PRL$to$COM;
+
+  setup:
+    procedure;
+
+      if fcb(1) = ' ' then
+      do;
+        errmsg = .('Input file must be specified.','$');
+        go to error;
+      end;
+      if fcb(9) = ' '
+        then call move (3,.('PRL'),.fcb(9));
+      if fcb16(1) = ' ' then
+      do;
+        call move (9,.fcb,.fcb16);
+      end;
+      if fcb16(9) = ' '
+        then call move (3,.('COM'),.fcb16(9));
+      call move (16,.fcb16,.fcbout);
+      if open$file (.fcb) = 0ffh then
+      do;
+        errmsg = .('Input file does not exist.','$');
+        go to error;
+      end;
+      fcb(32) = 0;
+      if open$file (.fcbout) <> 0ffh then
+      do;
+        call print$buffer (.(0ah,0dh,
+          'Destination file exists, delete (Y/N)?','$'));
+        ret = read$console;
+        if (ret = 'y') or
+           (ret = 'Y') then
+        do;
+          call delete$file (.fcbout);
+        end;
+        else
+        do;
+          call system$reset;
+        end;
+      end;
+      call make$file (.fcbout);
+      fcbout(32) = 0;
+    end setup;
+
+  /*
+    Main Program
+  */
+
+  start:
+
+    call setup;
+    call copy$PRL$to$COM;
+    call system$reset;
+
+  error:
+    call print$buffer (.(0dh,0ah,'$'));
+    call print$buffer (errmsg);
+    call system$reset;
+
+end prlcom;
+

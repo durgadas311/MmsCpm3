@@ -1,0 +1,270 @@
+$title('MP/M II V2.0  Spool Process - Banked Portion')
+spool:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+$include (proces.lit)
+$include (queue.lit)
+$include (fcb.lit)
+
+/*
+    BDOS & XDOS Literals
+*/
+
+  declare
+          lo               literally '005',
+          open$file        literally '015',
+          delete$file      literally '019',
+          read$file        literally '020',
+          set$dma          literally '026',
+          free$drives      literally '039',
+          make$queue       literally '134',
+          open$queue       literally '135',
+          read$queue       literally '137',
+          cond$read$queue  literally '138',
+          write$queue      literally '139',
+          cond$write$queue literally '140',
+          delay            literally '141',
+          dispatch         literally '142',
+          set$priority     literally '145',
+          parse$fname      literally '152',
+          attach$list      literally '158',
+          detach$list      literally '159';
+
+/*
+    Common Literals
+*/
+
+  declare true literally '0FFFFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  declare restarts literally
+    '0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H,0C7C7H,
+     0C7C7H,0C7C7H,0C7C7H';
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon2a:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon2a;
+
+  declare control$z literally '1AH';
+
+/*
+  Spool Process Data Segment
+*/
+  declare os address public
+    /* The OS address will be filled in here by the
+       MPM Loader, this address is used by Mon1 & Mon2 */
+    data (0);
+
+  declare spool$stack$pointer address
+    data (.spool$stk+38);
+
+  declare nrs$name (8) byte data (
+    'Spool   ');
+
+  declare spool$pd$adr address;
+  declare spool$pd based spool$pd$adr process$descriptor;
+
+  declare spool$stk (20) address
+    initial (restarts,.spool);
+
+  declare spool$lqcb$adr address;
+  declare spool$lqcb based spool$lqcb$adr
+    structure (lqueue,
+               buf (192) byte);
+
+  declare spool$uqcb userqcbhead
+    initial (0,.field);
+
+  declare stpspl$cqcb$adr address;
+  declare stpspl$cqcb based stpspl$cqcb$adr circularqueue;
+
+  declare stpspl$uqcb address;
+
+  declare field (62) byte;
+  declare disk$select byte at (.field(0));
+  declare console byte at (.field(1));
+  declare null byte initial (0);
+
+  declare pcb structure (
+    field$adr address,
+    fcb$adr address)
+    initial (0,.fcb);
+
+  declare fcb fcb$descriptor;
+
+  declare ret byte;
+
+  declare (char,column,itab,jtab,eod,i) byte;
+
+  declare nxt$chr$adr address;
+  declare delim based nxt$chr$adr byte;
+
+  declare actbuf address;
+  declare nmbufs address initial (8);
+
+  list$buf:
+    procedure (buf$adr) byte;
+      declare buf$adr address;
+      declare buffer based buf$adr (1) byte;
+      declare i byte;
+
+      do i = 0 to 127;
+        if (char := buffer(i)) = control$z
+          then return true;
+        itab = (char = 09H) and (7 - (column and 7));
+        if char = 09H
+          then char = ' ';
+        do jtab = 0 to itab;
+          if char >= ' '
+            then column = column + 1;
+          if char = 0AH then
+          do;
+            column = 0;
+            if mon2 (cond$read$queue,.stpspl$uqcb) = 0 then
+            do;
+              nxt$chr$adr = 0;
+              call mon1 (lo,char);
+              return true;
+            end;
+          end;
+          call mon1 (lo,char);
+        end;
+      end;
+      return false;
+    end list$buf;
+
+  copy$file:
+    procedure (buf$base);
+      declare buf$base address;
+      declare buffer based buf$base (1) structure (
+        record (128) byte);
+      declare ok byte;
+      declare i address;
+
+      do forever;
+        actbuf = 0;
+        ok = true;
+        do while ok;
+          call mon1 (set$dma,.buffer(actbuf));
+          if (ok := (mon2 (read$file,.fcb) = 0)) then
+          do;
+            ok = ((actbuf := actbuf+1) <> nmbufs);
+          end;
+          else
+          do;
+            if actbuf = 0 then return;
+          end;
+        end;
+        do i = 0 to actbuf-1;
+          if list$buf (.buffer(i))
+            then return;
+        end;
+        if actbuf <> nmbufs then return;
+      end;
+    end copy$file;
+
+  declare spool$buffer (1024) byte;
+  declare buffer (1) structure (
+    char (128) byte) at (.spool$buffer);
+
+  declare last$dseg$byte byte
+    initial (0);
+
+/*
+  spool:
+*/
+
+  spool:
+    procedure;
+  
+      spool$pd$adr = os + 2;
+      spool$lqcb$adr = spool$pd$adr + 52;
+      spool$uqcb.pointer = .spool$lqcb;
+      stpspl$cqcb$adr = spool$lqcb$adr + 24 + 128;
+      stpspl$uqcb = .stpspl$cqcb;
+
+      call mon1 (make$queue,.spool$lqcb);
+      call mon1 (make$queue,.stpspl$cqcb);
+      call mon1 (set$priority,201);
+  
+      do forever;
+        call mon1 (read$queue,.spool$uqcb);
+        spool$pd.disk$slct = disk$select;
+        spool$pd.console = console;
+
+        call mon1 (detach$list,0);
+        if nxt$chr$adr <> 0ffffh
+            then nxt$chr$adr = .field(1);
+        do while (nxt$chr$adr <> 0) and
+                 (nxt$chr$adr <> 0FFFFH);
+          pcb.field$adr = nxt$chr$adr + 1;
+          nxt$chr$adr = mon2a (parse$fname,.pcb);
+          if nxt$chr$adr <> 0FFFFH then
+          do;
+            fcb.fn(5) = (fcb.fn(5) or 80h);
+            if mon2 (open$file,.fcb) <> 0FFH then
+            do;
+              fcb.nr = 0;
+              call mon1 (attach$list,0);
+              call copy$file (.buffer);
+              call mon1 (detach$list,0);
+              call mon1 (free$drives,0ffffh);
+              if (nxt$chr$adr <> 0) and
+                 (delim = '[') then
+              do;
+                pcb.field$adr = nxt$chr$adr + 1;
+                pcb.fcb$adr = .spool$buffer;
+                nxt$chr$adr = mon2a (parse$fname,.pcb);
+                if nxt$chr$adr <> 0ffffh then
+                do;
+                  if spool$buffer(1) = 'D' then
+                  do;
+                    fcb.ex = 0;
+                    call mon1 (delete$file,.fcb);
+                  end;
+                  if (nxt$chr$adr <> 0) and
+                     (delim <> ']') then
+                  do;
+                    nxt$chr$adr = 0ffffh;
+                  end;
+                end;
+                pcb.fcb$adr = .fcb;
+              end;
+            end;
+          end;
+        end; /* of while */
+      end;
+    end spool;
+  /*
+    Dummy Main Program
+  */
+  do;
+    ;
+  end;
+end spool;
+

@@ -1,0 +1,183 @@
+$title('MP/M II V2.0 List Number Assign/Display')
+list:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0c3h,.start-3);
+
+$include (proces.lit)
+
+
+/*
+    Common Literals
+*/
+
+  declare true literally '0FFFFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon2a:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon2a;
+
+  declare xdos literally 'mon2';
+  declare xdosa literally 'mon2a';
+
+  declare fcb (1) byte external;
+
+  print$buffer:
+    procedure (bufferadr);
+      declare bufferadr address;
+      call mon1 (9,bufferadr);
+    end print$buffer;
+
+  who$list:
+    procedure byte;
+      declare pdadr address;
+      declare pd based pdadr process$descriptor;
+      pdadr = mon2a (156,0);
+      return (shr (pd.console,4));
+    end who$list;
+
+  terminate:
+    procedure;
+      call mon1 (143,0);
+    end terminate;
+
+  who$con:
+    procedure byte;
+      return xdos (153,0);
+    end who$con;
+
+  sys$dat$adr:
+    procedure address;
+      return xdosa (154,0);
+    end sys$dat$adr;
+
+  ASCII$to$int:
+    procedure (string$adr) byte;
+      declare string$adr address;
+      declare string based string$adr (1) byte;
+
+        if (string(0) := string(0) - '0') < 10 then
+        do;
+          if string(1) <> ' '
+            then return string(0)*10 + (string(1)-'0');
+            else return string(0);
+        end;
+        return 254;
+    end ASCII$to$int;
+
+  int$to$ASCII:
+    procedure (string$adr);
+      declare string$adr address;
+      declare string based string$adr (1) byte;
+
+        if string(0) < 10 then
+        do;
+          string(0) = string(0) + '0';
+          string(1) = ' ';
+        end;
+        else
+        do;
+          string(1) = (string(0)-10) + '0';
+          string(0) = '1';
+        end;
+    end int$to$ASCII;
+
+  declare datapgadr address;
+  declare datapg based datapgadr address;
+
+  declare thread$root$adr address;
+  declare thread$root based thread$root$adr address;
+
+  declare TMPx (8) byte
+    initial ('Tmpx    ');
+  declare console byte at (.TMPx(3));
+
+  declare msg1 (*) byte
+    initial ('List Number = ');
+  declare msg2 (5) byte
+    initial ('xx',0dh,0ah,'$');
+  declare list$nmb byte at (.msg2(0));
+
+  declare pdadr address;
+  declare pd based pdadr Process$descriptor;
+
+  declare i byte;
+
+  /*
+     List Main Program
+  */
+
+  start:
+    if fcb(1) = ' ' then
+    /* displaying list number */
+    do;
+      list$nmb = who$list;
+    end;
+    else
+    /* assigning list number */
+    do;
+      if (list$nmb := ASCII$to$int(.fcb(1))) < 16 then
+      do;
+        console = who$con + '0';
+        datapgadr = sys$dat$adr + 252;
+        datapgadr = datapg;
+        thread$root$adr = datapgadr + 17;
+        pdadr = thread$root;
+        do while pdadr <> 0;
+          i = 0;
+          do while (i <> 8) and ((pd.name(i) and 7fh) = TMPx(i));
+            i = i + 1;
+          end;
+          if i = 8 then
+          do;
+            pd.console = ((pd.console and 0Fh) or
+                         (shl (list$nmb,4)));
+            pdadr = 0;
+          end;
+          else
+          do;
+            pdadr = pd.thread;
+          end;
+        end;
+      end;
+      else
+      /* invalid list number entry */
+      do;
+        list$nmb = who$list;
+        call print$buffer (.(
+          'Invalid list number, ignored',0dh,0ah,'$'));
+      end;
+    end;
+    call int$to$ASCII (.listnmb);
+    call print$buffer (.msg1);
+    call terminate;
+
+end list;
+

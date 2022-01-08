@@ -1,0 +1,100 @@
+$title ('MP/M II  V2.0  Abort a Program')
+abort:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0C3H,
+    .start-3);
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  declare fcb (1) byte external;
+  declare fcb16 (1) byte external;
+  declare tbuff (1) byte external;
+
+  /**************************************
+   *                                    *
+   *       B D O S   Externals          *
+   *                                    *
+   **************************************/
+
+  print$console$buffer:
+    procedure (buff$adr);
+      declare buff$adr address;
+      call mon1 (9,buff$adr);
+    end print$console$buffer;
+
+  terminate:
+    procedure;
+      call mon1 (143,0);
+    end terminate;
+
+  console$number:
+    procedure byte;
+      return mon2 (153,0);
+    end console$number;
+
+  abort$process:
+    procedure (abort$pb) byte;
+      declare abort$pb address;
+      return mon2 (157,abort$pb);
+    end abort$process;
+
+  declare abort$pb structure (
+    pdadr address,
+    param address,
+    pname (8) byte,
+    console byte) initial (
+    0,00ffh,'        ',0);
+
+  /*
+    Main Program
+  */
+
+declare last$dseg$byte byte
+  initial (0);
+
+start:
+  do;
+    if fcb16(1) = ' ' then
+    do;
+      abort$pb.console = console$number;
+    end;
+    else
+    do;
+      if (fcb16(1):=fcb16(1)-'0') > 9 then
+      do;
+        fcb16(1) = fcb16(1) + '0' - 'A' + 10;
+      end;
+      abort$pb.console = fcb16(1);
+    end;
+    call move (8,.fcb(1),.abort$pb.pname);
+    if abort$process (.abort$pb) = 0ffh then
+    do;
+      call print$console$buffer (.(
+        'Abort failed.','$'));
+    end;
+    call terminate;
+  end;
+
+end abort;
+

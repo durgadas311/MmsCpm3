@@ -1,0 +1,514 @@
+$ TITLE('MP/M II --- REN 2.0')
+ren:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    19 Jan  80  by Thomas Rolander
+    14 Sept 81  by Doug Huskey
+*/
+
+
+declare
+    mpmproduct literally '01h', /* requires mp/m */
+    cpmversion literally '30h'; /* requires 3.0 cp/m */
+
+
+declare
+    true    literally '0FFh',
+    false   literally '0',
+    forever literally 'while true',
+    lit     literally 'literally',
+    proc    literally 'procedure',
+    dcl     literally 'declare',
+    addr    literally 'address',
+    cr      literally '13',
+    lf      literally '10',
+    ctrlc   literally '3',
+    ctrlx   literally '18h',
+    bksp    literally '8';
+
+$include (proces.lit)
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0C3H,
+    .start-3);
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   INTERFACE          *
+   *                                    *
+   **************************************/
+
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon3:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon3;
+
+  declare cmdrv     byte    external;	/* command drive      */
+  declare fcb (1)   byte    external;	/* 1st default fcb    */
+  declare fcb16 (1) byte    external;	/* 2nd default fcb    */
+  declare pass0     address external;	/* 1st password ptr   */
+  declare len0      byte    external;	/* 1st passwd length  */
+  declare pass1     address external;	/* 2nd password ptr   */
+  declare len1      byte    external;	/* 2nd passwd length  */
+  declare tbuff (1) byte    external;	/* default dma buffer */
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   Externals          *
+   *                                    *
+   **************************************/
+
+  read$console:
+    procedure byte;
+      return mon2 (1,0);
+    end read$console;
+
+  conin: 
+    procedure byte;
+    return mon2(6,0fdh);
+    end conin;
+
+  printchar:
+    procedure (char);
+      declare char byte;
+      call mon1 (2,char);
+    end printchar;
+
+  print$buf:
+    procedure (buffer$address);
+      declare buffer$address address;
+      call mon1 (9,buffer$address);
+    end print$buf;
+
+
+  check$con$stat:
+    procedure byte;
+      return mon2 (11,0);
+    end check$con$stat;
+
+  version: procedure address;
+    /* returns current cp/m version # */
+    return mon3(12,0);
+    end version;
+
+  search$first:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (17,fcb$address);
+    end search$first;
+
+  search$next:
+    procedure byte;
+      return mon2 (18,0);
+    end search$next;
+
+  delete$file:
+    procedure (fcb$address);
+      declare fcb$address address;
+      call mon1 (19,fcb$address);
+    end delete$file;
+
+  rename$file:
+    procedure (fcb$address) address;
+      declare fcb$address address;
+      return mon3 (23,fcb$address);
+    end rename$file;
+
+  setdma: procedure(dma);
+    declare dma address;
+    call mon1(26,dma);
+    end setdma;
+
+  /* 0ff => return BDOS errors */
+  return$errors:
+    procedure(mode);
+    declare mode byte;
+      call mon1 (45,mode);	
+    end return$errors;
+
+  terminate:
+    procedure;
+      call mon1 (143,0);
+    end terminate;
+
+  declare
+    parse$fn structure (
+      buff$adr  address,
+      fcb$adr   address);
+
+  parse: procedure address;
+    return mon3(152,.parse$fn);
+    end parse;
+
+  declare
+    pdadr      addr,
+    pd         based pdadr process$descriptor;
+
+  getpd: procedure;
+
+    pdadr = mon3(156,0);
+    end getpd;
+
+
+  /**************************************
+   *                                    *
+   *         GLOBAL VARIABLES           *
+   *                                    *
+   **************************************/
+
+  /* Note: there are three fcbs used by
+     this program:
+
+         1) new$fcb: the new file name
+            (this can be a wildcard if it
+            has the same pattern of question
+            marks as the old file name)
+            Any question marks are replaced
+            with the corresponding filename
+            character in the old$fcb before
+            doing the rename function.
+
+         2) cur$fcb: the file to be renamed
+            specified in the rename command.
+            (any question marks must correspond
+            to question marks in new$fcb).
+
+         3) old$fcb: a fcb in the directory
+            matching the cur$fcb and used in
+            the bdos rename function.  This
+            cannot contain any question marks.
+  */         
+
+  declare successful lit '0FFh';
+  declare failed       (*) byte data(cr,lf,'Not renamed: $'),
+          read$only    (*) byte data(cr,lf,'Drive Read Only$'),
+          bad$wildcard (*) byte data('Invalid Wildcard$');
+  declare passwd (8) byte;
+  declare 
+      new$fcb$adr address,       /* new name */
+      new$fcb based  new$fcb$adr (32) byte;
+  declare cur$fcb (33) byte;      /* current fcb (old name) */
+
+  /**************************************
+   *                                    *
+   *       S U B R O U T I N E S        *
+   *                                    *
+   **************************************/
+
+
+                  /* upper case character from console */
+crlf:   proc;
+    call printchar(cr);
+    call printchar(lf);
+    end crlf;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* fill string @ s for c bytes with f */
+fill:   proc(s,f,c);
+    dcl s addr,
+        (f,c) byte,
+        a based s byte;
+
+        do while (c:=c-1)<>255;
+        a = f;
+        s = s+1;
+        end;
+    end fill;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* error message routine */
+error:   proc(code);
+   declare
+      code byte;
+
+    if code = 0 then do;  
+        call print$buf(.('No such file to rename$'));
+        call terminate;
+        end;
+    if code=1 then do;
+        call print$buf(.(cr,lf,'BDOS Bad Sector$'));
+        call terminate;
+        end;
+    if code=2 then do;
+        call print$buf(.read$only);
+        call terminate;
+        end;
+    if code = 3 then
+        call print$buf(.read$only(8));
+    if code = 5 then      
+        call print$buf(.('Currently Opened$'));
+    if code = 7 then
+        call print$buf(.('Password Error$'));
+    if code = 8 then      
+        call print$buf(.('already exists$'));
+    if code = 9 then do;
+        call print$buf(.bad$wildcard);
+        call terminate;
+        end;
+    end error;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                 /* print file name */
+print$file: procedure(fcbp);
+        declare k byte;
+        declare typ lit '9';        /* file type */
+        declare fnam lit '11';        /* file type */
+        declare
+            fcbp   addr,
+            fcbv   based fcbp (32) byte;
+
+            do k = 1 to fnam;
+            if k = typ then 
+	       call printchar('.');
+            call printchar(fcbv(k) and 7fh);
+            end;
+        end print$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+  /* try to rename fcb at old$fcb$adr to name at new$fcb$adr 
+            return error code if unsuccessful */
+  rename:
+    procedure(old$fcb$adr) byte;
+    declare
+       old$fcb$adr address,
+       old$fcb based  old$fcb$adr (32) byte,
+       error$code  address,
+       code        byte;
+       
+    call move (16,new$fcb$adr,old$fcb$adr+16);
+    call setdma(.passwd);                   /* password    */
+    call return$errors(0FFh);        /* return bdos errors */
+    error$code = rename$file (old$fcb$adr);
+    call return$errors(0);           /* normal error mode  */
+    if low(error$code) = 0FFh then do;
+        code = high(error$code);
+        if code < 3 then 
+            call error(code);
+        return code;
+        end;
+    return successful;      
+    end rename;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* upper case character from console */
+ucase:   proc(c) byte;
+    dcl c byte;
+
+    if c >= 'a' then
+       if c < '{' then
+          return(c-20h);
+    return c;
+    end ucase;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* get password and place at fcb + 16 */
+getpasswd:   proc;
+    dcl (i,c) byte;
+
+    call crlf;
+    call print$buf(.('Password ? ','$'));
+retry:
+    call fill(.passwd,' ',8);
+        do i = 0 to 7;
+nxtchr:
+        if (c:=ucase(conin)) >= ' ' then 
+            passwd(i)=c;
+        if c = cr then do;
+            call crlf;
+            go to exit;
+            end;
+        if c = ctrlx then
+            goto retry;
+        if c = bksp then do;
+            if i<1 then
+                goto retry;
+            else do;
+                passwd(i:=i-1)=' ';
+                goto nxtchr;
+                end;
+            end;
+        if c = ctrlc then
+            call terminate;
+        end;
+exit:
+    c = check$con$stat;             /* clear raw I/O mode */
+    end getpasswd;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* check for wildcard in rename command */
+wildcard:   proc byte;
+    dcl (i,wild) byte;
+
+    wild = false;
+        do i=1 to 11;
+        if cur$fcb(i) = '?' then
+            if new$fcb(i) <> '?' then do;
+                call print$buf(.failed);
+                call print$buf(.bad$wildcard);
+                call terminate;
+                end;
+            else
+                wild = true;
+        end;
+    return wild;
+    end wildcard;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set up new name for rename function */
+set$new$fcb:   proc(old$fcb$adr);
+    dcl old$fcb$adr address,
+        old$fcb based old$fcb$adr (32) byte;
+    dcl i byte;
+
+    old$fcb(0) = cur$fcb(0);    /* set up drive */
+        do i=1 to 11;
+        if cur$fcb(i) = '?' then 
+            new$fcb(i) = old$fcb(i);
+        end;
+    end set$new$fcb;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* try deleting files one at a time */
+  single$file:
+    procedure;
+    declare (code,dcnt,savsearchl) byte;
+    declare (old$fcb$adr,savdcnt,savsearcha) addr;
+    declare old$fcb based old$fcb$adr (32) byte;
+ 
+    file$err: procedure(fcba);
+        dcl fcba address;
+        call print$buf(.failed);
+        call print$file(fcba);
+        call printchar(' ');
+        call error(code);
+        end file$err;
+
+    call setdma(.tbuff);
+    if (dcnt:=search$first(.cur$fcb)) = 0ffh then
+        call error(0);
+
+        do while dcnt <> 0ffh;
+        old$fcb$adr = shl(dcnt,5) + .tbuff;
+        savdcnt = pd.dcnt;
+        savsearcha = pd.searcha;
+        savsearchl = pd.searchl;
+        call set$new$fcb(old$fcb$adr);
+        if (code:=rename(old$fcb$adr)) = 8 then do;
+            call file$err(new$fcb$adr);
+            call print$buf(.(', delete (Y/N)?$'));
+            if ucase(read$console) = 'Y' then do;
+                call delete$file(new$fcb$adr);
+                code = rename(old$fcb$adr);
+                end;
+            else
+                go to next;
+            end;
+        if code = 7 then do;
+            call file$err(old$fcb$adr);
+            call getpasswd;
+            code = rename(old$fcb$adr);
+            end;
+        if code <> successful then 
+            call file$err(old$fcb$adr);
+        else do;
+            call crlf;
+            call print$file(new$fcb$adr);
+            call printchar('=');
+            call print$file(old$fcb$adr);
+            end;
+next:
+        call setdma(.tbuff);
+        pd.dcnt = savdcnt;
+        pd.searcha = savsearcha;
+        pd.searchl = savsearchl;
+        dcnt = search$next;
+        end;
+    end single$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* invalid rename command */
+bad$entry:   proc;
+
+    call print$buf(.failed);
+    call print$buf(.('Invalid File','$'));
+    call terminate;
+    end bad$entry;
+
+
+  /**************************************
+   *                                    *
+   *       M A I N  P R O G R A M       *
+   *                                    *
+   **************************************/
+
+declare ver address;
+
+declare last$dseg$byte byte
+  initial (0);
+
+start:
+  
+    ver = version;
+    if low(ver) <> cpmversion or high(ver) <> mpmproduct then 
+        call print$buf (.(
+          'Requires MP/M 2.0','$'));
+    else do;
+        call getpd;
+        parse$fn.buff$adr = .tbuff(1);
+        new$fcb$adr, parse$fn.fcb$adr = .fcb;
+        if (parse$fn.fcb$adr:=parse) <> 0FFFFh then do; /* old file */
+            parse$fn.buff$adr = parse$fn.fcb$adr + 1; /* skip delim */
+            parse$fn.fcb$adr  = .cur$fcb;
+            parse$fn.fcb$adr = parse;                /* new file */
+            call move (8,.cur$fcb+16,.passwd);       /* password */
+            end;
+        if parse$fn.fcb$adr = 0ffffh then 
+            call bad$entry;
+        if fcb(0) <> 0 then
+            if cur$fcb(0) <> 0 then do;
+                if fcb(0) <> cur$fcb(0) then
+                    call bad$entry;
+                end;
+            else
+                cur$fcb(0) = new$fcb(0);        /* set drive */
+        if wildcard then
+            call singlefile;
+        else if rename(.cur$fcb) <> successful then 
+            call singlefile;
+        end;
+    call mon1(0,0);
+
+end ren;
+
+

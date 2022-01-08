@@ -1,0 +1,355 @@
+$ TITLE('MP/M II --- DIR 2.0')
+dir:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    19 Jan  80  by Thomas Rolander
+    14 Sept 81  by Doug Huskey
+*/
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data  (
+    0C3H,
+    .start-3);
+
+
+declare
+    true literally '1',
+    false literally '0',
+    forever literally 'while true',
+    lit literally 'literally',
+    proc literally 'procedure',
+    dcl literally 'declare',
+    addr literally 'address',
+    cr literally '13',
+    lf literally '10';
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   INTERFACE          *
+   *                                    *
+   **************************************/
+
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon3:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon3;
+
+  declare cmdrv     byte    external;	/* command drive      */
+  declare fcb (1)   byte    external;	/* 1st default fcb    */
+  declare fcb16 (1) byte    external;	/* 2nd default fcb    */
+  declare pass0     address external;	/* 1st password ptr   */
+  declare len0      byte    external;	/* 1st passwd length  */
+  declare pass1     address external;	/* 2nd password ptr   */
+  declare len1      byte    external;	/* 2nd passwd length  */
+  declare tbuff (1) byte    external;	/* default dma buffer */
+
+  read$console:
+    procedure byte;
+      return mon2 (1,0);
+    end read$console;
+
+  write$console:
+    procedure (char);
+      declare char byte;
+      call mon1 (2,char);
+    end write$console;
+
+  print$buf:
+    procedure (buffer$address);
+      declare buffer$address address;
+      call mon1 (9,buffer$address);
+    end print$buf;
+
+  check$con$stat:
+    procedure byte;
+      return mon2 (11,0);
+    end check$con$stat;
+
+  search$first:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (17,fcb$address);
+    end search$first;
+
+  search$next:
+    procedure (fcb$address) byte;
+      declare fcb$address address;
+      return mon2 (18,fcb$address);
+    end search$next;
+
+  setdma: procedure(dma);
+    declare dma address;
+    call mon1(26,dma);
+    end setdma;
+
+  get$user$code:
+    procedure byte;
+      return mon2 (32,0ffh);
+    end get$user$code;
+
+  set$user$code:
+    procedure(user);
+      declare user byte;
+      call mon1 (32,user);
+    end set$user$code;
+
+  declare
+    parse$fn structure (
+      buff$adr  address,
+      fcb$adr   address),
+    delimiter based parse$fn.buff$adr byte;
+
+  parse: procedure address;
+    return mon3(152,.parse$fn);
+    end parse;
+
+  terminate:
+    procedure;
+      call mon1 (143,0);
+    end terminate;
+
+  crlf:
+    procedure;
+      call write$console (0dh);
+      call write$console (0ah);
+    end crlf;
+
+
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                * * *  GLOBAL VARIABLES  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+
+declare dir$title (*) byte initial
+  ('Directory for User  x:','$');
+
+declare (sys,temp,dcnt,cnt,user) byte;
+declare 
+   i          byte initial (0),
+   new$user   byte initial (true),
+   sys$exists byte initial (false),
+   incl$sys   byte initial (false),
+   option     byte initial (false);
+
+declare 
+   dirbuf (128) byte;
+
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                * * *  DIRECTORY DISPLAY  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+                  /* display directory heading */
+heading: procedure;
+
+    if user > 9 then
+    do;
+      dir$title(19) = '1';
+      dir$title(20) = user - 10 + '0';
+    end;
+    else
+    do;
+      dir$title(19) = ' ';
+      dir$title(20) = user + '0';
+    end;
+    call print$buf (.dir$title);
+    end heading;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* do next directory display */
+directory: procedure;
+
+    if new$user then do;
+        call heading;
+        new$user = false;
+        end;
+    sys$exists = false;
+    cnt = -1;
+    /* if drive is 0 (default) 
+       then set to current disk */
+    if fcb(0) = 0
+      then fcb(0) = mon2 (25,0) + 1;
+    if fcb(1) = ' ' then
+    /* check for blank filename => wildcard */
+    do i = 1 to 11;
+      fcb(i) = '?';
+    end;
+    /* get first file */
+    if (dcnt := search$first (.fcb)) <> 0ffh then
+    do while dcnt <> 0ffh;
+      temp = ror(dcnt,3) and 0110$0000b;
+      sys = ((dirbuf(temp+10) and 80h) = 80h);
+      if (dirbuf(temp) = user) and
+         (incl$sys or not sys) then
+      do;
+        if ((cnt:=cnt+1) mod 4) = 0 then
+        do;
+          call crlf;
+          call write$console ('A'+fcb(0)-1);
+        end;
+        else
+        do;
+          call write$console (' ');
+        end;
+        call write$console (':');
+        call write$console (' ');
+        do i = 1 to 11;
+          if i = 9 then call write$console (' ');
+          call write$console
+            (dirbuf(temp+i) and 7fh);
+          if check$con$stat then
+          do;
+            dcnt = read$console;
+            call terminate;
+          end;
+        end;
+      end;
+      else if sys then
+        sys$exists = true;
+      dcnt = search$next (.fcb);
+    end;
+    if cnt = -1 then
+    do;
+      call print$buf (.(0dh,0ah,
+        'File not found.','$'));
+    end;
+    if sys$exists then 
+      call print$buf (.(0dh,0ah,
+        'System Files Exist','$'));
+    end directory;
+
+
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                    * * *  PARSING  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+
+                  /* parse next item */
+parse$next: procedure;
+
+    /* skip comma or space delimiter */
+    parse$fn.buff$adr = parse$fn.buff$adr + 1;
+    parse$fn.buff$adr = parse;
+    if parse$fn.buff$adr = 0ffffh then do;
+        call print$buf (.(0dh,0ah,
+          'Bad entry','$'));
+        call terminate;
+        end;
+    if delimiter = ']' then do;    /* skip */
+        parse$fn.buff$adr = parse$fn.buff$adr + 1;
+        if delimiter = 0 then 
+            parse$fn.buff$adr = 0;
+        option = false;
+        end;
+    if delimiter = '[' then 
+        option = true;
+    if parse$fn.buff$adr = 0 then 
+        option = false;
+    end parse$next;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* parse & interpret option */
+parse$option: procedure;
+
+    parse$fn.fcb$adr = .dirbuf;
+        do while option;
+        call parse$next;
+        if dirbuf(1) = 'S' then
+            incl$sys = true;
+        else if dirbuf(1) = 'G' then do;
+            if dirbuf(3) <> ' ' then 
+                temp = dirbuf(3) - '0' + 10;
+            else if dirbuf(2) <> ' ' then
+                temp = dirbuf(2) - '0';
+            if temp < 16 then do;
+                call set$user$code(user:=temp);
+                new$user = true;
+                end;
+            end;
+        end;
+    parse$fn.fcb$adr = .fcb;
+    end parse$option;
+
+
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+             * * *  M A I N   P R O G R A M  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+declare last$dseg$byte byte
+  initial (0);
+
+start:
+  do;
+    user = get$user$code;
+    incl$sys = (fcb16(1) = 'S');
+    call setdma(.dirbuf);
+    parse$fn.buff$adr = .tbuff;
+    parse$fn.fcb$adr = .fcb;
+
+        /* scan for global option */
+        do while tbuff(i:=i+1)=' ';
+        end;
+    if tbuff(i) = '[' then do;   /* skip leading [ */
+        parse$fn.buff$adr = .tbuff(i);
+        option = true;
+        call parse$option;
+        fcb(0) = 0;              /* set current disk */
+        fcb(1) = ' ';            /* clear fcb */
+        call directory;
+        end;
+
+        /* do command line */
+        do while parse$fn.buff$adr <> 0;
+        call parse$next;      /* filename */
+        if option then
+            call parse$option;
+        call directory;
+        end;
+    call terminate;
+  end;
+
+end dir;
+

@@ -1,0 +1,324 @@
+$title('MP/M II V2.0  Spool Program')
+spool:
+do;
+
+$include (copyrt.lit)
+/*
+  Revised:
+    14 Sept 81  by Thomas Rolander
+*/
+
+$include (proces.lit)
+$include (queue.lit)
+$include (xdos.lit)
+$include (fcb.lit)
+
+/*
+    Common Literals
+*/
+
+  declare true literally '0FFFFH';
+  declare false literally '0';
+  declare forever literally 'while true';
+  declare boolean literally 'byte';
+
+  declare start label;
+  declare jmp$to$start structure (
+    jmp$instr byte,
+    jmp$location address ) data (
+    0c3h,
+    .start-3);
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon2a:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon2a;
+
+  declare maxb address external;
+  declare fcb fcb$descriptor external;
+  declare tbuff fcb$descriptor external;
+
+  declare get$user literally '32',
+          get$disk literally '25';
+
+  read$console:
+    procedure byte;
+      return mon2 (1,0);
+    end read$console;
+
+  print$console$buffer:
+    procedure (buff$adr);
+      declare buff$adr address;
+      call mon1 (9,buff$adr);
+    end print$console$buffer;
+
+  check$console$status:
+    procedure byte;
+      return mon2 (11,0);
+    end check$console$status;
+
+  open:
+    procedure (fcb$adr) byte public;
+      declare fcb$adr address;
+      declare fcb based fcb$adr fcb$descriptor;
+      return mon2 (15,fcb$adr);
+    end open;
+  
+  delete$file:
+    procedure (fcb$adr) public;
+      declare fcb$adr address;
+      call mon1 (19,fcb$adr);
+    end delete$file;
+
+  readbf:
+    procedure (fcb$adr) byte public;
+      declare fcb$adr address;
+      return mon2 (20,fcb$adr);
+    end readbf;
+  
+  set$dma:
+    procedure (dma$adr) public;
+      declare dma$adr address;
+      call mon1 (26,dma$adr);
+    end set$dma;
+
+  free$drives:
+    procedure;
+      call mon1 (39,0ffffh);
+    end free$drives;
+
+  co:
+    procedure (char) public;
+      declare char byte;
+      call mon1 (2,char);
+    end co;
+
+  lo:
+    procedure (char) public;
+      declare char byte;
+      call mon1 (5,char);
+    end lo;
+
+  system$reset:
+    procedure;
+      call mon1 (0,0);
+    end system$reset;
+
+  declare xdos literally 'mon2';
+  declare xdosa literally 'mon2a';
+
+  declare pcb structure (
+    field$adr address,
+    fcb$adr address)
+    initial (0,.fcb);
+
+  declare control$z literally '1AH';
+
+  declare (nmbufs,actbuf) address;
+
+  list$buf:
+    procedure (buf$adr) byte;
+      declare buf$adr address;
+      declare buffer based buf$adr (1) byte;
+      declare i byte;
+
+      do i = 0 to 127;
+        if (char := buffer(i)) = control$z
+          then return true;
+        itab = (char = 09H) and (7 - (column and 7));
+        if char = 09H
+          then char = ' ';
+        do jtab = 0 to itab;
+          if char >= ' '
+            then column = column + 1;
+          if char = 0AH then column = 0;
+          call lo(char);
+          if check$console$status then
+          do;
+            i = read$console;
+            call system$reset;
+          end;
+        end;
+      end;
+      return false;
+    end list$buf;
+
+  copy$file:
+    procedure (buf$base);
+      declare buf$base address;
+      declare buffer based buf$base (1) structure (
+        record (128) byte);
+      declare ok byte;
+      declare i address;
+
+      do forever;
+        actbuf = 0;
+        ok = true;
+        do while ok;
+          call set$dma (.buffer(actbuf));
+          if (ok := (readbf (.fcb) = 0)) then
+          do;
+            ok = ((actbuf := actbuf+1) <> nmbufs);
+          end;
+          else
+          do;
+            if actbuf = 0 then return;
+          end;
+        end;
+        do i = 0 to actbuf-1;
+          if list$buf (.buffer(i))
+            then return;
+        end;
+        if actbuf <> nmbufs then return;
+      end;
+    end copy$file;
+
+  detach$msg:
+    procedure;
+      declare ret byte;
+
+      call print$console$buffer (.(
+             '- Enter STOPSPLR to abort the spooler',0dh,0ah,
+             '- Enter ATTACH SPOOL to re-attach console to spooler',0dh,0ah,
+             '*** Spooler detaching from console ***','$'));
+      ret = xdos (detach,0);
+    end detach$msg;
+
+  declare ret byte;
+
+  declare (char,column,itab,jtab,i) byte;
+
+  declare nxt$chr$adr address;
+  declare delim based nxt$chr$adr byte;
+
+  declare spool$msg (1) byte at (.tbuff-1);
+
+  declare SPOOLQ$uqcb userqcb
+    initial (0,.spool$msg,'SPOOLQ  ');
+
+  declare reserved$for$disk (3) byte;
+  declare dummy$buffer (128) byte;
+  declare buffer (1) structure (
+    char (128) byte) at (.dummy$buffer);
+
+  declare last$dseg$byte byte
+    initial (0);
+
+
+/*
+  spool:
+*/
+
+start:
+
+  call print$console$buffer (.(
+    'MP/M II V2.0  Spooler',0dh,0ah,'$'));
+  nxt$chr$adr = .tbuff;		/* make sure files exit */
+  do while (nxt$chr$adr <> 0);
+    pcb.field$adr = nxt$chr$adr + 1;
+    nxt$chr$adr = xdosa (parse$fname,.pcb);
+    if nxt$chr$adr = 0FFFFH then
+    do;
+      call print$console$buffer(.(0dh,0ah,
+                                'Illegal File Name',0dh,0ah,'$'));
+      call system$reset;
+    end;
+    else
+    do;
+      if open (.fcb) = 0FFH then
+      do;
+        call print$console$buffer (.(0dh,0ah,
+                                   'Can''t Open File = $'));
+        if fcb.et <> 0 then
+        do;
+          call co ('A'+fcb.et-1);
+          call co (':');
+        end;
+        fcb.ex = '$';
+        call print$console$buffer(.fcb.fn);
+        call co (0dh);
+        call co (0ah);
+        call system$reset;
+      end;
+      call free$drives;
+    end;
+  end; /* of while */
+
+  if xdos (open$queue,.SPOOLQ$uqcb) <> 0ffh then
+  do;
+    spool$msg(0) = xdos (get$disk,0)*16 + xdos (get$user,0ffh);
+    spool$msg(1) = xdos (get$list$nmb,0)*16 + xdos (get$console$nmb,0);  
+    if xdos (cond$write$queue,.SPOOLQ$uqcb) = 0ffh then
+    do;
+      call print$console$buffer (.(
+        '*** Spool Queue is full ***',0dh,0ah,'$'));
+    end;
+    call system$reset;
+  end;
+
+  nmbufs = shr((maxb-.buffer),8);
+  if xdos (cond$attach$list,0) = 0ffh then
+  do;
+    call print$console$buffer (.(
+      '*** Printer busy ***',0dh,0ah,
+      '- Spooler will wait until printer free',0dh,0ah,'$'));
+    call detach$msg;
+    ret = xdos (attach$list,0);
+  end;
+  else
+  do;
+    call detach$msg;
+  end;
+  nxt$chr$adr = .tbuff;
+  do while (nxt$chr$adr <> 0) and
+           (nxt$chr$adr <> 0FFFFH);
+    pcb.field$adr = nxt$chr$adr + 1;
+    nxt$chr$adr = xdosa (parse$fname,.pcb);
+    if nxt$chr$adr <> 0FFFFH then
+    do;
+      fcb.fn(5) = (fcb.fn(5) or 80h);
+      if open (.fcb) <> 0FFH then
+      do;
+        fcb.nr = 0;
+        call copy$file(.buffer);
+        call free$drives;
+	if (nxt$chr$adr <> 0) and
+           (delim = '[') then
+        do;
+          pcb.field$adr = nxt$chr$adr + 1;
+          pcb.fcb$adr = .dummy$buffer;
+          nxt$chr$adr = xdosa (parse$fname,.pcb);
+          if nxt$chr$adr <> 0ffffh then
+          do;
+            if dummy$buffer(1) = 'D' then
+            do;
+              fcb.ex = 0;
+              call delete$file (.fcb);
+            end;
+            if (nxt$chr$adr <> 0) and
+               (delim <> ']') then
+            do;
+              nxt$chr$adr = 0ffffh;
+            end;
+          end;
+          pcb.fcb$adr = .fcb;
+        end;
+      end;
+    end;
+  end; /* of while */
+  call system$reset;
+end spool;
+
