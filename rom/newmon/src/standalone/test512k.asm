@@ -3,7 +3,7 @@
 ; stand-alone version                		 		*
 ;****************************************************************
 	$*MACRO
-rev	equ	'2'
+rev	equ	'3'
 
 ; NOTE: This does not test every single bit in memory,
 ; but does confirm that 32 unique 16K pages can be mapped
@@ -41,6 +41,25 @@ begin:
 	lxi	d,signon
 	call	msgout
 ; TODO: scan for 'C'?
+ if 1
+	lxi	h,2280h
+	mov	b,m	; len
+	inx	h
+skipb:	mov	a,m
+	inx	h
+	ora	a
+	jrz	skp1
+	cpi	' '
+	jrz	skp0
+	djnz	skipb
+	jr	skp1
+skp0:	mov	a,m
+	ani	01011111b
+	cpi	'C'
+	jrnz	skp1
+	sta	cont
+skp1:
+ endif
 	jmp	start
 
 cont:	db	0	; continuous mode
@@ -48,6 +67,8 @@ cont:	db	0	; continuous mode
 seed:	db	0
 pgnum:	db	0
 err0:	db	0
+count:	dw	0
+errflg:	db	0
 
 ; If current mapping is not the default/disabled,
 ; things will likely crash here.
@@ -175,6 +196,7 @@ start:
 
 	call	mmu$init
 
+loop0:
 	lxix	banks
 	; First check if low 4 pages work (3, actually)
 	lxi	h,0000h
@@ -255,6 +277,9 @@ loop2:
 	out	wr16K	; both RD and WR
 	mov	a,c
 	call	chkpat
+	lda	errflg
+	orx	+1
+	sta	errflg
 	lxi	d,4
 	dadx	d
 	lda	pgnum
@@ -262,7 +287,17 @@ loop2:
 	sta	pgnum
 	cpi	32
 	jc	loop2
-
+	lda	cont
+	ora	a
+	jrz	done
+	call	conchk
+	jrc	done
+	lhld	count
+	inx	h
+	shld	count
+	call	wrdout
+	jmp	loop0
+done:
 nommu:
 	; done with MMU, report results...
 	call	mmu$deinit
@@ -362,6 +397,34 @@ div1:	setb	0,c
 	pop	psw	; remainder
 	ret
 
+; print XXXX[*]<CR>
+wrdout:	mov	a,h
+	call	bytout
+	mov	a,l
+	call	bytout
+	lda	errflg
+	ora	a
+	jrz	wrdout0
+	mvi	a,'*'
+	call	conout
+wrdout0:
+	mvi	a,CR
+	jr	conout
+
+bytout:	push	psw
+	rlc
+	rlc
+	rlc
+	rlc
+	call	byt0
+	pop	psw
+byt0:	ani	0fh
+	adi	90h
+	daa
+	aci	40h
+	daa
+	jr	conout
+
 hexout:	push	psw
 	rlc
 	rlc
@@ -391,6 +454,17 @@ cono0:	in	0edh
 	jrz	cono0
 	pop	psw
 	out	0e8h
+	ret
+
+conchk:	in	0edh
+	ani	00000001b
+	rz
+	in	0e8h
+	mvi	a,CR
+	call	conout
+	mvi	a,LF
+	call	conout
+	stc
 	ret
 
 result:	db	'Page'

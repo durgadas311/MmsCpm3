@@ -7,7 +7,7 @@
                 
                 	; Caller must supply 'nvbuf'
                 	extrn	nvbuf
-                if (SPIDEV eq H8xSPI)
+                if NVRAM
                 	; Requires linking with NVRAM.REL, for 'wizcfg'...
                 	extrn	nvget, vcksum
                 endif
@@ -22,6 +22,7 @@
  0009 =         SHAR	equ	9
  000F =         SIPR	equ	15
  001D =         PMAGIC	equ	29	; used for node ID
+ 001E =         PDPORT	equ	30	; used for server listening port
                 
  0008 =         nsock	equ	8
  0008 =         SOCK0	equ	000$01$000b
@@ -53,8 +54,8 @@
  001D =         NvKPALVTR equ	SnRESV8	; where to stash keepalive in NVRAM
  002F =         SnKPALVTR equ	47	; Keep alive timeout, 5s units
                 
-                ; Socket SR values
- 0000 =         CLOSED	equ	00h
+                ; Socket SR values
+ 0000 =         CLOSED	equ	00h
                 
                 ; Socket CR commands
  0008 =         DISCON	equ	08h
@@ -109,8 +110,8 @@
  003D 7A        	mov	a,d
  003E D340      	out	spi$wr
  0040 DB40      	in	spi$rd	; prime pump
- 0042 0E40      	mvi	c,spi$rd
-                	inir
+ 0042 0E40      	mvi	c,spi$rd
+                	inir
  0044+EDB2      	DB	0EDH,0B2H
  0046 AF        	xra	a	; not SCS
  0047 D341      	out	spi$ctl
@@ -165,8 +166,8 @@
  0082 C9        	ret
                 
                 ; Set socket MR to TCP.
-                ; D = socket BSB (result of "getsokn")
-                ; Destroys all registers except D.
+                ; D = socket BSB (result of "getsokn")
+                ; Destroys all registers except D.
                 settcp:
  0083 210000    	lxi	h,tmp
  0086 3601      	mvi	m,1	; TCP/IP mode
@@ -202,7 +203,7 @@
                 ; Buffer is 'nvbuf' (512 bytes)
                 ; Return: CY if no config
                 wizcfg:
-                if (SPIDEV eq H8xSPI)
+                if NVRAM
                 	lxix	nvbuf
  00AE+DD21      	DB	0DDH,21H
  00B0+0000      	DW	NVBUF
@@ -215,19 +216,23 @@
  00BF CD0000    	call	vcksum
  00C2 37        	stc
  00C3 C0        	rnz
+                else
+                	stc
+                	ret
+                endif
                 wizcf0:
                 	lxix	nvbuf
- 00C4+DD21      	DB	0DDH,21H
+ 00C4+DD21      	DB	0DDH,21H
  00C6+0000      	DW	NVBUF
  00C8 210100    	lxi	h,nvbuf+GAR
  00CB 1600      	mvi	d,0
  00CD 1E01      	mvi	e,GAR
- 00CF 0612      	mvi	b,18	; GAR, SUBR, SHAR, SIPR
+ 00CF 0612      	mvi	b,18	; GAR, SUBR, SHAR, SIPR
  00D1 CD4A00    	call	wizset
  00D4 211D00    	lxi	h,nvbuf+PMAGIC
  00D7 1600      	mvi	d,0
  00D9 1E1D      	mvi	e,PMAGIC
- 00DB 0601      	mvi	b,1
+ 00DB 0603      	mvi	b,3
  00DD CD4A00    	call	wizset
                 	lxix	nvbuf+32
  00E0+DD21      	DB	0DDH,21H
@@ -260,14 +265,10 @@
                 	djnz	rest0
  0115+10D1      	DB	10H,REST0-$-1
  0117 AF        	xra	a
-                else
-                wizcf0:
-                	stc
-                endif
  0118 C9        	ret
                 
                 	dseg
  0000 00        tmp:	db	0
                 
  0001           	end
-
+

@@ -63,7 +63,7 @@ libwiznt.asm: config.lib
 	unix2dos -n ~/git/cpnet-z80/src/w5500/libwiznt.asm $@
 
 libnvram.asm: config.lib
-	unix2dos -n ~/git/cpnet-z80/src/h8xspi/libnvram.asm $@
+	unix2dos -n ~/git/cpnet-z80/src/libnvram.asm $@
 
 config.lib: ~/git/cpnet-z80/src/config.lib \
 	~/git/cpnet-z80/src/w5500/config.lib ~/git/cpnet-z80/src/h8xspi/config.lib
