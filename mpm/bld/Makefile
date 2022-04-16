@@ -18,6 +18,7 @@ RCBASE = mxios.rel cioz180.rel end.rel lptbl.rel
 
 Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
+CFDRVS = -d a:=70,b:=71,c:=72,d:=73,e:=74,f:=75,g:=76,h:=77
 
 all: m3sdczrr.sys mldrsdc.img
 
@@ -48,17 +49,25 @@ bwbwbot.cim: bwbwbot.asm
 #mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 #	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr,l0100,p0]"
 
+# H8/H8-512K/H67 MP/M XIOS
 m3z67zrr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
 	vcpm link "m3z67zrr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
 	setup30 $(Z67DRVS) $@
 
+# H8/Z180/H8xSPI+SDC MP/M XIOS
 m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $@
 
-m3rcz180.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
+# RC2014/MT011+SDC MP/M XIOS
+m3rcz1sd.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
 	vcpm link "m3rcz180=mxios,cioz180,sdc,end,lptbl,memz180,nortc[b,os,nr]"
 	setup30 $(SDCDRVS) $@
+
+# RC2014/CF MP/M XIOS
+m3rcz1cf.spr: $(RCBASE) cf2014.rel nortc.rel memz180.rel
+	vcpm link "m3rcz180=mxios,cioz180,cf2014,end,lptbl,memz180,nortc[b,os,nr]"
+	setup30 $(CFDRVS) $@
 
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
 m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
@@ -77,12 +86,20 @@ m3z67net.sys: m3z67zrr.spr netservr.rsp netservr.brs
 	mv system.dat m3z67net.dat
 
 # RC2014/MT011 MP/M+CP/NET - assumes CP/NET RSP(s) present
-m3rcznet.sys: m3rcz180.spr netservr.rsp netservr.brs
+m3rcznsd.sys: m3rcz1sd.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
-	vcpm gensys '$$ar' | tee m3rcznet.out
+	vcpm gensys '$$ar' | tee m3rcznsd.out
 	mv mpm.sys $@
-	mv system.dat m3rcznet.dat
+	mv system.dat m3rcznsd.dat
+
+# RC2014/MT011/CF MP/M+CP/NET - assumes CP/NET RSP(s) present
+m3rczncf.sys: m3rcz1cf.spr netservr.rsp netservr.brs
+	cp $< bnkxios.spr
+	cp gm.cpnet.dat system.dat
+	vcpm gensys '$$ar' | tee m3rczncf.out
+	mv mpm.sys $@
+	mv system.dat m3rczncf.dat
 
 netservr.rsp netservr.brs:
 	cp $(CPNET)/$@ .

@@ -1,16 +1,16 @@
-VERS EQU '1 ' ; Dec 20, 2021 08:26 drm "SDC.ASM"
+VERS EQU '1 ' ; Apr 16, 2022 05:56 drm "CF2014.ASM"
 *************************************************************************
 
-	TITLE	'SDC - DRIVER FOR MMS MP/M WITH SDCard INTERFACE'
+	TITLE	'CF - DRIVER FOR MMS MP/M WITH RC2014 CF INTERFACE'
 	maclib	z80
 	maclib	cfgsys
 	$*MACRO
 
 	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
-	extrn	@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
+	extrn	@dirbf,@scrcb,@rcnfg,@cmode,@lptbl
 	extrn	?bnksl
 
-nsegmt	equ	004eh	; where to pass segment to CP/M 3, LUN is -1
+nsegmt	equ	004eh	; where to pass segment to CP/M 3
 
 **************************************************************************
 ; Configure the number of partitions (numparX) on each LUN in your system
@@ -25,16 +25,29 @@ true	equ	not false
 numpar0 equ	8		; number of partitions on LUN
 
 ndev	equ	numpar0
-dev0	equ	80
+dev0	equ	70
 
 *************************************************************************
 **  PORTS AND CONSTANTS
 *************************************************************************
 
-CMDST	equ	01000000b	; command start bits
+GIDE	equ	010h	; GIDE base port
+GIDE$DA	equ	GIDE+0	; GIDE data port
+GIDE$EF	equ	GIDE+1	; GIDE feature/error register
+GIDE$SC	equ	GIDE+2	; GIDE sector count
+GIDE$SE	equ	GIDE+3	; GIDE sector number	(lba7:0)
+GIDE$CL	equ	GIDE+4	; GIDE cylinder low	(lba15:8)
+GIDE$CH	equ	GIDE+5	; GIDE cylinder high	(lba23:16)
+GIDE$DH	equ	GIDE+6	; GIDE drive+head	(drive+lba27:24)
+GIDE$CS	equ	GIDE+7	; GIDE command/status
+
+ERR	equ	00000001b	; error bit in GIDE$CS
+RDY	equ	01000000b	; ready bit in GIDE$CS
+DRQ	equ	00001000b	; DRQ bit in GIDE$CS
+BSY	equ	10000000b	; busy bit in GIDE$CS
 
 dpbl	equ	17	; length of CP/M 3.0 dpb
-alvl	equ	512	; size of allocation vector - 4096 blocks
+alvl	equ	512	; size of allocation vector
 csvl	equ	256	; size of check sum vector
 modlen	equ	8	; length of each mode byte table entry
 datlen	equ	19	; length of each lun data entry
@@ -57,23 +70,23 @@ WRUNA	EQU	2	; WRITE TO UNALLOCATED
 READOP	EQU	3	; READ OPERATION
 
 ***************************************************
-	dseg	; common memory
+	dseg	; MP/M common memory
 
 	dw	thread
 driv0	db	dev0,ndev
-	jmp	init$sdc
+	jmp	init$gide
 	jmp	login
-	jmp	read$sdc
-	jmp	write$sdc
+	jmp	read$gide
+	jmp	write$gide
 	dw	string
 	dw	dphtbl,modtbl
 
-string: db	'SDC ',0,'SDCard Interface ('
+string: db	'CF ',0,'RC2014 CF Interface ('
 	db	ndev+'0'
-	db	' partitions) ',0,'v3.00'
+	db	' partitions) ',0,'v3.10'
 	dw	VERS,'$'
 
-; Mode byte table for SDC driver
+; Mode byte table for GIDE driver
 
 modtbl:
 drv	set	0
@@ -95,10 +108,7 @@ dpb:
 ;	ACTUAL READ-WRITE OF DATA
 ;
 
-bbnk:	db	0
-bdma:	dw	0
-
-sdcrd:
+giderd:
 	lda	bbnk
 	call	?bnksl
 	inir
@@ -107,7 +117,7 @@ sdcrd:
 	call	?bnksl		; re-select bank 0
 	ret
 
-sdcwr:
+gidewr:
 	lda	bbnk
 	call	?bnksl
 	outir
@@ -118,11 +128,11 @@ sdcwr:
 
 thread	equ	$
 
-	cseg	; banked memory
+	cseg	; MP/M banked memory
 	$*MACRO
 
 
-; Disk parameter headers for the SDC driver
+; Disk parameter headers for the GIDE driver
 
 ncsv	set	0
 drv	set	0
@@ -151,28 +161,17 @@ csv:
 
 	$-MACRO
 
-nparts:	db	0
-
 ;
 ;	DRIVER INITIALIZATION CODE
 ;
 
-init$sdc:
+init$gide:
 	; anything to do? Leave reading of magic sector until
 	; first drive access?
-if 1
-	; This only works if SDC was boot device
-	lda	nsegmt-1	; LUN, 0 or 1
-	ora	a
-	mvi	a,SD0SCS
-	jrz	is0
-	mvi	a,SD1SCS	; might be non-functional
-is0:	sta	scs	; SD0SCS, SD1SCS
-	call	sdcini
 	lhld	nsegmt		;grab this before it's gone...
 	shld	segoff
-endif
 	xra	a
+	out	GIDE$EF		; ensure this reg is sane
 	ret
 
 login:	lda	init
@@ -181,7 +180,7 @@ login:	lda	init
 	sta	init
 	call	init$hard
 login0:
-	lda	nparts
+	lda	npart
 	mov	e,a
 	lda	@rdrv
 	cmp	e	; See if loging in a drive that doesn't exist
@@ -220,12 +219,12 @@ init$hard:
 	cpi	numpar0
 	jrc	ih3
 	mvi	a,numpar0
-ih3:	sta	nparts		; use all partitions (and no more)
+ih3:	sta	npart		; use all partitions (and no more)
 	; copy over all DPBs, add PSH,PSK
 	mvi	a,DDPB		; CP/M 2.2 DPBs in magic sector
 	call	bufoff
 	lxi	d,dpb		; Our CP/M 3 DPBs
-	lda	nparts
+	lda	npart
 ih0:
 	push	psw		; num partitions
 	lxi	b,15	; CP/M 2.2 DPB length
@@ -246,12 +245,12 @@ ih0:
 	mvi	a,SECTBL
 	call	bufoff
 	lxix	partbl
-	lda	nparts		; num entries
+	lda	npart		; num entries
 	mov	b,a
 ih1:	push	b
-	lded	segoff+0; E = LBA31:24
+	lded	segoff+0; E = LBA27:24,DRV (future seg off)
 	;		; D = LBA23:19 is segment offset, carry-in
-	stx	e,+0	; LBA31:24 is fixed
+	stx	e,+0	; LBA27:24,DRV is fixed
 	inxix
 	mvi	b,3
 	mov	a,m
@@ -280,7 +279,7 @@ ih2:
 ;
 ;	READ A PHYSICAL SECTOR CODE
 ; IY=buffer header
-read$sdc:
+read$gide:
 	ldy	a,+14	; buffer bank
 	sta	bbnk
 	ldy	l,+12	; buffer address
@@ -288,18 +287,27 @@ read$sdc:
 	shld	bdma
 	call	set$lba
 read$raw:
-	mvi	a,CMDST+17
-	sta	cmd
-	lxi	h,cmd
-	mvi	d,1
-	mvi	e,0	; leave SCS on (unless error)
-	call	sdcmd
-	jrc	rwerr
-	call	sdrblk	; turns off SCS
-	jrc	rwerr
+	mvi	a,20h
+	out	GIDE$CS
+gider0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+	bit	7,a		; BSY
+	jrnz	gider0
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	bit	6,a		; RDY
+	jrz	rwerr
+	bit	3,a		; DRQ
+	jrz	gider0
+	lhld	bdma		; data buffer address
+	mvi	c,GIDE$DA
+	mvi	b,0
+	call	giderd
 	xra	a
 	ret
 
+rwerr0:
+	in	GIDE$EF
+	sta	dskerr
 rwerr:
 	xra	a
 	inr	a
@@ -308,22 +316,36 @@ rwerr:
 ;
 ;	WRITE A PHYSICAL SECTOR CODE
 ; IY=buffer header
-write$sdc:
+write$gide:
 	ldy	a,+14	; buffer bank
 	sta	bbnk
 	ldy	l,+12	; buffer address
 	ldy	h,+13
 	shld	bdma
 	call	set$lba
-	mvi	a,CMDST+24
-	sta	cmd
-	lxi	h,cmd
-	mvi	d,1
-	mvi	e,0	; leave SCS on (unless error)
-	call	sdcmd
-	jrc	rwerr
-	call	sdwblk	; turns off SCS
-	jrc	rwerr
+	call	set$lba
+	mvi	a,30h
+	out	GIDE$CS
+gidew0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+	bit	7,a		; BSY
+	jrnz	gidew0
+	bit	6,a		; RDY
+	jrz	rwerr
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	bit	3,a		; DRQ
+	jrz	gidew0
+	lhld	bdma		; data buffer address
+	mvi	c,GIDE$DA
+	mvi	b,0
+	call	gidewr
+gidew2:
+	in	GIDE$CS		; wait for not busy
+	bit	7,a		; BSY
+	jrnz	gidew2
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	; TODO: confirm DRQ also off?
 	xra	a
 	ret
 
@@ -372,156 +394,29 @@ stlba1:
 	dcx	d
 	djnz	stlba1
 stlba2:	; setup controller regs from CURLBA
-	lhld	curlba+0
-	shld	cmd+1
-	lhld	curlba+2
-	shld	cmd+3
-	ret
-
-; send (6 byte) command to SDCard, get response.
-; HL=command+response buffer, D=response length
-; return A=response code (00=success), HL=idle length, DE=gap length
-sdcmd:
-	lda	scs
-	; drop out here if no device...
-	ora	a
-	stc
-	rz
-	out	spi?ctl	; SCS on
-	mvi	c,spi?rd
-	; wait for idle
-	; TODO: timeout this loop
-	push	h	; save command+response buffer
-	lxi	h,0	; idle timeout
-sdcmd0:	inp	a
-	cpi	0ffh
-	jrz	sdcmd1
-	dcx	h
-	mov	a,h
-	ora	l
-	jrnz	sdcmd0
-	; timeout - error
-sdcmd5:
-	pop	h
-	xra	a
-	out	spi?ctl	; SCS off
-	stc
-	ret
-sdcmd1:	pop	h	; command buffer back
- if spi?rd <> spi?wr
-	mvi	c,spi?wr
- endif
-	mvi	b,6
-	outir
- if spi?rd <> spi?wr
-	mvi	c,spi?rd
- endif
-	inp	a	; prime the pump
-	push	h	; points to response area...
-	lxi	h,0	; gap timeout
-sdcmd2:	inp	a
-	cpi	0ffh
-	jrnz	sdcmd3
-	dcx	h
-	mov	a,h
-	ora	l
-	jrnz	sdcmd2
-	jr	sdcmd5
-sdcmd3:	pop	h	; response buffer back
-	mov	b,d
-	mov	m,a
+	lxi	h,curlba
+	mov	a,m
+	ori	11100000b	; LBA mode, etc
+	out	GIDE$DH
 	inx	h
-	dcr	b
-	jrz	sdcmd4
-	inir	; rest of response
-sdcmd4:	mov	a,e	; SCS flag
-	ora	a
-	rz	; NC
+	mov	a,m
+	out	GIDE$CH
+	inx	h
+	mov	a,m
+	out	GIDE$CL
+	inx	h
+	mov	a,m
+	out	GIDE$SE
+	mvi	a,1
+	out	GIDE$SC	; always 1 sector at a time
 	xra	a
-	out	spi?ctl	; SCS off
-	ret	; NC
-
-; read a 512-byte data block, with packet header and CRC (ignored).
-; READ command was already sent and responded to.
-; SCS must already be ON.
-; return CY on error (A=error), SCS always off
-sdrblk:
-	mvi	c,spi?rd
-	; wait for packet header (or error)
-	lxi	d,0	; gap timeout
-sdrbk0:	inp	a
-	cpi	0ffh
-	jrnz	sdrbk1
-	dcx	d
-	mov	a,d
-	ora	e
-	jrnz	sdrbk0
-	stc
-	jr	sdrbk2
-sdrbk1:	
-	cpi	11111110b	; data start
-	stc	; else must be error
-	jrnz	sdrbk2
-	mvi	b,0	; 256 bytes at a time
-	lhld	bdma
-	call	sdcrd
-	inp	a	; CRC 1
-	inp	a	; CRC 2
-	xra	a	; NC
-sdrbk2:	mvi	a,0	; don't disturb CY
-	out	spi?ctl	; SCS off
-	ret
-
-; write a 512-byte data block, with packet header and CRC (ignored).
-; WRITE command was already sent and responded to.
-; SCS must already be ON.
-; return CY on error (A=error), SCS always off
-sdwblk:
-	mvi	c,spi?wr
-	; TODO: wait for idle?
-	mvi	a,11111110b	; data start token
-	outp	a
-	mvi	b,0	; 256 bytes at a time
-	lhld	bdma
-	call	sdcwr	; send 512B block
-	outp	a	; CRC-1
-	outp	a	; CRC-2
- if spi?rd <> spi?wr
-	mvi	c,spi?rd
- endif
-	inp	a	; prime the pump
-	; wait for response...
-	lxi	d,0	; gap timeout
-sdwbk0:	inp	a
-	cpi	0ffh
-	jrnz	sdwbk1
-	dcx	d
-	mov	a,d
-	ora	e
-	jrnz	sdwbk0
-	stc
-	jr	sdwbk2
-sdwbk1:	
-	ani	00011111b	; mask off unknown bits
-	cpi	00000101b	; data accepted
-	stc	; else must be error
-	jrnz	sdwbk2
-	xra	a	; NC
-sdwbk2:	mvi	a,0	; don't disturb CY
-	out	spi?ctl	; SCS off
-	ret
-
-sdcini:
-	; TODO: initialize card
+	out	GIDE$EF	; feature always zero?
 	ret
 
 ;
 ;	DATA BUFFERS AND STORAGE
 ;
 
-cmd:	db	0,0,0,0,0,1 ; command buffer w/end bit
-	db	0	; response
-scs:	db	0
 segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
 curlba:	db	0,0,0,0
 
