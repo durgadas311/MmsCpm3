@@ -1,5 +1,5 @@
 H8MODS=	2716_444-19_H17.rom \
-	zout/bgide.cim \
+	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
 	zout/bh47.cim \
@@ -21,7 +21,7 @@ H8MODS=	2716_444-19_H17.rom \
 #	zout/csetup.cim # Z80/Z180 differences
 
 H8NMODS= 2716_444-19_H17.rom \
-	zout/bgide.cim \
+	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
 	zout/bh47.cim \
@@ -39,7 +39,7 @@ H8NMODS= 2716_444-19_H17.rom \
 
 # TODO: what will this include?
 H89MODS= 2716_444-19_H17.rom \
-	zout/bgide.cim \
+	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
 	zout/bh47.cim \
