@@ -1,7 +1,7 @@
-VERS EQU '2 ' ; Apr 4, 2020 08:06 drm "GIDE'3.ASM"
+VERS EQU '1 ' ; Apr 24, 2022 09:37 drm "H8CF'3.ASM"
 *************************************************************************
 
-	TITLE	'GIDE- DRIVER FOR MMS CP/M 3 WITH ATA INTERFACE'
+	TITLE	'CF - DRIVER FOR MMS CP/M 3 WITH CF INTERFACE'
 	MACLIB	Z80
 	$*MACRO
 
@@ -32,20 +32,21 @@ dev0	equ	70
 
 GPIO	EQU	0F2H		; SWITCH 501
 
-GIDE	equ	080h	; GIDE base port
-GIDE$DA	equ	GIDE+8	; GIDE data port
-GIDE$EF	equ	GIDE+9	; GIDE feature/error register
-GIDE$SC	equ	GIDE+10	; GIDE sector count
-GIDE$SE	equ	GIDE+11	; GIDE sector number	(lba7:0)
-GIDE$CL	equ	GIDE+12	; GIDE cylinder low	(lba15:8)
-GIDE$CH	equ	GIDE+13	; GIDE cylinder high	(lba23:16)
-GIDE$DH	equ	GIDE+14	; GIDE drive+head	(drive+lba27:24)
-GIDE$CS	equ	GIDE+15	; GIDE command/status
+CF	equ	080h	; CF base port
+CF$BA	equ	CF+0	; CF-select port
+CF$DA	equ	CF+8	; CF data port
+CF$EF	equ	CF+9	; CF feature/error register
+CF$SC	equ	CF+10	; CF sector count
+CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+CF$CS	equ	CF+15	; CF command/status
 
-ERR	equ	00000001b	; error bit in GIDE$CS
-RDY	equ	01000000b	; ready bit in GIDE$CS
-DRQ	equ	00001000b	; DRQ bit in GIDE$CS
-BSY	equ	10000000b	; busy bit in GIDE$CS
+ERR	equ	00000001b	; error bit in CF$CS
+RDY	equ	01000000b	; ready bit in CF$CS
+DRQ	equ	00001000b	; DRQ bit in CF$CS
+BSY	equ	10000000b	; busy bit in CF$CS
 
 dpbl	equ	17	; length of CP/M 3.0 dpb
 alvl	equ	512	; size of allocation vector
@@ -75,19 +76,19 @@ READOP	EQU	3	; READ OPERATION
 
 	dw	thread
 driv0	db	dev0,ndev
-	jmp	init$gide
+	jmp	init$cf
 	jmp	login
-	jmp	read$gide
-	jmp	write$gide
+	jmp	read$cf
+	jmp	write$cf
 	dw	string
 	dw	dphtbl,modtbl
 
-string: db	'GIDE ',0,'ATA Interface ('
+string: db	'H8CF ',0,'CF Interface ('
 	db	ndev+'0'
 	db	' partitions) ',0,'v3.10'
 	dw	VERS,'$'
 
-; Mode byte table for GIDE driver
+; Mode byte table for CF driver
 
 modtbl:
 drv	set	0
@@ -109,7 +110,7 @@ dpb:
 ;	ACTUAL READ-WRITE OF DATA
 ;
 
-giderd:
+cfrd:
 	lda	@dbnk
 	call	?bnksl
 	inir
@@ -118,7 +119,7 @@ giderd:
 	call	?bnksl		; re-select bank 0
 	ret
 
-gidewr:
+cfwr:
 	lda	@dbnk
 	call	?bnksl
 	outir
@@ -133,7 +134,7 @@ thread	equ	$
 	$*MACRO
 
 
-; Disk parameter headers for the GIDE driver
+; Disk parameter headers for the CF driver
 
 ncsv	set	0
 drv	set	0
@@ -167,13 +168,16 @@ csv:
 ;	DRIVER INITIALIZATION CODE
 ;
 
-init$gide:
+init$cf:
 	; anything to do? Leave reading of magic sector until
 	; first drive access?
+	lda	nsegmt-1	; LUN
+	inr	a		; 0->01b, 1->10b
+	sta	cfsel
 	lhld	nsegmt		;grab this before it's gone...
 	shld	segoff
 	xra	a
-	out	GIDE$EF		; ensure this reg is sane
+	out	CF$EF		; ensure this reg is sane
 	ret
 
 login:	lda	init
@@ -182,7 +186,7 @@ login:	lda	init
 	sta	init
 	call	init$hard
 login0:
-	lda	npart
+	lda	nparts
 	mov	e,a
 	lda	@rdrv
 	cmp	e	; See if loging in a drive that doesn't exist
@@ -222,14 +226,14 @@ init$hard:
 	shld	curlba+0
 	lxi	h,0
 	shld	curlba+2		; phy sec 0 = partition table
-	call	stlba2
-	call	read$raw
+	call	stlba2		; selects CF card
+	call	read$raw	; deselects CF card
 	rnz	; error
 	lda	@scrbf+NPART
 	cpi	numpar0
 	jrc	ih3
 	mvi	a,numpar0
-ih3:	sta	npart		; use all partitions (and no more)
+ih3:	sta	nparts		; use all partitions (and no more)
 	; copy over all DPBs, add PSH,PSK
 	lxi	h,@scrbf+DDPB	; CP/M 2.2 DPBs in magic sector
 	lxi	d,dpb		; Our CP/M 3 DPBs
@@ -252,7 +256,7 @@ ih0:
 	; converting from LBA and 4-byte entries.
 	lxi	h,@scrbf+SECTBL
 	lxix	partbl
-	lda	npart		; num entries
+	lda	nparts		; num entries
 	mov	b,a
 ih1:	push	b
 	lded	segoff+0; E = LBA27:24,DRV (future seg off)
@@ -286,63 +290,66 @@ ih2:
 ;
 ;	READ A PHYSICAL SECTOR CODE
 ;
-read$gide:
-	call	set$lba
+read$cf:
+	call	set$lba		; selects CF card - all paths must deselect
 read$raw:
 	mvi	a,20h
-	out	GIDE$CS
-gider0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+	out	CF$CS
+cfr0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
 	bit	7,a		; BSY
-	jrnz	gider0
+	jrnz	cfr0
 	bit	0,a		; ERR
 	jrnz	rwerr0
 	bit	6,a		; RDY
 	jrz	rwerr
 	bit	3,a		; DRQ
-	jrz	gider0
+	jrz	cfr0
 	lhld	@dma		; data buffer address
-	mvi	c,GIDE$DA
+	mvi	c,CF$DA
 	mvi	b,0
-	call	giderd
+	call	cfrd
 	xra	a
+	out	CF$BA	; deselect drive
 	ret
 
 rwerr0:
-	in	GIDE$EF
+	in	CF$EF
 	sta	dskerr
 rwerr:
 	xra	a
+	out	CF$BA	; deselect drive
 	inr	a
 	ret
 
 ;
 ;	WRITE A PHYSICAL SECTOR CODE
 ;
-write$gide:
-	call	set$lba
+write$cf:
+	call	set$lba		; selects CF card - all paths must deselect
 	mvi	a,30h
-	out	GIDE$CS
-gidew0: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+	out	CF$CS
+cfw0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
 	bit	7,a		; BSY
-	jrnz	gidew0
+	jrnz	cfw0
 	bit	6,a		; RDY
 	jrz	rwerr
 	bit	0,a		; ERR
 	jrnz	rwerr0
 	bit	3,a		; DRQ
-	jrz	gidew0
+	jrz	cfw0
 	lhld	@dma		; data buffer address
-	mvi	c,GIDE$DA
+	mvi	c,CF$DA
 	mvi	b,0
-	call	gidewr
-gidew2:
-	in	GIDE$CS		; wait for not busy
+	call	cfwr
+cfw2:
+	in	CF$CS		; wait for not busy
 	bit	7,a		; BSY
-	jrnz	gidew2
+	jrnz	cfw2
 	bit	0,a		; ERR
 	jrnz	rwerr0
 	; TODO: confirm DRQ also off?
 	xra	a
+	out	CF$BA	; deselect drive
 	ret
 
 ;	CALCULATE THE REQUESTED SECTOR
@@ -392,29 +399,33 @@ stlba1:
 	dcx	d
 	djnz	stlba1
 stlba2:	; setup controller regs from CURLBA
+	lda	cfsel
+	out	CF$BA	; card is selected now... errors must deselect
 	lxi	h,curlba
 	mov	a,m
 	ori	11100000b	; LBA mode, etc
-	out	GIDE$DH
+	out	CF$DH
 	inx	h
 	mov	a,m
-	out	GIDE$CH
+	out	CF$CH
 	inx	h
 	mov	a,m
-	out	GIDE$CL
+	out	CF$CL
 	inx	h
 	mov	a,m
-	out	GIDE$SE
+	out	CF$SE
 	mvi	a,1
-	out	GIDE$SC	; always 1 sector at a time
+	out	CF$SC	; always 1 sector at a time
 	xra	a
-	out	GIDE$EF	; feature always zero?
+	out	CF$EF	; feature always zero?
 	ret
 
 ;
 ;	DATA BUFFERS AND STORAGE
 ;
 
+nparts:	db	0	; number of partitions we used
+cfsel:	db	0	; bits to select current CF card
 segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
 curlba:	db	0,0,0,0
 

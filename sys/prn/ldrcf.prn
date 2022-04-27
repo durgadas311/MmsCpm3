@@ -1,0 +1,491 @@
+ 2031 =         VERS	EQU   '1 '  ; Apr 27, 2022 05:07 drm "ldrcf.asm"
+                ***************************************************
+                ;	Loader disk I/O module for MMS CP/M 2.24
+                ;	for the CF bus interface 
+                ;	Copyright (c) 1983 Magnolia Microsystems
+                ***************************************************
+                
+                	MACLIB	z80
+                	$-MACRO
+                
+                	public	btend		;end of system (boot stops loading there)
+                	extrn	BDOS,CBOOT,DSKSTA,TIMEOT,MIXER,DIRBUF,DLOG
+                	extrn	NEWDSK,NEWTRK,NEWSEC,DMAA,phytrk
+                
+ 0046 =         DRIV0	EQU	70		; FIRST PHYSICAL DRIVE NUMBER
+ 0009 =         NDRIV	EQU	9
+                
+                ***************************************************
+                **  PORTS AND CONSTANTS
+                ***************************************************
+ 00F2 =         GPIO	EQU	0F2H		; SWITCH 501
+                
+ 0080 =         CF	equ	080h	; CF base port
+ 0080 =         CF$BA	equ	CF+0	; CF select port
+ 0088 =         CF$DA	equ	CF+8	; CF data port
+ 0089 =         CF$EF	equ	CF+9	; CF feature/error register
+ 008A =         CF$SC	equ	CF+10	; CF sector count
+ 008B =         CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+ 008C =         CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+ 008D =         CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+ 008E =         CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+ 008F =         CF$CS	equ	CF+15	; CF command/status
+                
+ 0001 =         ERR	equ	00000001b	; error bit in CF$CS
+ 0040 =         RDY	equ	01000000b	; ready bit in CF$CS
+ 0008 =         DRQ	equ	00001000b	; DRQ bit in CF$CS
+ 0080 =         BSY	equ	10000000b	; busy bit in CF$CS
+                
+ 000A =         DPHDPB	EQU	10
+ 0010 =         DPHL	EQU	16
+ 0015 =         DPBL	EQU	21
+ 0004 =         DDEFL	EQU	4
+ 000D =         CSTRNG	EQU	13
+ 0013 =         NPART	EQU	19
+ 0004 =         CBYTE	EQU	4
+ 0005 =         DDATA	EQU	5
+ 0003 =         DCTYPE	EQU	3
+ 0014 =         SECTBL	EQU	20
+ 002F =         DDPB	EQU	47
+                
+ 0000 =         WRALL	EQU	0	; WRITE TO ALLOCATED
+ 0001 =         WRDIR	EQU	1	; WRITE TO DIRECTORY
+ 0002 =         WRUNA	EQU	2	; WRITE TO UNALLOCATED
+ 0003 =         READOP	EQU	3	; READ OPERATION
+                
+ 2034 =         BTDRV	EQU	2034H	; BOOT DRIVE SAVE BY PROM
+ 25F0 =         STRNG	EQU	25F0H	; ASCII SEGMENT NUMBER SAVE BY BOOT LOADER
+ 2131 =         UNITNUM EQU	2131H	; PARTITION NUMBER SAVE BY EPROM
+ 2156 =         SEGOFF	EQU	2156H	; segment offset setup by ROM
+ 004E =         nsegmt	equ	004eh	; where to pass segment to CP/M 3
+                
+                ***************************************************
+                ** START OF RELOCATABLE DISK I/O MODULE
+                *************************************************** 
+                
+                ; Assume SPT is always 64 (16x512):
+                ; Init:
+                ;	seg_off = (STRNG - 'A') << 19		[256M segments]
+                ;	partn(UNITNUM) += seg_off
+                ; each I/O:
+                ;	LBA = partn(UNITNUM) + (NEWTRK << 4) + (NEWSEC - 1)
+                
+                	cseg   
+                 
+ 0000 C3E101    	jmp	INIT$CF
+ 0003 C39F01    	jmp	SEL$CF
+ 0006 C35A02    	jmp	READ$CF
+                
+ 0009 0000      	dw	0
+ 000B 0000      	dw	0     
+                
+                ;	TEXT
+ 000D 4838434620	DB	'H8CF ',0,'CF system loader ',0,'v3.00'
+ 002A 31202400  	DW	VERS,'$'
+                
+                
+ 002E 0000000000DPH0:	DW	0,0,0,0,DIRBUF,DPB0,CSV0,ALV0
+ 003E 0000000000DPH1:	DW	0,0,0,0,DIRBUF,DPB1,CSV0,ALV0
+ 004E 0000000000DPH2:	DW	0,0,0,0,DIRBUF,DPB2,CSV0,ALV0
+ 005E 0000000000DPH3:	DW	0,0,0,0,DIRBUF,DPB3,CSV0,ALV0
+ 006E 0000000000DPH4:	DW	0,0,0,0,DIRBUF,DPB4,CSV0,ALV0
+ 007E 0000000000DPH5:	DW	0,0,0,0,DIRBUF,DPB5,CSV0,ALV0
+ 008E 0000000000DPH6:	DW	0,0,0,0,DIRBUF,DPB6,CSV0,ALV0
+ 009E 0000000000DPH7:	DW	0,0,0,0,DIRBUF,DPB7,CSV0,ALV0
+ 00AE 0000000000DPH8:	DW	0,0,0,0,DIRBUF,DPB8,CSV0,ALV0
+                
+                
+                ;	SECTOR DEFINITION/TRANSLATION TABLE
+                ;	already converted to 512b sectors
+                ;	i.e. base LBA 27:0
+                ;		-----ADDRESS----
+ 00BE 00000000  DDEFTBL:DB	0,   0,   0,   0
+ 00C2 00000000  	DB	0,   0,   0,   0
+ 00C6 00000000  	DB	0,   0,   0,   0
+ 00CA 00000000  	DB	0,   0,   0,   0
+ 00CE 00000000  	DB	0,   0,   0,   0
+ 00D2 00000000  	DB	0,   0,   0,   0
+ 00D6 00000000  	DB	0,   0,   0,   0
+ 00DA 00000000  	DB	0,   0,   0,   0
+ 00DE 00000000  	DB	0,   0,   0,   0
+                
+                ;
+                ;
+                ; DISK PARAMETER BLOCKS -- CONTAIN DUMMY DATA. REAL DATA IS OBTAINED FROM 
+                ;			   MAGIC SECTOR ON INITIALIZATION OF PARTITION
+                ;
+ 00E2 4000      DPB0:	DW	64		; SPT
+ 00E4 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 00E7 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 00EB F000      	DB	0F0H,0		; AL0,AL1
+ 00ED 00000200  	DW	0,2		; CKS,OFF
+ 00F1 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 00F4 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 00F7 4000      DPB1:	DW	64		; SPT
+ 00F9 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 00FC 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0100 F000      	DB	0F0H,0		; AL0,AL1
+ 0102 00000200  	DW	0,2		; CKS,OFF
+ 0106 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0109 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 010C 4000      DPB2:	DW	64		; SPT
+ 010E 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0111 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0115 F000      	DB	0F0H,0		; AL0,AL1
+ 0117 00000200  	DW	0,2		; CKS,OFF
+ 011B 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 011E FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0121 4000      DPB3:	DW	64		; SPT
+ 0123 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0126 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 012A F000      	DB	0F0H,0		; AL0,AL1
+ 012C 00000200  	DW	0,2		; CKS,OFF
+ 0130 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0133 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0136 4000      DPB4:	DW	64		; SPT
+ 0138 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 013B 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 013F F000      	DB	0F0H,0		; AL0,AL1
+ 0141 00000200  	DW	0,2		; CKS,OFF
+ 0145 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0148 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 014B 4000      DPB5:	DW	64		; SPT
+ 014D 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0150 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0154 F000      	DB	0F0H,0		; AL0,AL1
+ 0156 00000200  	DW	0,2		; CKS,OFF
+ 015A 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 015D FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0160 4000      DPB6:	DW	64		; SPT
+ 0162 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 0165 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0169 F000      	DB	0F0H,0		; AL0,AL1
+ 016B 00000200  	DW	0,2		; CKS,OFF
+ 016F 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0172 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 0175 4000      DPB7:	DW	64		; SPT
+ 0177 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 017A 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 017E F000      	DB	0F0H,0		; AL0,AL1
+ 0180 00000200  	DW	0,2		; CKS,OFF
+ 0184 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 0187 FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+ 018A 4000      DPB8:	DW	64		; SPT
+ 018C 051F01    	DB	5,31,1		; BSH,BLM,EXM
+ 018F 0300FF01  	DW	4-1,512-1	; DSM,DRM
+ 0193 F000      	DB	0F0H,0		; AL0,AL1
+ 0195 00000200  	DW	0,2		; CKS,OFF
+ 0199 028000    	DB	00000010B,10000000B,0  ; MODE BYTES
+ 019C FFFFFF    	DB	0FFH,0FFH,0FFH	; MODE MASKS
+                
+                ;	SELECT DISK CODE
+                ;
+                SEL$CF:
+ 019F AF        	xra	a
+ 01A0 324E03    	sta	SELERR		; NO SELECT ERRORS (YET)
+ 01A3 3A4F03    	lda	PARTLUN
+ 01A6 47        	mov	b,a
+ 01A7 3A0000    	lda	NEWDSK
+ 01AA D646      	sui	DRIV0
+ 01AC B8        	cmp	b
+ 01AD D2D801    	jnc	ERREXT
+ 01B0 47        	mov	b,a
+ 01B1 11BE00    	lxi	d,DDEFTBL
+ 01B4 6F        	mov	l,a		; NOW POINT TO THE CORRECT
+ 01B5 2600      	mvi	h,0		; ENTRY IN THE SECTOR
+ 01B7 29        	dad	h		; OFFSET TABLE
+ 01B8 29        	dad	h		; *4
+ 01B9 19        	dad	d
+ 01BA 224A03    	shld	SECPTR
+ 01BD 211E00    	lxi	h,DPH0-DPHL	; POINT TO DPH TABLE
+ 01C0 111000    	lxi	d,DPHL		; LENGTH OF DPH's
+ 01C3 04        	inr	b
+ 01C4 19        SEL1:	dad	d
+ 01C5           	djnz	SEL1		; CALCULATE POINTER TO REQUESTED DPH
+ 01C7 224C03    	shld	curdph		
+ 01CA 110A00    	lxi	d,DPHDPB
+ 01CD 19        	dad	d		; POINT TO ADDRESS OF DPB
+ 01CE CD1203    	call	HLIHL		; DPB ADDRESS IN HL
+ 01D1 225503    	shld	CURDPB		; SAVE IT
+ 01D4 2A4C03    	lhld	curdph
+ 01D7 C9        	ret
+                
+ 01D8 3E01      ERREXT: mvi	a,1
+ 01DA 324E03    	sta	SELERR
+ 01DD 210000    	lxi	h,0
+ 01E0 C9        	ret
+                
+                INIT$CF:
+                	; gather info from bootloader
+ 01E1 3A3420    	lda	BTDRV		;FROM BOOT LOADER
+ 01E4 320000    	sta	MIXER
+ 01E7 2A5621    	lhld	SEGOFF		;from ROM
+ 01EA 224E00    	shld	nsegmt		;hope it is safe here
+                	; since we only have one disk, init partn table now.
+                	; read "magic sector"
+ 01ED 225703    	shld	CURLBA+0
+ 01F0 210000    	lxi	h,0
+ 01F3 225903    	shld	CURLBA+2		; phy sec 0 = partition table
+ 01F6 CDA602    	call	READ
+ 01F9 C0        	rnz	; error
+ 01FA 3A7203    	lda	HSTBUF+NPART	; num partns
+ 01FD 324F03    	sta	PARTLUN		; use all partitons
+                	; copy over all DPBs
+ 0200 3A4F03    	lda	PARTLUN		; compute length of DPB block
+ 0203 47        	mov	b,a
+ 0204 210000    	lxi	h,0		; CALCULATE TOTAL LENGTH OF DPB'S TO BE MOVED 
+ 0207 111500    	lxi	d,DPBL
+ 020A 19        NXTLEN:	dad	d
+ 020B           	djnz	NXTLEN
+ 020D 44        	mov	b,h		; PUT LENGTH IN BC
+ 020E 4D        	mov	c,l
+ 020F 11E200    	lxi	d,DPB0
+ 0212 218E03    	lxi	h,HSTBUF+DDPB	; PUT FROM ADDRESS IN HL
+ 0215           	ldir
+                	; copy over sector (partition) offsets,
+                	; converting from LBA and 4-byte entries.
+ 0217           	lxix	DDEFTBL		; destination start
+ 021B 217303    	lxi	h,HSTBUF+SECTBL	; source start
+ 021E 3A4F03    	lda	PARTLUN		; num entries
+ 0221 47        	mov	b,a
+ 0222 C5        nxtdef:	push	b
+ 0223 3A5621    	lda	SEGOFF+0; LBA27:24,DRV is fixed
+ 0226           	stx	a,+0
+ 0229           	inxix
+ 022B 0603      	mvi	b,3
+ 022D 3A5721    	lda	SEGOFF+1; LBA23:19 is segment offset
+ 0230 57        	mov	d,a	; carry-in, s0000000
+ 0231 7E        	mov	a,m
+ 0232 E61F      	ani	00011111b	; must clear LUN bits
+ 0234 77        	mov	m,a
+                nxdef0:
+ 0235 1E00      	mvi	e,0
+ 0237 7E        	mov	a,m
+ 0238 23        	inx	h
+ 0239           	srlr	a	; convert 128B-secnum to 512B-secnum
+ 023B           	rarr	e	;
+ 023D           	srlr	a	;
+ 023F           	rarr	e	;
+ 0241 B2        	ora	d	; carry-in from previous
+ 0242           	stx	a,+0
+ 0245           	inxix
+ 0247 53        	mov	d,e	; carry-out becomes next carry-in
+ 0248           	djnz	nxdef0
+ 024A C1        	pop	b
+ 024B           	djnz	nxtdef
+                	; anything else to do?
+ 024D AF        	xra	a
+ 024E C9        	ret
+                
+                ; HL, DE are LBA buffers to be compared
+ 024F 0604      cmplba:	mvi	b,4
+                cmplba0:
+ 0251 1A        	ldax	d
+ 0252 BE        	cmp	m
+ 0253 C0        	rnz
+ 0254 23        	inx	h
+ 0255 13        	inx	d
+ 0256           	djnz	cmplba0
+ 0258 AF        	xra	a
+ 0259 C9        	ret
+                
+                READ$CF:
+ 025A 3A4E03    	lda	SELERR
+ 025D B7        	ora	a
+ 025E C0        	rnz
+ 025F 2A0000    	lhld	phytrk
+ 0262 225103    	shld	REQTRK
+ 0265 0E00      	mvi	c,0		; CALCULATE PHYSICAL SECTOR
+ 0267 3A0000    	lda	NEWSEC
+ 026A           	srlr	a		; DIVIDE ACCUMULATOR BY 2
+ 026C           	rarr	c		; SAVE OVERFLOW BIT
+ 026E           	srlr	a		; DIVIDE ACCUMULATOR BY 4
+ 0270           	rarr	c		; SAVE OVERFLOW BIT
+ 0272 325303    	sta	REQSEC		; SAVE IT
+ 0275 79        	mov	a,c
+ 0276 07        	rlc
+ 0277 07        	rlc			; sub-sector index
+ 0278 325403    	sta	BLKSEC		; STORE IT
+ 027B CDBA02    	call	SET$LBA		; setup CURLBA from REQTRK/SEC
+                	; only one disk, each partn LBAs are unique
+ 027E 215B03    	lxi	h,HSTLBA
+ 0281 115703    	lxi	d,CURLBA
+ 0284 CD4F02    	call	cmplba
+ 0287 CA8E02    	jz	NOREAD		; no pre-read required
+                	; no flushing required - we never write
+ 028A CDA602    	call	READ		; READ THE SECTOR
+ 028D C0        	rnz
+ 028E 215F03    NOREAD: lxi	h,HSTBUF	; POINT TO START OF SECTOR BUFFER
+ 0291 018000    	lxi	b,128
+ 0294 3A5403    	lda	BLKSEC		; POINT TO LOCATION OF CORRECT LOGICAL SECTOR
+ 0297 3D        MOVIT1: dcr	a
+ 0298 FA9E02    	jm	MOVIT2
+ 029B 09        	dad	b
+ 029C           	jr	MOVIT1
+ 029E           MOVIT2: lded	DMAA		; POINT TO DMA
+ 02A2           	ldir			; MOVE IT
+ 02A4 AF        	xra	a		; FLAG NO ERROR
+ 02A5 C9        	ret			; RETURN TO BDOS
+                
+                ;
+                ;	READ A PHYSICAL SECTOR CODE
+                ;
+                READ:
+ 02A6 CDED02    	call	SET$SEC 	; set ctrl regs from CURLBA, selects CF card
+ 02A9 CD1703    	call	CFRD		; DO READ, CF deselected on return
+ 02AC C0        	rnz
+ 02AD 215703    	lxi	h,CURLBA
+ 02B0 115B03    	lxi	d,HSTLBA	; SET UP NEW BUFFER PARAMETERS
+ 02B3 010400    	lxi	b,4
+ 02B6           	ldir
+ 02B8 AF        	xra	a
+ 02B9 C9        	ret
+                
+                ;	ABSOLUTE SECTOR NUMBER
+                ;
+                ;	CALCULATE THE REQUESTED SECTOR
+                ;
+                SET$LBA:
+                	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
+                	; so H,D are LSB and L,E are MSB.
+ 02BA 2A5103    	lhld	REQTRK		; GET REQUESTED TRACK
+ 02BD 5D        	mov	e,l	;
+ 02BE 6C        	mov	l,h	;
+ 02BF 63        	mov	h,e	; bswap HL
+ 02C0 110000    	lxi	d,0
+ 02C3 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
+                stlba0:
+ 02C5           	slar	h
+ 02C7           	rarr	l
+ 02C9           	rarr	d	; can't carry out
+ 02CB           	djnz	stlba0
+                	; sector can't carry - 0-15 into vacated bits
+ 02CD 3A5303    	lda	REQSEC		; GET REQUESTED SECTOR
+ 02D0 B4        	ora	h
+ 02D1 67        	mov	h,a
+ 02D2 225903    	shld	CURLBA+2
+ 02D5 EB        	xchg
+ 02D6 225703    	shld	CURLBA+0
+                	; add 32-bit values LBA += *(SECPTR)
+ 02D9 215A03    	lxi	h,CURLBA+3
+ 02DC           	lded	SECPTR	; adjusted by SEGOFF already
+ 02E0 13        	inx	d
+ 02E1 13        	inx	d
+ 02E2 13        	inx	d	; SECPTR+3
+                	; CY is cleared above
+ 02E3 0604      	mvi	b,4
+                stlba1:
+ 02E5 1A        	ldax	d
+ 02E6 8E        	adc	m
+ 02E7 77        	mov	m,a
+ 02E8 2B        	dcx	h
+ 02E9 1B        	dcx	d
+ 02EA           	djnz	stlba1
+ 02EC C9        	ret
+                
+                SET$SEC:
+ 02ED 3A3121    	lda	UNITNUM
+ 02F0 324D00    	sta	nsegmt-1
+ 02F3 3C        	inr	a	; 0->01b, 1->10b
+ 02F4 D380      	out	CF$BA	; select CF card
+ 02F6 215703    	lxi	h,CURLBA	; adjusted by SEGOFF already
+ 02F9 7E        	mov	a,m
+ 02FA F6E0      	ori	11100000b	; LBA mode, etc
+ 02FC D38E      	out	CF$DH
+ 02FE 23        	inx	h
+ 02FF 7E        	mov	a,m
+ 0300 D38D      	out	CF$CH
+ 0302 23        	inx	h
+ 0303 7E        	mov	a,m
+ 0304 D38C      	out	CF$CL
+ 0306 23        	inx	h
+ 0307 7E        	mov	a,m
+ 0308 D38B      	out	CF$SE
+ 030A 3E01      	mvi	a,1
+ 030C D38A      	out	CF$SC	; always 1 sector at a time
+ 030E AF        	xra	a
+ 030F D389      	out	CF$EF	; feature always zero?
+ 0311 C9        	ret
+                
+ 0312 7E        HLIHL:	mov	a,m
+ 0313 23        	inx	h
+ 0314 66        	mov	h,m
+ 0315 6F        	mov	l,a
+ 0316 C9        	ret
+                
+                ;
+                ;	ACTUAL READ OF DATA
+                ;	controller registers already set
+                ;
+                CFRD: 			; THIS ROUTINE IS FOR READING
+ 0317 3E20      	mvi	a,20h
+ 0319 D38F      	out	CF$CS		; start command
+ 031B AF        	xra	a
+ 031C 320000    	sta	DSKSTA
+ 031F 215F03    	lxi	h,HSTBUF	; AND WRITING DATA
+ 0322 0E88      	mvi	c,CF$DA	; DATA PORT ADDRESS TO REG. C
+ 0324 0600      	mvi	b,0		; 256 bytes per INIR/OUTIR
+ 0326 DB8F      CFCK: in	CF$CS		; FIRST CHECK FOR DRIVE READY
+ 0328           	bit	7,a		; BSY
+ 032A           	jrnz	CFCK
+ 032C           	bit	0,a		; ERR
+ 032E           	jrnz	rwerr0
+ 0330           	bit	6,a		; RDY
+ 0332           	jrz	rwerr
+ 0334           	bit	3,a		; DRQ
+ 0336           	jrz	CFCK
+ 0338           	inir
+ 033A           	inir
+ 033C AF        	xra	a
+ 033D D380      	out	CF$BA	; deselect CF card
+ 033F C9        	ret	; ZR = success
+                rwerr0:
+ 0340 DB89      	in	CF$EF
+ 0342 320000    	sta	DSKSTA		; STORE STATUS
+                rwerr:
+ 0345 AF        	xra	a
+ 0346 D380      	out	CF$BA	; deselect CF card
+ 0348 3C        	inr	a
+ 0349 C9        	ret	; NZ = error
+                
+                ****************************************************************
+                
+                ;
+                ;	DATA BUFFERS AND STORAGE
+                ;
+ 034A 0000      SECPTR	DW	0		; POINTER TO CURRENT SECTOR TABLE ENTRY
+ 034C 0000      CURDPH	DW	0		; current disk parameter header
+ 034E 00        SELERR	DB	0		; SELECT ERROR FLAG
+ 034F 00        PARTLUN DB	0		; NUMBER OF PARTITIONS IN CURRENT LUN
+ 0350 00        DSKERR:	db	0
+                ;
+                ; DEBLOCKING VARIABLES
+                ;
+ 0351 0000      REQTRK	DW	0
+ 0353 00        REQSEC	DB	0
+ 0354 00        BLKSEC: DB	0		; LOCATION OF LOGICAL SECTOR WITHIN PHYSICAL
+ 0355 0000      CURDPB	DW	0		; ADDRESS OF CURRENT DISK PARAMETER BLOCK
+                
+ 0357 00000000  CURLBA:	db	0,0,0,0
+ 035B FF000000  HSTLBA:	db	0ffh,0,0,0
+                
+ 035F =         btend	equ	$
+                
+                ********************************************************
+                ** BUFFERS
+                ********************************************************
+                
+ 035F           HSTBUF: DS	512
+ 055F           CSV0:	DS	128
+ 05DF           ALV0:	DS	256
+                
+ 06DF           	END
+

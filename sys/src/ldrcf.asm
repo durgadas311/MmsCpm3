@@ -1,7 +1,7 @@
-VERS	EQU   '2 '  ; Feb 26, 2020 20:41 drm "ldride.asm"
+VERS	EQU   '1 '  ; Apr 27, 2022 05:07 drm "ldrcf.asm"
 ***************************************************
 ;	Loader disk I/O module for MMS CP/M 2.24
-;	for the GIDE bus interface 
+;	for the CF bus interface 
 ;	Copyright (c) 1983 Magnolia Microsystems
 ***************************************************
 
@@ -20,20 +20,21 @@ NDRIV	EQU	9
 ***************************************************
 GPIO	EQU	0F2H		; SWITCH 501
 
-GIDE	equ	080h	; GIDE base port
-GIDE$DA	equ	GIDE+8	; GIDE data port
-GIDE$EF	equ	GIDE+9	; GIDE feature/error register
-GIDE$SC	equ	GIDE+10	; GIDE sector count
-GIDE$SE	equ	GIDE+11	; GIDE sector number	(lba7:0)
-GIDE$CL	equ	GIDE+12	; GIDE cylinder low	(lba15:8)
-GIDE$CH	equ	GIDE+13	; GIDE cylinder high	(lba23:16)
-GIDE$DH	equ	GIDE+14	; GIDE drive+head	(drive+lba27:24)
-GIDE$CS	equ	GIDE+15	; GIDE command/status
+CF	equ	080h	; CF base port
+CF$BA	equ	CF+0	; CF select port
+CF$DA	equ	CF+8	; CF data port
+CF$EF	equ	CF+9	; CF feature/error register
+CF$SC	equ	CF+10	; CF sector count
+CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+CF$CS	equ	CF+15	; CF command/status
 
-ERR	equ	00000001b	; error bit in GIDE$CS
-RDY	equ	01000000b	; ready bit in GIDE$CS
-DRQ	equ	00001000b	; DRQ bit in GIDE$CS
-BSY	equ	10000000b	; busy bit in GIDE$CS
+ERR	equ	00000001b	; error bit in CF$CS
+RDY	equ	01000000b	; ready bit in CF$CS
+DRQ	equ	00001000b	; DRQ bit in CF$CS
+BSY	equ	10000000b	; busy bit in CF$CS
 
 DPHDPB	EQU	10
 DPHL	EQU	16
@@ -71,15 +72,15 @@ nsegmt	equ	004eh	; where to pass segment to CP/M 3
 
 	cseg   
  
-	jmp	INIT$GIDE
-	jmp	SEL$GIDE
-	jmp	READ$GIDE
+	jmp	INIT$CF
+	jmp	SEL$CF
+	jmp	READ$CF
 
 	dw	0
 	dw	0     
 
 ;	TEXT
-	DB	'GIDE ',0,'ATA system loader ',0,'v3.00'
+	DB	'H8CF ',0,'CF system loader ',0,'v3.00'
 	DW	VERS,'$'
 
 
@@ -187,7 +188,7 @@ DPB8:	DW	64		; SPT
 
 ;	SELECT DISK CODE
 ;
-SEL$GIDE:
+SEL$CF:
 	xra	a
 	sta	SELERR		; NO SELECT ERRORS (YET)
 	lda	PARTLUN
@@ -222,7 +223,7 @@ ERREXT: mvi	a,1
 	lxi	h,0
 	ret
 
-INIT$GIDE:
+INIT$CF:
 	; gather info from bootloader
 	lda	BTDRV		;FROM BOOT LOADER
 	sta	MIXER
@@ -296,7 +297,7 @@ cmplba0:
 	xra	a
 	ret
 
-READ$GIDE:
+READ$CF:
 	lda	SELERR
 	ora	a
 	rnz
@@ -338,8 +339,8 @@ MOVIT2: lded	DMAA		; POINT TO DMA
 ;	READ A PHYSICAL SECTOR CODE
 ;
 READ:
-	call	SET$SEC 	; set ctrl regs from CURLBA
-	call	GIDERD		; DO READ OR WRITE
+	call	SET$SEC 	; set ctrl regs from CURLBA, selects CF card
+	call	CFRD		; DO READ, CF deselected on return
 	rnz
 	lxi	h,CURLBA
 	lxi	d,HSTLBA	; SET UP NEW BUFFER PARAMETERS
@@ -391,23 +392,27 @@ stlba1:
 	ret
 
 SET$SEC:
+	lda	UNITNUM
+	sta	nsegmt-1
+	inr	a	; 0->01b, 1->10b
+	out	CF$BA	; select CF card
 	lxi	h,CURLBA	; adjusted by SEGOFF already
 	mov	a,m
 	ori	11100000b	; LBA mode, etc
-	out	GIDE$DH
+	out	CF$DH
 	inx	h
 	mov	a,m
-	out	GIDE$CH
+	out	CF$CH
 	inx	h
 	mov	a,m
-	out	GIDE$CL
+	out	CF$CL
 	inx	h
 	mov	a,m
-	out	GIDE$SE
+	out	CF$SE
 	mvi	a,1
-	out	GIDE$SC	; always 1 sector at a time
+	out	CF$SC	; always 1 sector at a time
 	xra	a
-	out	GIDE$EF	; feature always zero?
+	out	CF$EF	; feature always zero?
 	ret
 
 HLIHL:	mov	a,m
@@ -420,32 +425,34 @@ HLIHL:	mov	a,m
 ;	ACTUAL READ OF DATA
 ;	controller registers already set
 ;
-GIDERD: 			; THIS ROUTINE IS FOR READING
+CFRD: 			; THIS ROUTINE IS FOR READING
 	mvi	a,20h
-	out	GIDE$CS		; start command
+	out	CF$CS		; start command
 	xra	a
 	sta	DSKSTA
 	lxi	h,HSTBUF	; AND WRITING DATA
-	mvi	c,GIDE$DA	; DATA PORT ADDRESS TO REG. C
+	mvi	c,CF$DA	; DATA PORT ADDRESS TO REG. C
 	mvi	b,0		; 256 bytes per INIR/OUTIR
-GIDECK: in	GIDE$CS		; FIRST CHECK FOR DRIVE READY
+CFCK: in	CF$CS		; FIRST CHECK FOR DRIVE READY
 	bit	7,a		; BSY
-	jrnz	GIDECK
+	jrnz	CFCK
 	bit	0,a		; ERR
 	jrnz	rwerr0
 	bit	6,a		; RDY
 	jrz	rwerr
 	bit	3,a		; DRQ
-	jrz	GIDECK
+	jrz	CFCK
 	inir
 	inir
 	xra	a
+	out	CF$BA	; deselect CF card
 	ret	; ZR = success
 rwerr0:
-	in	GIDE$EF
+	in	CF$EF
 	sta	DSKSTA		; STORE STATUS
 rwerr:
 	xra	a
+	out	CF$BA	; deselect CF card
 	inr	a
 	ret	; NZ = error
 

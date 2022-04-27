@@ -1,7 +1,7 @@
 ********** BOOT MODULE LOADER ROUTINE **********
-**********  FOR GIDE (ATA) DRIVES     **********
+**********       FOR CF DRIVES        **********
 ************************************************
-VERS	EQU	'1 '		; June 29, 2019 07:34 drm "BIDEBOT.ASM"
+VERS	EQU	'1 '		; Apr 27, 2022 05:54 drm "BCFBOT.ASM"
 ************************************************
 ********** MACRO ASSEMBLER DIRECTIVES **********
 	MACLIB	z80
@@ -14,8 +14,9 @@ VERS	EQU	'1 '		; June 29, 2019 07:34 drm "BIDEBOT.ASM"
 ?PORT	EQU	0F2H
 ?STACK	EQU	2680H
 BASE$PORT EQU	2150H		; PORT ADDRESS SAVED BY BOOT PROM
-SEGOFF	EQU	2156H		; setup by GIDE boot code in ROM
+SEGOFF	EQU	2156H		; setup by CF boot code in ROM
 BTDRV	EQU	2034H		; BOOT DRIVE NUMBER SAVED BY PROM
+AIO$UNI	EQU	2131H		; BOOT LUN
 BOOT	EQU	2280H		; ADDRESS TO LOAD BOOT MODULE INTO
 SECTR0	EQU	2280H		; LOCATION OF 'MAGIC SECTOR'
 DCTYPE	EQU	SECTR0+3	; DRIVE/CONTROLLER TYPE
@@ -29,15 +30,16 @@ SYSADR	EQU	2377H		; LOCATION IN BOOT MODULE TO PLACE SECTOR
 				;  ADDRESS OF OPERATING SYSTEM
 DRIV0	EQU	70
 
-GIDE	equ	080h	; GIDE base port
-GIDE$DA	equ	GIDE+8	; GIDE data port
-GIDE$EF	equ	GIDE+9	; GIDE feature/error register
-GIDE$SC	equ	GIDE+10	; GIDE sector count
-GIDE$SE	equ	GIDE+11	; GIDE sector number	(lba7:0)
-GIDE$CL	equ	GIDE+12	; GIDE cylinder low	(lba15:8)
-GIDE$CH	equ	GIDE+13	; GIDE cylinder high	(lba23:16)
-GIDE$DH	equ	GIDE+14	; GIDE drive+head	(drive+lba27:24)
-GIDE$CS	equ	GIDE+15	; GIDE command/status
+CF	equ	080h	; CF base port
+CF$BA	equ	CF+0	; CF select port
+CF$DA	equ	CF+8	; CF data port
+CF$EF	equ	CF+9	; CF feature/error register
+CF$SC	equ	CF+10	; CF sector count
+CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+CF$CS	equ	CF+15	; CF command/status
 
 ERR	EQU	00000001B
 DRQ	EQU	00001000B
@@ -93,42 +95,48 @@ START:
 	SRLR	C		; ROTATE C:E:D >> 1
 	RARR	E
 	RARR	D		; 256/sec => 512/sec
+	; C:E:D contain LBA of partition
+	lda	AIO$UNI
+	inr	a	; 0->01b, 1->10b
+	out	CF$BA	; select CF card
 	lda	SEGOFF+0	; fixed bits, SEG 27:24
 	sta	LBA+0		; save for boot module.
 	ori	11100000b	; LBA mode, drive 0, LBA27:24=0
-	out	GIDE$DH		; mode, drv, LBA 27:24
+	out	CF$DH		; mode, drv, LBA 27:24
 	LDA	SEGOFF+1	; SEG 23:16
 	ORA	C		; OR IT INTO NEW SECTOR ADDRESS.
 	STA	LBA+1
-	out	GIDE$CH		; LBA 23:16
+	out	CF$CH		; LBA 23:16
 	mov	a,e
 	STA	LBA+2
-	out	GIDE$CL		; LBA 15:8
+	out	CF$CL		; LBA 15:8
 	mov	a,d
 	STA	LBA+3
-	out	GIDE$SE		; LBA 7:0
+	out	CF$SE		; LBA 7:0
 	MVI	A,1
-	out	GIDE$SC 	; READ IN 1 SECTOR
+	out	CF$SC 	; READ IN 1 SECTOR
 	MVI	A,20h
-	out	GIDE$CS		; READ COMMAND
+	out	CF$CS		; READ COMMAND
 
 ;
 ;  READ IN BOOT MODULE AND JUMP TO IT WHEN DONE
 ;
-load0:	in	GIDE$CS
+load0:	in	CF$CS
 	bit	7,a		; BUSY
 	jrnz	load0
 	bit	0,a		; ERR
-	rnz
+	jrnz	cferr
 	bit	6,a		; RDY
-	rz
+	jrz	cferr
 	bit	3,a		; DRQ
 	jrz	load0
-	mvi	c,GIDE$DA
+	mvi	c,CF$DA
 	mvi	b,0
 	lxi	h,BOOT
 	inir	; 256 bytes
 	inir	; 512 bytes - done
+	xra	a
+	out	CF$BA	; deselect CF card
 
 	; now that module is loaded, we can overlay LBA to SYSADR
 	lxi	h,LBA
@@ -136,6 +144,10 @@ load0:	in	GIDE$CS
 	lxi	b,4
 	ldir
 	JMP	BOOT
+
+cferr:	xra	a
+	out	CF$BA	; deselect CF card
+	ret
 
 ;
 ;  MISCELLANEOUS STORAGE

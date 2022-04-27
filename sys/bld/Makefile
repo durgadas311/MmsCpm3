@@ -10,7 +10,7 @@ RELS = $(subst .asm,.rel,$(SRCS))
 BASE = mbios3.rel chrio3.rel end.rel lptbl.rel getdp.rel scb.rel
 BASEZ = mbios3z.rel chrio3.rel end.rel lptbl.rel getdp.rel scb.rel
 
-GIDEDRVS = -d a:=70,b:=71,c:=72,d:=73,e:=74,f:=75,g:=76,h:=77
+CFDRVS = -d a:=70,b:=71,c:=72,d:=73,e:=74,f:=75,g:=76,h:=77
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 Z17DRVS = -d i:=0,j:=1,k:=2
@@ -22,10 +22,10 @@ M316MODS = -m "33=dds,mdd,mds;34=dds,mdd,mds;35=dds,mdd,mds;36=dds,mdd,mds"
 RDDRVS = -d l:=40
 DSO = -p def,a:
 
-SDCSYS = c3g37krr.sys c3g37zrr.sys
-GIDESYS = c3g37krr.sys c3g37zrr.sys
+SDCSYS = c3s37krr.sys c3s37zrr.sys
+CFSYS = c3f37krr.sys c3f37zrr.sys
 Z67SYS = c3z17krr.sys c3z37krr.sys c3z67mr.sys c3z37zrr.sys
-ALLSYS = $(Z67SYS) $(GIDESYS) $(SDCSYS)
+ALLSYS = $(Z67SYS) $(CFSYS) $(SDCSYS)
 
 all: $(ALLSYS)
 
@@ -44,9 +44,9 @@ b3z37krr.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
 	vcpm link "b3z37krr=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
-b3g37krr.spr: $(BASE) gide'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldride.com
-	vcpm link "b3g37krr=mbios3,chrio3,gide'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
-	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+b3f37krr.spr: $(BASE) h8cf'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldrcf.com
+	vcpm link "b3f37krr=mbios3,chrio3,h8cf'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(CFDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
 b3s37krr.spr: $(BASE) sdc'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldrsdc.com
 	vcpm link "b3s37krr=mbios3,chrio3,sdc'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
@@ -64,10 +64,10 @@ mbios3z.asm: mbios3.asm
 b3z37zrr.spr: $(BASEZ) m320'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
 	vcpm link "b3z37zrr=mbios3z,chrio3,m320'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
-# GIDE+Z37+Z180MMU+RTC+RAMDISK
-b3g37zrr.spr: $(BASEZ) gide'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
-	vcpm link "b3g37zrr=mbios3z,chrio3,gide'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
-	setup30 $(GIDEDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+# CF+Z37+Z180MMU+RTC+RAMDISK
+b3f37zrr.spr: $(BASEZ) h8cf'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
+	vcpm link "b3f37zrr=mbios3z,chrio3,h8cf'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"
+	setup30 $(CFDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 # SDC+Z37+Z180MMU+RTC+RAMDISK
 b3s37zrr.spr: $(BASEZ) sdc'3.rel z37'3.rel rdz180'3.rel rtc72421.rel memz180.rel
 	vcpm link "b3s37zrr=mbios3z,chrio3,sdc'3,z37'3,rdz180'3,end,lptbl,rtc72421,memz180,getdp,scb[b,os,nr]"

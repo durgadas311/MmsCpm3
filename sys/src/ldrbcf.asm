@@ -1,4 +1,4 @@
-VERS	EQU   '2 '  ; April 7, 2020 17:45 drm "ldrbide.asm"
+VERS	EQU   '1 '  ; April 26, 2022 21:41 drm "ldrbcf.asm"
 
 	MACLIB	z80
 	$-MACRO
@@ -7,7 +7,7 @@ VERS	EQU   '2 '  ; April 7, 2020 17:45 drm "ldrbide.asm"
 
 ***** PHYSICAL DRIVES ARE ASSIGNED AS FOLLOWS *****
 *****					      *****
-*****	   50 - 58 Sasi drives		      *****
+*****	   70 - 78 CF partitions	      *****
 *****					      *****
 ***************************************************
 
@@ -23,17 +23,19 @@ ctl$F2	EQU	2036H		; last image of ?PORT
 SYSADR	EQU	2377H		; ADDRESS OF WHERE THE PARTN LBA
 				; SHOULD BE FOR BOOT LOADER TO PUT PARTITION
 				; ADDRESS IN.
+AIO$UNI	EQU	2131H		; LUN from boot command
 SEGOFF	EQU	2156H		; address where ROM put segment offset
 
-GIDE	equ	080h	; GIDE base port
-GIDE$DA	equ	GIDE+8	; GIDE data port
-GIDE$EF	equ	GIDE+9	; GIDE feature/error register
-GIDE$SC	equ	GIDE+10	; GIDE sector count
-GIDE$SE	equ	GIDE+11	; GIDE sector number	(lba7:0)
-GIDE$CL	equ	GIDE+12	; GIDE cylinder low	(lba15:8)
-GIDE$CH	equ	GIDE+13	; GIDE cylinder high	(lba23:16)
-GIDE$DH	equ	GIDE+14	; GIDE drive+head	(drive+lba27:24)
-GIDE$CS	equ	GIDE+15	; GIDE command/status
+CF	equ	080h	; CF base port
+CF$BA	equ	CF+0	; CF card selection port
+CF$DA	equ	CF+8	; CF data port
+CF$EF	equ	CF+9	; CF feature/error register
+CF$SC	equ	CF+10	; CF sector count
+CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+CF$CS	equ	CF+15	; CF command/status
 
 DRQ	EQU	00001000B
 RDY	EQU	01000000B
@@ -74,39 +76,43 @@ around: pop	h	;ADDRESS OF ERROR ROUTINE
 	srlr	h	; >>9 == >>8 (byte) and >>1
 	inr	h		; PHYSICAL SECTORS TO BE BOOTED (rounded up)
 	mov	e,h	; sector count to E
+	lda	AIO$UNI
+	inr	a	; 0->01b, 1->10b
+	out	CF$BA	; select card
 	; SYSADR already has SEGOFF...
 	lda	SYSADR+0
 	ori	11100000b
-	out	GIDE$DH	; LBA 27:24, drive and mode
+	out	CF$DH	; LBA 27:24, drive and mode
 	lda	SYSADR+1
-	out	GIDE$CH	; LBA 23:16
+	out	CF$CH	; LBA 23:16
 	lda	SYSADR+2
-	out	GIDE$CL	; LBA 15:8
+	out	CF$CL	; LBA 15:8
 	lda	SYSADR+3
-	out	GIDE$SE	; LBA 7:0
+	out	CF$SE	; LBA 7:0
 	mov	a,e
-	out	GIDE$SC
+	out	CF$SC
 	mvi	a,20h
-	out	GIDE$CS
+	out	CF$CS
 	lxi	h,3000h
-	mvi	c,GIDE$DA
+	mvi	c,CF$DA
 	mvi	b,0	; should always be 0 after inir
 load:
-	in	GIDE$CS
+	in	CF$CS
 	bit	7,a	; BUSY
 	jrnz	load
 	bit	0,a	; ERR
-	rnz
+	jrnz	cferr
 	bit	6,a	; RDY
-	rz
+	jrz	cferr
 	bit	3,a	; DRQ
 	jrz	load
 	inir	; 256 bytes
 	inir	; 512 bytes
 	dcr	e
 	jrnz	load
-
-DONE:	DI
+	xra	a
+	out	CF$BA	; deselect CF
+	DI
 	mvi	a,10011111b	; H8 2mS off, display blank
 	out	?H8PT		; H89 NMI here should be OK
 	mvi	a,00000010b	; aux 2mS enable
@@ -125,6 +131,10 @@ done2:	lxi	h,3000h+256
 	lbcd	syssiz
 	ldir
 	jmp	cboot
+
+cferr:	xra	a
+	out	CF$BA	; deselect CF
+	ret
 
 ?CODE	DB	0000$01$00B
 	DB	0000$11$00B

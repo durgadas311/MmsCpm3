@@ -5,11 +5,11 @@
 # "od -tx1 -w8 zout/bsdcbot.cim" is used to get initial array data,
 # then apply fixup to meet JAVA syntax.
 
-all: gide m320 sdc
+all: cf m320 sdc
 
 m320: ../bin/b320bot.bin
 
-gide: ../bin/bidebot.bin
+cf: ../bin/bcfbot.bin
 
 sdc: ../bin/bsdcbot.bin
 
