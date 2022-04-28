@@ -20,6 +20,9 @@ Z67DRVS = -d a:=50,b:=51,c:=52,d:=53,e:=54,f:=55,g:=56,h:=57
 SDCDRVS = -d a:=80,b:=81,c:=82,d:=83,e:=84,f:=85,g:=86,h:=87
 CFDRVS = -d a:=70,b:=71,c:=72,d:=73,e:=74,f:=75,g:=76,h:=77
 
+# Override on make command (e.g. make ... DEF_H8=h8)
+DEF_H8 = h8v4
+
 all: m3sdczrr.sys mldrsdc.img
 
 %.rel: %.asm cfgsys.lib
@@ -27,7 +30,7 @@ all: m3sdczrr.sys mldrsdc.img
 
 # Targets that setup configuration file.
 # One of these must be done before each mpm.sys build.
-# h8v4 h8z180
+# h8 h8v4 h8z180 rcz180
 %:	cfg%.lib
 	cp $< cfgsys.lib
 
@@ -49,28 +52,44 @@ bwbwbot.cim: bwbwbot.asm
 #mldr%.com: ldrentry.rel ldr%.rel mldrprog.rel ldrbdos.rel ldrbios.rel
 #	vcpm link "$@=ldrentry,mldrprog,ldrbdos,ldrbios,ldr$*[oc,nr,l0100,p0]"
 
+# Rules to configure/make XIOS and loader
 # H8/H8-512K/H67 MP/M XIOS
-m3z67zrr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
-	vcpm link "m3z67zrr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
-	setup30 $(Z67DRVS) $@
+m3z67kr: $(DEF_H8) m3z67kr.sys mldr320.com
+
+# H8/H8-512K/CF MP/M XIOS
+m3cfkr: $(DEF_H8) m3cfkr.sys mldrcf.com
 
 # H8/Z180/H8xSPI+SDC MP/M XIOS
-m3sdczrr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
+m3sdczr: h8z180 m3sdczr.sys mldrsdc.com
+
+# RC2014/MT011+SDC MP/M XIOS
+m3rcz1sd: rcz180 m3rcz1sd.sys mldrwbw.com
+
+# RC2014/CF MP/M XIOS
+m3rcz1cf: rcz180 m3rcz1cf.sys mldrwbw.com
+
+m3z67kr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
+	vcpm link "m3z67kr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
+	setup30 $(Z67DRVS) $@
+
+m3cfkr.spr: $(BASE) h8cf.rel rtc72421.rel mem512k.rel
+	vcpm link "m3cfkr=mxios,cio8250,h8cf,end,lptbl,mem512k,rtc72421[b,os,nr]"
+	setup30 $(CFDRVS) $@
+
+m3sdczr.spr: $(BASE) sdc.rel rtc72421.rel memz180.rel
 	vcpm link "m3sdczrr=mxios,cio8250,sdc,end,lptbl,memz180,rtc72421[b,os,nr]"
 	setup30 $(SDCDRVS) $@
 
-# RC2014/MT011+SDC MP/M XIOS
 m3rcz1sd.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
 	vcpm link "m3rcz180=mxios,cioz180,sdc,end,lptbl,memz180,nortc[b,os,nr]"
 	setup30 $(SDCDRVS) $@
 
-# RC2014/CF MP/M XIOS
 m3rcz1cf.spr: $(RCBASE) cf2014.rel nortc.rel memz180.rel
 	vcpm link "m3rcz180=mxios,cioz180,cf2014,end,lptbl,memz180,nortc[b,os,nr]"
 	setup30 $(CFDRVS) $@
 
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
-m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
+m3sdcnet.sys: m3sdczr.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar' | tee m3sdcnet.out
@@ -78,7 +97,7 @@ m3sdcnet.sys: m3sdczrr.spr netservr.rsp netservr.brs
 	mv system.dat m3sdcnet.dat
 
 # Z67-IDE MP/M+CP/NET - assumes CP/NET RSP(s) present
-m3z67net.sys: m3z67zrr.spr netservr.rsp netservr.brs
+m3z67net.sys: m3z67kr.spr netservr.rsp netservr.brs
 	cp $< bnkxios.spr
 	cp gm.cpnet.dat system.dat
 	vcpm gensys '$$ar' | tee m3z67net.out

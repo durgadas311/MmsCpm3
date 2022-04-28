@@ -1,15 +1,16 @@
-VERS EQU '1 ' ; Apr 4, 2020 08:12 drm "SDC'3.ASM"
+VERS EQU '1 ' ; Apr 27, 2022 20:54 drm "H8CF.ASM"
 *************************************************************************
 
-	TITLE	'SDC - DRIVER FOR MMS CP/M 3 WITH SDCard INTERFACE'
-	MACLIB	Z80
+	TITLE	'CF - DRIVER FOR MMS MP/M WITH CF INTERFACE'
+	maclib	z80
+	maclib	cfgsys
 	$*MACRO
 
-	extrn	@dph,@rdrv,@side,@trk,@sect,@dma,@dbnk,@dstat,@intby
-	extrn	@dtacb,@dircb,@scrbf,@rcnfg,@cmode,@lptbl,@login
-	extrn	?bnksl,?halloc
+	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
+	extrn	@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
+	extrn	?bnksl
 
-nsegmt	equ	004eh	; where to pass segment to CP/M 3, LUN is -1
+nsegmt	equ	004eh	; where to pass segment to CP/M 3
 
 **************************************************************************
 ; Configure the number of partitions (numparX) on each LUN in your system
@@ -24,7 +25,7 @@ true	equ	not false
 numpar0 equ	8		; number of partitions on LUN
 
 ndev	equ	numpar0
-dev0	equ	80
+dev0	equ	70
 
 *************************************************************************
 **  PORTS AND CONSTANTS
@@ -32,16 +33,21 @@ dev0	equ	80
 
 GPIO	EQU	0F2H		; SWITCH 501
 
-spi	equ	40h	; same board as WizNet
+CF	equ	080h	; CF base port
+CF$BA	equ	CF+0	; CF-select port
+CF$DA	equ	CF+8	; CF data port
+CF$EF	equ	CF+9	; CF feature/error register
+CF$SC	equ	CF+10	; CF sector count
+CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+CF$CS	equ	CF+15	; CF command/status
 
-spi?dat	equ	spi+0
-spi?ctl	equ	spi+1
-spi?sts	equ	spi+1
-
-SD0SCS	equ	0100b	; SCS for SDCard 0
-SD1SCS	equ	1000b	; SCS for SDCard 1
-
-CMDST	equ	01000000b	; command start bits
+ERR	equ	00000001b	; error bit in CF$CS
+RDY	equ	01000000b	; ready bit in CF$CS
+DRQ	equ	00001000b	; DRQ bit in CF$CS
+BSY	equ	10000000b	; busy bit in CF$CS
 
 dpbl	equ	17	; length of CP/M 3.0 dpb
 alvl	equ	512	; size of allocation vector
@@ -67,23 +73,23 @@ WRUNA	EQU	2	; WRITE TO UNALLOCATED
 READOP	EQU	3	; READ OPERATION
 
 ***************************************************
-	cseg
+	dseg	; common memory
 
 	dw	thread
 driv0	db	dev0,ndev
-	jmp	init$sdc
+	jmp	init$cf
 	jmp	login
-	jmp	read$sdc
-	jmp	write$sdc
+	jmp	read$cf
+	jmp	write$cf
 	dw	string
 	dw	dphtbl,modtbl
 
-string: db	'SDC ',0,'SDCard Interface ('
+string: db	'H8CF ',0,'CF Interface ('
 	db	ndev+'0'
-	db	' partitions) ',0,'v3.10'
+	db	' partitions) ',0,'v3.00'
 	dw	VERS,'$'
 
-; Mode byte table for SDC driver
+; Mode byte table for CF driver
 
 modtbl:
 drv	set	0
@@ -104,9 +110,11 @@ dpb:
 ;
 ;	ACTUAL READ-WRITE OF DATA
 ;
+bbnk:	db	0
+bdma:	dw	0
 
-sdcrd:
-	lda	@dbnk
+cfrd:
+	lda	bbnk
 	call	?bnksl
 	inir
 	inir
@@ -114,8 +122,8 @@ sdcrd:
 	call	?bnksl		; re-select bank 0
 	ret
 
-sdcwr:
-	lda	@dbnk
+cfwr:
+	lda	bbnk
 	call	?bnksl
 	outir
 	outir
@@ -125,21 +133,20 @@ sdcwr:
 
 thread	equ	$
 
-	dseg
+	cseg	; banked memory
 	$*MACRO
 
 
-; Disk parameter headers for the SDC driver
+; Disk parameter headers for the CF driver
 
 ncsv	set	0
 drv	set	0
 
 dphtbl:
 	rept	numpar0
-	dw	0,0,0,0,0,0,dpb+(drv*dpbl)
+	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
 	dw	0	; no CSV - DPB.CKS must be 8000h
-	dw	alv+(drv*alvl),@dircb,@dtacb,0
-	db	0
+	dw	alv+(drv*alvl)
 drv	set	drv+1
 	endm
 
@@ -159,27 +166,20 @@ csv:
 
 	$-MACRO
 
-nparts:	db	0
-
 ;
 ;	DRIVER INITIALIZATION CODE
 ;
 
-init$sdc:
+init$cf:
 	; anything to do? Leave reading of magic sector until
 	; first drive access?
-if 1
-	; This only works if SDC was boot device
-	lda	nsegmt-1
-	inr	a	; 0->01b, 1->10b
-	rlc
-	rlc
-	sta	scs	; SD0SCS, SD1SCS
-	call	sdcini
+	lda	nsegmt-1	; LUN
+	inr	a		; 0->01b, 1->10b
+	sta	cfsel
 	lhld	nsegmt		;grab this before it's gone...
 	shld	segoff
-endif
 	xra	a
+	out	CF$EF		; ensure this reg is sane
 	ret
 
 login:	lda	init
@@ -193,52 +193,46 @@ login0:
 	lda	@rdrv
 	cmp	e	; See if loging in a drive that doesn't exist
 	jnc	rwerr
-	; Note: computation not needed if already set.
-	; ?halloc takes care of that.
-	lhld	@dph
-	lxi	d,12	; offset of DPH.DPB
-	dad	d
-	mov	e,m
-	inx	h
-	mov	d,m
-	lxi	h,7	; offset of DPB.DRM
-	dad	d
-	mov	a,m
-	inx	h
-	mov	h,m
-	mov	l,a	; HL=DRM
-	inx	h	; num DIR ents
-	; TODO: check overflow? must be < 8192
-	dad	h
-	dad	h	; HL*=4: HASH size
-	mov	c,l
-	mov	b,h
-	call	?halloc
 	xra	a
+	ret
+
+; A=offset into bdma (@scrcb+12)
+; Returns HL=bdma+A
+bufoff:
+	lhld	bdma
+	add	l
+	mov	l,a
+	mvi	a,0
+	adc	h
+	mov	h,a
 	ret
 
 init$hard:
 	; since we only have one disk, init partn table now.
 	; read "magic sector" - LBA 0 of chosen disk segment.
-	lxi	h,@scrbf	; use bios scratch buffer for magic sector
-	shld	@dma	; is this safe now?
-	xra	a
-	sta	@dbnk	; is this safe now?
+	lhld	@scrcb+12	; hstbuf - use bios scratch buffer for magic sector
+	shld	bdma	; is this safe now?
+	lda	@scrcb+14	; hstbnk
+	sta	bbnk	; is this safe now?
 	lhld	segoff
 	shld	curlba+0
 	lxi	h,0
 	shld	curlba+2		; phy sec 0 = partition table
-	call	stlba2
-	call	read$raw
+	call	stlba2		; selects CF card
+	call	read$raw	; deselects CF card
 	rnz	; error
-	lda	@scrbf+NPART
+	mvi	a,NPART
+	call	bufoff
+	mov	a,m
 	cpi	numpar0
 	jrc	ih3
 	mvi	a,numpar0
 ih3:	sta	nparts		; use all partitions (and no more)
 	; copy over all DPBs, add PSH,PSK
-	lxi	h,@scrbf+DDPB	; CP/M 2.2 DPBs in magic sector
+	mvi	a,DDPB	; CP/M 2.2 DPBs in magic sector
+	call	bufoff
 	lxi	d,dpb		; Our CP/M 3 DPBs
+	lda	nparts
 ih0:
 	push	psw		; num partitions
 	lxi	b,15	; CP/M 2.2 DPB length
@@ -256,14 +250,15 @@ ih0:
 	jrnz	ih0
 	; copy over sector (partition) offsets,
 	; converting from LBA and 4-byte entries.
-	lxi	h,@scrbf+SECTBL
+	mvi	a,SECTBL
+	call	bufoff
 	lxix	partbl
 	lda	nparts		; num entries
 	mov	b,a
 ih1:	push	b
-	lded	segoff+0; E = LBA31:24
+	lded	segoff+0; E = LBA27:24,DRV (future seg off)
 	;		; D = LBA23:19 is segment offset, carry-in
-	stx	e,+0	; LBA31:24 is fixed
+	stx	e,+0	; LBA27:24,DRV is fixed
 	inxix
 	mvi	b,3
 	mov	a,m
@@ -291,53 +286,86 @@ ih2:
 ;	READ - WRITE ROUTINES
 ;
 ;	READ A PHYSICAL SECTOR CODE
-;
-read$sdc:
-	call	set$lba
+; IY=buffer header
+read$cf:
+	ldy	a,+14	; hstbnk
+	sta	bbnk
+	ldy	l,+12	; hstbuf
+	ldy	h,+13
+	shld	bdma
+	call	set$lba		; selects CF card - all paths must deselect
 read$raw:
-	mvi	a,CMDST+17
-	sta	cmd
-	lxi	h,cmd
-	mvi	d,1
-	mvi	e,0	; leave SCS on (unless error)
-	call	sdcmd
-	jrc	rwerr
-	call	sdrblk	; turns off SCS
-	jrc	rwerr
+	mvi	a,20h
+	out	CF$CS
+cfr0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
+	bit	7,a		; BSY
+	jrnz	cfr0
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	bit	6,a		; RDY
+	jrz	rwerr
+	bit	3,a		; DRQ
+	jrz	cfr0
+	lhld	bdma		; data buffer address
+	mvi	c,CF$DA
+	mvi	b,0
+	call	cfrd
 	xra	a
+	out	CF$BA	; deselect drive
 	ret
 
+rwerr0:
+	in	CF$EF
+	sta	dskerr
 rwerr:
 	xra	a
+	out	CF$BA	; deselect drive
 	inr	a
 	ret
 
 ;
 ;	WRITE A PHYSICAL SECTOR CODE
-;
-write$sdc:
-	call	set$lba
-	mvi	a,CMDST+24
-	sta	cmd
-	lxi	h,cmd
-	mvi	d,1
-	mvi	e,0	; leave SCS on (unless error)
-	call	sdcmd
-	jrc	rwerr
-	call	sdwblk	; turns off SCS
-	jrc	rwerr
+; IY=buffer header
+write$cf:
+	ldy	a,+14	; hstbnk
+	sta	bbnk
+	ldy	l,+12	; hstbuf
+	ldy	h,+13
+	shld	bdma
+	call	set$lba		; selects CF card - all paths must deselect
+	mvi	a,30h
+	out	CF$CS
+cfw0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
+	bit	7,a		; BSY
+	jrnz	cfw0
+	bit	6,a		; RDY
+	jrz	rwerr
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	bit	3,a		; DRQ
+	jrz	cfw0
+	lhld	bdma		; data buffer address
+	mvi	c,CF$DA
+	mvi	b,0
+	call	cfwr
+cfw2:
+	in	CF$CS		; wait for not busy
+	bit	7,a		; BSY
+	jrnz	cfw2
+	bit	0,a		; ERR
+	jrnz	rwerr0
+	; TODO: confirm DRQ also off?
 	xra	a
+	out	CF$BA	; deselect drive
 	ret
 
 ;	CALCULATE THE REQUESTED SECTOR
-;
+; IY=buffer header
 set$lba:
 	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
 	; so H,D are LSB and L,E are MSB.
-	lhld	@trk		; get requested track
-	mov	e,l	;
-	mov	l,h	;
-	mov	h,e	; bswap HL
+	ldy	h,+8		; get requested track, byte-swapped
+	ldy	l,+9
 	lxi	d,0
 	mvi	b,4		; shift 4 bits left (16 psec/trk)
 stlba0:
@@ -346,7 +374,7 @@ stlba0:
 	ralr	d	; can't carry out
 	djnz	stlba0
 	; sector can't carry - 0-15 into vacated bits
-	lda	@sect		; get requested sector
+	ldy	a,+10		; get requested sector
 	ora	h
 	mov	h,a
 	shld	curlba+2
@@ -376,143 +404,33 @@ stlba1:
 	dcx	d
 	djnz	stlba1
 stlba2:	; setup controller regs from CURLBA
-	lhld	curlba+0
-	shld	cmd+1
-	lhld	curlba+2
-	shld	cmd+3
-	ret
-
-; send (6 byte) command to SDCard, get response.
-; HL=command+response buffer, D=response length
-; return A=response code (00=success), HL=idle length, DE=gap length
-sdcmd:
-	lda	scs
-	out	spi?ctl	; SCS on
-	mvi	c,spi?dat
-	; wait for idle
-	; TODO: timeout this loop
-	push	h	; save command+response buffer
-	lxi	h,0	; idle timeout
-sdcmd0:	inp	a
-	cpi	0ffh
-	jrz	sdcmd1
-	dcx	h
-	mov	a,h
-	ora	l
-	jrnz	sdcmd0
-	; timeout - error
-sdcmd5:
-	pop	h
-	xra	a
-	out	spi?ctl	; SCS off
-	stc
-	ret
-sdcmd1:	pop	h	; command buffer back
-	mvi	b,6
-	outir
-	inp	a	; prime the pump
-	push	h	; points to response area...
-	lxi	h,0	; gap timeout
-sdcmd2:	inp	a
-	cpi	0ffh
-	jrnz	sdcmd3
-	dcx	h
-	mov	a,h
-	ora	l
-	jrnz	sdcmd2
-	jr	sdcmd5
-sdcmd3:	pop	h	; response buffer back
-	mov	b,d
-	mov	m,a
+	lda	cfsel
+	out	CF$BA	; card is selected now... errors must deselect
+	lxi	h,curlba
+	mov	a,m
+	ori	11100000b	; LBA mode, etc
+	out	CF$DH
 	inx	h
-	dcr	b
-	jrz	sdcmd4
-	inir	; rest of response
-sdcmd4:	mov	a,e	; SCS flag
-	ora	a
-	rz	; NC
+	mov	a,m
+	out	CF$CH
+	inx	h
+	mov	a,m
+	out	CF$CL
+	inx	h
+	mov	a,m
+	out	CF$SE
+	mvi	a,1
+	out	CF$SC	; always 1 sector at a time
 	xra	a
-	out	spi?ctl	; SCS off
-	ret	; NC
-
-; read a 512-byte data block, with packet header and CRC (ignored).
-; READ command was already sent and responded to.
-; SCS must already be ON.
-; return CY on error (A=error), SCS always off
-sdrblk:
-	mvi	c,spi?dat
-	; wait for packet header (or error)
-	lxi	d,0	; gap timeout
-sdrbk0:	inp	a
-	cpi	0ffh
-	jrnz	sdrbk1
-	dcx	d
-	mov	a,d
-	ora	e
-	jrnz	sdrbk0
-	stc
-	jr	sdrbk2
-sdrbk1:	
-	cpi	11111110b	; data start
-	stc	; else must be error
-	jrnz	sdrbk2
-	mvi	b,0	; 256 bytes at a time
-	lhld	@dma
-	call	sdcrd
-	inp	a	; CRC 1
-	inp	a	; CRC 2
-	xra	a	; NC
-sdrbk2:	mvi	a,0	; don't disturb CY
-	out	spi?ctl	; SCS off
-	ret
-
-; write a 512-byte data block, with packet header and CRC (ignored).
-; WRITE command was already sent and responded to.
-; SCS must already be ON.
-; return CY on error (A=error), SCS always off
-sdwblk:
-	mvi	c,spi?dat
-	; TODO: wait for idle?
-	mvi	a,11111110b	; data start token
-	outp	a
-	mvi	b,0	; 256 bytes at a time
-	lhld	@dma
-	call	sdcwr	; send 512B block
-	outp	a	; CRC-1
-	outp	a	; CRC-2
-	inp	a	; prime the pump
-	; wait for response...
-	lxi	d,0	; gap timeout
-sdwbk0:	inp	a
-	cpi	0ffh
-	jrnz	sdwbk1
-	dcx	d
-	mov	a,d
-	ora	e
-	jrnz	sdwbk0
-	stc
-	jr	sdwbk2
-sdwbk1:	
-	ani	00011111b	; mask off unknown bits
-	cpi	00000101b	; data accepted
-	stc	; else must be error
-	jrnz	sdwbk2
-	xra	a	; NC
-sdwbk2:	mvi	a,0	; don't disturb CY
-	out	spi?ctl	; SCS off
-	ret
-
-sdcini:
-	; TODO: initialize card
+	out	CF$EF	; feature always zero?
 	ret
 
 ;
 ;	DATA BUFFERS AND STORAGE
 ;
 
-cmd:	db	0,0,0,0,0,1 ; command buffer w/end bit
-	db	0	; response
-scs:	db	0
+nparts:	db	0	; number of partitions we used
+cfsel:	db	0	; bits to select current CF card
 segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
 curlba:	db	0,0,0,0
 

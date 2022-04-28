@@ -1,0 +1,531 @@
+CP/M RMAC ASSEM 1.1	#001	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 2031 =         VERS EQU '1 ' ; Apr 27, 2022 20:54 drm "H8CF.ASM"
+                *************************************************************************
+                
+                	TITLE	'CF - DRIVER FOR MMS MP/M WITH CF INTERFACE'
+                	maclib	z80
+                	maclib	cfgsys
+                	$*MACRO
+                
+                	extrn	@dph,@rdrv,@side,@trk,@sect,@dstat
+                	extrn	@scrcb,@dirbf,@rcnfg,@cmode,@lptbl
+                	extrn	?bnksl
+                
+ 004E =         nsegmt	equ	004eh	; where to pass segment to CP/M 3
+                
+                **************************************************************************
+                ; Configure the number of partitions (numparX) on each LUN in your system
+                ;  and if the LUN is removable (true) or not (false).
+                **************************************************************************
+                
+ 0000 =         false	equ	0
+ FFFF =         true	equ	not false
+                
+                ; Logical Unit 0 characteristics
+                
+ 0008 =         numpar0 equ	8		; number of partitions on LUN
+                
+ 0008 =         ndev	equ	numpar0
+ 0046 =         dev0	equ	70
+                
+                *************************************************************************
+                **  PORTS AND CONSTANTS
+                *************************************************************************
+                
+ 00F2 =         GPIO	EQU	0F2H		; SWITCH 501
+                
+ 0080 =         CF	equ	080h	; CF base port
+ 0080 =         CF$BA	equ	CF+0	; CF-select port
+ 0088 =         CF$DA	equ	CF+8	; CF data port
+ 0089 =         CF$EF	equ	CF+9	; CF feature/error register
+ 008A =         CF$SC	equ	CF+10	; CF sector count
+ 008B =         CF$SE	equ	CF+11	; CF sector number	(lba7:0)
+ 008C =         CF$CL	equ	CF+12	; CF cylinder low	(lba15:8)
+ 008D =         CF$CH	equ	CF+13	; CF cylinder high	(lba23:16)
+ 008E =         CF$DH	equ	CF+14	; CF drive+head	(drive+lba27:24)
+ 008F =         CF$CS	equ	CF+15	; CF command/status
+                
+ 0001 =         ERR	equ	00000001b	; error bit in CF$CS
+ 0040 =         RDY	equ	01000000b	; ready bit in CF$CS
+ 0008 =         DRQ	equ	00001000b	; DRQ bit in CF$CS
+ 0080 =         BSY	equ	10000000b	; busy bit in CF$CS
+                
+ 0011 =         dpbl	equ	17	; length of CP/M 3.0 dpb
+ 0200 =         alvl	equ	512	; size of allocation vector
+ 0100 =         csvl	equ	256	; size of check sum vector
+ 0008 =         modlen	equ	8	; length of each mode byte table entry
+ 0013 =         datlen	equ	19	; length of each lun data entry
+CP/M RMAC ASSEM 1.1	#002	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 0010 =         bcode	equ	16	; offset in lun data of the blk code
+ 0010 =         initflg equ	16	;    "   "   "   "   of lun initialization flag
+ 0011 =         parstr	equ	17	;    "   "   "   "   of partition start of lun
+ 0012 =         numpar	equ	18	;    "   "   "   "   of the number of partitions
+                
+ 000D =         CSTRNG	EQU	13	; Offsets of data in magic sector
+ 0013 =         NPART	EQU	19
+ 0004 =         CBYTE	EQU	4
+ 0005 =         DDATA	EQU	5
+ 0003 =         DCTYPE	EQU	3
+ 0014 =         SECTBL	EQU	20
+ 002F =         DDPB	EQU	47
+                
+ 0000 =         WRALL	EQU	0	; WRITE TO ALLOCATED
+ 0001 =         WRDIR	EQU	1	; WRITE TO DIRECTORY
+ 0002 =         WRUNA	EQU	2	; WRITE TO UNALLOCATED
+ 0003 =         READOP	EQU	3	; READ OPERATION
+                
+                ***************************************************
+                	dseg	; common memory
+                
+ 0000 2B01      	dw	thread
+ 0002 4608      driv0	db	dev0,ndev
+ 0004 C38010    	jmp	init$cf
+ 0007 C39110    	jmp	login
+ 000A C33A11    	jmp	read$cf
+ 000D C37A11    	jmp	write$cf
+ 0010 1600      	dw	string
+ 0012 00004200  	dw	dphtbl,modtbl
+                
+ 0016 4838434620string: db	'H8CF ',0,'CF Interface ('
+ 002A 38        	db	ndev+'0'
+ 002B 2070617274	db	' partitions) ',0,'v3.00'
+ 003E 31202400  	dw	VERS,'$'
+                
+                ; Mode byte table for CF driver
+                
+                modtbl:
+ 0000 #         drv	set	0
+                	rept	numpar0
+                	db	1000$0000b+drv,000$00000b,00000000b,00000000b
+                	db	11111111b,11111111b,11111111b,11111111b
+                drv	set	drv+1
+                	endm
+ 0042+80000000
+ 0046+FFFFFFFF
+ 004A+81000000
+ 004E+FFFFFFFF
+ 0052+82000000
+ 0056+FFFFFFFF
+ 005A+83000000
+ 005E+FFFFFFFF
+ 0062+84000000
+ 0066+FFFFFFFF
+ 006A+85000000
+ 006E+FFFFFFFF
+CP/M RMAC ASSEM 1.1	#003	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 0072+86000000
+ 0076+FFFFFFFF
+ 007A+87000000
+ 007E+FFFFFFFF
+                
+                ; Disk parameter tables
+                
+                dpb:
+                	rept	ndev
+                	ds	dpbl
+                	endm
+ 0082+
+ 0093+
+ 00A4+
+ 00B5+
+ 00C6+
+ 00D7+
+ 00E8+
+ 00F9+
+                
+                	$-MACRO
+                ;
+                ;	ACTUAL READ-WRITE OF DATA
+                ;
+ 010A 00        bbnk:	db	0
+ 010B 0000      bdma:	dw	0
+                
+                cfrd:
+ 010D 3A0A01    	lda	bbnk
+ 0110 CD0000    	call	?bnksl
+ 0113           	inir
+ 0115           	inir
+ 0117 AF        	xra	a
+ 0118 CD0000    	call	?bnksl		; re-select bank 0
+ 011B C9        	ret
+                
+                cfwr:
+ 011C 3A0A01    	lda	bbnk
+ 011F CD0000    	call	?bnksl
+ 0122           	outir
+ 0124           	outir
+ 0126 AF        	xra	a
+ 0127 CD0000    	call	?bnksl		; re-select bank 0
+ 012A C9        	ret
+                
+ 012B =         thread	equ	$
+                
+                	cseg	; banked memory
+                	$*MACRO
+                
+                
+                ; Disk parameter headers for the CF driver
+                
+ 0000 #         ncsv	set	0
+ 0000 #         drv	set	0
+                
+CP/M RMAC ASSEM 1.1	#004	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+                dphtbl:
+                	rept	numpar0
+                	dw	0,0,0,0,@dirbf,dpb+(drv*dpbl)
+                	dw	0	; no CSV - DPB.CKS must be 8000h
+                	dw	alv+(drv*alvl)
+                drv	set	drv+1
+                	endm
+ 0000+0000000000
+ 000C+0000
+ 000E+8000
+ 0010+0000000000
+ 001C+0000
+ 001E+8002
+ 0020+0000000000
+ 002C+0000
+ 002E+8004
+ 0030+0000000000
+ 003C+0000
+ 003E+8006
+ 0040+0000000000
+ 004C+0000
+ 004E+8008
+ 0050+0000000000
+ 005C+0000
+ 005E+800A
+ 0060+0000000000
+ 006C+0000
+ 006E+800C
+ 0070+0000000000
+ 007C+0000
+ 007E+800E
+                
+                ; Allocation vectors
+                
+                alv:
+                	rept	ndev
+                	ds	alvl
+                	endm
+ 0080+
+ 0280+
+ 0480+
+ 0680+
+ 0880+
+ 0A80+
+ 0C80+
+ 0E80+
+                
+                ; Check sum vectors for removable media (none)
+                
+                csv:
+                	rept	ncsv
+                	ds	csvl
+                	endm
+                
+                	$-MACRO
+                
+CP/M RMAC ASSEM 1.1	#005	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+                ;
+                ;	DRIVER INITIALIZATION CODE
+                ;
+                
+                init$cf:
+                	; anything to do? Leave reading of magic sector until
+                	; first drive access?
+ 1080 3A4D00    	lda	nsegmt-1	; LUN
+ 1083 3C        	inr	a		; 0->01b, 1->10b
+ 1084 321712    	sta	cfsel
+ 1087 2A4E00    	lhld	nsegmt		;grab this before it's gone...
+ 108A 221812    	shld	segoff
+ 108D AF        	xra	a
+ 108E D389      	out	CF$EF		; ensure this reg is sane
+ 1090 C9        	ret
+                
+ 1091 3A4212    login:	lda	init
+ 1094 3C        	inr	a
+ 1095           	jrnz	login0
+ 1097 324212    	sta	init
+ 109A CDB410    	call	init$hard
+                login0:
+ 109D 3A1612    	lda	nparts
+ 10A0 5F        	mov	e,a
+ 10A1 3A0000    	lda	@rdrv
+ 10A4 BB        	cmp	e	; See if loging in a drive that doesn't exist
+ 10A5 D27511    	jnc	rwerr
+ 10A8 AF        	xra	a
+ 10A9 C9        	ret
+                
+                ; A=offset into bdma (@scrcb+12)
+                ; Returns HL=bdma+A
+                bufoff:
+ 10AA 2A0B01    	lhld	bdma
+ 10AD 85        	add	l
+ 10AE 6F        	mov	l,a
+ 10AF 3E00      	mvi	a,0
+ 10B1 8C        	adc	h
+ 10B2 67        	mov	h,a
+ 10B3 C9        	ret
+                
+                init$hard:
+                	; since we only have one disk, init partn table now.
+                	; read "magic sector" - LBA 0 of chosen disk segment.
+ 10B4 2A0C00    	lhld	@scrcb+12	; hstbuf - use bios scratch buffer for magic sector
+ 10B7 220B01    	shld	bdma	; is this safe now?
+ 10BA 3A0E00    	lda	@scrcb+14	; hstbnk
+ 10BD 320A01    	sta	bbnk	; is this safe now?
+ 10C0 2A1812    	lhld	segoff
+ 10C3 221A12    	shld	curlba+0
+ 10C6 210000    	lxi	h,0
+ 10C9 221C12    	shld	curlba+2		; phy sec 0 = partition table
+ 10CC CDF511    	call	stlba2		; selects CF card
+ 10CF CD4C11    	call	read$raw	; deselects CF card
+ 10D2 C0        	rnz	; error
+ 10D3 3E13      	mvi	a,NPART
+CP/M RMAC ASSEM 1.1	#006	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 10D5 CDAA10    	call	bufoff
+ 10D8 7E        	mov	a,m
+ 10D9 FE08      	cpi	numpar0
+ 10DB           	jrc	ih3
+ 10DD 3E08      	mvi	a,numpar0
+ 10DF 321612    ih3:	sta	nparts		; use all partitions (and no more)
+                	; copy over all DPBs, add PSH,PSK
+ 10E2 3E2F      	mvi	a,DDPB	; CP/M 2.2 DPBs in magic sector
+ 10E4 CDAA10    	call	bufoff
+ 10E7 118200    	lxi	d,dpb		; Our CP/M 3 DPBs
+ 10EA 3A1612    	lda	nparts
+                ih0:
+ 10ED F5        	push	psw		; num partitions
+ 10EE 010F00    	lxi	b,15	; CP/M 2.2 DPB length
+ 10F1           	ldir
+ 10F3 3E02      	mvi	a,2	; 512 byte shift, from 128 byte
+ 10F5 12        	stax	d
+ 10F6 13        	inx	d
+ 10F7 3E03      	mvi	a,3	; 512 byte mask, from 128 byte
+ 10F9 12        	stax	d
+ 10FA 13        	inx	d
+ 10FB 010600    	lxi	b,6	; skip mode bytes
+ 10FE 09        	dad	b
+ 10FF F1        	pop	psw
+ 1100 3D        	dcr	a
+ 1101           	jrnz	ih0
+                	; copy over sector (partition) offsets,
+                	; converting from LBA and 4-byte entries.
+ 1103 3E14      	mvi	a,SECTBL
+ 1105 CDAA10    	call	bufoff
+ 1108           	lxix	partbl
+ 110C 3A1612    	lda	nparts		; num entries
+ 110F 47        	mov	b,a
+ 1110 C5        ih1:	push	b
+ 1111           	lded	segoff+0; E = LBA27:24,DRV (future seg off)
+                	;		; D = LBA23:19 is segment offset, carry-in
+ 1115           	stx	e,+0	; LBA27:24,DRV is fixed
+ 1118           	inxix
+ 111A 0603      	mvi	b,3
+ 111C 7E        	mov	a,m
+ 111D E61F      	ani	00011111b	; must clear LUN bits
+ 111F 77        	mov	m,a
+                ih2:
+ 1120 1E00      	mvi	e,0
+ 1122 7E        	mov	a,m
+ 1123 23        	inx	h
+ 1124           	srlr	a	; convert 128B-secnum to 512B-secnum
+ 1126           	rarr	e	;
+ 1128           	srlr	a	;
+ 112A           	rarr	e	; E=carry-out
+ 112C B2        	ora	d	; carry-in from previous
+ 112D           	stx	a,+0
+ 1130           	inxix
+ 1132 53        	mov	d,e	; carry-out becomes next carry-in
+ 1133           	djnz	ih2
+ 1135 C1        	pop	b
+CP/M RMAC ASSEM 1.1	#007	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 1136           	djnz	ih1
+                	; anything else to do?
+ 1138 AF        	xra	a
+ 1139 C9        	ret
+                
+                ;	READ - WRITE ROUTINES
+                ;
+                ;	READ A PHYSICAL SECTOR CODE
+                ; IY=buffer header
+                read$cf:
+ 113A           	ldy	a,+14	; hstbnk
+ 113D 320A01    	sta	bbnk
+ 1140           	ldy	l,+12	; hstbuf
+ 1143           	ldy	h,+13
+ 1146 220B01    	shld	bdma
+ 1149 CDBA11    	call	set$lba		; selects CF card - all paths must deselect
+                read$raw:
+ 114C 3E20      	mvi	a,20h
+ 114E D38F      	out	CF$CS
+ 1150 DB8F      cfr0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
+ 1152           	bit	7,a		; BSY
+ 1154           	jrnz	cfr0
+ 1156           	bit	0,a		; ERR
+ 1158           	jrnz	rwerr0
+ 115A           	bit	6,a		; RDY
+ 115C           	jrz	rwerr
+ 115E           	bit	3,a		; DRQ
+ 1160           	jrz	cfr0
+ 1162 2A0B01    	lhld	bdma		; data buffer address
+ 1165 0E88      	mvi	c,CF$DA
+ 1167 0600      	mvi	b,0
+ 1169 CD0D01    	call	cfrd
+ 116C AF        	xra	a
+ 116D D380      	out	CF$BA	; deselect drive
+ 116F C9        	ret
+                
+                rwerr0:
+ 1170 DB89      	in	CF$EF
+ 1172 324312    	sta	dskerr
+                rwerr:
+ 1175 AF        	xra	a
+ 1176 D380      	out	CF$BA	; deselect drive
+ 1178 3C        	inr	a
+ 1179 C9        	ret
+                
+                ;
+                ;	WRITE A PHYSICAL SECTOR CODE
+                ; IY=buffer header
+                write$cf:
+ 117A           	ldy	a,+14	; hstbnk
+ 117D 320A01    	sta	bbnk
+ 1180           	ldy	l,+12	; hstbuf
+ 1183           	ldy	h,+13
+ 1186 220B01    	shld	bdma
+ 1189 CDBA11    	call	set$lba		; selects CF card - all paths must deselect
+ 118C 3E30      	mvi	a,30h
+CP/M RMAC ASSEM 1.1	#008	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 118E D38F      	out	CF$CS
+ 1190 DB8F      cfw0: in	CF$CS		; FIRST CHECK FOR DRIVE READY
+ 1192           	bit	7,a		; BSY
+ 1194           	jrnz	cfw0
+ 1196           	bit	6,a		; RDY
+ 1198           	jrz	rwerr
+ 119A           	bit	0,a		; ERR
+ 119C           	jrnz	rwerr0
+ 119E           	bit	3,a		; DRQ
+ 11A0           	jrz	cfw0
+ 11A2 2A0B01    	lhld	bdma		; data buffer address
+ 11A5 0E88      	mvi	c,CF$DA
+ 11A7 0600      	mvi	b,0
+ 11A9 CD1C01    	call	cfwr
+                cfw2:
+ 11AC DB8F      	in	CF$CS		; wait for not busy
+ 11AE           	bit	7,a		; BSY
+ 11B0           	jrnz	cfw2
+ 11B2           	bit	0,a		; ERR
+ 11B4           	jrnz	rwerr0
+                	; TODO: confirm DRQ also off?
+ 11B6 AF        	xra	a
+ 11B7 D380      	out	CF$BA	; deselect drive
+ 11B9 C9        	ret
+                
+                ;	CALCULATE THE REQUESTED SECTOR
+                ; IY=buffer header
+                set$lba:
+                	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
+                	; so H,D are LSB and L,E are MSB.
+ 11BA           	ldy	h,+8		; get requested track, byte-swapped
+ 11BD           	ldy	l,+9
+ 11C0 110000    	lxi	d,0
+ 11C3 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
+                stlba0:
+ 11C5           	slar	h
+ 11C7           	ralr	l
+ 11C9           	ralr	d	; can't carry out
+ 11CB           	djnz	stlba0
+                	; sector can't carry - 0-15 into vacated bits
+ 11CD           	ldy	a,+10		; get requested sector
+ 11D0 B4        	ora	h
+ 11D1 67        	mov	h,a
+ 11D2 221C12    	shld	curlba+2
+ 11D5 EB        	xchg
+ 11D6 221A12    	shld	curlba+0	; CURLBA = (@trk << 4) | @sec
+                	; compute &partbl[@rdrv]+3.
+                	; We'd like to only do this only if seldsk changes,
+                	; but we have no callback for that.
+ 11D9 3A0000    	lda	@rdrv
+ 11DC 87        	add	a
+ 11DD 87        	add	a	; *4
+ 11DE C603      	adi	3	; can't carry
+ 11E0 5F        	mov	e,a
+ 11E1 1600      	mvi	d,0
+ 11E3 211E12    	lxi	h,partbl
+CP/M RMAC ASSEM 1.1	#009	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 11E6 19        	dad	d
+ 11E7 EB        	xchg		; DE = &partbl[@rdrv]+3
+                	; add 32-bit values CURLBA += PARTBL[@rdrv]
+ 11E8 211D12    	lxi	h,curlba+3
+ 11EB AF        	xra	a	; clear CY
+ 11EC 0604      	mvi	b,4
+                stlba1:
+ 11EE 1A        	ldax	d
+ 11EF 8E        	adc	m
+ 11F0 77        	mov	m,a
+ 11F1 2B        	dcx	h
+ 11F2 1B        	dcx	d
+ 11F3           	djnz	stlba1
+                stlba2:	; setup controller regs from CURLBA
+ 11F5 3A1712    	lda	cfsel
+ 11F8 D380      	out	CF$BA	; card is selected now... errors must deselect
+ 11FA 211A12    	lxi	h,curlba
+ 11FD 7E        	mov	a,m
+ 11FE F6E0      	ori	11100000b	; LBA mode, etc
+ 1200 D38E      	out	CF$DH
+ 1202 23        	inx	h
+ 1203 7E        	mov	a,m
+ 1204 D38D      	out	CF$CH
+ 1206 23        	inx	h
+ 1207 7E        	mov	a,m
+ 1208 D38C      	out	CF$CL
+ 120A 23        	inx	h
+ 120B 7E        	mov	a,m
+ 120C D38B      	out	CF$SE
+ 120E 3E01      	mvi	a,1
+ 1210 D38A      	out	CF$SC	; always 1 sector at a time
+ 1212 AF        	xra	a
+ 1213 D389      	out	CF$EF	; feature always zero?
+ 1215 C9        	ret
+                
+                ;
+                ;	DATA BUFFERS AND STORAGE
+                ;
+                
+ 1216 00        nparts:	db	0	; number of partitions we used
+ 1217 00        cfsel:	db	0	; bits to select current CF card
+ 1218 0000      segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
+ 121A 00000000  curlba:	db	0,0,0,0
+                
+                ; Partition start LBAs for each partition.
+                ; Loaded from the magic sector, converted to LBA.
+                
+                partbl:
+ 121E 00000000  	db	0,0,0,0
+ 1222 00000000  	db	0,0,0,0
+ 1226 00000000  	db	0,0,0,0
+ 122A 00000000  	db	0,0,0,0
+ 122E 00000000  	db	0,0,0,0
+ 1232 00000000  	db	0,0,0,0
+ 1236 00000000  	db	0,0,0,0
+ 123A 00000000  	db	0,0,0,0
+CP/M RMAC ASSEM 1.1	#010	CF - DRIVER FOR MMS MP/M WITH CF INTERFACE
+
+ 123E 00000000  	db	0,0,0,0
+                
+ 1242 FF        init:	db	0ffh	; one-time initialization
+ 1243 00        dskerr:	db	0
+                
+ 1244           	END
+

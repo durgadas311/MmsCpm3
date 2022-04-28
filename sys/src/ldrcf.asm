@@ -364,8 +364,8 @@ SET$LBA:
 	mvi	b,4		; shift 4 bits left (16 psec/trk)
 stlba0:
 	slar	h
-	rarr	l
-	rarr	d	; can't carry out
+	ralr	l
+	ralr	d	; can't carry out
 	djnz	stlba0
 	; sector can't carry - 0-15 into vacated bits
 	lda	REQSEC		; GET REQUESTED SECTOR
