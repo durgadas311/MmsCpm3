@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	29
+beta	equ	30
 
 z180	equ	false
 h8nofp	equ	false
@@ -697,6 +697,7 @@ gbooty:
 	mvi	b,0
 	inx	h	; first byte of string...
 	dad	b	; point to end (TRM)
+	inr	c	; +1 for TRM
 btstr1:
 	mov	a,m
 	push	psw
