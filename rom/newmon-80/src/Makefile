@@ -27,13 +27,13 @@ VERN = $(shell awk -f ../../newmon/src/getver.awk h8core.asm)
 
 all: $(ROMS)
 
-ram.lib core.lib:
+ram.lib core.lib setup.lib:
 	ln -s ../../newmon/src/$@ $@
 
 sys:
 	$(MAKE) -C rmac all
 
-zout/%.cim: %.asm core.lib ram.lib
+zout/%.cim: %.asm core.lib ram.lib setup.lib
 	zmac --dri -i -8 -c -s -n $<
 	cp $@ ../bin
 	cp zout/$*.lst ../prn

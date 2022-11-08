@@ -133,24 +133,11 @@ rst7:	jmp	vrst7
 	jmp	conin1	; 004a - without kaypad or DEL
 
 intret:
-	pop	psw
-	pop	psw
-	pop	b
-	pop	d
-	pop	h
-	popix
-	popiy
-	exx
-	exaf
-	pop	b	; I,R - R cannot be restored
-	mov	a,b
-	stai
+	pop	psw	; discard SP?
 	pop	psw
 	pop	b
 	pop	d
 	pop	h
-	exx
-	exaf
 nulint:
 	ei
 	ret
@@ -163,36 +150,20 @@ int1$cont:
 	jmp	int1$fp
 
 intsetup:
-	exx
-	exaf
-	xthl	; HL=PC (ret adr)
-	push	d
-	push	b
-	push	psw
-	ldar
-	mov	c,a
-	ldai
-	mov	b,a
-	push	b
-	pushiy
-	pushix
-	push	h	; save PC
-	exx
-	exaf
-	xthl		; HL=PC
-	push	d
-	push	b
-	push	psw
+	xthl	; HL=PC (ret adr) [HL]
+	push	d		; [HL DE]
+	push	b		; [HL DE BC]
+	push	psw		; [HL DE BC AF]
 	xchg		; DE=PC
 	lxi	h,nReg-2
 	dad	sp
-	push	h
-	push	d	; save PC
+	push	h		; [HL DE BC AF SP]
+	push	d	; save PC (ret adr)
 	lxi	d,ctl$F0
 	ldax	d
 	cma
-	ani	030h
-	rz
+	ani	030h	; org0 or mem1
+	rz		; return to caller...
 	lxi	h,2
 	dad	sp
 	shld	monstk	; a.k.a. RegPtr
@@ -233,7 +204,7 @@ cmchr:	lxi	h,cmdtab
 cmloop:
 	cmp	m
 	inx	h
-	jrz	docmd
+	jz	docmd
 	inx	h
 	inx	h
 	djnz	cmloop
@@ -305,7 +276,7 @@ cmdpc:
 	dcx	h
 	xchg		; HL=PC, DE=adr to store
 	call	inhexcr
-	jrc	cmdpc0	; hex digit entered
+	jc	cmdpc0	; hex digit entered
 	call	adrnl	; show current PC (HL)
 	call	inhexcr	; get another char
 	rnc	; CR entered, don't update value
@@ -359,7 +330,7 @@ error:
 	sta	MFlag
 	in	0f2h
 	ani	00000011b
-	jrnz	error0
+	jnz	error0
 	out	07fh	; clear H17 ctrl port (A=0)
 error0:
 	jmp	re$entry
@@ -388,7 +359,7 @@ gtdev2:
 	in	0f2h
 	rrc
 	rrc
-	jr	gtdev0	; rest are same
+	jmp	gtdev0	; rest are same
 
 ; determine default boot device.
 gtdfbt:
@@ -396,9 +367,9 @@ gtdfbt:
 	in	0f2h
 	ani	01110000b	; default boot selection
 	cpi	00100000b	; device at 07CH
-	jrz	gtdev1
+	jz	gtdev1
 	cpi	00110000b	; device at 078H
-	jrz	gtdev2
+	jz	gtdev2
 	jmp	gtdvtb		; get MMS device
 
 ; Check SW501 for installed device.
@@ -430,7 +401,7 @@ delay:
 	add	m
 delay0:
 	cmp	m
-	jrnz	delay0
+	jnz	delay0
 	pop	h
 	ret
 
@@ -460,7 +431,7 @@ cmdboot:
 	sta	cport
 	lxi	sp,bootbf
 	mvi	c,CR	; end input on CR
-	jr	boot0
+	jmp	boot0
 
 	rept	0260h-$
 	db	0ffh
@@ -474,7 +445,7 @@ hhorn:	push	h
 	lxi	h,horn
 	xra	a
 hhorn0:	cmp	m
-	jrnz	hhorn0
+	jnz	hhorn0
 	pop	h
 	ret
 bterr:
@@ -487,11 +458,11 @@ boot0:
 	; boot by letter... Boot alpha-
 	ani	05fh ; toupper
 	cpi	'A'
-	jrc	bterr
+	jc	bterr
 	cpi	'Z'+1
-	jrnc	bterr
+	jnc	bterr
 	cpi	'A'
-	jrc	bterr
+	jc	bterr
 	call	conout
 	call	conout
 	cpi	'B'
@@ -510,13 +481,13 @@ gotit:
 	mvi	e,0
 	mvi	a,'-'	; next is optional unit number...
 	call	conout
-	jr	luboot0
+	jmp	luboot0
 
 ; verify port is set
 ; IX=boot module (in memory)
 vfport:	ldx	a,mdport
 	ora	a
-	jrnz	vfp0
+	jnz	vfp0
 	lda	cport	; if btinit did not set, we can't go on
 	ora	a
 	rnz
@@ -530,22 +501,22 @@ lunerr:
 	call	belout
 luboot0:
 	call	hexin
-	jrnc	luboot2	; valid HEX digit...
+	jnc	luboot2	; valid HEX digit...
 	cmp	c
-	jrz	goboot
+	jz	goboot
 	cpi	':'
-	jrz	colon
+	jz	colon
 	cpi	' '
-	jrz	space
-	jr	lunerr
+	jz	space
+	jmp	lunerr
 luboot2:
 	call	E$x16$A
-	jrc	lunerr
+	jc	lunerr
 	call	conout
-	jr	luboot0
+	jmp	luboot0
 space:
 	call	conout
-	jr	luboot0	; TODO: this gets dodgy if spaces between digits.
+	jmp	luboot0	; TODO: this gets dodgy if spaces between digits.
 
 colon:	; get arbitrary string as last boot param
 	call	conout	; echo ':'
@@ -570,7 +541,7 @@ gbooty:
 	lxi	h,bootbf
 	mov	a,m
 	cpi	0c3h
-	jrz	gboot0
+	jz	gboot0
 	mov	c,a	; length
 	mvi	b,0
 	inx	h	; first byte of string...
@@ -582,7 +553,7 @@ btstr1:
 	inx	sp	; undo half of push
 	dcx	h
 	dcr	c
-	jrnz	btstr1
+	jnz	btstr1
 gboot0:
 	pushiy	; error routine
 ; IX=boot module (in memory)
@@ -618,12 +589,12 @@ init:
 	lxi	h,0
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
-	ldir
+	call	ldir
 	; save config data
 	lxi	h,suadr
 	lxi	d,susave
 	lxi	b,sumax
-	ldir
+	call	ldir
 	lxi	h,re$entry
 	push	h
 	call	hwinit
@@ -652,22 +623,22 @@ cmdsub0:
 	call	spout
 cmdsub1:
 	call	hexin
-	jrnc	cmdsub4
+	jnc	cmdsub4
 	cpi	CR
-	jrz	cmdsub2
+	jz	cmdsub2
 	cpi	'-'
-	jrz	cmdsub3
+	jz	cmdsub3
 	cpi	'.'
 	rz
 	call	belout
-	jr	cmdsub1
+	jmp	cmdsub1
 cmdsub2:
 	inx	h
-	jr	cmdsub0
+	jmp	cmdsub0
 cmdsub3:
 	call	conout
 	dcx	h
-	jr	cmdsub0
+	jmp	cmdsub0
 cmdsub4:
 	mvi	m,000h
 cmdsub5:
@@ -675,8 +646,8 @@ cmdsub5:
 	call	hexbin
 	rld
 	call	inhexcr
-	jrnc	cmdsub2
-	jr	cmdsub5
+	jnc	cmdsub2
+	jmp	cmdsub5
 
 inhexcr:
 	call	conin
@@ -686,7 +657,7 @@ inhexcr:
 	cmc
 	rc
 	call	belout
-	jr	inhexcr
+	jmp	inhexcr
 
 belout:
 	mvi	a,BEL
@@ -695,7 +666,7 @@ conout:
 conot1:
 	in	0edh
 	ani	00100000b
-	jrz	conot1
+	jz	conot1
 	pop	psw
 	out	0e8h
 	ret
@@ -737,7 +708,7 @@ adrin:
 	stc
 adrin0:	cnc	conin
 	call	hexchk
-	jrc	adrin1
+	jc	adrin1
 	call	conout
 	call	hexbin
 	dad	h
@@ -746,13 +717,13 @@ adrin0:	cnc	conin
 	dad	h
 	ora	l
 	mov	l,a
-	jr	adrin0
+	jmp	adrin0
 adrin1:
 	cmp	d
-	jrz	adrin2
+	jz	adrin2
 	call	belout
 	ora	a
-	jr	adrin0
+	jmp	adrin0
 adrin2:
 	call	conout
 	xchg
@@ -764,7 +735,7 @@ adrin2:
 
 hexbin:
 	sui	'9'+1
-	jrnc	hexbi0
+	jnc	hexbi0
 	adi	7
 hexbi0:
 	adi	3
@@ -819,7 +790,7 @@ coninit:
 	mvi	c,12	; 9600 baud
 	in	0f2h
 	ani	10000000b	; 9600/19.2K?
-	jrz	ci0
+	jz	ci0
 	mvi	c,6	; 19.2K baud
 ci0:	mvi	a,083h
 	out	0ebh
@@ -852,7 +823,7 @@ cmdmt:
 	dad	sp
 	mov	a,h
 	inr	a
-	jrz	cmdmt0
+	jz	cmdmt0
 	sui	020h
 cmdmt0:
 	mov	h,a
@@ -869,7 +840,7 @@ cmdmt0:
 	lxi	h,mtest0
 	lxi	d,memtest - (mtest1-mtest0)
 	lxi	b,mtestZ-mtest0
-	ldir
+	call	ldir
 	lxi	d,memtest
 	lxi	h,mtest1
 	mvi	c,mtestZ-mtest1
@@ -886,11 +857,11 @@ cmdmt1:
 	inx	h
 	inx	d
 	dcr	c
-	jrnz	cmdmt1
+	jnz	cmdmt1
 	mov	c,a
 	exaf
 	cmp	c
-	jrnz	cserr
+	jnz	cserr
 	di
 	lda	ctl$F2
 	ani	ctl$SPD	; all but speed bits OFF
@@ -930,9 +901,9 @@ mtest2:
 mtest3:
 	in	0edh
 	ani	020h
-	jrz	mtest3
+	jz	mtest3
 	dcr	b
-	jrnz	mtest2
+	jnz	mtest2
 	mvi	a,CR
 	out	0e8h
 	exx
@@ -942,10 +913,10 @@ mtest4:
 	adi	1
 	daa
 	inr	l
-	jrnz	mtest4
+	jnz	mtest4
 	inr	h
 	dcr	c
-	jrnz	mtest4
+	jnz	mtest4
 	mov	a,h
 	sub	d
 	mov	c,a
@@ -954,14 +925,14 @@ mtest4:
 	mov	a,b
 mtest5:
 	cmp	m
-	jrnz	mtest9
+	jnz	mtest9
 	adi	1
 	daa
 	inr	l
-	jrnz	mtest5
+	jnz	mtest5
 	inr	h
 	dcr	c
-	jrnz	mtest5
+	jnz	mtest5
 	exx
 	lxi	h,memtest
 	lxi	d,0
@@ -970,9 +941,9 @@ mtest5:
 	mov	a,d
 	xri	030h
 	mov	d,a
-	jrz	mtest6
+	jz	mtest6
 	mov	c,e
-	jr	mtest7
+	jmp	mtest7
 mtest6:
 	mvi	c,030h
 	mvi	a,001h
@@ -984,7 +955,7 @@ mtest6:
 	exx
 mtest7:
 	exx
-	ldir
+	call	ldir
 	mov	a,d
 	ani	0f0h
 	mov	h,a
@@ -995,11 +966,11 @@ mtest8:
 	add	m
 	inx	h
 	dcr	c
-	jrnz	mtest8
+	jnz	mtest8
 	mov	c,a
 	exaf
 	cmp	c
-	jrnz	mtestE
+	jnz	mtestE
 	exaf
 	mov	a,d
 	ani	0f0h
@@ -1014,7 +985,7 @@ mtest9:
 mtestA:
 	in	0edh
 	ani	020h
-	jrz	mtestA
+	jz	mtestA
 	mvi	c,2
 	mvi	b,4
 mtestB:
@@ -1032,7 +1003,7 @@ mtestB:
 mtestC:
 	in	0edh
 	ani	020h
-	jrz	mtestC
+	jz	mtestC
 	dad	h
 	dad	h
 	dad	h
@@ -1043,39 +1014,39 @@ mtestC:
 mtestD:
 	in	0edh
 	ani	020h
-	jrz	mtestD
+	jz	mtestD
 	dcr	c
 	xchg
 	mvi	b,002h
-	jrnz	mtestB
+	jnz	mtestB
 	mvi	a,'*'
 	out	0e8h
-	jr	mtestG
+	jmp	mtestG
 mtestE:
 	in	0edh
 	ani	020h
-	jrz	mtestE
+	jz	mtestE
 	mvi	a,LF
 	out	0e8h
 mtestF:
 	in	0edh
 	ani	020h
-	jrz	mtestF
+	jz	mtestF
 	mvi	a,'!'
 	out	0e8h
 mtestG:
 	in	0edh
 	ani	020h
-	jrz	mtestG
+	jz	mtestG
 	xra	a
 	mvi	b,0fah
 mtestH:
 	dcr	a
-	jrnz	mtestH
+	jnz	mtestH
 	djnz	mtestH
 	mvi	a,BEL
 	out	0e8h
-	jr	mtestG
+	jmp	mtestG
 ; End of relocated code
 mtestZ	equ	$
 ;------------------------------------------------
@@ -1148,7 +1119,7 @@ kpsst:	; entry point for keypad SI command
 	xri	00010000b	; toggle single-step = enable
 	out	0f0h
 	sta	ctl$F0
-	jr	cmdgo1
+	jmp	cmdgo1
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; HL=prompt message, ends with CRLF
@@ -1236,7 +1207,7 @@ nocmd:
 	mvi	b,0	; no boot modules
 	lxi	h,bfchr
 	call	bfind
-	jrc	cmerr
+	jc	cmerr
 	lda	lstcmd
 	call	conout
 	jmp	cmexec
@@ -1273,7 +1244,7 @@ kpubt:
 	mvi	b,-1	; boot modules only
 	lxi	h,bfkey
 	call	bfind
-	jrc	deverr
+	jc	deverr
 	pushix
 	pop	b	; b = IXh
 	mvi	c,mddisp
@@ -1283,7 +1254,7 @@ kpubt:
 	; determine if fixed port...
 	ldx	a,mdport
 	ora	a
-	jrnz	gotprt
+	jnz	gotprt
 	lxi	b,dPor
 	call	mov3dsp
 	call	keyin	; get port
@@ -1333,17 +1304,17 @@ bterr0:
 	adi	25	; 50mS
 bterr2:
 	cmp	m
-	jrnz	bterr2
+	jnz	bterr2
 	ldax	d
 	xra	c	; beep off
 	stax	d
 	mov	a,m
 	adi	-1
 bterr1:	cmp	m
-	jrz	bterr0
+	jz	bterr0
 	lda	kpchar
 	cpi	01101111b	; raw pattern for '*' or CANCEL
-	jrnz	bterr1
+	jnz	bterr1
 	xra	a
 	sta	kpchar
 	lxi	h,MFlag
@@ -1366,7 +1337,7 @@ kppbt:	; primary boot (default boot)
 	cpi	0ffh
 	jz	kperr
 	cpi	0feh
-	jrz	kppbt0
+	jz	kppbt0
 kpbt0:
 	xra	a
 	sta	cport
@@ -1394,9 +1365,9 @@ kpsbt:	; secondary boot
 	call	dfboot0
 	jc	kperr
 	ora	a
-	jrz	kpbt1
+	jz	kpbt1
 	call	galtbt
-	jr	kpbt0
+	jmp	kpbt0
 
 kppbt0:	lxi	h,susave+dpdev
 	call	dfboot0
@@ -1459,7 +1430,7 @@ kprdx:	; choose radix for display
 	lda	Radix
 	ora	a
 	cma		; 00->ff
-	jrz	rdx0
+	jz	rdx0
 	xra	a	; else 00
 rdx0:	sta	Radix		; 00       ff
 	ani	00010011b	; 00->00,  ff->13
@@ -1482,7 +1453,7 @@ kpnxt:	; next register/memory addr
 	lhld	ABUSS
 	lxi	d,RegI
 	inx	h
-	jrz	sae
+	jz	sae
 	ldax	d
 	adi	2
 	stax	d
@@ -1498,7 +1469,7 @@ kpprv:	; previous register/memory addr
 	lhld	ABUSS
 	lxi	d,RegI
 	dcx	h
-	jrz	sae
+	jz	sae
 	ldax	d
 	sui	2
 	stax	d
@@ -1530,7 +1501,7 @@ kprgm:	; switch to register mode
 	call	keyin
 	ani	01111111b
 	cpi	(nReg-1)/2	; PC requires spcl
-	jrc	reg0
+	jc	reg0
 	sub	3		; gap in codes?
 	cpi	12		; was 15...
 	jnz	kperr	; TODO: proper handling
@@ -1545,14 +1516,14 @@ kpcmd:	; A=keypad command, +80h
 	mov	b,a
 	lda	DspMod
 	rrc	; CY=alter mode
-	jrc	kpalter	; alter mode - numeric values only
+	jc	kpalter	; alter mode - numeric values only
 	mov	a,b
 	jmp	cmchr
 ; A=DspMod >> 1, B=key
 kpalter:
 	lhld	ABUSS
 	rrc	; register (else memory)
-	jrc	kpreg
+	jc	kpreg
 	stc
 	call	iob
 	inx	h
@@ -1581,7 +1552,7 @@ iob:	rarr	c	; save CY => C bit 7
 	lda	Radix
 	ora	a
 	mov	a,b
-	jrz	ioboct
+	jz	ioboct
 ; iobhex - to avoid conflict with cmd keys A-F, first input must be [0]
 ; So, hex input requires 3 or 5 + 1 keys.
 	ralr	c	; restore CY
@@ -1601,8 +1572,8 @@ iobh0:	call	keyin
 	ora	e	; also ensure NC for loop
 	mov	m,a
 	dcr	d
-	jrnz	iobh0
-	jr	iob0
+	jnz	iobh0
+	jmp	iob0
 ioboct:
 	ralr	c	; restore CY
 	mvi	d,3
@@ -1619,7 +1590,7 @@ iobo0:	cnc	keyin
 	ora	e	; also ensure NC for loop
 	mov	m,a
 	dcr	d
-	jrnz	iobo0
+	jnz	iobo0
 iob0:
 	; TODO: blip to ack entry?
 	ret
@@ -1630,7 +1601,7 @@ h17init:
 	di
 	in	0f2h
 	ani	00000011b	; port 7C - only one for H17
-	jrnz	h17in0
+	jnz	h17in0
 	xra	a
 	out	07fh	; avoid this if H17 not configured
 h17in0:	push	d
@@ -1639,13 +1610,13 @@ h17in0:	push	d
 	lxi	h,R$CONST
 	lxi	d,D$CONST
 	lxi	b,88
-	ldir
+	call	ldir
 	mov	l,e
 	mov	h,d
 	inx	d
 	mvi	c,30
 	mov	m,a
-	ldir	; fill l20a0h...
+	call	ldir	; fill l20a0h...
 	mvi	a,7
 	lxi	h,intvec	; vector area
 h17ini0:
@@ -1656,14 +1627,14 @@ h17ini0:
 	mvi	m,HIGH (nulint-rst0)
 	inx	h
 	dcr	a
-	jrnz	h17ini0
+	jnz	h17ini0
 	pop	d
 	ret
 
 waitcr:
 	call	conin
 	cpi	CR
-	jrnz	waitcr
+	jnz	waitcr
 crlf:
 	mvi	a,CR
 	call	conout
@@ -1676,21 +1647,21 @@ msgout:
 	rz
 	call	conout
 	inx	h
-	jr	msgout
+	jmp	msgout
 
 ; called in the context of a command on console
 conin:	in	0edh
 	rrc
-	jrc	conin0
+	jc	conin0
 	; flush out VDIP1 while we wait...
 	in	0dah	; VDIP1/FT245R status
 	ani	00001000b	; VDIP1 RxR
-	jrz	novdip2
+	jz	novdip2
 	in	0d9h	; flush char
 novdip2:
 	lda	kpchar
 	ora	a
-	jrz	conin
+	jz	conin
 	; cancel console cmd, leave keypad char for cmdin
 	jmp	start
 
@@ -1703,7 +1674,7 @@ conin0:	in	0e8h
 ; Pure console input, no tricks
 conin1:	in	0edh
 	rrc
-	jrnc	conin1
+	jnc	conin1
 	in	0e8h
 	ani	07fh
 	ret
@@ -1711,10 +1682,10 @@ conin1:	in	0edh
 ; called in the context of command on front-panel
 keyin:	lda	kpchar
 	ora	a
-	jrnz	getkey
+	jnz	getkey
 	in	0edh
 	rrc
-	jrnc	keyin
+	jnc	keyin
 	; cancel kaypad cmd, leave console char for cmdin
 	; TODO: what modes need reset?
 	jmp	start
@@ -1723,26 +1694,26 @@ keyin:	lda	kpchar
 cmdin:
 	in	0edh
 	rrc
-	jrc	conin0
+	jc	conin0
 	; flush out VDIP1 while we wait...
 	in	0dah	; VDIP1/FT245R status
 	ani	00001000b	; VDIP1 RxR
 	; INS8250 IIR always 0
 	; 16550 IIR is RxD timeout (?)
 	; 16C2550 ISR is RxD timeout (?)
-	jrz	novdip1
+	jz	novdip1
 	in	0d9h	; flush char
 novdip1:
 	lda	kpchar
 	ora	a
-	jrz	cmdin
+	jz	cmdin
 getkey:	push	psw	; A=scan code
 	xra	a
 	sta	kpchar
 	pop	psw
 	xri	11111110b
 	rrc
-	jrnc	gotkey
+	jnc	gotkey
 	rrc
 	rrc
 	rrc
@@ -1756,7 +1727,7 @@ gotkey:	ani	00001111b
 kpchk:	lxi	h,RckA
 	in	0f0h
 	cmp	m	; RckA
-	jrnz	kpchk0
+	jnz	kpchk0
 	ani	00010001b
 	cpi	00010001b
 	rz	; nothing pressed
@@ -1788,7 +1759,7 @@ ufd:	mvi	a,mfl$DDU
 	mov	a,m
 	ani	00000010b
 	lhld	ABUSS
-	jrz	ufd1	; displaying memory
+	jz	ufd1	; displaying memory
 	; displaying registers
 	call	lra	; locate register address offset (DE)
 	push	h
@@ -1813,7 +1784,7 @@ ufd1:	push	psw
 	call	dod
 	pop	psw
 	ldax	d
-	jrz	dod	; if displaying memory
+	jz	dod	; if displaying memory
 	; displaying register name
 	pop	b
 	lxi	d,Dleds
@@ -1823,7 +1794,7 @@ mvb:	ldax	b
 	inx	b
 	inx	d
 	dcr	l
-	jrnz	mvb
+	jnz	mvb
 	ret
 
 ; B=dot flag
@@ -1831,7 +1802,7 @@ dod:	mov	c,a	; value to display
 	lda	Radix
 	ora	a	; Z if octal (also CY=0)
 	mov	a,c
-	jrnz	dodhex
+	jnz	dodhex
 	push	d
 	mvi	c,3
 dodr5:	ral
@@ -1855,7 +1826,7 @@ dodr5:	ral
 	mov	b,a
 	pop	psw
 	dcr	c
-	jrnz	dodr5
+	jnz	dodr5
 	pop	d
 	ret
 
@@ -1881,7 +1852,7 @@ deh55:	rlc
 	rlcr	b
 	pop	psw
 	dcr	c
-	jrnz	deh55
+	jnz	deh55
 	pop	d
 	mvi	a,01101111b	; "_"
 	xra	b		; DP on/off
@@ -1899,13 +1870,6 @@ dPSW:	db	11111111b,10010000b,10011100b	; " AF"
 dBC:	db	11111111b,10000110b,10001101b	; " BC"
 dDE:	db	11111111b,11000010b,10001100b	; " DE"
 dHL:	db	11111111b,10010010b,10001111b	; " HL"
-dIX:	db	11111111b,11110011b,10110110b	; " IX"
-dIY:	db	11111111b,11110011b,11011110b	; " IY"
-dIR:	db	11111111b,11110011b,11010011b	; " IR"
-dPSWp:	db	10010000b,10011100b,10111111b	; "AF'"
-dBCp:	db	10000110b,10001101b,10111111b	; "BC'"
-dDEp:	db	11000010b,10001100b,10111111b	; "DE'"
-dHLp:	db	10010010b,10001111b,10111111b	; "HL'"
 dPC:	db	11111111b,10011000b,11001110b	; " PC"
 
 dDev:	db	11000010b,10001100b,10000011b	; "dEU" (dev)
@@ -1923,14 +1887,7 @@ LedRegTbl:
 	dw	dBC	; 2
 	dw	dDE	; 3
 	dw	dHL	; 4
-	dw	dIX	; 5	- TODO
-	dw	dIY	; 6	- TODO
-	dw	dIR	; 7	- TODO
-	dw	dPSWp	; 8	- TODO
-	dw	dBCp	; 9	- TODO
-	dw	dDEp	; 10	- TODO
-	dw	dHLp	; 11	- TODO
-	dw	dPC	; 12	- 5
+	dw	dPC	; 5
 nReg	equ	$-LedRegTbl	; 2x num registers...
 
 lra:	lda	RegI
@@ -1948,7 +1905,7 @@ md0:	ldax	b
 	inx	b
 	inx	d
 	dcr	l
-	jrnz	md0
+	jnz	md0
 	ret
 
 clrdisp:
@@ -1958,7 +1915,7 @@ clrdisp:
 	lxi	b,9-1
 	mvi	m,11111111b
 	inx	d
-	ldir
+	call	ldir
 	ret
 
 ; Front panel display refresh and keypad check
@@ -1974,9 +1931,9 @@ int1$fp:
 	lxi	h,horn
 	mov	a,m
 	ora	a
-	jrz	fp1
+	jz	fp1
 	dcr	m
-	jrnz	fp1
+	jnz	fp1
 	mvi	c,10000000b	; beep off
 fp1:
 	lxi	h,MFlag
@@ -1986,10 +1943,10 @@ fp1:
 	ora	c	; beep off bit
 	mov	m,a
 	bit	6,b	; refresh display?
-	jrnz	fp3
+	jnz	fp3
 	inx	h	; Refind
 	dcr	m
-	jrnz	fp2
+	jnz	fp2
 	mvi	m,9
 fp2:	mov	e,m	; 1-9
 	mvi	d,0
@@ -2046,7 +2003,7 @@ bfchr:	ldx	a,+2	; phy drv or type
 	sui	200	; boot modules < 200
 	sbb	a	; ff=boot, 00=cmd
 	cmp	b	; ZR=match
-	jrnz	bfn0
+	jnz	bfn0
 	ldx	a,mdchr
 	cmp	c
 	ret
@@ -2057,7 +2014,7 @@ bfkey:	ldx	a,+2	; phy drv or type
 	sui	200	; boot modules < 200
 	sbb	a	; ff=boot, 00=cmd
 	cmp	b	; ZR=match
-	jrnz	bfn0
+	jnz	bfn0
 	ldx	a,mdkey
 	cmp	c
 	ret
@@ -2067,11 +2024,11 @@ bfkey:	ldx	a,+2	; phy drv or type
 ; Only for boot modules
 bfnum:	ldx	a,mdbase	; phy drv or type
 	cpi	200	; boot modules < 200
-	jrnc	bfn0	; skip if >= 200
+	jnc	bfn0	; skip if >= 200
 	mov	a,c
 	subx	mdbase
 	ora	a
-	jrnz	bfn0
+	jnz	bfn0
 	xra	a
 	ret
 bfn0:	xra	a
@@ -2082,7 +2039,7 @@ bfn0:	xra	a
 ; On first module, C=0
 bflst:	ldx	a,mdbase	; phy drv or type
 	cpi	200	; boot modules < 200
-	jrnc	bfn0
+	jnc	bfn0
 	mov	a,c
 	ora	a
 	mvi	a,','
@@ -2099,17 +2056,17 @@ bflst:	ldx	a,mdbase	; phy drv or type
 	dad	d
 	call	msgout
 	lxi	h,bflst
-	jr	bfn0	; NZ - keep going
+	jmp	bfn0	; NZ - keep going
 
 ; List only boot modules
 bfllst:	ldx	a,mdbase	; phy drv or type
 	cpi	200	; boot modules < 200
-	jrnc	bfn0
+	jnc	bfn0
 	mov	a,b
 	subx	mdbase
 	ora	a
 	mvi	a,' '
-	jrnz	bfll2
+	jnz	bfll2
 	mvi	a,'*'
 bfll2:	call	conout
 	pushix
@@ -2125,7 +2082,7 @@ bfll2:	call	conout
 	call	conout
 	ldx	a,mdkey
 	adi	'0'
-	jrnc	bfll0
+	jnc	bfll0
 	mvi	a,'-'
 bfll0:	call	conout
 	mvi	a,' '
@@ -2163,19 +2120,19 @@ bfind0:
 	out	0f2h
 	lxix	btmods	; start of modules...
 bf0:	call	icall
-	jrz	bf9
+	jz	bf9
 	ldx	d,mdpgs
 	mvi	e,0
 	dadx	d
 	pushix
 	pop	psw	; A=IXh
 	cpi	HIGH bterom	; end of ROM
-	jrnc	bf1
+	jnc	bf1
 	ldx	a,mdpgs
 	ora	a
-	jrz	bf1
+	jz	bf1
 	cpi	0ffh
-	jrnz	bf0
+	jnz	bf0
 bf1:
 	pop	psw
 	out	0f2h
@@ -2193,7 +2150,7 @@ bf9:	; match found, now load into place and init
 	mvi	c,0
 	push	d
 	; TODO: avoid redundant load... and init?
-	ldir
+	call	ldir
 	popix	; module load addr
 	; now call init routine... but must restore RAM...
 	pop	psw
@@ -2257,7 +2214,7 @@ A$boot:
 	cpi	0ffh
 	jz	s501er
 	cpi	0feh
-	jrnz	findit
+	jnz	findit
 	lxi	h,susave+dpdev
 	mov	a,m
 	inx	h
@@ -2311,7 +2268,7 @@ dfboot0:	; HL=setup data for pri or sec
 	mov	a,m
 	inx	h
 	cpi	0ffh
-	jrnz	dfbt0
+	jnz	dfbt0
 	xra	a
 dfbt0:	cmpx	mdluns
 	cmc
@@ -2319,7 +2276,7 @@ dfbt0:	cmpx	mdluns
 	mov	e,a	; DE=phy drv base,unit
 	mov	a,m
 	cpi	0ffh	; no string?
-	jrz	dfbt2
+	jz	dfbt2
 	push	d
 	lxi	d,bootbf+1	; len in +0...
 	mvi	c,0
@@ -2329,7 +2286,7 @@ dfbt1:	mov	a,m
 	inx	d
 	inr	c
 	ora	a
-	jrnz	dfbt1
+	jnz	dfbt1
 	mov	a,c
 	dcr	a
 	sta	bootbf
@@ -2386,10 +2343,20 @@ savram0:		; total: 24 cy
 	lxi	h,08000h
 	lxi	d,08000h
 	lxi	b,16*1024
-	ldir
+	call	ldir
 	; de-init mmu
 	mvi	a,0
 	out	rd00k	; turn off MAP bit, back to normal
+	ret
+
+ldir:	mov	a,m
+	stax	d
+	inx	h
+	inx	d
+	dcx	b
+	mov	a,b
+	ora	c
+	jnz	ldir
 	ret
 
 linix:	mvi	m,0	; terminate buffer
@@ -2402,28 +2369,28 @@ linin:
 	mvi	b,0	; count chars
 lini0	call	conin	; handles DEL (cancel)
 	cpi	CR
-	jrz	linix
+	jz	linix
 	cpi	BS
-	jrz	backup
+	jz	backup
 	cpi	' '
-	jrc	chrnak
+	jc	chrnak
 	cpi	'~'+1
-	jrnc	chrnak
+	jnc	chrnak
 chrok:	mov	m,a
 	inx	h
 	inr	b
 	jm	chrovf	; 128 chars max
 	call	conout
-	jr	lini0
+	jmp	lini0
 chrovf:	dcx	h
 	dcr	b
 chrnak:	mvi	a,BEL
 	call	conout
-	jr	lini0
+	jmp	lini0
 backup:
 	mov	a,b
 	ora	a
-	jrz	lini0
+	jz	lini0
 	dcr	b
 	dcx	h
 	mvi	a,BS
@@ -2432,7 +2399,7 @@ backup:
 	call	conout
 	mvi	a,BS
 	call	conout
-	jr	lini0
+	jmp	lini0
 
 ; Used during entry of LUN in boot command.
 ; multiply E by 16, check for >= (IX+mdnum) (or overflow)
@@ -2452,11 +2419,11 @@ E$x16$A:
 	push	psw
 	sui	'0'
 	cpi	9+1
-	jrc	ex16a0
+	jc	ex16a0
 	sui	'A'-'0'-10
 ex16a0:	add	b	; never CY
 	cmpx	mdluns	; might be 0ffh
-	jrc	ex16a1	; value OK
+	jc	ex16a1	; value OK
 	pop	psw
 	stc
 	ret
@@ -2488,9 +2455,9 @@ dmp1:	mov	a,m
 	mvi	b,16
 dmp2:	mov	a,m
 	cpi	' '
-	jrc	dmp3
+	jc	dmp3
 	cpi	'~'+1
-	jrc	dmp4
+	jc	dmp4
 dmp3:	mvi	a,'.'
 dmp4:	call	conout
 	inx	h
@@ -2530,7 +2497,7 @@ cmdhb:	lxi	h,hbmsg
 	ani	01110000b	; default boot device
 	cpi	01110000b	; use setup cfg?
 	mvi	a,'*'
-	jrz	cmdhb6
+	jz	cmdhb6
 	mvi	a,' '
 cmdhb6:	call	cmdhbx
 	lxi	h,hbmsg3
@@ -2544,7 +2511,7 @@ cmdhbx:	call	conout
 	ldax	d
 	inx	d
 	cpi	0ffh
-	jrnz	cmdhb0
+	jnz	cmdhb0
 	mvi	a,'-'
 cmdhb0:	call	conout
 	mvi	a,' '
@@ -2552,17 +2519,17 @@ cmdhb0:	call	conout
 	ldax	d
 	inx	d
 	adi	'0'	; FF=2F,CY
-	jrnc	cmdhb1
+	jnc	cmdhb1
 	mvi	a,'-'
 cmdhb1:	call	conout
 	mvi	a,' '
 	call	conout
 	ldax	d
 	cpi	0ffh
-	jrnz	cmdhb2
+	jnz	cmdhb2
 	mvi	a,'-'
 	call	conout
-	jr	cmdhb3
+	jmp	cmdhb3
 cmdhb2:	xchg
 	call	msgout
 cmdhb3:	call	crlf
@@ -2575,23 +2542,23 @@ cmdx:
 	call	conin	; get actual command character
 	ori	00100000b	; lower case
 	cpi	'a'
-	jrc	cmxerr
+	jc	cmxerr
 	cpi	'z'+1
-	jrnc	cmxerr
+	jnc	cmxerr
 	sta	lstcmd
 	; would like to re-use nocmd, but error path is wrong...
 	mov	c,a
 	mvi	b,0	; no boot modules
 	lxi	h,bfchr
 	call	bfind
-	jrc	cmxerr
+	jc	cmxerr
 	lda	lstcmd
 	ani	01011111b	; upper case echo
 	call	conout
 	jmp	cmexec
 
 cmxerr:	call	belout
-	jr	cmdx
+	jmp	cmdx
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
