@@ -1,7 +1,6 @@
 # Assumes PWD = CPMDrive_D
 
-export CPMDrive_D = $(HOME)/CpmDev/sys	# a.k.a. $(PWD)
-export CPMDrive_O = $(HOME)/CpmDev/sysprn
+export CPMDrive_D = $(PWD)
 export CPMDefault = d:
 
 SRCS = $(wildcard *.asm)
