@@ -66,6 +66,7 @@ if z180
 ; Z180 internal registers (I/O ports)
 ccr	equ	1fh
 itc	equ	34h
+rcr	equ	36h
 mmu$cbr	equ	38h
 mmu$bbr	equ	39h
 mmu$cbar equ	3ah
@@ -753,6 +754,8 @@ init0:	lxi	h,0ffffh
 	push	h	; save top on stack
 	mvi	a,CLK1
 	out0	a,ccr	; use full clock speed
+	xra	a
+	out0	a,rcr	; turn off refresh
 	; configure WAIT states later...
 	call	savram
 	; map in 8K of ROM from 0xf8000 into 0x4000
