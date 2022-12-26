@@ -105,6 +105,11 @@ if 0	; H17 is not configurable?
 	lxi	h,last+h17pt
 	call	gethex
 endif
+if z180
+	lxi	d,gwait
+	lxi	h,last+waits
+	call	getwt
+endif
 
 	; TODO: more setup?
 	lda	dirty
@@ -457,13 +462,13 @@ pd0:	mov	a,m
 	mov	e,a
 	mov	a,d
 	add	a	; *2
-	rc	
+	rc
 	add	a	; *4
-	rc	
+	rc
 	add	d	; *5
-	rc	
+	rc
 	add	a	; *10
-	rc	
+	rc
 	add	e	;
 	rc
 	mov	d,a
@@ -680,6 +685,8 @@ gethex:
 ; delete setting, re-prompt
 gethxx:	pop	h
 	mvi	m,0ffh
+	mvi	a,1
+	sta	dirty
 	pop	d
 	jr	gethexe
 
@@ -720,6 +727,8 @@ getnm0:	lxi	d,gpunn
 ; delete setting, re-prompt
 getnmx:	pop	h
 	mvi	m,0ffh
+	mvi	a,1
+	sta	dirty
 	pop	d
 	jr	getnume
 
@@ -763,11 +772,102 @@ getst2:	ldax	d
 	inx	d
 	jr	getst2
 getstx:	mvi	m,0ffh
+	mvi	a,1
+	sta	dirty
 	jr	getstre
 getst1:	mvi	m,0
 	mvi	a,1
 	sta	dirty
 	ret
+
+if z180
+getwte:	mvi	a,BEL
+	call	conout
+getwt:
+	push	d
+	push	h
+	call	msgout
+	mov	a,m
+	call	wtout
+	lxi	d,gpunn
+	call	msgout
+	call	linin
+	jc	nmerr9
+	mov	a,c
+	ora	a
+	jrz	getxit
+	lda	inbuf
+	cpi	ESC	; delete setting
+	jrz	getwtx
+	mov	b,c
+	lxi	h,inbuf
+	call	parwt
+	pop	h
+	pop	d
+	jrc	getwte
+	mov	m,a
+	mvi	a,1
+	sta	dirty
+	ret
+
+getwtx:	pop	h
+	mvi	m,0ffh
+	mvi	a,1
+	sta	dirty
+	pop	d
+	jr	getwte
+
+wtout:	cpi	0ffh
+	rz
+	push	psw
+	rlc
+	rlc
+	call	wtout1
+	mvi	a,','
+	call	conout
+	pop	psw
+	rrc
+	rrc
+	rrc
+	rrc
+wtout1:	ani	3
+	adi	'0'
+	jmp	conout
+
+parwt:	call	parwt1
+	rc
+	rrc
+	rrc
+	mov	d,a
+	inx	h
+	mov	a,m
+	cpi	','
+	stc
+	rnz
+	inx	h
+	call	parwt1
+	rc
+	rlc
+	rlc
+	rlc
+	rlc
+	ora	d
+	mov	d,a
+	inx	h
+	mov	a,m
+	sui	1	; CY only if was 00
+	cmc
+	mov	a,d
+	ret
+
+parwt1:
+	mov	a,m
+	sui	'0'
+	rc
+	cpi	'3'-'0'+1
+	cmc
+	ret
+endif
 
 signon:	db	'onfig setup v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
@@ -792,6 +892,9 @@ if not z180
 g512k:	db	'H8-512K RAM installed (',0
 endif
 dport:	db	'H_7 Port (FF=use SW1) (',0
+if z180
+gwait:	db	'WAIT states (MEM,I/O) (',0
+endif
 
 dirty:	db	0
 curmsg:	dw	0

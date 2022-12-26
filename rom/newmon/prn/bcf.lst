@@ -1,0 +1,204 @@
+		; Boot Module for CF - unit select via port CF$BA
+			maclib	ram
+**** ram.lib ****
+**** bcf.asm ****
+			maclib	core
+**** core.lib ****
+**** bcf.asm ****
+			maclib	z80
+**** z80.lib ****
+**** bcf.asm ****
+		
+0080          	CF$BA	equ	80h		; CF base port
+0088          	CF$DA	equ	CF$BA+8	; CF data port
+0089          	CF$ER	equ	CF$BA+9	; CF error register (read)
+0089          	CF$FR	equ	CF$BA+9	; CF feature register (write)
+008A          	CF$SC	equ	CF$BA+10	; CF sector count
+008B          	CF$SE	equ	CF$BA+11	; CF sector number
+008C          	CF$CL	equ	CF$BA+12	; CF cylinder low
+008D          	CF$CH	equ	CF$BA+13	; CF cylinder high
+008E          	CF$DH	equ	CF$BA+14	; CF drive/head
+008F          	CF$CS	equ	CF$BA+15	; CF command/status
+		
+00EF          	CMD$FEA	equ	0efh	; Set Features command
+		
+0001          	F$8BIT	equ	001h	; enable 8-bit transfer
+0082          	F$NOWC	equ	082h	; disable write-cache
+		
+0046          	drv0	equ	70
+0002          	ndrv	equ	2
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  4602    		db	drv0,ndrv	; +2,+3: phy drv base, num
+		
+1004  C31310  		jmp	init	; +4: init entry
+1007  C31510  		jmp	boot	; +7: boot entry
+		
+100A  46      		db	'F'	; +10: Boot command letter
+100B  04      		db	4	; +11: front panel key
+100C  80      		db	80h	; +12: port, 0 if variable
+100D  8D9CFF  		db	10001101b,10011100b,11111111b	; +13: FP display ("CF ")
+1010  434600  		db	'CF',0	; +16: mnemonic string
+		
+1013  AF      	init:	xra	a	; NC
+1014  C9      		ret
+		
+1015          	boot:
+			; Partition is passed to bootloader, but we need
+			; segment offset before we can start.
+			; stack: retL, retH, str0, str1, ...
+1015  210200  		lxi	h,2
+1018  39      		dad	sp
+1019  EB      		xchg		; DE=string
+101A  210000  		lxi	h,0	; def seg/lun
+101D  225821  		shld	l2156h+2
+1020  225A21  		shld	l2156h+4
+1023  2E00    		mvi	l,0	; each socket wired as master (drive 0)
+1025  3E46    		mvi	a,drv0
+1027  323420  		sta	l2034h	; pre-loader expects 70-78 for partn
+102A  1A      		ldax	d
+102B  13      		inx	d
+102C  FEC3    		cpi	0c3h	; JMP means no string present
+102E  2820    		jrz	nostr
+1030  CDBE10  		call	trydig
+1033  300F    		jrnc	gotdig
+1035  CDCD10  		call	tryltr
+1038  D8      		rc
+1039  1A      		ldax	d
+103A  13      		inx	d
+103B  B7      		ora	a
+103C  2812    		jrz	gotit
+103E  CDBE10  		call	trydig
+1041  D8      		rc
+1042  1809    		jr	chkend
+1044  1A      	gotdig:	ldax	d
+1045  13      		inx	d
+1046  B7      		ora	a
+1047  2807    		jrz	gotit
+1049  CDCD10  		call	tryltr
+104C  D8      		rc
+104D  1A      	chkend:	ldax	d
+104E  B7      		ora	a
+104F  C0      		rnz	; max two chars
+1050          	gotit:
+1050  225621  	nostr:	shld	l2156h	; l2156h[0]=DRV|27:24, l2156h[1]=23:16
+1053  3A3121  		lda	AIO$UNI	; 0000000d - 0/1
+1056  C601    		adi	1	; 01b/10b
+1058  D380    		out	CF$BA	; select CF card
+105A  AF      		xra	a
+105B  D389    		out	CF$FR	; needed after power-on?
+			; select 8-bit mode
+105D  3E01    		mvi	a,F$8BIT
+105F  D389    		out	CF$FR
+1061  3EEF    		mvi	a,CMD$FEA
+1063  D38F    		out	CF$CS
+1065  CDA910  		call	waitcf
+1068  D8      		rc
+			; disable write-cache
+1069  3E82    		mvi	a,F$NOWC
+106B  D389    		out	CF$FR
+106D  3EEF    		mvi	a,CMD$FEA
+106F  D38F    		out	CF$CS
+1071  CDA910  		call	waitcf
+1074  D8      		rc
+1075  7D      		mov	a,l
+1076  F6E0    		ori	11100000b	; LBA mode + std "1" bits
+1078  D38E    		out	CF$DH	; LBA 27:4, drive 0, LBA mode
+107A  7C      		mov	a,h
+107B  D38D    		out	CF$CH	; LBA 23:16
+107D  AF      		xra	a
+107E  D38C    		out	CF$CL	; LBA 15:8
+1080  D38B    		out	CF$SE	; LBA 7:0
+1082  3E0A    		mvi	a,10
+1084  D38A    		out	CF$SC	; 10 sectors (standard boot length)
+1086  3E20    		mvi	a,20h	; READ SECTORS
+1088  D38F    		out	CF$CS
+108A  218022  		lxi	h,bootbf
+108D  0E88    		mvi	c,CF$DA
+108F  1E0A    		mvi	e,10
+1091  0600    		mvi	b,0	; should always be 0 after inir
+1093          	bcf0:
+1093  CDA910  		call	waitcf
+1096  D8      		rc
+1097  CB5F    		bit	3,a	; DRQ
+1099  28F8    		jrz	bcf0
+109B  EDB2    		inir	; 256 bytes
+109D  EDB2    		inir	; 512 bytes
+109F  1D      		dcr	e
+10A0  20F1    		jrnz	bcf0
+10A2  AF      		xra	a
+10A3  D380    		out	CF$BA	; deselect drive
+			; final status check?
+10A5  E1      		pop	h	; adj stack for possible string
+10A6  C33B00  		jmp	hwboot
+		
+10A9          	waitcf:
+10A9  DB8F    		in	CF$CS
+10AB  CB7F    		bit	7,a	; busy
+10AD  20FA    		jrnz	waitcf
+10AF  CB47    		bit	0,a	; error
+10B1  2006    		jrnz	cferr
+10B3  CB77    		bit	6,a	; ready
+10B5  2802    		jrz	cferr
+10B7  B7      		ora	a	; NC
+10B8  C9      		ret
+		
+10B9          	cferr:
+10B9  AF      		xra	a
+10BA  D380    		out	CF$BA	; deselect drive
+10BC  37      		stc
+10BD  C9      		ret
+		
+10BE          	trydig:
+10BE  FE30    		cpi	'0'	; digit?
+10C0  D8      		rc	; error
+10C1  FE3A    		cpi	'9'+1	; max 9 partitions
+10C3  3F      		cmc
+10C4  D8      		rc	; error - or letter
+10C5  D630    		sui	'0'
+10C7  C646    		adi	drv0
+10C9  323420  		sta	l2034h	; pre-loader expects 70-78 for partn
+10CC  C9      		ret
+		
+10CD          	tryltr:
+10CD  FE41    		cpi	'A'
+10CF  D8      		rc	; error - or digit
+10D0  E65F    		ani	5fh	; toupper
+10D2  D641    		sui	'A'	; 000sssss
+10D4  FE1A    		cpi	26
+10D6  3F      		cmc
+10D7  D8      		rc
+10D8  07      		rlc
+10D9  07      		rlc
+10DA  07      		rlc		; sssss000
+10DB  67      		mov	h,a	; no overlap with DRV
+10DC  C9      		ret
+		
+10DD  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   108	symbols
+   256	bytes
+
+    71	macro calls
+  3759	macro bytes
+     0	invented symbols

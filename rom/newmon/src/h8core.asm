@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	30
+beta	equ	31
 
 z180	equ	false
 h8nofp	equ	false
@@ -63,7 +63,8 @@ mfl$DDU	equ	00000010b	; disable disp update (debug info)
 mfl$CLK	equ	00000001b	; allow 2mS clock hook (user hook)
 
 if z180
-; Z180 internal registers (I/O ports) - CCR
+; Z180 internal registers (I/O ports)
+ccr	equ	1fh
 itc	equ	34h
 mmu$cbr	equ	38h
 mmu$bbr	equ	39h
@@ -79,6 +80,19 @@ bcr0h	equ	27h
 dstat	equ	30h
 dmode	equ	31h
 dcntl	equ	32h
+
+; DCNTL register definitions:
+MW0	equ	00$000000b
+MW1	equ	01$000000b
+MW2	equ	10$000000b
+MW3	equ	11$000000b
+IOW0	equ	00$00$0000b
+IOW1	equ	00$01$0000b
+IOW2	equ	00$10$0000b
+IOW3	equ	00$11$0000b
+; CCR register definitions:
+CLK2	equ	0$0000000b	; CLK/2
+CLK1	equ	1$0000000b	; CLK/1
 else
 ; H8-512K MMU
 mmu	equ	0	; base port
@@ -737,6 +751,9 @@ if z180
 init0:	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
+	mvi	a,CLK1
+	out0	a,ccr	; use full clock speed
+	; configure WAIT states later...
 	call	savram
 	; map in 8K of ROM from 0xf8000 into 0x4000
 	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
@@ -1263,6 +1280,13 @@ hwinit:
 	xra	a
 	out	rtc+13	; clear pending intr, HOLD
 	; TODO: any other hardware needs init?
+if z180
+	lda	susave+waits
+	cpi	0ffh
+	jrnz	cfgwt
+	mvi	a,MW0+IOW3
+cfgwt:	out0	a,dcntl	; set WAIT states for memory (and I/O)
+endif
 	ret
 
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
