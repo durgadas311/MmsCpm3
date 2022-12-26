@@ -1,0 +1,451 @@
+                ;****************************************************************
+                ; Z180-MMU Memory Test Program			 		*
+                ; stand-alone version                		 		*
+                ; Continuous, exhaustive.					*
+                ;****************************************************************
+                ; Assume the low 16K has already been tested - we run there.
+                	$*MACRO
+ 0031 =         rev	equ	'1'
+                
+                	maclib	z180
+                ;	maclib	ram	; doesn't work with REL files...
+ 2036 =         ctl$F2	equ	2036h
+                
+ FFFF =         true	equ -1
+ 0000 =         false	equ not true
+                
+ 000D =         cr	equ	13
+ 000A =         lf	equ	10
+ 0008 =         bs	equ	8
+ 0007 =         bell	equ	7
+                
+ 4000 =         buf16K	equ	4000h	; assumes normal ROM CBAR
+                
+                ; Z180 MMU registers
+ 0038 =         mmu$cbr	equ	38h
+ 0039 =         mmu$bbr	equ	39h
+ 003A =         mmu$cbar equ	3ah
+                
+                	cseg
+                begin:
+ 0000 312904    	lxi	sp,stack
+ 0003 117A02    	lxi	d,signon
+ 0006 CD1402    	call	msgout
+ 0009 C38A00    	jmp	start
+                
+ 000C 00        cont:	db	0	; continuous mode
+                
+ 000D 00        seed0:	db	0
+ 000E 00        seed:	db	0
+ 000F 00        maxpg:	db	0
+ 0010 00        pgnum:	db	0
+ 0011 00        bbr:	db	0
+                
+                ; We are running at 3000h which should be 03000h physical RAM.
+                ; Assuming that CBAR is set for C000/4000.
+                mmu$init:
+ 0012 F3        	di
+                	in0	a,mmu$bbr	; the only register we change...
+ 0013+ED3839
+ 0016 321100    	sta	bbr
+ 0019 FB        	ei
+ 001A C9        	ret
+                
+                mmu$deinit:
+ 001B F3        	di
+ 001C 3A1100    	lda	bbr
+                	out0	a,mmu$bbr
+ 001F+ED3939
+ 0022 FB        	ei
+ 0023 C9        	ret
+                
+ 0024 87        selpg:	add	a
+ 0025 87        	add	a	; convert to 4K page number
+ 0026 D604      	sui	4	; offset for location 4000h
+                	out0	a,mmu$bbr
+ 0028+ED3939
+ 002B C9        	ret
+                
+                ; IX=current bank results
+                ; HL=ref buffer
+                ; DE=test buffer
+                ; BC=count
+                compare:
+ 002C 1A        	ldax	d
+ 002D BE        	cmp	m
+                	jrz	comp0
+ 002E+2811
+                	inrx	+1
+ 0030+DD3401
+                	jrnz	comp1
+ 0033+2003
+                	dcrx	+1	; hold at 255
+ 0035+DD3501
+                comp1:
+                	ldx	a,+2
+ 0038+DD7E02
+ 003B 3C        	inr	a
+                	jrnz	comp0
+ 003C+2003
+                	stx	e,+2
+ 003E+DD7302
+                comp0:
+ 0041 23        	inx	h
+ 0042 13        	inx	d
+ 0043 0B        	dcx	b
+ 0044 78        	mov	a,b
+ 0045 B1        	ora	c
+                	jrnz	compare
+ 0046+20E4
+                	ldx	a,+1
+ 0048+DD7E01
+ 004B B7        	ora	a
+ 004C C9        	ret
+                
+                ; A=seed (BCD)
+                setpat:
+ 004D 210040    	lxi	h,buf16K
+ 0050 010040    	lxi	b,16*1024
+                setpat0:
+ 0053 77        	mov	m,a
+ 0054 23        	inx	h
+ 0055 C601      	adi	1
+ 0057 27        	daa
+ 0058 5F        	mov	e,a
+ 0059 0B        	dcx	b
+ 005A 78        	mov	a,b
+ 005B B1        	ora	c
+ 005C 7B        	mov	a,e
+                	jrnz	setpat0
+ 005D+20F4
+ 005F C9        	ret
+                
+                ; A=seed (BCD), IX=bank results
+                chkpat:
+ 0060 210040    	lxi	h,buf16K
+ 0063 010040    	lxi	b,16*1024
+                chkpat0:
+ 0066 BE        	cmp	m
+                	jrz	chkpat1
+ 0067+2811
+                	inrx	+1
+ 0069+DD3401
+                	jrnz	chkpat2
+ 006C+2003
+                	dcrx	+1	; hold at 255
+ 006E+DD3501
+                chkpat2:
+                	ldx	e,+2
+ 0071+DD5E02
+ 0074 1C        	inr	e
+                	jrnz	chkpat1
+ 0075+2003
+                	stx	l,+2
+ 0077+DD7502
+                chkpat1:
+ 007A 23        	inx	h
+ 007B C601      	adi	1
+ 007D 27        	daa
+ 007E 5F        	mov	e,a
+ 007F 0B        	dcx	b
+ 0080 78        	mov	a,b
+ 0081 B1        	ora	c
+ 0082 7B        	mov	a,e
+                	jrnz	chkpat0
+ 0083+20E1
+                	ldx	a,+1
+ 0085+DD7E01
+ 0088 B7        	ora	a
+ 0089 C9        	ret
+                
+                start:
+ 008A F3        	di	; completely isolate ourself...
+ 008B 3A3620    	lda	ctl$F2
+ 008E E614      	ani	00010100b
+ 0090 F620      	ori	00100000b
+ 0092 D3F2      	out	0f2h	; ORG0 on (ROM off), everything else as in RESET
+ 0094 CD1200    	call	mmu$init
+                
+                	; probe memory size - assume 512K if 1M not present.
+                	; We can't access top 32K of RAM (used by EEPROM).
+ 0097 3E3D      	mvi	a,3dh	; last possible page (1M - 32K)
+ 0099 320F00    	sta	maxpg
+ 009C CD2400    	call	selpg
+ 009F 210040    	lxi	h,buf16k
+ 00A2 7E        	mov	a,m
+ 00A3 34        	inr	m
+ 00A4 BE        	cmp	m
+                	jrnz	ok
+ 00A5+2005
+ 00A7 3E1F      	mvi	a,1fh	; last page of 512K
+ 00A9 320F00    	sta	maxpg
+ 00AC 119002    ok:	lxi	d,note
+ 00AF CD1402    	call	msgout
+ 00B2 3A0F00    	lda	maxpg
+ 00B5 FE20      	cpi	20h
+ 00B7 119D02    	lxi	d,t512k
+                	jrc	sm
+ 00BA+3803
+ 00BC 11A402    	lxi	d,t1m
+ 00BF CD1402    sm:	call	msgout
+                over:
+                	; setup results buffer
+ 00C2 21A902    	lxi	h,banks
+ 00C5 36FF      	mvi	m,0ffh	; pattern (none)
+ 00C7 23        	inx	h
+ 00C8 3600      	mvi	m,0	; num errs
+ 00CA 23        	inx	h
+ 00CB 36FF      	mvi	m,0ffh	; 1st err
+ 00CD 23        	inx	h
+ 00CE 3600      	mvi	m,0	; not used
+ 00D0 2B        	dcx	h
+ 00D1 2B        	dcx	h
+ 00D2 2B        	dcx	h
+ 00D3 11AD02    	lxi	d,banks+4
+ 00D6 017C00    	lxi	b,lenbnks-4
+                	ldir
+ 00D9+EDB0
+                	; initialize buffer to detect errors
+ 00DB 3E99      	mvi	a,099h
+ 00DD CD4D00    	call	setpat
+                
+                	; start testing at page 1 (0 contains this program)
+                	lxix	banks
+ 00E0+DD21
+ 00E2+A902
+ 00E4 3A0D00    	lda	seed0
+ 00E7 320E00    	sta	seed
+ 00EA 3E01      	mvi	a,1	; page number
+ 00EC 321000    	sta	pgnum
+                loop1:
+ 00EF 3A0E00    	lda	seed
+                	stx	a,+0
+ 00F2+DD7700
+ 00F5 4F        	mov	c,a
+ 00F6 C601      	adi	1
+ 00F8 27        	daa
+ 00F9 320E00    	sta	seed
+ 00FC 3A1000    	lda	pgnum
+ 00FF CD2400    	call	selpg
+ 0102 79        	mov	a,c
+ 0103 CD4D00    	call	setpat
+ 0106 110400    	lxi	d,4
+                	dadx	d
+ 0109+DD19
+ 010B CD2802    	call	progress
+ 010E 3A0F00    	lda	maxpg
+ 0111 4F        	mov	c,a
+ 0112 3A1000    	lda	pgnum
+ 0115 3C        	inr	a
+ 0116 321000    	sta	pgnum
+ 0119 0C        	inr	c
+ 011A B9        	cmp	c
+ 011B DAEF00    	jc	loop1
+                	; Now can check write...
+                	lxix	banks
+ 011E+DD21
+ 0120+A902
+ 0122 3A0D00    	lda	seed0
+ 0125 320E00    	sta	seed
+ 0128 3E01      	mvi	a,1	; page number
+ 012A 321000    	sta	pgnum
+                loop2:
+ 012D 3A0E00    	lda	seed
+                	stx	a,+0
+ 0130+DD7700
+ 0133 4F        	mov	c,a
+ 0134 C601      	adi	1
+ 0136 27        	daa
+ 0137 320E00    	sta	seed
+ 013A 3A1000    	lda	pgnum
+ 013D CD2400    	call	selpg
+ 0140 79        	mov	a,c
+ 0141 CD6000    	call	chkpat
+ 0144 110400    	lxi	d,4
+                	dadx	d
+ 0147+DD19
+ 0149 CD2802    	call	progress
+ 014C 3A0F00    	lda	maxpg
+ 014F 4F        	mov	c,a
+ 0150 3A1000    	lda	pgnum
+ 0153 3C        	inr	a
+ 0154 321000    	sta	pgnum
+ 0157 0C        	inr	c
+ 0158 B9        	cmp	c
+ 0159 DA2D01    	jc	loop2
+                
+                nommu:
+                	; done with MMU, report results...
+                	lxix	banks
+ 015C+DD21
+ 015E+A902
+ 0160 3E01      	mvi	a,1
+ 0162 321000    	sta	pgnum
+ 0165 0600      	mvi	b,0
+ 0167 3A0F00    	lda	maxpg
+ 016A 4F        	mov	c,a
+ 016B 0C        	inr	c
+                done0:
+                	ldx	a,+1	; num errs
+ 016C+DD7E01
+ 016F B7        	ora	a
+ 0170 CAA401    	jz	done1
+ 0173 04        	inr	b
+ 0174 3A1000    	lda	pgnum
+ 0177 214902    	lxi	h,res0
+ 017A CDD301    	call	decout
+                	ldx	a,+0
+ 017D+DD7E00
+ 0180 215202    	lxi	h,res1
+ 0183 CD0002    	call	hexout
+                	ldx	a,+1
+ 0186+DD7E01
+ 0189 215A02    	lxi	h,res2
+ 018C CDD301    	call	decout
+                	ldx	a,+2
+ 018F+DD7E02
+ 0192 215E02    	lxi	h,res3
+ 0195 CD0002    	call	hexout
+ 0198 C5        	push	b
+                	pushix
+ 0199+DDE5
+ 019B 114502    	lxi	d,result
+ 019E CD1402    	call	msgout
+                	popix
+ 01A1+DDE1
+ 01A3 C1        	pop	b
+ 01A4 110400    done1:	lxi	d,4
+                	dadx	d
+ 01A7+DD19
+ 01A9 3A1000    	lda	pgnum
+ 01AC 3C        	inr	a
+ 01AD 321000    	sta	pgnum
+ 01B0 B9        	cmp	c
+ 01B1 DA6C01    	jc	done0
+ 01B4 78        	mov	a,b
+ 01B5 B7        	ora	a
+                	jrnz	dover	; already reported results
+ 01B6+200F
+ 01B8 216302    	lxi	h,noerr
+ 01BB 3A0D00    	lda	seed0
+ 01BE CD0002    	call	hexout
+ 01C1 116302    	lxi	d,noerr
+ 01C4 CD1402    	call	msgout
+                	; TODO: restore and return to monitor
+                dover:	; do test again...
+ 01C7 3A0D00    	lda	seed0
+ 01CA C601      	adi	1
+ 01CC 27        	daa
+ 01CD 320D00    	sta	seed0
+ 01D0 C3C200    	jmp	over
+                
+                ; leading zeroes blanked - must preserve B
+                decout:
+ 01D3 0E00      	mvi	c,0
+ 01D5 1664      	mvi	d,100
+ 01D7 CDE401    	call	divide
+ 01DA 160A      	mvi	d,10
+ 01DC CDE401    	call	divide
+ 01DF C630      	adi	'0'
+ 01E1 77        	mov	m,a
+ 01E2 23        	inx	h
+ 01E3 C9        	ret
+                
+ 01E4 1E00      divide:	mvi	e,0
+ 01E6 92        div0:	sub	d
+ 01E7 1C        	inr	e
+                	jrnc	div0
+ 01E8+30FC
+ 01EA 82        	add	d
+ 01EB 1D        	dcr	e
+                	jrnz	div1
+ 01EC+2008
+                	bit	0,c
+ 01EE+CB41
+                	jrnz	div1
+ 01F0+2004
+ 01F2 3620      	mvi	m,' '
+ 01F4 23        	inx	h
+ 01F5 C9        	ret
+                div1:	setb	0,c
+ 01F6+CBC1
+ 01F8 F5        	push	psw	; remainder
+ 01F9 3E30      	mvi	a,'0'
+ 01FB 83        	add	e
+ 01FC 77        	mov	m,a
+ 01FD 23        	inx	h
+ 01FE F1        	pop	psw	; remainder
+ 01FF C9        	ret
+                
+ 0200 F5        hexout:	push	psw
+ 0201 07        	rlc
+ 0202 07        	rlc
+ 0203 07        	rlc
+ 0204 07        	rlc
+ 0205 CD0902    	call	hex0
+ 0208 F1        	pop	psw
+ 0209 E60F      hex0:	ani	0fh
+ 020B C690      	adi	90h
+ 020D 27        	daa
+ 020E CE40      	aci	40h
+ 0210 27        	daa
+ 0211 77        	mov	m,a
+ 0212 23        	inx	h
+ 0213 C9        	ret
+                
+ 0214 1A        msgout:	ldax	d
+ 0215 B7        	ora	a
+ 0216 C8        	rz
+ 0217 13        	inx	d
+ 0218 CD1D02    	call	conout
+                	jr	msgout
+ 021B+18F7
+                
+ 021D F5        conout:	push	psw
+ 021E DBED      cono0:	in	0edh
+ 0220 E620      	ani	00100000b
+                	jrz	cono0
+ 0222+28FA
+ 0224 F1        	pop	psw
+ 0225 D3E8      	out	0e8h
+ 0227 C9        	ret
+                
+                progress:
+ 0228 214002    	lxi	h,spinx
+ 022B 34        	inr	m
+ 022C 7E        	mov	a,m
+ 022D E603      	ani	00000011b
+ 022F 4F        	mov	c,a
+ 0230 0600      	mvi	b,0
+ 0232 214102    	lxi	h,spin
+ 0235 09        	dad	b
+ 0236 7E        	mov	a,m
+ 0237 CD1D02    	call	conout
+ 023A 3E08      	mvi	a,bs
+ 023C CD1D02    	call	conout
+ 023F C9        	ret
+                
+ 0240 00        spinx:	db	0
+ 0241 2D5C7C2F  spin:	db	'-','\','|','/'
+                
+ 0245 50616765  result:	db	'Page'
+ 0249 6E6E6E2070res0:	db	'nnn patn '
+ 0252 6868206572res1:	db	'hh errs '
+ 025A 6E6E6E20  res2:	db	'nnn '
+ 025E 68680D0A00res3:	db	'hh',cr,lf,0
+                
+ 0263 68683A204Enoerr:	db	'hh: No errors found.',cr,lf,0
+ 027A 52414D2054signon:	db	'RAM Test Z180 rev ',rev,cr,lf,0
+ 0290 4D656D6F72note:	db	'Memory size ',0
+ 029D 3531324B0Dt512k:	db	'512K',cr,lf,0
+ 02A4 314D0D0A00t1m:	db	'1M',cr,lf,0
+                
+                banks:
+ 02A9           	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u
+ 0080 =         lenbnks	equ	$-banks
+                
+ 0329           	ds	256
+ 0429           stack:	ds	0
+                
+ 0429           	end	begin
+

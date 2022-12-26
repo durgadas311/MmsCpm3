@@ -1,16 +1,13 @@
 ;****************************************************************
-; H8-512K Banked Memory Test Program		 		*
+; Z180-MMU Memory Test Program			 		*
 ; stand-alone version                		 		*
 ; Continuous, exhaustive.					*
 ;****************************************************************
+; Assume the low 16K has already been tested - we run there.
 	$*MACRO
-rev	equ	'2'
+rev	equ	'1'
 
-; NOTE: This does not test every single bit in memory,
-; but does confirm that 32 unique 16K pages can be mapped
-; into block 4000H.
-
-	maclib z80
+	maclib	z180
 ;	maclib	ram	; doesn't work with REL files...
 ctl$F2	equ	2036h
 
@@ -22,24 +19,16 @@ lf	equ	10
 bs	equ	8
 bell	equ	7
 
-mmu	equ	000h	; H8-512K Bank Switch Board base port
-rd00K	equ	mmu+0
-rd16K	equ	mmu+1
-rd32K	equ	mmu+2
-rd48K	equ	mmu+3
-wr00K	equ	mmu+4
-wr16K	equ	mmu+5
-wr32K	equ	mmu+6
-wr48K	equ	mmu+7
+buf16K	equ	4000h	; assumes normal ROM CBAR
 
-buf16K	equ	4000h
+; Z180 MMU registers
+mmu$cbr	equ	38h
+mmu$bbr	equ	39h
+mmu$cbar equ	3ah
 
 	cseg
 begin:
 	lxi	sp,stack
-	mvi	a,mmu
-	lxi	h,port
-	call	hexout
 	lxi	d,signon
 	call	msgout
 	jmp	start
@@ -48,57 +37,30 @@ cont:	db	0	; continuous mode
 
 seed0:	db	0
 seed:	db	0
+maxpg:	db	0
 pgnum:	db	0
-err0:	db	0
+bbr:	db	0
 
-; If current mapping is not the default/disabled,
-; things will likely crash here.
+; We are running at 3000h which should be 03000h physical RAM.
+; Assuming that CBAR is set for C000/4000.
 mmu$init:
 	di
-	mvi	a,0	; page 0
-	out	rd00K
-	out	wr00K
-	inr	a
-	out	rd16K
-	out	wr16K
-	inr	a
-	out	rd32K
-	out	wr32K
-	inr	a
-	ori	080h	; MMU enable
-	out	rd48K
-	out	wr48K
+	in0	a,mmu$bbr	; the only register we change...
+	sta	bbr
 	ei
 	ret
 
 mmu$deinit:
 	di
-	; leave 080h off, disable MMU and force "pass-thru" mapping.
-	; really, only one OUT needs to be done, but just restore all.
-	; overkill, since we only ever changed rd/wr16K.
-	mvi	a,0
-	out	rd00K
-	out	wr00K
-	inr	a
-	out	rd16K
-	out	wr16K
-	inr	a
-	out	rd32K
-	out	wr32K
-	inr	a
-	out	rd48K
-	out	wr48K
+	lda	bbr
+	out0	a,mmu$bbr
 	ei
 	ret
 
-; A=page num, HL=ref buf
-minchk:
-	ori	080h
-	out	rd16K	; map into 16K
-	out	wr16K	; (not used - yet)
-	lxi	d,buf16K
-	lxi	b,16*1024
-	call	compare
+selpg:	add	a
+	add	a	; convert to 4K page number
+	sui	4	; offset for location 4000h
+	out0	a,mmu$bbr
 	ret
 
 ; IX=current bank results
@@ -180,6 +142,28 @@ start:
 	ani	00010100b
 	ori	00100000b
 	out	0f2h	; ORG0 on (ROM off), everything else as in RESET
+	call	mmu$init
+
+	; probe memory size - assume 512K if 1M not present.
+	; We can't access top 32K of RAM (used by EEPROM).
+	mvi	a,3dh	; last possible page (1M - 32K)
+	sta	maxpg
+	call	selpg
+	lxi	h,buf16k
+	mov	a,m
+	inr	m
+	cmp	m
+	jrnz	ok
+	mvi	a,1fh	; last page of 512K
+	sta	maxpg
+ok:	lxi	d,note
+	call	msgout
+	lda	maxpg
+	cpi	20h
+	lxi	d,t512k
+	jrc	sm
+	lxi	d,t1m
+sm:	call	msgout
 over:
 	; setup results buffer
 	lxi	h,banks
@@ -200,54 +184,11 @@ over:
 	mvi	a,099h
 	call	setpat
 
-	call	mmu$init
-
+	; start testing at page 1 (0 contains this program)
 	lxix	banks
-	; First check if low 4 pages work (3, actually)
-	lxi	h,0000h
-	mvi	a,0	; page 0
-	call	minchk
-	sta	err0
-	call	progress
-	lxi	d,4
-	dadx	d
-	lxi	h,4000h
-	mvi	a,1	; page 1 - no-op
-	call	minchk
-	mov	c,a
-	lda	err0
-	ora	c
-	sta	err0
-	call	progress
-	lxi	d,4
-	dadx	d
-	lxi	h,8000h
-	mvi	a,2	; page 2
-	call	minchk
-	mov	c,a
-	lda	err0
-	ora	c
-	sta	err0
-	call	progress
-	lxi	d,4
-	dadx	d
-	lxi	h,0c000h
-	mvi	a,3	; page 3
-	call	minchk
-	mov	c,a
-	lda	err0
-	ora	c
-	sta	err0
-	call	progress
-	lda	err0
-	ora	a
-	jnz	nommu
-	lxi	d,4
-	dadx	d
-	; Now can do write tests...
 	lda	seed0
 	sta	seed
-	mvi	a,4	; page number
+	mvi	a,1	; page number
 	sta	pgnum
 loop1:
 	lda	seed
@@ -257,24 +198,25 @@ loop1:
 	daa
 	sta	seed
 	lda	pgnum
-	ori	080h
-	out	rd16K	; map into 16K
-	out	wr16K	; both RD and WR
+	call	selpg
 	mov	a,c
 	call	setpat
 	lxi	d,4
 	dadx	d
 	call	progress
+	lda	maxpg
+	mov	c,a
 	lda	pgnum
 	inr	a
 	sta	pgnum
-	cpi	32
+	inr	c
+	cmp	c
 	jc	loop1
 	; Now can check write...
-	lxix	banks+4*4
+	lxix	banks
 	lda	seed0
 	sta	seed
-	mvi	a,4	; page number
+	mvi	a,1	; page number
 	sta	pgnum
 loop2:
 	lda	seed
@@ -284,26 +226,30 @@ loop2:
 	daa
 	sta	seed
 	lda	pgnum
-	ori	080h
-	out	rd16K	; map into 16K
-	out	wr16K	; both RD and WR
+	call	selpg
 	mov	a,c
 	call	chkpat
 	lxi	d,4
 	dadx	d
 	call	progress
+	lda	maxpg
+	mov	c,a
 	lda	pgnum
 	inr	a
 	sta	pgnum
-	cpi	32
+	inr	c
+	cmp	c
 	jc	loop2
 
 nommu:
 	; done with MMU, report results...
 	lxix	banks
-	xra	a
+	mvi	a,1
 	sta	pgnum
 	mvi	b,0
+	lda	maxpg
+	mov	c,a
+	inr	c
 done0:
 	ldx	a,+1	; num errs
 	ora	a
@@ -332,14 +278,7 @@ done1:	lxi	d,4
 	lda	pgnum
 	inr	a
 	sta	pgnum
-	cpi	4
-	jnz	done2
-	lda	err0
-	ora	a
-	jnz	nommu0
-	lda	pgnum
-done2:
-	cpi	32
+	cmp	c
 	jc	done0
 	mov	a,b
 	ora	a
@@ -350,16 +289,6 @@ done2:
 	lxi	d,noerr
 	call	msgout
 	; TODO: restore and return to monitor
-	jr	dover
-
-nommu0:
-	lxi	h,mmuerr
-	lda	seed0
-	call	hexout
-	lxi	d,mmuerr
-	call	msgout
-	; TODO: restore and return to monitor
-	;jr	dover
 dover:	; do test again...
 	lda	seed0
 	adi	1
@@ -456,9 +385,10 @@ res2:	db	'nnn '
 res3:	db	'hh',cr,lf,0
 
 noerr:	db	'hh: No errors found.',cr,lf,0
-mmuerr:	db	'hh: Aborting test: No MMU?',cr,lf,0
-signon:	db	'RAM Test H8-512K rev ',rev,' port '
-port:	db	'hh',cr,lf,0
+signon:	db	'RAM Test Z180 rev ',rev,cr,lf,0
+note:	db	'Memory size ',0
+t512k:	db	'512K',cr,lf,0
+t1m:	db	'1M',cr,lf,0
 
 banks:
 	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u
