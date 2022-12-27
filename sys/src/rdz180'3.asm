@@ -43,7 +43,7 @@ dcntl	equ	32h
 
 ; CP/M 3 uses 00000-39FFF, unused RAM is 3A000-7FFFF
 base$pg	equ	3ah	; 286720 bytes, 280K, 2240 sectors (128B)
-num$pgs	equ	70	; in case anyone asks
+num$pgs	equ	70	; in case anyone asks.
 
 driv0	equ	40		; first drive in system
 ndriv	equ	1		; # of drives is system
@@ -54,6 +54,13 @@ blm	equ	15	; 2K block size
 exm	equ	0
 drm	equ	64-1	; still requires manual ALV0 setup
 alv0	equ	10000000b
+; for 1M, 3A000-F8000, that's 190 pages (need 4K blocks)
+dsm1	equ	190-1	; 760K for ramdisk
+bsh1	equ	5
+blm1	equ	31	; 4K block size
+exm1	equ	0
+drm1	equ	128-1	; still requires manual ALV0 setup
+; same alv0, 1 block
 ;-------------------------------------------------------
 ;	Start of relocatable disk I/O module.
 ;-------------------------------------------------------
@@ -100,6 +107,7 @@ pbuf:	ds	128
 thread	equ	$
 
 	dseg
+dseg0	equ	$
 
 usr$addr: db	0,0,0
 dsk$addr: db	0,0,0
@@ -109,9 +117,10 @@ dsk$addr: db	0,0,0
 dphtbl: dw	0,0,0,0,0,0,rddpb,0,alv40,@dircb,0ffffh,0ffffh
 	db 0
 
-alv40:	ds	(dsm+1)/4 	;
+alv40:	; ds	(dsm+1)/4 	;
+alv40e	equ	alv40+(dsm1+1+3)/4	; must reserve max amount
 
-; This could be overlapped with alv40: never used after init$rd.
+; This can be overlapped with alv40: never used after init$rd.
 label:	db	020h,'RAMDISK3LBL'
 lblen	equ	$-label
 	db	00000001b,0,0,0	; no modes (yet)
@@ -119,12 +128,38 @@ lblen	equ	$-label
 	db	0,0,0,0		; ctime
 	db	0,0,0,0		; utime
 
+dpb1m:	dw	128
+	db	bsh1,blm1,exm1
+	dw	dsm1,drm1
+	db	alv0,0
+	dw	08000h,0
+	db	0,0	; PSH,PSM = 128byte sectors
+
+if alv40e-dseg0 > $-dseg0
+	ds	alv40e-$
+endif
+
 init$rd:	; interrupts are disabled - leave them that way
 	; Check if a valid directory already exists...
 	; carefully change mapping to make this easier...
 	; note: we must be (are) in bank 0...
 	mvi	a,1000$0000b	; common at 8000, 32K for ramdisk view
 	out0	a,mmu$cbar
+	mvi	a,80h	; see if 80000h RAM exists (1M)
+	out0	a,mmu$bbr
+	lxi	h,0
+	mov	a,m
+	inr	m
+	cmp	m
+	jrz	ird4
+	; fix DPB for RAM from base$pg..0f8h
+	lxi	h,dpb1m
+	lxi	d,rddpb
+	lxi	b,17	; not all changes, though
+	ldir
+	lxi	h,'76'	; "760K"...
+	shld	string+8
+ird4:
 	mvi	a,base$pg
 	out0	a,mmu$bbr	; map in first part of ramdisk
 	lxi	h,0	; first sector... first dirent (label)
@@ -144,7 +179,8 @@ ird1:	; must re-initialize directory (to empty)
 	ldir
 	xchg	; make rest empty
 	lxi	d,32	; bytes/dirent
-	mvi	b,drm	; DRM (one already done)
+	lda	rddpb+7	; assume 1-byte DRM
+	mov	b,a	; DRM (one already done, so -1 OK)
 	mvi	a,0e5h	; empty entry
 ird0:	mov	m,a
 	dad	d
