@@ -149,9 +149,10 @@ init$rd:	; interrupts are disabled - leave them that way
 	out0	a,mmu$bbr
 	lxi	h,0
 	mov	a,m
-	inr	m
+	dcr	m
+	dcr	a
 	cmp	m
-	jrz	ird4
+	jrnz	ird4
 	; fix DPB for RAM from base$pg..0f8h
 	lxi	h,dpb1m
 	lxi	d,rddpb

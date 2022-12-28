@@ -5,7 +5,7 @@
 ;****************************************************************
 ; Assume the low 16K has already been tested - we run there.
 	$*MACRO
-rev	equ	'2'
+rev	equ	'3'
 
 	maclib	z180
 ;	maclib	ram	; doesn't work with REL files...
@@ -151,9 +151,10 @@ start:
 	call	selpg
 	lxi	h,buf16k
 	mov	a,m
-	inr	m
+	dcr	m
+	dcr	a
 	cmp	m
-	jrnz	ok
+	jrz	ok
 	mvi	a,1fh	; last page of 512K
 	sta	maxpg
 ok:	lxi	d,note
