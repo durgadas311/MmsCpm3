@@ -5,7 +5,7 @@
 ;****************************************************************
 ; Assume the low 16K has already been tested - we run there.
 	$*MACRO
-rev	equ	'1'
+rev	equ	'2'
 
 	maclib	z180
 ;	maclib	ram	; doesn't work with REL files...
@@ -241,15 +241,11 @@ loop2:
 	cmp	c
 	jc	loop2
 
-nommu:
-	; done with MMU, report results...
+	; done with one pass, report results...
 	lxix	banks
 	mvi	a,1
 	sta	pgnum
 	mvi	b,0
-	lda	maxpg
-	mov	c,a
-	inr	c
 done0:
 	ldx	a,+1	; num errs
 	ora	a
@@ -257,13 +253,13 @@ done0:
 	inr	b
 	lda	pgnum
 	lxi	h,res0
-	call	decout
+	call	decout	; destroys C, DE
 	ldx	a,+0
 	lxi	h,res1
 	call	hexout
 	ldx	a,+1
 	lxi	h,res2
-	call	decout
+	call	decout	; destroys C, DE
 	ldx	a,+2
 	lxi	h,res3
 	call	hexout
@@ -275,6 +271,9 @@ done0:
 	pop	b
 done1:	lxi	d,4
 	dadx	d
+	lda	maxpg
+	mov	c,a
+	inr	c
 	lda	pgnum
 	inr	a
 	sta	pgnum
@@ -391,7 +390,7 @@ t512k:	db	'512K',cr,lf,0
 t1m:	db	'1M',cr,lf,0
 
 banks:
-	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u
+	ds	64*4	; pattern seed or 0FFH, num errs, 1st err, n/u
 lenbnks	equ	$-banks
 
 	ds	256
