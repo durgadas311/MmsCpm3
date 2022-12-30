@@ -5,10 +5,10 @@ cr	equ	13
 lf	equ	10
 
 ; "index" numbers for speeds
-mhz10	equ	3
-mhz8	equ	2
-mhz4	equ	1
-mhz2	equ	0
+xmhz10	equ	3
+xmhz8	equ	2
+xmhz4	equ	1
+xmhz2	equ	0
 
 cpm	equ	0000h
 bdos	equ	0005h
@@ -52,37 +52,20 @@ skip:
 	jmp	show
 start:
 	cpi	'2'
-	mvi	c,mhz2
+	mvi	c,xmhz2
 	jz	gotit
 	cpi	'4'
-	mvi	c,mhz4
+	mvi	c,xmhz4
 	jz	gotit
 	cpi	'8'
-	mvi	c,mhz8
+	mvi	c,xmhz8
 	jz	gotit
-	cpi	'1'
-	mvi	c,mhz10
-	jnz	cmax
-	inx	h
-	dcr	b
-	jz	help
-	mov	a,m
-	cpi	'0'
-	jz	gotit	; allow "10" or "16" (or "MAX")
-	cpi	'6'
-	jnz	help
-gotit:
-	dcr	b
-	jnz	help
-	; C=speed index
-	mov	a,c
-	jmp	done
-cmax:
 	cpi	'M'
 	jnz	help
+	mvi	c,xmhz10
 	inx	h
 	dcr	b
-	jz	help
+	jz	gotit0
 	mov	a,m
 	cpi	'A'
 	jnz	help
@@ -92,8 +75,12 @@ cmax:
 	mov	a,m
 	cpi	'X'
 	jnz	help
-	jmp	gotit
-
+gotit:
+	dcr	b
+	jnz	help
+gotit0:	; C=speed index
+	mov	a,c
+	jmp	done
 show:
 	mvi	a,0ffh
 done:
@@ -141,12 +128,12 @@ setspd:	lhld	spdjmp
 spdjmp:	dw	0
 
 spdtbl:
-	db	'2$  '
-	db	'4$  '
-	db	'8$  '
-	db	'MAX$'
+	db	'2$  '	; xmhz2
+	db	'4$  '	; xmhz4
+	db	'8$  '	; xmhz8
+	db	'MAX$';	; xmhz10
 
-usage:	db	'Usage: MPMSPD {s} where s is 2, 4, 8 or MAX (MHz).',cr,lf,'$'
+usage:	db	'Usage: MPMSPD {s} where s is 2, 4, 8 or M[AX] (MHz).',cr,lf,'$'
 speed:	db	'You are running at $'
 spdnum:	db	' MHz.',cr,lf,'$'
 nmpmii:	db	'Requires MP/M',cr,lf,'$'

@@ -1,0 +1,148 @@
+                ; MPMSPD - SET/SHOW CPU SPEED FOR NORBERTO'S H8 CPU CARD UNDER MP/M
+                	MACLIB	Z80
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+                ; "INDEX" NUMBERS FOR SPEEDS
+ 0003 =         XMHZ10	EQU	3
+ 0002 =         XMHZ8	EQU	2
+ 0001 =         XMHZ4	EQU	1
+ 0000 =         XMHZ2	EQU	0
+                
+ 0000 =         CPM	EQU	0000H
+ 0005 =         BDOS	EQU	0005H
+ 0080 =         CMD	EQU	0080H
+                
+ 0009 =         PRINT	EQU	9
+ 000C =         VERS	EQU	12
+                
+ 005D =         SETSPDV	EQU	005DH	; PAGE OFFSET OF MP/M SETSPD JMP VECTOR.
+                
+ 0100           	ORG	100H
+                
+ 0100 31A902    	LXI	SP,STACK
+ 0103 0E0C      	MVI	C,VERS
+ 0105 CD0500    	CALL	BDOS
+ 0108 7C        	MOV	A,H
+ 0109 E601      	ANI	01H
+ 010B CAA201    	JZ	NOTMPM
+ 010E 2A0100    	LHLD	CPM+1	; XIOS LANDING PAD
+ 0111 23        	INX	H
+ 0112 5E        	MOV	E,M
+ 0113 23        	INX	H
+ 0114 56        	MOV	D,M
+ 0115 EB        	XCHG		; HL=XIOSJMP.TBL
+ 0116 2E5D      	MVI	L,SETSPDV
+ 0118 22B801    	SHLD	SPDJMP
+                	; TODO: SANITY CHECK THIS?
+                
+                	; PARSE COMMANDLINE
+ 011B 218000    	LXI	H,CMD
+ 011E 7E        	MOV	A,M
+ 011F B7        	ORA	A
+ 0120 CA6A01    	JZ	SHOW
+ 0123 47        	MOV	B,A
+                SKIP:
+ 0124 23        	INX	H
+ 0125 7E        	MOV	A,M
+ 0126 FE20      	CPI	' '
+ 0128 C23001    	JNZ	START
+                	DJNZ	SKIP
+ 012B+10F7      	DB	10H,SKIP-$-1
+ 012D C36A01    	JMP	SHOW
+                START:
+ 0130 FE32      	CPI	'2'
+ 0132 0E00      	MVI	C,XMHZ2
+ 0134 CA6201    	JZ	GOTIT
+ 0137 FE34      	CPI	'4'
+ 0139 0E01      	MVI	C,XMHZ4
+ 013B CA6201    	JZ	GOTIT
+ 013E FE38      	CPI	'8'
+ 0140 0E02      	MVI	C,XMHZ8
+ 0142 CA6201    	JZ	GOTIT
+ 0145 FE4D      	CPI	'M'
+ 0147 C29C01    	JNZ	HELP
+ 014A 0E03      	MVI	C,XMHZ10
+ 014C 23        	INX	H
+ 014D 05        	DCR	B
+ 014E CA6601    	JZ	GOTIT0
+ 0151 7E        	MOV	A,M
+ 0152 FE41      	CPI	'A'
+ 0154 C29C01    	JNZ	HELP
+ 0157 23        	INX	H
+ 0158 05        	DCR	B
+ 0159 CA9C01    	JZ	HELP
+ 015C 7E        	MOV	A,M
+ 015D FE58      	CPI	'X'
+ 015F C29C01    	JNZ	HELP
+                GOTIT:
+ 0162 05        	DCR	B
+ 0163 C29C01    	JNZ	HELP
+                GOTIT0:	; C=SPEED INDEX
+ 0166 79        	MOV	A,C
+ 0167 C36C01    	JMP	DONE
+                SHOW:
+ 016A 3EFF      	MVI	A,0FFH
+                DONE:
+ 016C CDB401    	CALL	SETSPD
+ 016F FEFF      	CPI	0FFH
+ 0171 CAAE01    	JZ	FAILED
+ 0174 FEFE      	CPI	0FEH
+ 0176 CAA801    	JZ	NOTSUP
+                	; TODO: SANITY CHECK 0..3?
+                	; A=SPEED INDEX
+ 0179 87        	ADD	A
+ 017A 87        	ADD	A	; *4
+ 017B 5F        	MOV	E,A
+ 017C 1600      	MVI	D,0
+ 017E 21BA01    	LXI	H,SPDTBL
+ 0181 19        	DAD	D
+ 0182 E5        	PUSH	H	; TEXT STRING FOR SPEED
+ 0183 110102    	LXI	D,SPEED
+ 0186 0E09      	MVI	C,PRINT
+ 0188 CD0500    	CALL	BDOS
+ 018B D1        	POP	D
+ 018C 0E09      	MVI	C,PRINT
+ 018E CD0500    	CALL	BDOS
+ 0191 111502    	LXI	D,SPDNUM
+                EXIT:
+ 0194 0E09      	MVI	C,PRINT
+ 0196 CD0500    	CALL	BDOS
+ 0199 C30000    	JMP	CPM
+                
+ 019C 11CA01    HELP:	LXI	D,USAGE
+ 019F C39401    	JMP	EXIT
+                
+ 01A2 111D02    NOTMPM:	LXI	D,NMPMII
+ 01A5 C39401    	JMP	EXIT
+                
+ 01A8 112D02    NOTSUP:	LXI	D,NSUPPT
+ 01AB C39401    	JMP	EXIT
+                
+ 01AE 114E02    FAILED:	LXI	D,NCHG
+ 01B1 C39401    	JMP	EXIT
+                
+ 01B4 2AB801    SETSPD:	LHLD	SPDJMP
+ 01B7 E9        	PCHL
+                
+ 01B8 0000      SPDJMP:	DW	0
+                
+                SPDTBL:
+ 01BA 32242020  	DB	'2$  '	; XMHZ2
+ 01BE 34242020  	DB	'4$  '	; XMHZ4
+ 01C2 38242020  	DB	'8$  '	; XMHZ8
+ 01C6 4D415824  	DB	'MAX$';	; XMHZ10
+                
+ 01CA 5573616765USAGE:	DB	'Usage: MPMSPD {s} where s is 2, 4, 8 or M[AX] (MHz).',CR,LF,'$'
+ 0201 596F752061SPEED:	DB	'You are running at $'
+ 0215 204D487A2ESPDNUM:	DB	' MHz.',CR,LF,'$'
+ 021D 5265717569NMPMII:	DB	'Requires MP/M',CR,LF,'$'
+ 022D 4350552053NSUPPT:	DB	'CPU Speed change not supported',CR,LF,'$'
+ 024E 4572726F72NCHG:	DB	'Error changing CPU speed',CR,LF,'$'
+                
+ 0269           	DS	64
+ 02A9           STACK:	DS	0
+                
+ 02A9           	END
+

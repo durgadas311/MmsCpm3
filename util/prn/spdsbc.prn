@@ -10,103 +10,154 @@
  0010 =         MHZ4	EQU	00010000B
  0000 =         MHZ2	EQU	00000000B
                 
+                ; "INDEX" NUMBERS FOR SPEEDS
+ 0003 =         XMHZ10	EQU	3
+ 0002 =         XMHZ8	EQU	2
+ 0001 =         XMHZ4	EQU	1
+ 0000 =         XMHZ2	EQU	0
+                
  00F2 =         GPP	EQU	0F2H
                 
  0000 =         CPM	EQU	0000H
  0005 =         BDOS	EQU	0005H
+ 000D =         CTLBYTE	EQU	000DH
  0080 =         CMD	EQU	0080H
                 
  0009 =         PRINT	EQU	9
+ 000C =         VERS	EQU	12
                 
  0064 =         CTLFLG	EQU	100	; OFFSET FROM BIOS FOR CTLFLG
                 
  0100           	ORG	100H
                 
- 0100 2A0100    	LHLD	CPM+1	; BIOS+3
- 0103 116100    	LXI	D,CTLFLG-3
- 0106 19        	DAD	D
- 0107 EB        	XCHG
-                
- 0108 218000    	LXI	H,CMD
- 010B 7E        	MOV	A,M
- 010C B7        	ORA	A
- 010D CA5501    	JZ	SHOW
- 0110 47        	MOV	B,A
+ 0100 316302    	LXI	SP,STACK
+ 0103 0E0C      	MVI	C,VERS
+ 0105 CD0500    	CALL	BDOS
+ 0108 7D        	MOV	A,L
+ 0109 FE31      	CPI	31H
+ 010B 110D00    	LXI	D,CTLBYTE
+ 010E C21901    	JNZ	GOTFLG
+ 0111 2A0100    	LHLD	CPM+1	; BIOS+3
+ 0114 116100    	LXI	D,CTLFLG-3
+ 0117 19        	DAD	D
+ 0118 EB        	XCHG
+                GOTFLG:
+ 0119 218000    	LXI	H,CMD
+ 011C 7E        	MOV	A,M
+ 011D B7        	ORA	A
+ 011E CA7801    	JZ	SHOW
+ 0121 47        	MOV	B,A
                 SKIP:
- 0111 23        	INX	H
- 0112 7E        	MOV	A,M
- 0113 FE20      	CPI	' '
- 0115 C21D01    	JNZ	START
+ 0122 23        	INX	H
+ 0123 7E        	MOV	A,M
+ 0124 FE20      	CPI	' '
+ 0126 C22E01    	JNZ	START
                 	DJNZ	SKIP
- 0118+10F7      	DB	10H,SKIP-$-1
- 011A C35501    	JMP	SHOW
+ 0129+10F7      	DB	10H,SKIP-$-1
+ 012B C37801    	JMP	SHOW
                 START:
- 011D FE32      	CPI	'2'
- 011F 0E00      	MVI	C,MHZ2
- 0121 CA4401    	JZ	GOTIT
- 0124 FE34      	CPI	'4'
- 0126 0E10      	MVI	C,MHZ4
- 0128 CA4401    	JZ	GOTIT
- 012B FE38      	CPI	'8'
- 012D 0E04      	MVI	C,MHZ8
- 012F CA4401    	JZ	GOTIT
- 0132 FE31      	CPI	'1'
- 0134 0E14      	MVI	C,MHZ10
- 0136 C25C01    	JNZ	HELP
- 0139 23        	INX	H
- 013A 05        	DCR	B
- 013B CA5C01    	JZ	HELP
- 013E 7E        	MOV	A,M
- 013F FE30      	CPI	'0'
- 0141 C25C01    	JNZ	HELP
+ 012E FE32      	CPI	'2'
+ 0130 0E00      	MVI	C,XMHZ2
+ 0132 CA6001    	JZ	GOTIT
+ 0135 FE34      	CPI	'4'
+ 0137 0E01      	MVI	C,XMHZ4
+ 0139 CA6001    	JZ	GOTIT
+ 013C FE38      	CPI	'8'
+ 013E 0E02      	MVI	C,XMHZ8
+ 0140 CA6001    	JZ	GOTIT
+ 0143 FE4D      	CPI	'M'
+ 0145 C27F01    	JNZ	HELP
+ 0148 0E03      	MVI	C,XMHZ10
+ 014A 23        	INX	H
+ 014B 05        	DCR	B
+ 014C CA6401    	JZ	GOTIT0
+ 014F 7E        	MOV	A,M
+ 0150 FE41      	CPI	'A'
+ 0152 C27F01    	JNZ	HELP
+ 0155 23        	INX	H
+ 0156 05        	DCR	B
+ 0157 CA7F01    	JZ	HELP
+ 015A 7E        	MOV	A,M
+ 015B FE58      	CPI	'X'
+ 015D C27F01    	JNZ	HELP
                 GOTIT:
- 0144 05        	DCR	B
- 0145 C25C01    	JNZ	HELP
- 0148 F3        	DI
- 0149 1A        	LDAX	D
- 014A E6EB      	ANI	NOT SPBITS
- 014C B1        	ORA	C
- 014D 12        	STAX	D
-                	;OUT	GPP
- 014E FB        	EI
-                	; A = CTLFLG VALUE
- 014F 11C401    	LXI	D,SPEED
- 0152 C36001    	JMP	DONE
+ 0160 05        	DCR	B
+ 0161 C27F01    	JNZ	HELP
+                GOTIT0:	; C=SPEED INDEX
+ 0164 21BD01    	LXI	H,SPDVAL
+ 0167 0600      	MVI	B,0
+ 0169 09        	DAD	B
+ 016A 4E        	MOV	C,M
+                	; C = SPEED BITS FOR PORT
+ 016B F3        	DI
+ 016C 1A        	LDAX	D
+ 016D E6EB      	ANI	NOT SPBITS
+ 016F B1        	ORA	C
+ 0170 12        	STAX	D
+                	;OUT	GPP	; JUST WAIT FOR NEXT INTR
+ 0171 FB        	EI
+                	; A = PORT VALUE
+ 0172 110702    	LXI	D,SPEED
+ 0175 C38301    	JMP	DONE
                 SHOW:
- 0155 1A        	LDAX	D
- 0156 11C401    	LXI	D,SPEED
- 0159 C36001    	JMP	DONE
+ 0178 1A        	LDAX	D
+ 0179 110702    	LXI	D,SPEED
+ 017C C38301    	JMP	DONE
                 HELP:
- 015C 1A        	LDAX	D
- 015D 115C01    	LXI	D,HELP
-                DONE:
- 0160 E614      	ANI	SPBITS
- 0162 FE14      	CPI	MHZ10
- 0164 CA7701    	JZ	DO10
- 0167 FE04      	CPI	MHZ8
- 0169 CA7D01    	JZ	DO8
- 016C FE10      	CPI	MHZ4
- 016E CA8301    	JZ	DO4
+ 017F 1A        	LDAX	D
+ 0180 11D101    	LXI	D,USAGE
+                DONE:	; A = PORT VALUE, DE = MESSAGE
+ 0183 F5        	PUSH	PSW
+ 0184 0E09      	MVI	C,PRINT
+ 0186 CD0500    	CALL	BDOS
+ 0189 F1        	POP	PSW
+                	; CONVERT SPEED BITS INTO INDEX...
+ 018A E614      	ANI	SPBITS
+ 018C FE14      	CPI	MHZ10
+ 018E 0E03      	MVI	C,XMHZ10
+ 0190 CAA301    	JZ	PRTSPD
+ 0193 FE04      	CPI	MHZ8
+ 0195 0E02      	MVI	C,XMHZ8
+ 0197 CAA301    	JZ	PRTSPD
+ 019A FE10      	CPI	MHZ4
+ 019C 0E01      	MVI	C,XMHZ4
+ 019E CAA301    	JZ	PRTSPD
                 ; MUST BE 2MHZ...
- 0171 012032    	LXI	B,' 2'
- 0174 C38601    	JMP	PRTSPD
- 0177 013130    DO10:	LXI	B,'10'
- 017A C38601    	JMP	PRTSPD
- 017D 012038    DO8:	LXI	B,' 8'
- 0180 C38601    	JMP	PRTSPD
- 0183 012034    DO4:	LXI	B,' 4'
+ 01A1 0E00      	MVI	C,XMHZ2
                 	;JMP	PRTSPD
- 0186 78        PRTSPD:	MOV	A,B
- 0187 32D701    	STA	SPDNUM
- 018A 79        	MOV	A,C
- 018B 32D801    	STA	SPDNUM+1
- 018E 0E09      	MVI	C,PRINT
- 0190 CD0500    	CALL	BDOS
- 0193 C30000    	JMP	CPM
+                PRTSPD:
+ 01A3 69        	MOV	L,C
+ 01A4 2600      	MVI	H,0
+ 01A6 29        	DAD	H
+ 01A7 29        	DAD	H	; *4
+ 01A8 01C101    	LXI	B,SPDTBL
+ 01AB 09        	DAD	B
+ 01AC EB        	XCHG
+ 01AD 0E09      	MVI	C,PRINT
+ 01AF CD0500    	CALL	BDOS
+ 01B2 111B02    	LXI	D,SPDNUM
+ 01B5 0E09      	MVI	C,PRINT
+ 01B7 CD0500    	CALL	BDOS
+ 01BA C30000    	JMP	CPM
                 
- 0196 5573616765USAGE:	DB	'Usage: SPD {s} where s is 2, 4, 8 or 10 MHz.',CR,LF
- 01C4 596F752061SPEED:	DB	'You are running at '
- 01D7 7878204D48SPDNUM:	DB	'xx MHz.',CR,LF,'$'
+                SPDVAL:
+ 01BD 00        	DB	MHZ2	; XMHZ2
+ 01BE 10        	DB	MHZ4	; XMHZ4
+ 01BF 04        	DB	MHZ8	; XMHZ8
+ 01C0 14        	DB	MHZ10	; XMHZ10 I.E. MAX
                 
- 01E1           	END
-
+                SPDTBL:
+ 01C1 32242020  	DB	'2$  '	; XMHZ2
+ 01C5 34242020  	DB	'4$  '	; XMHZ4
+ 01C9 38242020  	DB	'8$  '	; XMHZ8
+ 01CD 4D415824  	DB	'MAX$';	; XMHZ10
+                
+ 01D1 5573616765USAGE:	DB	'Usage: SPDSBC {s} where s is 2, 4, 8 or M[AX] (MHz).',CR,LF
+ 0207 596F752061SPEED:	DB	'You are running at $'
+ 021B 204D487A2ESPDNUM:	DB	' MHz.',CR,LF,'$'
+                
+ 0223           	DS	64
+ 0263           STACK:	DS	0
+                
+ 0263           	END
+
