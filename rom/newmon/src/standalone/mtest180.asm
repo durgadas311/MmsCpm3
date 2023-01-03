@@ -4,6 +4,8 @@
 ; Continuous, exhaustive.					*
 ;****************************************************************
 ; Assume the low 16K has already been tested - we run there.
+force1M	equ	0	; force test of 1M?
+
 	$*MACRO
 rev	equ	'3'
 
@@ -148,6 +150,7 @@ start:
 	; We can't access top 32K of RAM (used by EEPROM).
 	mvi	a,3dh	; last possible page (1M - 32K)
 	sta	maxpg
+if not force1M
 	call	selpg
 	lxi	h,buf16k
 	mov	a,m
@@ -157,6 +160,7 @@ start:
 	jrz	ok
 	mvi	a,1fh	; last page of 512K
 	sta	maxpg
+endif
 ok:	lxi	d,note
 	call	msgout
 	lda	maxpg
@@ -385,7 +389,11 @@ res2:	db	'nnn '
 res3:	db	'hh',cr,lf,0
 
 noerr:	db	'hh: No errors found.',cr,lf,0
-signon:	db	'RAM Test Z180 rev ',rev,cr,lf,0
+signon:	db	'RAM Test Z180 rev ',rev
+if force1M
+	db	'x'
+endif
+	db	cr,lf,0
 note:	db	'Memory size ',0
 t512k:	db	'512K',cr,lf,0
 t1m:	db	'1M',cr,lf,0

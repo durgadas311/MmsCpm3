@@ -4,6 +4,8 @@
                 ; Continuous, exhaustive.					*
                 ;****************************************************************
                 ; Assume the low 16K has already been tested - we run there.
+ 0000 =         force1M	equ	0	; force test of 1M?
+                
                 	$*MACRO
  0033 =         rev	equ	'3'
                 
@@ -52,9 +54,9 @@
  001A C9        	ret
                 
                 mmu$deinit:
- 001B F3        	di
+ 001B F3        	di
  001C 3A1100    	lda	bbr
-                	out0	a,mmu$bbr
+                	out0	a,mmu$bbr
  001F+ED3939
  0022 FB        	ei
  0023 C9        	ret
@@ -108,9 +110,9 @@
  0050 010040    	lxi	b,16*1024
                 setpat0:
  0053 77        	mov	m,a
- 0054 23        	inx	h
+ 0054 23        	inx	h
  0055 C601      	adi	1
- 0057 27        	daa
+ 0057 27        	daa
  0058 5F        	mov	e,a
  0059 0B        	dcx	b
  005A 78        	mov	a,b
@@ -164,12 +166,13 @@
  008E E614      	ani	00010100b
  0090 F620      	ori	00100000b
  0092 D3F2      	out	0f2h	; ORG0 on (ROM off), everything else as in RESET
- 0094 CD1200    	call	mmu$init
+ 0094 CD1200    	call	mmu$init
                 
-                	; probe memory size - assume 512K if 1M not present.
+                	; probe memory size - assume 512K if 1M not present.
                 	; We can't access top 32K of RAM (used by EEPROM).
  0097 3E3D      	mvi	a,3dh	; last possible page (1M - 32K)
  0099 320F00    	sta	maxpg
+                if not force1M
  009C CD2400    	call	selpg
  009F 210040    	lxi	h,buf16k
  00A2 7E        	mov	a,m
@@ -180,6 +183,7 @@
  00A6+2805
  00A8 3E1F      	mvi	a,1fh	; last page of 512K
  00AA 320F00    	sta	maxpg
+                endif
  00AD 119102    ok:	lxi	d,note
  00B0 CD1502    	call	msgout
  00B3 3A0F00    	lda	maxpg
@@ -218,11 +222,11 @@
  00E8 320E00    	sta	seed
  00EB 3E01      	mvi	a,1	; page number
  00ED 321000    	sta	pgnum
-                loop1:
+                loop1:
  00F0 3A0E00    	lda	seed
                 	stx	a,+0
  00F3+DD7700
- 00F6 4F        	mov	c,a
+ 00F6 4F        	mov	c,a
  00F7 C601      	adi	1
  00F9 27        	daa
  00FA 320E00    	sta	seed
@@ -274,11 +278,11 @@
  0158 0C        	inr	c
  0159 B9        	cmp	c
  015A DA2E01    	jc	loop2
-                
+                
                 	; done with one pass, report results...
                 	lxix	banks
  015D+DD21
- 015F+AA02
+ 015F+AA02
  0161 3E01      	mvi	a,1
  0163 321000    	sta	pgnum
  0166 0600      	mvi	b,0
@@ -330,11 +334,11 @@
  01BC 3A0D00    	lda	seed0
  01BF CD0102    	call	hexout
  01C2 116402    	lxi	d,noerr
- 01C5 CD1502    	call	msgout
+ 01C5 CD1502    	call	msgout
                 	; TODO: restore and return to monitor
                 dover:	; do test again...
  01C8 3A0D00    	lda	seed0
- 01CB C601      	adi	1
+ 01CB C601      	adi	1
  01CD 27        	daa
  01CE 320D00    	sta	seed0
  01D1 C3C300    	jmp	over
@@ -386,11 +390,11 @@
  0209 F1        	pop	psw
  020A E60F      hex0:	ani	0fh
  020C C690      	adi	90h
- 020E 27        	daa
+ 020E 27        	daa
  020F CE40      	aci	40h
  0211 27        	daa
  0212 77        	mov	m,a
- 0213 23        	inx	h
+ 0213 23        	inx	h
  0214 C9        	ret
                 
  0215 1A        msgout:	ldax	d
@@ -435,10 +439,14 @@
  025F 68680D0A00res3:	db	'hh',cr,lf,0
                 
  0264 68683A204Enoerr:	db	'hh: No errors found.',cr,lf,0
- 027B 52414D2054signon:	db	'RAM Test Z180 rev ',rev,cr,lf,0
+ 027B 52414D2054signon:	db	'RAM Test Z180 rev ',rev
+                if force1M
+                	db	'x'
+                endif
+ 028E 0D0A00    	db	cr,lf,0
  0291 4D656D6F72note:	db	'Memory size ',0
  029E 3531324B0Dt512k:	db	'512K',cr,lf,0
- 02A5 314D0D0A00t1m:	db	'1M',cr,lf,0
+ 02A5 314D0D0A00t1m:	db	'1M',cr,lf,0
                 
                 banks:
  02AA           	ds	64*4	; pattern seed or 0FFH, num errs, 1st err, n/u
@@ -446,6 +454,6 @@
                 
  03AA           	ds	256
  04AA           stack:	ds	0
-                
+                
  04AA           	end	begin
-
+
