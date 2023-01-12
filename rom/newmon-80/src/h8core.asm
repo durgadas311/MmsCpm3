@@ -207,7 +207,7 @@ cmloop:
 	jz	docmd
 	inx	h
 	inx	h
-	djnz	cmloop
+	dcr b ! jnz	cmloop
 	jmp	nocmd
 
 cmdtab:
@@ -417,7 +417,9 @@ gotnum:	; Boot N... "N" in D
 	jc	s501er
 	; convert phy drv to phy base + unit
 	mov	a,d
-	ldx	d,mdbase
+	lhld	bfmod	; module to HL
+	mvi	l,mdbase
+	mov	d,m
 	sub	d
 	mov	e,a	; always zero?
 	jmp	goboot
@@ -476,7 +478,9 @@ gotit1:	push	b
 	jc	error
 	call	vfport
 	jc	s501er
-	ldx	d,mdbase	; base phy drv num
+	lhld	bfmod
+	mvi	l,mdbase	; base phy drv num
+	mov	d,m
 gotit:
 	mvi	e,0
 	mvi	a,'-'	; next is optional unit number...
@@ -484,8 +488,11 @@ gotit:
 	jmp	luboot0
 
 ; verify port is set
-; IX=boot module (in memory)
-vfport:	ldx	a,mdport
+vfport:	push h
+	lhld	bfmod
+	mvi	l,mdport
+	mov	a,m
+	pop	h
 	ora	a
 	jnz	vfp0
 	lda	cport	; if btinit did not set, we can't go on
@@ -530,14 +537,15 @@ colon:	; get arbitrary string as last boot param
 ; NOTE: string might have been placed at bootbf...
 ; SP was set to 'bootbf'...
 goboot:
-	lxiy	error
 	call	crlf
-; IY=error routine
+	lxi	h,error
+; HL=error routine
 ; Move string to stack, if present.
 ; Stack space is 292 bytes, be certain not to overrun.
 ; Since len value is 127 max + TRM, should be OK.
 ; Can't use stack until copy is done... can't destroy DE...
 gbooty:
+	shld	bferr
 	lxi	h,bootbf
 	mov	a,m
 	cpi	0c3h
@@ -555,8 +563,8 @@ btstr1:
 	dcr	c
 	jnz	btstr1
 gboot0:
-	pushiy	; error routine
-; IX=boot module (in memory)
+	lhld	bferr
+	push	h	; error routine on stack
 ; D=phy drv base, E=unit
 doboot:	; common boot path for console and keypad
 	call	h17init	; leaves interrupts disabled
@@ -564,6 +572,7 @@ doboot:	; common boot path for console and keypad
 	sta	AIO$UNI	; relative unit num
 	mov	a,d
 	sta	l2034h	; boot phys drv base
+	lhld	bfmod
 	jmp	btboot
 	; btboot effectively returns here on success
 	; (in most cases)
@@ -644,7 +653,14 @@ cmdsub4:
 cmdsub5:
 	call	conout
 	call	hexbin
-	rld
+	mov	b,a
+	mov	a,m
+	add	a
+	add	a
+	add	a
+	add	a
+	add	b
+	mov	m,a
 	call	inhexcr
 	jnc	cmdsub2
 	jmp	cmdsub5
@@ -833,6 +849,10 @@ cmdmt0:
 	mov	e,a
 	call	adrout
 	call	crlf
+if 1 ; TODO: de-zilog memory test
+	.warning	'de-zilog memory test'
+	ret
+else ; TODO: de-zilog memory test
 	mvi	d,000h
 	mvi	c,030h
 	mvi	b,000h
@@ -1008,7 +1028,7 @@ mtestC:
 	dad	h
 	dad	h
 	dad	h
-	djnz	mtestB
+	dcr b ! jnz	mtestB
 	mvi	a,' '
 	out	0e8h
 mtestD:
@@ -1043,12 +1063,13 @@ mtestG:
 mtestH:
 	dcr	a
 	jnz	mtestH
-	djnz	mtestH
+	dcr b ! jnz	mtestH
 	mvi	a,BEL
 	out	0e8h
 	jmp	mtestG
 ; End of relocated code
 mtestZ	equ	$
+endif
 ;------------------------------------------------
 
 ; must be called with interrupts off
@@ -1057,8 +1078,9 @@ mtestZ	equ	$
 set$horn:
 	sta	horn
 	lxi	h,ctl$F0
-	res	7,m	; beep on
-	mov	a,m
+	mvi	a,01111111b	; beep on
+	ana	m
+	mov	m,a
 	out	0f0h
 	ret
 
@@ -1140,15 +1162,19 @@ adrin3:	pop	h
 
 ; ABUSS L=port, H=value
 kpin:	lhld	ABUSS
-	mov	c,l	; port
-	inp	h	; get value
+	mov	a,l	; port
+	sta	kpin0+1
+kpin0:	in	0
+	mov	h,a	; get value
 	shld	ABUSS
 	ret
 
 ; ABUSS L=port, H=value
 kpout:	lhld	ABUSS
-	mov	c,l	; port
-	outp	h	; output value
+	mov	a,l	; port
+	sta	kpout0+1
+	mov	a,h
+kpout0:	out	0
 kpabt:	ret
 
 kprw:	; switch between display/modify
@@ -1245,14 +1271,16 @@ kpubt:
 	lxi	h,bfkey
 	call	bfind
 	jc	deverr
-	pushix
-	pop	b	; b = IXh
+	lda	bfmod+1	; page adr of mod
+	mov	b,a
 	mvi	c,mddisp
 	lxi	d,Aleds
 	call	mov3dsp
 	push	d	; save LEDs pointer
 	; determine if fixed port...
-	ldx	a,mdport
+	lhld	bfmod
+	mvi	l,mdport
+	mov	a,m
 	ora	a
 	jnz	gotprt
 	lxi	b,dPor
@@ -1276,7 +1304,9 @@ gotprt:	pop	h	; LEDs pointer
 	call	keyin	; get unit
 	ani	01111111b
 	mov	e,a
-	ldx	d,mdbase
+	lhld	bfmod
+	mvi	l,mdbase
+	mov	d,m
 	mvi	a,0c3h
 	sta	bootbf	; mark "no string"
 	lxi	sp,bootbf
@@ -1376,7 +1406,7 @@ kppbt0:	lxi	h,susave+dpdev
 	jnz	kperr
 kpbt1:
 	call	btdsp2	; show device name
-	lxiy	kperr
+	lxi	h,kperr
 	lxi	sp,bootbf
 	jmp	gbooty
 
@@ -1392,16 +1422,12 @@ btdsp:
 	call	mov3dsp
 	pop	d
 	ret
-; IX=boot module
 ; show device name in FP display
 btdsp2:
 	push	d	; device/unit
-	pushix
-	pop	h
-	lxi	d,13	; FP display name
-	dad	d
-	mov	c,l
-	mov	b,h
+	lda	bfmod+1	; page adr of mod
+	mov	b,a
+	mvi	c,mddisp	; FP display name
 	lxi	d,Dleds
 	call	mov3dsp
 	; TODO: fix this - is there a better way?
@@ -1548,14 +1574,17 @@ kpreg:
 
 ; Input Octal(or Hex) byte
 ; B=key, CY=first digit
-iob:	rarr	c	; save CY => C bit 7
+iob:	rar		; save CY => C bit 7
+	mov	c,a	;
 	lda	Radix
 	ora	a
 	mov	a,b
 	jz	ioboct
 ; iobhex - to avoid conflict with cmd keys A-F, first input must be [0]
 ; So, hex input requires 3 or 5 + 1 keys.
-	ralr	c	; restore CY
+	mov	a,c	;
+	ral		; restore CY
+	mov	a,b
 	cnc	keyin
 	ani	01111111b
 	jnz	kperr
@@ -1575,7 +1604,9 @@ iobh0:	call	keyin
 	jnz	iobh0
 	jmp	iob0
 ioboct:
-	ralr	c	; restore CY
+	mov	a,c	;
+	ral		; restore CY
+	mov	a,b
 	mvi	d,3
 iobo0:	cnc	keyin
 	ani	01111111b
@@ -1753,8 +1784,10 @@ ufd:	mvi	a,mfl$DDU
 	ana	b
 	rnz		; updates disabled
 	lxi	h,DsProt
-	rlcr	m
-	mov	b,m
+	mov	a,m
+	rlc
+	mov	m,a
+	mov	b,a
 	inx	h	; DspMod
 	mov	a,m
 	ani	00000010b
@@ -1849,7 +1882,9 @@ deh55:	rlc
 	xra	b		; ???
 	mov	m,a
 	inx	h
-	rlcr	b
+	mov	a,b	; rlcr b
+	rlc
+	mov	b,a
 	pop	psw
 	dcr	c
 	jnz	deh55
@@ -1942,7 +1977,8 @@ fp1:
 	mov	a,m
 	ora	c	; beep off bit
 	mov	m,a
-	bit	6,b	; refresh display?
+	mov	a,b
+	ani	01000000b	; refresh display?
 	jnz	fp3
 	inx	h	; Refind
 	dcr	m
@@ -1969,10 +2005,10 @@ fp3:
 int1$xx:
 	; not really FP related, but no space in low ROM...
 	lda	ctl$F0
-	bit	5,a	; MON mode?
+	ani	00100000b	; MON mode?
 	jnz	intret	; skip if running monitor...
 	lda	MFlag
-	bit	7,a	; HLT processing enabled
+	ani	10000000b	; HLT processing enabled
 	cz	chkhlt
 	rrc		; mfl$CLK private int1?
 	cc	vrst1
@@ -1999,45 +2035,51 @@ chkhlt:
 
 ; match module by character (letter)
 ; C=letter, B=00:cmd,ff:boot
-bfchr:	ldx	a,+2	; phy drv or type
+bfchr:
+	mvi	e,mdbase	; phy drv or type
+	ldax	d		; phy drv or type
 	sui	200	; boot modules < 200
 	sbb	a	; ff=boot, 00=cmd
 	cmp	b	; ZR=match
 	jnz	bfn0
-	ldx	a,mdchr
+	mvi	e,mdchr
+	ldax	d	; mdchr
 	cmp	c
 	ret
 
 ; match module by FP key
 ; C=FP key, B=00:cmd,ff:boot
-bfkey:	ldx	a,+2	; phy drv or type
+bfkey:
+	mvi	e,mdbase	; phy drv or type
+	ldax	d		; phy drv or type
 	sui	200	; boot modules < 200
 	sbb	a	; ff=boot, 00=cmd
 	cmp	b	; ZR=match
 	jnz	bfn0
-	ldx	a,mdkey
+	mvi	e,mdkey
+	ldax	d	; mdkey
 	cmp	c
 	ret
 
 ; match boot module by phy drv number
 ; C=phy drv (base), B=type
+; DE=module
 ; Only for boot modules
-bfnum:	ldx	a,mdbase	; phy drv or type
+bfnum:	mvi	e,mdbase	; phy drv or type
+	ldax	d		; phy drv or type
 	cpi	200	; boot modules < 200
 	jnc	bfn0	; skip if >= 200
-	mov	a,c
-	subx	mdbase
-	ora	a
-	jnz	bfn0
-	xra	a
-	ret
+	sub	c
+	rz	; A is zero - match
 bfn0:	xra	a
 	inr	a
 	ret
 
 ; List only boot modules
 ; On first module, C=0
-bflst:	ldx	a,mdbase	; phy drv or type
+bflst:
+	mvi	e,mdbase	; phy drv or type
+	ldax	d		; phy drv or type
 	cpi	200	; boot modules < 200
 	jnc	bfn0
 	mov	a,c
@@ -2045,49 +2087,47 @@ bflst:	ldx	a,mdbase	; phy drv or type
 	mvi	a,','
 	cnz	conout
 	inr	c
-	mov	a,b
-	subx	mdbase
-	ora	a
+	ldax	d	; mdbase - phy drv or type
+	sub	b
 	mvi	a,'*'
 	cz	conout
-	pushix
-	pop	h
-	lxi	d,mdname
-	dad	d
+	mov	h,d
+	mvi	l,mdname
 	call	msgout
 	lxi	h,bflst
 	jmp	bfn0	; NZ - keep going
 
 ; List only boot modules
-bfllst:	ldx	a,mdbase	; phy drv or type
+bfllst:
+	mvi	e,mdbase	; phy drv or type
+	ldax	d		; phy drv or type
 	cpi	200	; boot modules < 200
 	jnc	bfn0
-	mov	a,b
-	subx	mdbase
-	ora	a
+	sub	b
 	mvi	a,' '
 	jnz	bfll2
 	mvi	a,'*'
 bfll2:	call	conout
-	pushix
-	pop	h
-	lxi	d,mdname
-	dad	d
+	mov	h,d
+	mvi	l,mdname
 	call	msgout
 	mvi	a,TAB
 	call	conout
-	ldx	a,mdchr
+	mvi	e,mdchr
+	ldax	d
 	call	conout
 	mvi	a,' '
 	call	conout
-	ldx	a,mdkey
+	mvi	e,mdkey
+	ldax	d
 	adi	'0'
 	jnc	bfll0
 	mvi	a,'-'
 bfll0:	call	conout
 	mvi	a,' '
 	call	conout
-	ldx	a,mdbase
+	mvi	e,mdbase
+	ldax	d
 	call	decout
 	call	crlf
 	lxi	h,bfllst
@@ -2096,10 +2136,18 @@ bfll0:	call	conout
 	ret
 
 ; Find boot module and load into 1000h if necessary.
-; HL=match function: returns Z if found, BC=target, IX=module
+; Entry: BC=target, HL=match function
+; match function: returns Z if found (BC=target, DE=module)
 ; Return CY at end of modules (not found)
-; Return IX=loaded module (run location)
+; Else return 'bfmod'=loaded module (run location)
 ; Must preserve BC during search loop.
+; Uses memory near E000H (stack below; storage above)
+; Modules MUST be on page boundaries.
+bfstk	equ	0e000h
+bfssp	equ	bfstk	; saved SP of caller
+bffnc	equ	bfssp+2	; saved match func
+bfmod	equ	bffnc+2	; current module being checked
+bferr	equ	bfmod+2	; error message for booting
 bfind:
 	; can't check if it's loaded until we know where it's loaded...
 	; first, check if already loaded
@@ -2110,66 +2158,76 @@ bfind0:
 	; must map ROM back in, so prevent interruptions...
 	; also, we loose memory at SP...
 	di
-	lxiy	0
-	dady	sp
-	lxi	sp,0e000h	; a safe SP?
+	shld	bffnc
+	lxi	h,0
+	dad	sp
+	shld	bfssp
+	lxi	sp,bfstk	; a safe SP?
 	lda	ctl$F2
 	push	psw
 	ani	not ctl$ORG0	; ORG0 off
 	ori	ctl$MEM1	; MEM1 on
-	out	0f2h
-	lxix	btmods	; start of modules...
-bf0:	call	icall
+	out	0f2h	; low 32K RAM disappears...
+	lxi	h,btmods	; start of modules...
+	shld	bfmod
+bf0:	; HL=curr mod
+	xchg		; DE=module
+	lhld	bffnc
+	call	icall
+	lhld	bfmod
 	jz	bf9
-	ldx	d,mdpgs
+	;mvi	l,mdpgs	; 'mdpgs' must be zero
+	mov	d,m	; mod.mdpgs
 	mvi	e,0
-	dadx	d
-	pushix
-	pop	psw	; A=IXh
+	dad	d
+	shld	bfmod
+	mov	a,h
 	cpi	HIGH bterom	; end of ROM
 	jnc	bf1
-	ldx	a,mdpgs
+	mov	a,m	; mod.mdpgs is +0
 	ora	a
 	jz	bf1
 	cpi	0ffh
-	jnz	bf0
-bf1:
+	jnz	bf0	; keep searching, HL=next mod
+bf1:	; error exit - not found.
 	pop	psw
 	out	0f2h
-	spiy
+	lhld	bfssp
+	sphl
 	ei
 	stc	; CY = end of list (not found)
 	ret
 
 bf9:	; match found, now load into place and init
-	ldx	b,mdpgs
-	ldx	d,mdorg
-	pushix		;
-	pop	h	; HL=IX (module in logical addr)
+	; HL=curr mod
+	mov	b,m	; mdpgs, must be +0
+	inx	h	; mdorg, must be +1
+	mov	d,m
+	dcx	h	; restore module+0
 	mvi	e,0
 	mvi	c,0
 	push	d
 	; TODO: avoid redundant load... and init?
-	call	ldir
-	popix	; module load addr
+	call	ldir	; copy module into place, DE
+	pop	h	; module load addr
+	shld	bfmod	;
 	; now call init routine... but must restore RAM...
 	pop	psw
 	out	0f2h
-	spiy
+	lhld	bfssp
+	sphl
 	ei
 	call	btinit	; CY indicates error, pass along...
 	ret
 
-; IX=module in real memory
-btinit:	pushix
-	pop	h
+; DE=module in real memory
+btinit:	lhld	bfmod
 	mvi	l,mdinit
 	pchl
 
-; IX=module in real memory
 cmexec:
-btboot:	pushix
-	pop	h
+btboot:
+	lhld	bfmod
 	mvi	l,mdboot
 	pchl
 
@@ -2264,13 +2322,19 @@ dfboot0:	; HL=setup data for pri or sec
 	rc		; CY: no module - error
 	call	vfport
 	rc		; CY: SW501 error
-	ldx	d,mdbase
+	push	h
+	lhld	bfmod
+	mvi	l,mdbase
+	mov	d,m
+	mvi	l,mdluns
+	mov	e,m	; DE = mdbase:mdluns
+	pop	h
 	mov	a,m
 	inx	h
 	cpi	0ffh
 	jnz	dfbt0
 	xra	a
-dfbt0:	cmpx	mdluns
+dfbt0:	cmp	e	; mdluns
 	cmc
 	rc
 	mov	e,a	; DE=phy drv base,unit
@@ -2402,33 +2466,40 @@ backup:
 	jmp	lini0
 
 ; Used during entry of LUN in boot command.
-; multiply E by 16, check for >= (IX+mdnum) (or overflow)
+; multiply E by 16, check for >= (bfmod.mdluns) (or overflow)
 ; add in A (converted to binary).
 ; IX=active boot module
 ; Returns CY on overflow, else E updated to new LUN value
 E$x16$A:
-	mov	b,e
-	ralr	b
-	rc
-	ralr	b
-	rc
-	ralr	b
-	rc
-	ralr	b
-	rc
 	push	psw
 	sui	'0'
 	cpi	9+1
 	jc	ex16a0
 	sui	'A'-'0'-10
-ex16a0:	add	b	; never CY
-	cmpx	mdluns	; might be 0ffh
-	jc	ex16a1	; value OK
-	pop	psw
+ex16a0:
+	mov	b,a
+	mov	a,e
+	add	a
+	jc	ex16a2
+	add	a
+	jc	ex16a2
+	add	a
+	jc	ex16a2
+	add	a
+	jc	ex16a2
+	add	b	; never CY
+	push	h
+	lhld	bfmod
+	mvi	l,mdluns
+	cmp	m	; might be 0ffh
+	pop	h
+	jc	ex16a1
+ex16a2:	pop	psw
 	stc
-	ret
+	ret	; overflow
 ex16a1:	mov	e,a
 	pop	psw
+	ora	a	; NC
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2450,7 +2521,7 @@ dmp1:	mov	a,m
 	call	hexout
 	call	spout
 	inx	h
-	djnz	dmp1
+	dcr b ! jnz	dmp1
 	pop	h
 	mvi	b,16
 dmp2:	mov	a,m
@@ -2461,9 +2532,9 @@ dmp2:	mov	a,m
 dmp3:	mvi	a,'.'
 dmp4:	call	conout
 	inx	h
-	djnz	dmp2
+	dcr b ! jnz	dmp2
 	pop	b
-	djnz	dmp0
+	dcr b ! jnz	dmp0
 	shld	ABUSS
 	ret
 
