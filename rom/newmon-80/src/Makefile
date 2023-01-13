@@ -21,6 +21,7 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 #	zout/cx.cim
 # for bringup:
 H8MODS=	../../newmon/src/2716_444-19_H17.rom \
+	zout/bvdip1.cim \
 	zout/chelp.cim \
 	zout/cdump.cim	\
 	zout/csubst.cim
@@ -52,9 +53,9 @@ h8amon2.rom: $(H8MON)
 	$(MAKE) -C rmac $@
 
 ship: $(ROMS) rmac/vaflash.sys # ../doc/H8-Monitor-2.pdf
-	rsync -uvW ../bin/*.sys ../doc/H8-Monitor-2.pdf \
+	rsync -uvW ../bin/*.sys \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/8080/
-	rsync -uvW h8mon2.rom \
+	rsync -uvW h8amon2.rom \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/8080/h8amon2-v$(VERN).rom
 	rsync -uvW x.htaccess \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/8080/.htaccess
