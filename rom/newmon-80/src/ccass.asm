@@ -1,0 +1,269 @@
+; Command module for Cassette tape load/store
+	maclib	ram
+	maclib	core
+
+; ASCII control characters
+STXc	equ	02h
+SYNc	equ	16h
+
+tpd	equ	0f8h	; data port
+tpc	equ	0f9h	; ctrl/status port
+
+	org	1000h
+first:	db	HIGH (last-first)	; +0: num pages
+	db	HIGH first		; +1: ORG page
+	db	255,0	; +2,+3: phy drv base, num
+
+	jmp	init	; +4: init entry
+	jmp	cass	; +7: action entry
+
+	db	-1	; +10: Command letter
+	db	88h	; +11: front panel key
+	db	0	; +12: port, 0 if variable
+	db	11111111b,11111111b,11111111b	; +13: FP display
+	db	'Cassette',0	; +16: mnemonic string
+
+crcsum:	dw	0
+savstk:	dw	0
+
+init:
+	mvi	a,01001110b	; 1 stop, no par, 8 data, 16x
+	out	tpc
+	xra	a
+	out	tpc	; in case it was not "mode" state...
+	xra	a	; NC
+	ret
+
+cass:
+	lxi	h,0
+	dad	sp
+	shld	savstk
+	lda	lstcmd
+	cpi	88h	; load key
+	jz	rmem
+	jmp	wmem
+
+; "read memory" a.k.a. load from cassette
+; load start => tpadr
+; end adr => ABUSS
+; exec adr => Reg[PC]
+rmem:
+	call	beep
+load:	lxi	b,0fe00h
+load0:	call	srs	; scan for record start...
+	; DE=leader (8101h)
+	; HA=byte count
+	mov	l,a	; HL=byte count
+	xchg		; DE=byte count, HL=leader
+	dcr	c
+	dad	b
+	mov	a,h
+	push	b
+	push	psw	; A=leader(HI)
+	ani	7fh
+	ora	l
+	mvi	a,2	; tape header error
+	jnz	tperr	; wrong type/seq
+	call	rnp	; get PC
+	mov	b,h
+	mov	c,a	; BC=PC
+	push	d
+	lxi	d,24	; get PC
+	lhld	RegPtr
+	dad	d
+	pop	d
+	mov	m,c
+	inx	h
+	mov	m,b	; save PC in Reg[PC]
+	call	rnp	; memory load address
+	mov	l,a	; HL=load addr
+	shld	tpadr
+load1:	call	rnb	; data byte
+	mov	m,a
+	shld	ABUSS
+	inx	h
+	dcx	d
+	mov	a,d
+	ora	e
+	jnz	load1
+	call	ctc	; verify checksum
+	pop	psw	; A=leader(HI)
+	pop	b	; BC=0fe00h...
+	rlc
+	jc	tft
+	jmp	load0
+
+ctc:	call	rnp
+	lhld	crcsum
+	mov	a,h
+	ora	l
+	rz
+	mvi	a,1	; checksum error code
+	;jr	tperr
+tperr:	mov	m,a	; error code
+	mov	b,a
+	call	tft
+	lhld	savstk
+	sphl
+	ret
+
+; "write memory" a.k.a. save to cassette
+; tpadr=start of save
+; ABUSS=end of save
+; Reg[PC]=entry/start execution address
+wmem:
+	call	beep
+	mvi	a,00000001b	; TxEn
+	out	tpc
+	mvi	a,SYNc
+	mvi	b,32
+wmem1:	call	wnb
+	dcr b ! jnz wmem1
+	mvi	a,STXc
+	call	wnb
+	lxi	h,0
+	shld	crcsum
+	lxi	h,8101h
+	call	wnp
+	lhld	tpadr
+	xchg
+	lhld	ABUSS	; last byte to include
+	inx	h	; +1 for all bytes
+	ora	a
+	call	dsbc	; HL=length of data
+	call	wnp
+	push	h
+	push	d
+	lxi	d,24	; get PC
+	lhld	RegPtr
+	dad	d
+	mov	a,m
+	inx	h
+	mov	h,m
+	mov	l,a
+	call	wnp
+	pop	h	; former DE content
+	pop	d	; former HL content
+	call	wnp
+wmem2:	mov	a,m
+	call	wnb
+	shld	ABUSS
+	inx	h
+	dcx	d
+	mov	a,d
+	ora	e
+	jnz	wmem2
+	lhld	crcsum
+	call	wnp
+	call	wnp
+; turn off tape and beep
+tft:	xra	a
+	out	tpc
+beep:	lxi	h,ctl$F0
+	mov	a,m
+	ani	01111111b	; beep on
+	mov	m,a
+	mvi	a,200/2
+	call	delay
+	mov	a,m
+	ori	10000000b	; beep off
+	mov	m,a
+	ret
+
+; scan for header...
+; Returns DE=leader, HA=byte count
+srs:	lxi	h,0
+	mov	d,h
+srs2:	call	rnb
+	inr	d
+	cpi	SYNc
+	jz	srs2
+	cpi	STXc
+	jnz	srs
+	mvi	a,10
+	cmp	d
+	jnc	srs
+	shld	crcsum	; zero checksum
+	call	rnp	; leader code
+	mov	d,h
+	mov	e,a
+	;jmp	rnp	; byte count
+; returns H=first byte, A=second byte
+rnp:	call	rnb
+	mov	h,a
+	;jmp	rnb
+rnb:	mvi	a,00110100b	; Err reset, RTS, RxEn, no DTR
+	out	tpc
+rnb1:	call	tpxit
+	ani	00000010b	; RxR
+	jz	rnb1
+	in	tpd
+	jmp	crc
+
+tpxit:	lda	kpchar
+	cpi	01101111b	; cancel?
+	in	tpc
+	rnz
+	xra	a
+	sta	kpchar
+	lhld	savstk
+	sphl
+	ret
+
+; HL=two bytes to save, big endian
+wnp:	mov	a,h
+	call	wnb
+	mov	a,l
+	; jr	wnb
+wnb:	push	psw
+wnb1:	call	tpxit	; check for cancel...
+	ani	00000001b	; TxRdy
+	jz	wnb1
+	mvi	a,00010001b	; TxEn, Err reset
+	out	tpc
+	pop	psw
+	out	tpd
+	;jr	crc
+; A=data byte
+crc:	push	b
+	push	h
+	mvi	b,8
+	lhld	crcsum
+crc1:	rlc
+	mov	c,a
+	dad	h
+	mov	a,h
+	ral
+	xra	c
+	rrc
+	jnc	crc2
+	mov	a,h
+	xri	80h
+	mov	h,a
+	mov	a,l
+	xri	05h
+	mov	l,a
+crc2:	mov	a,c
+	dcr b ! jnz crc1
+	; A was RLCed 8 times, back to original value
+	shld	crcsum
+	pop	h
+	pop	b
+	ret
+
+dsbc:	mov	a,l
+	sub	e
+	mov	l,a
+	mov	a,h
+	sbb	d
+	mov	h,a
+	ret
+
+	rept	(($+0ffh) and 0ff00h)-$
+	db	0ffh
+	endm
+if ($ > 1800h)
+	.error	'Module overflow'
+endif
+
+last:	end

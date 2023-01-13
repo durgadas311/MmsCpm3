@@ -24,7 +24,15 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/bvdip1.cim \
 	zout/chelp.cim \
 	zout/cdump.cim	\
-	zout/csubst.cim
+	zout/csubst.cim \
+        zout/ccass.cim \
+        zout/cclock.cim \
+        zout/cinput.cim \
+        zout/coutput.cim \
+        zout/csetup.cim \
+        zout/cspeed.cim \
+        zout/cterm.cim \
+        zout/cvtalk.cim
 
 H8MON = zout/h8core.cim $(H8MODS)
 ROMS = h8amon2.rom # h8anmon2.rom
