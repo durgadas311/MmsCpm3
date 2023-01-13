@@ -26,7 +26,7 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/csubst.cim
 
 H8MON = zout/h8core.cim $(H8MODS)
-ROMS = h8amon2.rom
+ROMS = h8amon2.rom # h8anmon2.rom
 
 VERN = $(shell awk -f ../../newmon/src/getver.awk h8core.asm)
 
@@ -51,7 +51,7 @@ h8amon2.rom: $(H8MON)
 %.sys:
 	$(MAKE) -C rmac $@
 
-ship: rmac/vflash.sys $(ROMS) ../doc/H8-Monitor-2.pdf
+ship: $(ROMS) rmac/vaflash.sys # ../doc/H8-Monitor-2.pdf
 	rsync -uvW ../bin/*.sys ../doc/H8-Monitor-2.pdf \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/8080/
 	rsync -uvW h8mon2.rom \
