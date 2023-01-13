@@ -19,6 +19,11 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/ch8test1.cim \
 	zout/csetup.cim
 #	zout/cx.cim
+# for bringup:
+H8MODS=	../../newmon/src/2716_444-19_H17.rom \
+	zout/chelp.cim \
+	zout/cdump.cim	\
+	zout/csubst.cim
 
 H8MON = zout/h8core.cim $(H8MODS)
 ROMS = h8amon2.rom
@@ -33,14 +38,14 @@ ram.lib core.lib setup.lib:
 sys:
 	$(MAKE) -C rmac all
 
-zout/%.cim: %.asm core.lib ram.lib setup.lib
+zout/%.cim: %.asm core80.lib core.lib ram.lib setup.lib
 	zmac --dri -i -8 -c -s -n $<
 	cp $@ ../bin
 	cp zout/$*.lst ../prn
 
 h8amon2.rom: $(H8MON)
 	cat $(H8MON) | ../../../tools/cksum -f -w -x -l 0x8000 >$@
-	cp	$@ ../bin
+	cp $@ ../bin
 
 # Standalone programs
 %.sys:

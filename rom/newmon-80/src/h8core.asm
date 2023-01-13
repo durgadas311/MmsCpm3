@@ -195,7 +195,7 @@ prloop:
 	; console or kaypad...
 	call	cmdin
 	cpi	'?'	; HELP command?
-	jz	nocmd0	; handled my add-on
+	jz	nocmd0	; handled by add-on
 	ani	11011111b ; toupper
 	sta	lstcmd
 	jm	kpcmd	; from keypad... jumps back here...
@@ -212,12 +212,9 @@ cmloop:
 
 cmdtab:
 	; console commands
-	db	'D' ! dw cmddmp	; Dump memory
 	db	'G' ! dw cmdgo	; Go
-	db	'S' ! dw cmdsub	; Substitute in memory
 	db	'P' ! dw cmdpc	; Set PC
 	db	'B' ! dw cmdboot; Boot
-	db	'M' ! dw cmdmt	; Memory Test
 	db	'V' ! dw prtver	; Version of ROM
 	db	'L' ! dw cmdlb	; List boot modules
 	db	'H' ! dw cmdhb	; long list (Help) boot modules
@@ -245,9 +242,18 @@ cmdtab:
 	db	8fh ! dw kprgm	; [F] [.] - Register Mode
 numcmd	equ	($-cmdtab)/3
 
-	rept	0137h-$
+	rept	0137h-$-21
 	db	0ffh
 	endm
+
+	jmp	inhexcr
+	jmp	hexbin
+	jmp	hexin
+	jmp	adrin
+	jmp	adrnl
+	jmp	hexout
+	jmp	spout
+
 if	($ <> 0137h)
 	.error 'HDOS entry overrun 0137h'
 endif
@@ -615,56 +621,6 @@ init:
 	; save registers on stack, for debugger access...
 	jmp	intsetup
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Substitute command
-cmdsub:
-	lxi	h,subms
-	call	msgout
-	lxi	h,ABUSS
-	ora	a	; NC
-	mvi	d,CR
-	call	adrin
-	xchg
-cmdsub0:
-	call	adrnl
-	mov	a,m
-	call	hexout
-	call	spout
-cmdsub1:
-	call	hexin
-	jnc	cmdsub4
-	cpi	CR
-	jz	cmdsub2
-	cpi	'-'
-	jz	cmdsub3
-	cpi	'.'
-	rz
-	call	belout
-	jmp	cmdsub1
-cmdsub2:
-	inx	h
-	jmp	cmdsub0
-cmdsub3:
-	call	conout
-	dcx	h
-	jmp	cmdsub0
-cmdsub4:
-	mvi	m,000h
-cmdsub5:
-	call	conout
-	call	hexbin
-	mov	b,a
-	mov	a,m
-	add	a
-	add	a
-	add	a
-	add	a
-	add	b
-	mov	m,a
-	call	inhexcr
-	jnc	cmdsub2
-	jmp	cmdsub5
-
 inhexcr:
 	call	conin
 	cpi	CR
@@ -822,254 +778,6 @@ ci0:	mvi	a,083h
 	out	0ech
 	ret
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Memory Test command
-
-cserr:
-	lxi	h,cserms
-	jmp	msgout
-
-cmdmt:
-	lxi	h,mtms
-	call	msgout
-	call	waitcr
-	lxi	h,topms
-	call	msgout
-	lxi	h,0
-	dad	sp
-	mov	a,h
-	inr	a
-	jz	cmdmt0
-	sui	020h
-cmdmt0:
-	mov	h,a
-	mvi	l,0
-	dcx	h
-	sui	'0'
-	mov	e,a
-	call	adrout
-	call	crlf
-if 1 ; TODO: de-zilog memory test
-	.warning	'de-zilog memory test'
-	ret
-else ; TODO: de-zilog memory test
-	mvi	d,000h
-	mvi	c,030h
-	mvi	b,000h
-	exx
-	lxi	h,mtest0
-	lxi	d,memtest - (mtest1-mtest0)
-	lxi	b,mtestZ-mtest0
-	call	ldir
-	lxi	d,memtest
-	lxi	h,mtest1
-	mvi	c,mtestZ-mtest1
-	xra	a
-	exaf
-	xra	a
-cmdmt1:
-	add	m
-	exaf
-	xchg
-	add	m
-	exaf
-	xchg
-	inx	h
-	inx	d
-	dcr	c
-	jnz	cmdmt1
-	mov	c,a
-	exaf
-	cmp	c
-	jnz	cserr
-	di
-	lda	ctl$F2
-	ani	ctl$SPD	; all but speed bits OFF
-	ori	ctl$ORG0	; set ORG0 only
-	; pass ctl$F2 in A...
-	jmp	memtest - (mtest1-mtest)
-
-;------------------------------------------------
-; Start of relocated code...
-; Memory Test routine, position-independent
-;
-mtest0:
-mtest:
-	; A reg contains desired ctl$F2 image
-	out	0f2h
-mtest1:		; lands at 03000h - retained relocated code
-	exx
-	mov	h,d
-	mvi	l,0
-	mov	a,b
-	exx
-	mov	c,a
-	mvi	b,2
-mtest2:
-	mov	a,c
-	rlc
-	rlc
-	rlc
-	rlc
-	mov	c,a
-	ani	00fh
-	adi	090h
-	daa
-	aci	040h
-	daa
-	out	0e8h
-mtest3:
-	in	0edh
-	ani	020h
-	jz	mtest3
-	dcr	b
-	jnz	mtest2
-	mvi	a,CR
-	out	0e8h
-	exx
-	mov	a,b
-mtest4:
-	mov	m,a
-	adi	1
-	daa
-	inr	l
-	jnz	mtest4
-	inr	h
-	dcr	c
-	jnz	mtest4
-	mov	a,h
-	sub	d
-	mov	c,a
-	mov	h,d
-	mvi	l,0
-	mov	a,b
-mtest5:
-	cmp	m
-	jnz	mtest9
-	adi	1
-	daa
-	inr	l
-	jnz	mtest5
-	inr	h
-	dcr	c
-	jnz	mtest5
-	exx
-	lxi	h,memtest
-	lxi	d,0
-	lxi	b,mtestZ-mtest1
-	exx
-	mov	a,d
-	xri	030h
-	mov	d,a
-	jz	mtest6
-	mov	c,e
-	jmp	mtest7
-mtest6:
-	mvi	c,030h
-	mvi	a,001h
-	add	b
-	daa
-	mov	b,a
-	exx
-	xchg
-	exx
-mtest7:
-	exx
-	call	ldir
-	mov	a,d
-	ani	0f0h
-	mov	h,a
-	mvi	l,0
-	mvi	c,mtestZ-mtest1
-	xra	a
-mtest8:
-	add	m
-	inx	h
-	dcr	c
-	jnz	mtest8
-	mov	c,a
-	exaf
-	cmp	c
-	jnz	mtestE
-	exaf
-	mov	a,d
-	ani	0f0h
-	mov	h,a
-	mvi	l,0
-	pchl
-mtest9:
-	xra	m
-	mov	d,a
-	mvi	a,LF
-	out	0e8h
-mtestA:
-	in	0edh
-	ani	020h
-	jz	mtestA
-	mvi	c,2
-	mvi	b,4
-mtestB:
-	mov	a,h
-	rlc
-	rlc
-	rlc
-	rlc
-	ani	00fh
-	adi	090h
-	daa
-	aci	040h
-	daa
-	out	0e8h
-mtestC:
-	in	0edh
-	ani	020h
-	jz	mtestC
-	dad	h
-	dad	h
-	dad	h
-	dad	h
-	dcr b ! jnz	mtestB
-	mvi	a,' '
-	out	0e8h
-mtestD:
-	in	0edh
-	ani	020h
-	jz	mtestD
-	dcr	c
-	xchg
-	mvi	b,002h
-	jnz	mtestB
-	mvi	a,'*'
-	out	0e8h
-	jmp	mtestG
-mtestE:
-	in	0edh
-	ani	020h
-	jz	mtestE
-	mvi	a,LF
-	out	0e8h
-mtestF:
-	in	0edh
-	ani	020h
-	jz	mtestF
-	mvi	a,'!'
-	out	0e8h
-mtestG:
-	in	0edh
-	ani	020h
-	jz	mtestG
-	xra	a
-	mvi	b,0fah
-mtestH:
-	dcr	a
-	jnz	mtestH
-	dcr b ! jnz	mtestH
-	mvi	a,BEL
-	out	0e8h
-	jmp	mtestG
-; End of relocated code
-mtestZ	equ	$
-endif
 ;------------------------------------------------
 
 ; must be called with interrupts off
@@ -1209,19 +917,12 @@ meminit:
 	sta	kpcnt
 	ret
 
-; for cmdmt...
-cserms:	db	BEL,'Cksum error',TRM
-topms:	db	'Top of Mem: ',TRM
-
 prompt:	db	CR,LF,'H8'
 	db	': ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
 sstms:	db	'-Step',TRM
-subms:	db	'ubstitute ',TRM
 pcms:	db	'rog Counter ',TRM
-mtms:	db	'em test',TRM
-dmpms:	db	'ump ',TRM
 
 ; command not built-in, check modules.
 ; should only be called for console commands.
@@ -1979,6 +1680,7 @@ fp1:
 	mov	m,a
 	mov	a,b
 	ani	01000000b	; refresh display?
+	mov	a,m
 	jnz	fp3
 	inx	h	; Refind
 	dcr	m
@@ -2500,42 +2202,6 @@ ex16a2:	pop	psw
 ex16a1:	mov	e,a
 	pop	psw
 	ora	a	; NC
-	ret
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Dump command
-cmddmp:
-	lxi	h,dmpms
-	call	msgout
-	lxi	h,ABUSS
-	ora	a	; NC
-	mvi	d,CR
-	call	adrin
-	xchg	; HL=adr
-	mvi	b,8	; 8 lines (one half page, 128 bytes)
-dmp0:	push	b
-	call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
-	push	h
-	mvi	b,16
-dmp1:	mov	a,m
-	call	hexout
-	call	spout
-	inx	h
-	dcr b ! jnz	dmp1
-	pop	h
-	mvi	b,16
-dmp2:	mov	a,m
-	cpi	' '
-	jc	dmp3
-	cpi	'~'+1
-	jc	dmp4
-dmp3:	mvi	a,'.'
-dmp4:	call	conout
-	inx	h
-	dcr b ! jnz	dmp2
-	pop	b
-	dcr b ! jnz	dmp0
-	shld	ABUSS
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
