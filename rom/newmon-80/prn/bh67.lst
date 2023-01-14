@@ -1,0 +1,271 @@
+		; Boot Module for H67
+			maclib	ram
+**** ram.lib ****
+**** bh67.asm ****
+			maclib	core
+**** core.lib ****
+**** bh67.asm ****
+			maclib	setup
+**** setup.lib ****
+**** bh67.asm ****
+		
+1000          		org	1000h
+1000  02      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  0302    		db	3,2	; +2,+3: phy drv base, num
+		
+1004  C31410  		jmp	init	; +4: init entry
+1007  C32A10  		jmp	boot	; +7: boot entry
+		
+100A  45      		db	'E'	; +10: Boot command letter
+100B  02      		db	2	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  9284F1  		db	10010010b,10000100b,11110001b	; +13: FP display ("H67")
+1010  48363700		db	'H67',0	; +16: mnemonic string
+		
+1014          	init:
+1014  3A0BF9  		lda	susave+h67pt
+1017  FEFF    		cpi	0ffh
+1019  C22510  		jnz	init1
+101C  0E02    		mvi	c,10b
+101E  CD0400  		call	getport	; no return on error
+1021  C22810  		jnz	init0	; not fatal, if caller gets port later
+1024  78      		mov	a,b
+1025  325021  	init1:	sta	cport
+1028  AF      	init0:	xra	a	; NC
+1029  C9      		ret
+		
+102A          	boot:
+102A  3A5021  		lda	cport
+102D  3C      		inr	a
+102E  4F      		mov	c,a
+102F  AF      		xra	a
+1030  CD4011  		call	outp
+1033  210000  		lxi	h,0		; zero-out command buffer
+1036  223221  		shld	cmdbuf
+1039  223421  		shld	cmdbuf+2
+103C  223621  		shld	cmdbuf+4
+103F  225621  		shld	l2156h	; zero-out ...
+1042  225821  		shld	l2156h+2
+1045  325A21  		sta	l2156h+4
+1048  3A3121  		lda	AIO$UNI	; set LUN in cmdbuf
+104B  0F      		rrc		;
+104C  0F      		rrc		;
+104D  0F      		rrc		;
+104E  323321  		sta	cmdbuf+1;
+1051  1600    		mvi	d,0	; controller number
+1053  3E04    		mvi	a,4	; delay 8mS, also NZ
+1055  B7      		ora	a
+1056  FB      		ei
+1057          	bsasi0:
+1057  C8      		rz
+1058  CD2B00  		call	delay
+105B  1E00    		mvi	e,0	; Test Drive Ready
+105D  CD7B10  		call	sasi$cmd
+1060  3EFF    		mvi	a,255	; longer delay on retry...
+1062  DA5710  		jc	bsasi0
+1065  1E01    		mvi	e,1	; Recalibrate (Home)
+1067  CD7B10  		call	sasi$cmd
+106A  D8      		rc
+106B  210A80  		lxi	h,0800ah	; 10 sectors, retry 8
+106E  223621  		shld	cmdbuf+4
+1071  1E08    		mvi	e,8	; Read
+1073  CD7B10  		call	sasi$cmd
+1076  D8      		rc
+1077  E1      		pop	h	; DEVIANT: leave ghost of error return on stack
+1078  C33B00  		jmp	hwboot
+		
+		; send SASI read command, get results
+107B          	sasi$cmd:
+107B  F3      		di
+107C  7B      		mov	a,e
+107D  323221  		sta	cmdbuf
+1080  0600    		mvi	b,0	; wait for "not BUSY" first
+1082  1E06    		mvi	e,6	;
+1084  210000  		lxi	h,0	; 0x060000 loop/timeout count
+1087          	sscmd0:
+1087  CD3011  		call	inp
+108A  E608    		ani	00001000b
+108C  B8      		cmp	b
+108D  CA9C10  		jz	sscmd1
+1090  2B      		dcx	h
+1091  7D      		mov	a,l
+1092  B4      		ora	h
+1093  C28710  		jnz	sscmd0
+1096  1D      		dcr	e
+1097  C28710  		jnz	sscmd0
+109A  37      		stc
+109B  C9      		ret
+109C          	sscmd1:
+109C  78      		mov	a,b
+109D  EE08    		xri	00001000b	; wait for BUSY
+109F  CAB710  		jz	sscmd2		; got BUSY...
+10A2  47      		mov	b,a
+10A3  0D      		dcr	c
+10A4  AF      		xra	a
+10A5  CD4011  		call	outp
+10A8  0C      		inr	c
+10A9  0C      		inr	c
+10AA  7A      		mov	a,d
+10AB  CD4011  		call	outp	; controller number
+10AE  0D      		dcr	c
+10AF  3E40    		mvi	a,040h	; SELECT
+10B1  CD4011  		call	outp
+10B4  C38710  		jmp	sscmd0	; wait for BUSY now...
+		
+10B7          	sscmd2:
+10B7  3E02    		mvi	a,002h	; enable INTR
+10B9  CD4011  		call	outp
+10BC  213221  		lxi	h,cmdbuf
+10BF          	sscmd3:
+10BF  CD3011  		call	inp
+10C2  47      		mov	b,a
+10C3  B7      		ora	a
+10C4  F2BF10  		jp	sscmd3	; !REQ
+10C7  3E10    		mvi	a,10000b	; CMD
+10C9  A0      		ana	b
+10CA  CADB10  		jz	sscmd4
+10CD  3E40    		mvi	a,01000000b	; MSG
+10CF  A0      		ana	b
+10D0  CAF210  		jz	sscmd6
+10D3  0D      		dcr	c
+10D4  CD3711  		call	outi	; output command byte
+10D7  0C      		inr	c
+10D8  C3BF10  		jmp	sscmd3
+		
+10DB          	sscmd4:
+10DB  218022  		lxi	h,bootbf
+10DE          	sscmd5:
+10DE  CD3011  		call	inp
+10E1  B7      		ora	a
+10E2  F2DE10  		jp	sscmd5	; !REQ
+10E5  E610    		ani	10000b	; CMD - indicates data done
+10E7  C2F210  		jnz	sscmd6
+10EA  0D      		dcr	c
+10EB  CD2711  		call	ini	; input data byte
+10EE  0C      		inr	c
+10EF  C3DE10  		jmp	sscmd5
+10F2          	sscmd6:
+10F2  CD3011  		call	inp
+10F5  E6D0    		ani	0d0h	; REQ, OUT, CMD
+10F7  FE90    		cpi	090h	; must be REQ, CMD
+10F9  C2F210  		jnz	sscmd6	; wait for it...
+10FC  0D      		dcr	c
+10FD  CD3011  		call	inp	; result 0
+1100  6F      		mov	l,a
+1101  0C      		inr	c
+1102          	sscmd7:
+1102  CD3011  		call	inp	; status
+1105  67      		mov	h,a
+1106  E6E0    		ani	0e0h	; REG, OUT, MSG
+1108  FEA0    		cpi	0a0h	; must be REQ, MSG
+110A  C20211  		jnz	sscmd7
+110D  223821  		shld	resbuf	; command results
+1110  0D      		dcr	c
+1111  CD3011  		call	inp	; last data byte
+1114  0C      		inr	c
+1115  FB      		ei
+1116  B7      		ora	a
+1117  37      		stc
+1118  C0      		rnz		; error
+1119  3E01    		mvi	a,1	; SASI error bit
+111B  A5      		ana	l
+111C  C0      		rnz
+111D  3E02    		mvi	a,2	; or other error?
+111F  A5      		ana	l
+1120  C0      		rnz
+1121  3E02    		mvi	a,2	; ACK
+1123  A4      		ana	h	; ACK
+1124  C0      		rnz
+1125  AF      		xra	a	; success
+1126  C9      		ret
+		
+1127  79      	ini:	mov	a,c
+1128  322C11  		sta	ini0+1
+112B  DB00    	ini0:	in	0
+112D  77      		mov	m,a
+112E  23      		inx	h
+112F  C9      		ret
+		
+1130  79      	inp:	mov	a,c
+1131  323511  		sta	inp0+1
+1134  DB00    	inp0:	in	0
+1136  C9      		ret
+		
+1137  79      	outi:	mov	a,c
+1138  323D11  		sta	outi0+1
+113B  7E      		mov	a,m
+113C  D300    	outi0:	out	0
+113E  23      		inx	h
+113F  C9      		ret
+		
+1140  F5      	outp:	push	psw
+1141  79      		mov	a,c
+1142  324711  		sta	outp0+1
+1145  F1      		pop	psw
+1146  D300    	outp0:	out	0
+1148  C9      		ret
+		
+1149  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1200          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   121	symbols
+   512	bytes
+
+   183	macro calls
+    16	macro bytes
+     0	invented symbols
