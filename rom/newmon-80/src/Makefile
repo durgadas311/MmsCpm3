@@ -12,7 +12,6 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/coutput.cim \
 	zout/cterm.cim \
 	zout/ccass.cim \
-	zout/cspeed.cim \
 	zout/cvtalk.cim \
 	zout/ch8dcopy.cim \
 	zout/cclock.cim \
@@ -33,7 +32,6 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
         zout/cinput.cim \
         zout/coutput.cim \
         zout/csetup.cim \
-        zout/cspeed.cim \
         zout/cterm.cim \
         zout/cmemtst.cim \
         zout/cvtalk.cim
