@@ -1,0 +1,315 @@
+		; Command module for Cassette tape load/store
+			maclib	ram
+**** ram.lib ****
+**** ccass.asm ****
+			maclib	core
+**** core.lib ****
+**** ccass.asm ****
+		
+		; ASCII control characters
+0002          	STXc	equ	02h
+0016          	SYNc	equ	16h
+		
+00F8          	tpd	equ	0f8h	; data port
+00F9          	tpc	equ	0f9h	; ctrl/status port
+		
+1000          		org	1000h
+1000  02      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C31D10  		jmp	init	; +4: init entry
+1007  C32610  		jmp	cass	; +7: action entry
+		
+100A  FF      		db	-1	; +10: Command letter
+100B  88      		db	88h	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  43617373		db	'Cassette',0	; +16: mnemonic string
+      65747465
+      00
+		
+1019  0000    	crcsum:	dw	0
+101B  0000    	savstk:	dw	0
+		
+101D          	init:
+101D  3E4E    		mvi	a,01001110b	; 1 stop, no par, 8 data, 16x
+101F  D3F9    		out	tpc
+1021  AF      		xra	a
+1022  D3F9    		out	tpc	; in case it was not "mode" state...
+1024  AF      		xra	a	; NC
+1025  C9      		ret
+		
+1026          	cass:
+1026  210000  		lxi	h,0
+1029  39      		dad	sp
+102A  221B10  		shld	savstk
+102D  3A3B20  		lda	lstcmd
+1030  FE88    		cpi	88h	; load key
+1032  CA3810  		jz	rmem
+1035  C39710  		jmp	wmem
+		
+		; "read memory" a.k.a. load from cassette
+		; load start => tpadr
+		; end adr => ABUSS
+		; exec adr => Reg[PC]
+1038          	rmem:
+1038  CDF810  		call	beep
+103B  0100FE  	load:	lxi	b,0fe00h
+103E  CD0911  	load0:	call	srs	; scan for record start...
+			; DE=leader (8101h)
+			; HA=byte count
+1041  6F      		mov	l,a	; HL=byte count
+1042  EB      		xchg		; DE=byte count, HL=leader
+1043  0D      		dcr	c
+1044  09      		dad	b
+1045  7C      		mov	a,h
+1046  C5      		push	b
+1047  F5      		push	psw	; A=leader(HI)
+1048  E67F    		ani	7fh
+104A  B5      		ora	l
+104B  3E02    		mvi	a,2	; tape header error
+104D  C28D10  		jnz	tperr	; wrong type/seq
+1050  CD2911  		call	rnp	; get PC
+1053  44      		mov	b,h
+1054  4F      		mov	c,a	; BC=PC
+1055  D5      		push	d
+1056  111800  		lxi	d,24	; get PC
+1059  2A1D20  		lhld	RegPtr
+105C  19      		dad	d
+105D  D1      		pop	d
+105E  71      		mov	m,c
+105F  23      		inx	h
+1060  70      		mov	m,b	; save PC in Reg[PC]
+1061  CD2911  		call	rnp	; memory load address
+1064  6F      		mov	l,a	; HL=load addr
+1065  220020  		shld	tpadr
+1068  CD2D11  	load1:	call	rnb	; data byte
+106B  77      		mov	m,a
+106C  221420  		shld	ABUSS
+106F  23      		inx	h
+1070  1B      		dcx	d
+1071  7A      		mov	a,d
+1072  B3      		ora	e
+1073  C26810  		jnz	load1
+1076  CD8210  		call	ctc	; verify checksum
+1079  F1      		pop	psw	; A=leader(HI)
+107A  C1      		pop	b	; BC=0fe00h...
+107B  07      		rlc
+107C  DAF510  		jc	tft
+107F  C33E10  		jmp	load0
+		
+1082  CD2911  	ctc:	call	rnp
+1085  2A1910  		lhld	crcsum
+1088  7C      		mov	a,h
+1089  B5      		ora	l
+108A  C8      		rz
+108B  3E01    		mvi	a,1	; checksum error code
+			;jr	tperr
+108D  77      	tperr:	mov	m,a	; error code
+108E  47      		mov	b,a
+108F  CDF510  		call	tft
+1092  2A1B10  		lhld	savstk
+1095  F9      		sphl
+1096  C9      		ret
+		
+		; "write memory" a.k.a. save to cassette
+		; tpadr=start of save
+		; ABUSS=end of save
+		; Reg[PC]=entry/start execution address
+1097          	wmem:
+1097  CDF810  		call	beep
+109A  3E01    		mvi	a,00000001b	; TxEn
+109C  D3F9    		out	tpc
+109E  3E16    		mvi	a,SYNc
+10A0  0620    		mvi	b,32
+10A2  CD5411  	wmem1:	call	wnb
+10A5  05      		dcr b !
+10A6  C2A210  	 jnz wmem1
+10A9  3E02    		mvi	a,STXc
+10AB  CD5411  		call	wnb
+10AE  210000  		lxi	h,0
+10B1  221910  		shld	crcsum
+10B4  210181  		lxi	h,8101h
+10B7  CD4F11  		call	wnp
+10BA  2A0020  		lhld	tpadr
+10BD  EB      		xchg
+10BE  2A1420  		lhld	ABUSS	; last byte to include
+10C1  23      		inx	h	; +1 for all bytes
+10C2  B7      		ora	a
+10C3  CD8811  		call	dsbc	; HL=length of data
+10C6  CD4F11  		call	wnp
+10C9  E5      		push	h
+10CA  D5      		push	d
+10CB  111800  		lxi	d,24	; get PC
+10CE  2A1D20  		lhld	RegPtr
+10D1  19      		dad	d
+10D2  7E      		mov	a,m
+10D3  23      		inx	h
+10D4  66      		mov	h,m
+10D5  6F      		mov	l,a
+10D6  CD4F11  		call	wnp
+10D9  E1      		pop	h	; former DE content
+10DA  D1      		pop	d	; former HL content
+10DB  CD4F11  		call	wnp
+10DE  7E      	wmem2:	mov	a,m
+10DF  CD5411  		call	wnb
+10E2  221420  		shld	ABUSS
+10E5  23      		inx	h
+10E6  1B      		dcx	d
+10E7  7A      		mov	a,d
+10E8  B3      		ora	e
+10E9  C2DE10  		jnz	wmem2
+10EC  2A1910  		lhld	crcsum
+10EF  CD4F11  		call	wnp
+10F2  CD4F11  		call	wnp
+		; turn off tape and beep
+10F5  AF      	tft:	xra	a
+10F6  D3F9    		out	tpc
+10F8  210920  	beep:	lxi	h,ctl$F0
+10FB  7E      		mov	a,m
+10FC  E67F    		ani	01111111b	; beep on
+10FE  77      		mov	m,a
+10FF  3E64    		mvi	a,200/2
+1101  CD2B00  		call	delay
+1104  7E      		mov	a,m
+1105  F680    		ori	10000000b	; beep off
+1107  77      		mov	m,a
+1108  C9      		ret
+		
+		; scan for header...
+		; Returns DE=leader, HA=byte count
+1109  210000  	srs:	lxi	h,0
+110C  54      		mov	d,h
+110D  CD2D11  	srs2:	call	rnb
+1110  14      		inr	d
+1111  FE16    		cpi	SYNc
+1113  CA0D11  		jz	srs2
+1116  FE02    		cpi	STXc
+1118  C20911  		jnz	srs
+111B  3E0A    		mvi	a,10
+111D  BA      		cmp	d
+111E  D20911  		jnc	srs
+1121  221910  		shld	crcsum	; zero checksum
+1124  CD2911  		call	rnp	; leader code
+1127  54      		mov	d,h
+1128  5F      		mov	e,a
+			;jmp	rnp	; byte count
+		; returns H=first byte, A=second byte
+1129  CD2D11  	rnp:	call	rnb
+112C  67      		mov	h,a
+			;jmp	rnb
+112D  3E34    	rnb:	mvi	a,00110100b	; Err reset, RTS, RxEn, no DTR
+112F  D3F9    		out	tpc
+1131  CD3E11  	rnb1:	call	tpxit
+1134  E602    		ani	00000010b	; RxR
+1136  CA3111  		jz	rnb1
+1139  DBF8    		in	tpd
+113B  C36411  		jmp	crc
+		
+113E  3A3A20  	tpxit:	lda	kpchar
+1141  FE6F    		cpi	01101111b	; cancel?
+1143  DBF9    		in	tpc
+1145  C0      		rnz
+1146  AF      		xra	a
+1147  323A20  		sta	kpchar
+114A  2A1B10  		lhld	savstk
+114D  F9      		sphl
+114E  C9      		ret
+		
+		; HL=two bytes to save, big endian
+114F  7C      	wnp:	mov	a,h
+1150  CD5411  		call	wnb
+1153  7D      		mov	a,l
+			; jr	wnb
+1154  F5      	wnb:	push	psw
+1155  CD3E11  	wnb1:	call	tpxit	; check for cancel...
+1158  E601    		ani	00000001b	; TxRdy
+115A  CA5511  		jz	wnb1
+115D  3E11    		mvi	a,00010001b	; TxEn, Err reset
+115F  D3F9    		out	tpc
+1161  F1      		pop	psw
+1162  D3F8    		out	tpd
+			;jr	crc
+		; A=data byte
+1164  C5      	crc:	push	b
+1165  E5      		push	h
+1166  0608    		mvi	b,8
+1168  2A1910  		lhld	crcsum
+116B  07      	crc1:	rlc
+116C  4F      		mov	c,a
+116D  29      		dad	h
+116E  7C      		mov	a,h
+116F  17      		ral
+1170  A9      		xra	c
+1171  0F      		rrc
+1172  D27D11  		jnc	crc2
+1175  7C      		mov	a,h
+1176  EE80    		xri	80h
+1178  67      		mov	h,a
+1179  7D      		mov	a,l
+117A  EE05    		xri	05h
+117C  6F      		mov	l,a
+117D  79      	crc2:	mov	a,c
+117E  05      		dcr b !
+117F  C26B11  	 jnz crc1
+			; A was RLCed 8 times, back to original value
+1182  221910  		shld	crcsum
+1185  E1      		pop	h
+1186  C1      		pop	b
+1187  C9      		ret
+		
+1188  7D      	dsbc:	mov	a,l
+1189  93      		sub	e
+118A  6F      		mov	l,a
+118B  7C      		mov	a,h
+118C  9A      		sbb	d
+118D  67      		mov	h,a
+118E  C9      		ret
+		
+118F  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FF
+0000          	if ($ > 1800h)
+		endif
+		
+1200          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   109	symbols
+   512	bytes
+
+   113	macro calls
+    16	macro bytes
+     0	invented symbols

@@ -1,0 +1,162 @@
+		; Command module for I/O port output
+		
+			maclib	core
+**** core.lib ****
+**** coutput.asm ****
+			maclib	core80
+**** core80.lib ****
+**** coutput.asm ****
+			maclib	ram
+**** ram.lib ****
+**** coutput.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0008          	BS	equ	8
+0003          	CTLC	equ	3
+0007          	BEL	equ	7
+001B          	ESC	equ	27
+007F          	DEL	equ	127
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C31B10  		jmp	init	; +4: init entry
+1007  C31D10  		jmp	exec	; +7: action entry
+		
+100A  4F      		db	'O'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  4F757470		db	'Output X V',0	; +16: mnemonic string
+      75742058
+      205600
+		
+101B  AF      	init:	xra	a	; NC
+101C  C9      		ret
+		
+101D          	exec:
+101D  21B810  		lxi	h,signon
+1020  CD4400  		call	msgout
+1023  CD6610  		call	parshx
+1026  D8      		rc
+1027  7A      		mov	a,d
+1028  32C710  		sta	port
+102B  3E20    		mvi	a,' '
+102D  CDB410  		call	chrout
+1030  CD6610  		call	parshx
+1033  D8      		rc
+1034  7A      		mov	a,d
+1035  32C810  		sta	value
+1038  CDA210  		call	waitcr
+103B  D8      		rc
+103C  CD1B00  		call	crlf
+103F  3AC710  		lda	port
+1042  324910  		sta	outp+1
+1045  3AC810  		lda	value
+1048  D300    	outp:	out	0
+104A          	show:
+104A  21BF10  		lxi	h,prefx
+104D  CD4400  		call	msgout
+1050  3AC710  		lda	port
+1053  CD3101  		call	hexout
+1056  21C410  		lxi	h,prefx2
+1059  CD4400  		call	msgout
+105C  3AC810  		lda	value
+105F  CD3101  		call	hexout
+1062  C9      		ret
+		
+1063  C31B00  	fin:	jmp	crlf
+		
+		; Parse a 8-bit hex value.
+		; Returns CY if abort, else D=value
+1066  110000  	parshx:	lxi	d,0	; D=0, E=0
+1069  CD9610  	ph0:	call	hexdig
+106C  DA7F10  		jc	ph1	; might be CR...
+106F  4F      		mov	c,a
+1070  7A      		mov	a,d
+1071  07      		rlc
+1072  07      		rlc
+1073  07      		rlc
+1074  07      		rlc
+1075  81      		add	c	; A=(D<<4)+val
+1076  57      		mov	d,a
+1077  1C      		inr	e
+1078  7B      		mov	a,e
+1079  FE02    		cpi	2
+107B  DA6910  		jc	ph0
+107E  C9      		ret	; NC
+107F  FE0D    	ph1:	cpi	CR
+1081  CA9010  		jz	ph2
+1084  FE7F    		cpi	DEL
+1086  37      		stc
+1087  C8      		rz
+1088  3E07    	phe:	mvi	a,BEL
+108A  CDB410  		call	chrout
+108D  C36910  		jmp	ph0
+1090  7B      	ph2:	mov	a,e	; CR pressed
+1091  B7      		ora	a
+1092  CA8810  		jz	phe	; must enter at least one digit
+1095  C9      		ret
+		
+		; Get a hex digit value
+1096  CD2801  	hexdig:	call	hexin
+1099  D8      		rc	; A=char
+109A  CDB410  		call	chrout	; preserves A (all)
+109D  CD2501  		call	hexbin
+10A0  B7      		ora	a	; NC
+10A1  C9      		ret
+		
+		; wait for CR or DEL (cancel)
+10A2  CD4A00  	waitcr:	call	conin
+10A5  FE7F    		cpi	DEL
+10A7  37      		stc
+10A8  C8      		rz
+10A9  FE0D    		cpi	CR
+10AB  C8      		rz
+10AC  3E07    		mvi	a,BEL
+10AE  CDB410  		call	chrout
+10B1  C3A210  		jmp	waitcr
+		
+10B4  2A2600  	chrout:	lhld	conout
+10B7  E9      		pchl
+		
+10B8  75747075	signon:	db	'utput ',0
+      742000
+10BF  4F555420	prefx:	db	'OUT ',0
+      00
+10C4  3A2000  	prefx2:	db	': ',0
+10C7  00      	port:	db	0
+10C8  00      	value:	db	0
+		
+10C9  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFF
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   109	symbols
+   256	bytes
+
+    55	macro calls
+    16	macro bytes
+     0	invented symbols

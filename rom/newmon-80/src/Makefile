@@ -32,6 +32,7 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
         zout/csetup.cim \
         zout/cspeed.cim \
         zout/cterm.cim \
+        zout/cmemtst.cim \
         zout/cvtalk.cim
 
 H8MON = zout/h8core.cim $(H8MODS)

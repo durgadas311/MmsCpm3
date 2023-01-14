@@ -1,0 +1,146 @@
+		; Command module for CPU Speed Control
+		
+			maclib	core
+**** core.lib ****
+**** cspeed.asm ****
+			maclib	ram
+**** ram.lib ****
+**** cspeed.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0008          	BS	equ	8
+0003          	CTLC	equ	3
+0007          	BEL	equ	7
+001B          	ESC	equ	27
+		
+0014          	spbits	equ	00010100b
+0014          	mhz10	equ	00010100b
+0004          	mhz8	equ	00000100b
+0010          	mhz4	equ	00010000b
+0000          	mhz2	equ	00000000b
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C32410  		jmp	init	; +4: init entry
+1007  C32610  		jmp	exec	; +7: action entry
+		
+100A  73      		db	's'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  43505520		db	'CPU Speed [2|4|8|M]',0	; +16: mnemonic string
+      53706565
+      64205B32
+      7C347C38
+      7C4D5D00
+		
+1024          	init:
+1024  AF      		xra	a	; NC
+1025  C9      		ret
+		
+1026          	exec:
+1026  21BE10  		lxi	h,signon
+1029  CD4400  		call	msgout
+102C  21CA10  		lxi	h,mis
+102F  CD4A00  	spd0:	call	conin
+1032  FE0D    		cpi	CR
+1034  CA7C10  		jz	show
+1037  FE32    		cpi	'2'
+1039  0E00    		mvi	c,mhz2
+103B  CA5D10  		jz	ok
+103E  FE34    		cpi	'4'
+1040  0E10    		mvi	c,mhz4
+1042  CA5D10  		jz	ok
+1045  FE38    		cpi	'8'
+1047  0E04    		mvi	c,mhz8
+1049  CA5D10  		jz	ok
+104C  E65F    		ani	01011111b
+104E  FE4D    		cpi	'M'
+1050  0E14    		mvi	c,mhz10
+1052  CA5D10  		jz	ok
+1055  3E07    		mvi	a,BEL
+1057  CDBA10  		call	chrout
+105A  C32F10  		jmp	spd0
+105D  CDBA10  	ok:	call	chrout
+1060  CD4A00  		call	conin
+1063  FE0D    		cpi	CR
+1065  CA6D10  		jz	ok1
+1068  3E07    		mvi	a,BEL
+106A  C35D10  		jmp	ok
+106D  213620  	ok1:	lxi	h,ctl$F2
+1070  F3      		di
+1071  7E      		mov	a,m
+1072  E6EB    		ani	NOT spbits
+1074  B1      		ora	c
+1075  77      		mov	m,a
+1076  D3F2    		out	0f2h
+1078  FB      		ei
+1079  21CE10  		lxi	h,mset
+107C  E5      	show:	push	h
+107D  CD1B00  		call	crlf
+1080  21BF10  		lxi	h,signon+1
+1083  CD4400  		call	msgout
+1086  E1      		pop	h
+1087  CD4400  		call	msgout
+108A  3A3620  		lda	ctl$F2
+108D  E614    		ani	spbits
+108F  FE00    		cpi	mhz2
+1091  0E32    		mvi	c,'2'
+1093  CAAD10  		jz	got
+1096  FE10    		cpi	mhz4
+1098  0E34    		mvi	c,'4'
+109A  CAAD10  		jz	got
+109D  FE04    		cpi	mhz8
+109F  0E38    		mvi	c,'8'
+10A1  CAAD10  		jz	got
+			; must be MAX
+10A4  21D610  		lxi	h,mmax
+10A7  CD4400  		call	msgout
+10AA  C3B710  		jmp	fin
+10AD  79      	got:	mov	a,c
+10AE  CDBA10  		call	chrout
+10B1  21DA10  		lxi	h,mmhz
+10B4  CD4400  		call	msgout
+10B7  C31B00  	fin:	jmp	crlf
+		
+10BA  2A2600  	chrout:	lhld	conout
+10BD  E9      		pchl
+		
+10BE  20435055	signon:	db	' CPU Speed ',0
+      20537065
+      65642000
+		
+10CA  69732000	mis:	db	'is ',0
+10CE  73657420	mset:	db	'set to ',0
+      746F2000
+10D6  4D617800	mmax:	db	'Max',0
+10DA  4D487A00	mmhz:	db	'MHz',0
+		
+10DE  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFF
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   102	symbols
+   256	bytes
+
+    34	macro calls
+    16	macro bytes
+     0	invented symbols

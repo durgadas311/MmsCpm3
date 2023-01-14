@@ -1,0 +1,264 @@
+		; Boot Module for VDIP1 (USB thumb drive)
+		; TODO: make port variable?
+		
+00D8          	vdip1	equ	0d8h	; assume part of Z80-DUART
+		
+			maclib	ram
+**** ram.lib ****
+**** bvdip1.asm ****
+			maclib	core
+**** core.lib ****
+**** bvdip1.asm ****
+		
+000D          	CR	equ	13
+2280          	bbuf:	equ	2280h
+2300          	vdbuf	equ	2300h
+2380          	vdscr	equ	2380h
+		
+1000          		org	1000h
+1000  03      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  2901    		db	41,1	; +2,+3: phy drv base, num
+		
+1004  C31A10  		jmp	init	; +4: init entry
+1007  C32110  		jmp	boot	; +7: boot entry
+		
+100A  56      		db	'V'	; +10: Boot command letter
+100B  06      		db	6	; +11: front panel key
+100C  D8      		db	vdip1	; +12: port, 0 if variable
+100D  83A486  		db	10000011b,10100100b,10000110b	; +13: FP display ("USb")
+1010  56444950		db	'VDIP1',0	; +16: mnemonic string
+      3100
+		
+1016  2E737973	sfx:	db	'.sys'
+0004          	sfxlen	equ	$-sfx
+		
+101A          	init:
+101A  CD9411  		call	runout
+101D  CD6F11  		call	sync
+1020  C9      		ret	; pass/fail based on CY
+		
+1021          	boot:
+1021  210211  		lxi	h,opr
+1024  110023  		lxi	d,vdbuf
+1027  CD2B11  		call	strcpy
+102A  218022  		lxi	h,bbuf	; possible string here
+102D  7E      		mov	a,m
+102E  FEC3    		cpi	0c3h	; JMP means no string
+1030  CA6610  		jz	boot5
+			; else, A=str len
+1033  4F      		mov	c,a
+1034  0600    		mvi	b,0
+1036  23      		inx	h
+1037  7E      	xx0:	mov	a,m
+1038  12      		stax	d
+1039  B7      		ora	a
+103A  CA4F10  		jz	xx1
+103D  FE20    		cpi	' '	; possible command options follow
+103F  CA4F10  		jz	xx1
+1042  D62E    		sui	'.'	; 00:(A=='.')
+1044  D601    		sui	1	; CY:==, NC:<>
+1046  9F      		sbb	a	; FF:=='.', 00:<>'.'
+1047  B0      		ora	b	; B=true if any '.' seen
+1048  47      		mov	b,a
+1049  23      		inx	h
+104A  13      		inx	d
+104B  0D      		dcr	c
+104C  C23710  		jnz	xx0
+104F  04      	xx1:	inr	b
+1050  CA6C10  		jz	boot6	; saw a '.', don't append '.sys'
+1053  211610  		lxi	h,sfx
+1056  010400  		lxi	b,sfxlen
+1059  7E      	ldir:	mov	a,m
+105A  12      		stax	d
+105B  23      		inx	h
+105C  13      		inx	d
+105D  0B      		dcx	b
+105E  78      		mov	a,b
+105F  B1      		ora	c
+1060  C25910  		jnz	ldir
+1063  C36C10  		jmp	boot6
+1066  21F610  	boot5:	lxi	h,defbt
+1069  CD2B11  		call	strcpy
+106C  3E0D    	boot6:	mvi	a,CR
+106E  12      		stax	d
+106F  210023  		lxi	h,vdbuf
+1072  CD4111  		call	vdcmd	; open file
+1075  D8      		rc	; no cleanup at this point
+1076  218023  		lxi	h,vdscr
+1079  CD5311  		call	vdrd
+107C  DAD310  		jc	bootx
+			; TODO: get load parameters..
+107F  2A8023  		lhld	vdscr
+1082  220711  		shld	memtop
+1085  2A8223  		lhld	vdscr+2
+1088  220911  		shld	bnktop
+108B  2A8423  		lhld	vdscr+4
+108E  220B11  		shld	entry
+1091  3A9023  		lda	vdscr+16	; ORG0 flag - don't care?
+1094  320D11  		sta	copy
+1097  218023  		lxi	h,vdscr
+109A  CD5311  		call	vdrd
+109D  DAD310  		jc	bootx
+10A0  118023  		lxi	d,vdscr	; load message
+10A3  CD0E11  		call	print
+10A6  3A0811  		lda	comlen
+10A9  B7      		ora	a
+10AA  CAB510  		jz	boot1
+10AD  57      		mov	d,a
+10AE  3A0711  		lda	memtop
+10B1  CDDA10  		call	loadit
+10B4  D8      		rc
+10B5  3A0A11  	boot1:	lda	bnklen
+10B8  B7      		ora	a
+10B9  CAC410  		jz	boot2
+10BC  57      		mov	d,a
+10BD  3A0911  		lda	bnktop
+10C0  CDDA10  		call	loadit
+10C3  D8      		rc
+10C4          	boot2:	; ready to go?
+10C4  CDD310  		call	bootx	; close file
+			; cleanup clocks...
+10C7  F3      		di
+10C8  3E9F    		mvi	a,10011111b	; H8 2mS off, display blank
+10CA  320920  		sta	ctl$F0
+10CD  D3F0    		out	0f0h
+			; already at ORG0... H89 2mS already off?
+10CF  2A0B11  		lhld	entry
+10D2  E9      		pchl
+		
+10D3          	bootx:	; exit boot on error, must close file
+10D3  21F210  		lxi	h,clf
+10D6  CD4111  		call	vdcmd
+10D9  C9      		ret
+		
+		; A=top page (might be 0 for 64K)
+		; D=num pages
+10DA  67      	loadit:	mov	h,a
+10DB  2E00    		mvi	l,0	; HL=top address
+10DD  7A      		mov	a,d
+10DE  87      		add	a	; num records
+10DF  57      		mov	d,a
+10E0          	load0:
+10E0  0180FF  		lxi	b,-128
+10E3  09      		dad	b
+10E4  E5      		push	h
+10E5  D5      		push	d
+10E6  CD5311  		call	vdrd
+10E9  D1      		pop	d
+10EA  E1      		pop	h
+10EB  D8      		rc		; error
+10EC  15      		dcr	d
+10ED  C2E010  		jnz	load0
+10F0  B7      		ora	a	; NC
+10F1  C9      		ret
+		
+10F2  636C660D	clf:	db	'clf',CR
+10F6  64656662	defbt:	db	'defboot.sys',0	; default boot file
+      6F6F742E
+      73797300
+1102  6F707220	opr:	db	'opr ',0	; command segment
+      00
+		
+1107  00      	memtop:	db	0
+1108  00      	comlen:	db	0
+1109  00      	bnktop:	db	0
+110A  00      	bnklen:	db	0
+110B  0000    	entry:	dw	0
+		; don't care about cfgtbl?
+110D  00      	copy:	db	0	; 'C' if ORG0 required
+		
+		; BDOS-style print function
+		; DE=message, '$' terminated
+110E  1A      	print:	ldax	d
+110F  FE24    		cpi	'$'
+1111  C8      		rz
+1112  CD1911  		call	outcon
+1115  13      		inx	d
+1116  C30E11  		jmp	print
+		
+1119  2A2600  	outcon:	lhld	conout
+111C  E9      		pchl
+		
+			maclib	vdip1
+**** vdip1.lib ****
+**** bvdip1.asm ****
+		
+120C  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1300          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   133	symbols
+   768	bytes
+
+   244	macro calls
+    16	macro bytes
+     0	invented symbols

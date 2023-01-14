@@ -1,0 +1,204 @@
+                	public	strcpy,strcmp,sync,runout
+                	public	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
+                	extrn	vdbuf
+                
+ 201B =         ticcnt	equ	201bh
+                
+ 000D =         CR	equ	13
+                
+                	cseg
+                
+                ; util routines for accessing VDIP1
+                ; caller must define 'vdbuf' as input buffer,
+                ; and 'vdip1' as base port.
+                
+ 00D8 =         vdip1	equ	0d8h	; base port
+                
+ 00D9 =         vd$dat	equ	vdip1+1
+ 00DA =         vd$sts	equ	vdip1+2
+                
+ 0004 =         vd$txe	equ	00000100b	; Tx ready
+ 0008 =         vd$rxr	equ	00001000b	; Rx data ready
+                
+ 0000 443A5C3E0Dvdprmp:	db	'D:\>',CR
+ 0005 7264662000rdf:	db	'rdf ',0,0,0,128,CR
+                
+                ; copy HL to DE, until NUL
+                strcpy:
+ 000E 7E        	mov	a,m
+ 000F 12        	stax	d
+ 0010 B7        	ora	a
+ 0011 C8        	rz
+ 0012 23        	inx	h
+ 0013 13        	inx	d
+ 0014 C30E00    	jmp	strcpy
+                
+                ; compare DE to HL, until CR or NUL
+                strcmp:
+ 0017 1A        	ldax	d
+ 0018 BE        	cmp	m
+ 0019 C0        	rnz
+ 001A B7        	ora	a
+ 001B C8        	rz
+ 001C FE0D      	cpi	CR
+ 001E C8        	rz
+ 001F 23        	inx	h
+ 0020 13        	inx	d
+ 0021 C31700    	jmp	strcmp
+                
+                ; send command, wait for prompt or error
+                ; HL=command string, CR term
+                vdcmd:	
+ 0024 CDDE00    	call	vdmsg
+                vdend:
+ 0027 CD8800    	call	vdinp
+ 002A 210000    	lxi	h,vdbuf
+ 002D 110000    	lxi	d,vdprmp
+ 0030 CD1700    	call	strcmp
+ 0033 C8        	rz	; OK
+                	; error, always?
+ 0034 37        	stc
+ 0035 C9        	ret
+                
+                ; read record (128 bytes) from file, into HL
+                ; returns CY if error, else HL at "next" addr
+ 0036 E5        vdrd:	push	h
+ 0037 210500    	lxi	h,rdf
+ 003A CDDE00    	call	vdmsg
+ 003D E1        	pop	h
+ 003E CDC000    	call	vdinb
+ 0041 E5        	push	h
+ 0042 CD8800    	call	vdinp
+ 0045 210000    	lxi	h,vdbuf
+ 0048 110000    	lxi	d,vdprmp
+ 004B CD1700    	call	strcmp
+ 004E E1        	pop	h	; "next" buffer addr
+ 004F C8        	rz
+ 0050 37        	stc
+ 0051 C9        	ret
+                
+ 0052 0605      sync:	mvi	b,5
+ 0054 3E45      	mvi	a,'E'
+ 0056 CDD200    	call	vdout
+ 0059 3E0D      	mvi	a,CR
+ 005B CDD200    	call	vdout
+ 005E CD8800    	call	vdinp	; line to vdbuf
+ 0061 D8        	rc
+ 0062 3A0000    	lda	vdbuf
+ 0065 FE45      	cpi	'E'
+ 0067 C27000    	jnz	sync0
+ 006A 3A0100    	lda	vdbuf+1
+ 006D FE0D      	cpi	CR
+ 006F C8        	rz
+ 0070 05C25200  sync0:	dcr b ! jnz sync
+ 0074 37        	stc
+ 0075 C9        	ret
+                
+                ; Observed timing:
+                ; [0-562mS]
+                ;	(cr)
+                ;	Ver 03.68VDAPF On-Line:(cr)
+                ; [250mS]
+                ;	Device Detected P2(cr)
+                ; [16-18mS]
+                ;	No Upgrade(cr)
+                ; [1-2mS]
+                ;	D:\>(cr)
+                ; Delays are measured between (cr)s, include all characters.
+                ; The expectation is that the monitor is doing this before we
+                ; even get here.
+                
+                ; get rid of any characters waiting... flush input
+                ; Stop if we hit '>',CR
+                runout0:
+ 0076 5F        	mov	e,a
+                runout:
+ 0077 CD9700    	call	vdinz	; short timeout...
+ 007A D8        	rc		; done - nothing more to drain
+ 007B FE0D      	cpi	CR
+ 007D C27600    	jnz	runout0
+ 0080 7B        	mov	a,e
+ 0081 FE3E      	cpi	'>'
+ 0083 C27700    	jnz	runout
+ 0086 AF        	xra	a
+ 0087 C9        	ret
+                
+                ;;;;;;;; everything else is private ;;;;;;;;;
+                
+                ; receive chars until CR, into vdbuf
+                ; returns HL->[CR] (if NC)
+ 0088 210000    vdinp:	lxi	h,vdbuf
+ 008B CDA100    vdi2:	call	vdinc
+ 008E D8        	rc
+ 008F 77        	mov	m,a
+ 0090 FE0D      	cpi	CR
+ 0092 C8        	rz
+ 0093 23        	inx	h
+ 0094 C38B00    	jmp	vdi2
+                
+                ; short-timeout input - for draining
+                vdinz:
+ 0097 0632      	mvi	b,50		; 100mS timeout
+ 0099 E5        	push	h
+ 009A 211B20    	lxi	h,ticcnt	; use 2mS increments
+ 009D 4E        	mov	c,m
+ 009E C3A800    	jmp	vdi0
+                
+                ; avoid hung situations
+                vdinc:
+ 00A1 0606      	mvi	b,6		; 2.5-3 second timeout
+ 00A3 E5        	push	h
+ 00A4 211C20    	lxi	h,ticcnt+1	; hi byte ticks at 512mS
+ 00A7 4E        	mov	c,m		; current tick...
+ 00A8 DBDA      vdi0:	in	vd$sts
+ 00AA E608      	ani	vd$rxr
+ 00AC C2BC00    	jnz	vdi1
+ 00AF 7E        	mov	a,m
+ 00B0 B9        	cmp	c
+ 00B1 CAA800    	jz	vdi0
+ 00B4 4F        	mov	c,a
+ 00B5 05C2A800  	dcr b ! jnz vdi0
+ 00B9 E1        	pop	h
+ 00BA 37        	stc
+ 00BB C9        	ret
+ 00BC DBD9      vdi1:	in	vd$dat
+ 00BE E1        	pop	h
+ 00BF C9        	ret
+                
+                ; get read data.
+                ; HL=buffer, length always 128
+ 00C0 0680      vdinb:	mvi	b,128
+ 00C2 DBDA      vdb0:	in	vd$sts
+ 00C4 E608      	ani	vd$rxr
+ 00C6 CAC200    	jz	vdb0
+ 00C9 DBD9      	in	vd$dat
+ 00CB 77        	mov	m,a
+ 00CC 23        	inx	h
+ 00CD 05C2C200  	dcr b ! jnz vdb0
+ 00D1 C9        	ret
+                
+                ; send char to VDIP1
+                ; A=char
+ 00D2 F5        vdout:	push	psw
+ 00D3 DBDA      vdo0:	in	vd$sts
+ 00D5 E604      	ani	vd$txe
+ 00D7 CAD300    	jz	vdo0
+ 00DA F1        	pop	psw
+ 00DB D3D9      	out	vd$dat
+ 00DD C9        	ret
+                
+                ; HL=message, terminated by CR
+                vdmsg:
+ 00DE DBDA      	in	vd$sts
+ 00E0 E604      	ani	vd$txe
+ 00E2 CADE00    	jz	vdmsg
+ 00E5 7E        	mov	a,m
+ 00E6 D3D9      	out	vd$dat
+ 00E8 FE0D      	cpi	CR	; CR
+ 00EA C8        	rz
+ 00EB 23        	inx	h
+ 00EC C3DE00    	jmp	vdmsg
+                
+                ; end of library
+ 00EF           	end
+

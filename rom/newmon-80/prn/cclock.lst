@@ -1,0 +1,190 @@
+		; Command module for FP clock display
+		
+			maclib	core
+**** core.lib ****
+**** cclock.asm ****
+			maclib	ram
+**** ram.lib ****
+**** cclock.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0003          	CTLC	equ	3
+		
+00A0          	rtc	equ	0a0h	; standard port address
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C32110  		jmp	init	; +4: init entry
+1007  C32910  		jmp	exec	; +7: action entry
+		
+100A  63      		db	'c'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  46502043		db	'FP Clock Display',0	; +16: mnemonic string
+      6C6F636B
+      20446973
+      706C6179
+      00
+		
+1021          	init:
+1021  DBAF    		in	rtc+15
+1023  F604    		ori	00000100b ; 24-hour format
+1025  D3AF    		out	rtc+15
+			; more to init?
+1027  AF      		xra	a	; NC
+1028  C9      		ret
+		
+1029          	exec:
+1029  21E610  		lxi	h,signon
+102C  CD4400  		call	msgout
+102F  3A0820  		lda	MFlag
+1032  F602    		ori	00000010b	; disable disp updates
+1034  320820  		sta	MFlag
+		
+1037          	clock:
+1037  CDA510  		call	gettime
+103A  21E010  		lxi	h,time
+103D  3ADF10  		lda	lastsec
+1040  BE      		cmp	m
+1041  C47110  		cnz	show	; HL=time
+			; delay a bit, do not always keep RTC in HOLD
+1044  211B20  		lxi	h,ticcnt
+1047  3E32    		mvi	a,50	; 100mS
+1049  86      		add	m
+104A  4F      		mov	c,a
+104B  CD6510  	wait0:	call	chkabort
+104E  DA5910  		jc	fin
+1051  7E      		mov	a,m
+1052  B9      		cmp	c
+1053  C24B10  		jnz	wait0
+1056  C33710  		jmp	clock
+		
+1059  CD1B00  	fin:	call	crlf
+105C  3A0820  		lda	MFlag
+105F  E6FD    		ani	11111101b	; enable disp updates
+1061  320820  		sta	MFlag
+1064  C9      		ret
+		
+1065          	chkabort:
+1065  DBED    		in	0edh
+1067  E601    		ani	1
+1069  C8      		rz
+106A  DBE8    		in	0e8h
+106C  FE03    		cpi	CTLC
+106E  C0      		rnz
+106F  37      		stc
+1070  C9      		ret
+		
+		; HL=time[0]
+1071          	show:
+1071  7E      		mov	a,m	; seconds LSD
+1072  32DF10  		sta	lastsec
+1075  111320  		lxi	d,fpLeds+8
+1078  0606    		mvi	b,6
+107A  7E      	show0:	mov	a,m
+107B  E5      		push	h
+107C  219B10  		lxi	h,fpdig
+107F  85      		add	l
+1080  6F      		mov	l,a
+1081  D28510  		jnc	show2
+1084  24      		inr	h
+1085  7E      	show2:	mov	a,m
+1086  12      		stax	d
+1087  E1      		pop	h
+1088  23      		inx	h
+1089  1B      		dcx	d
+108A  05      		dcr	b
+108B  78      		mov	a,b
+108C  E601    		ani	1
+108E  C29510  		jnz	show1
+1091  3E7F    		mvi	a,01111111b	; " ."
+1093  12      		stax	d
+1094  1B      		dcx	d
+1095  78      	show1:	mov	a,b
+1096  B7      		ora	a
+1097  C27A10  		jnz	show0
+109A  C9      		ret
+		
+109B          	fpdig:	
+109B  81      		db	10000001b	; "0"
+109C  F3      		db	11110011b	; "1"
+109D  C8      		db	11001000b	; "2"
+109E  E0      		db	11100000b	; "3"
+109F  B2      		db	10110010b	; "4"
+10A0  A4      		db	10100100b	; "5"
+10A1  84      		db	10000100b	; "6"
+10A2  F1      		db	11110001b	; "7"
+10A3  80      		db	10000000b	; "8"
+10A4  A0      		db	10100000b	; "9"
+		
+10A5          	gettime:
+10A5  CDBF10  		call	hold
+10A8  21E010  		lxi	h,time
+10AB  0E9F    		mvi	c,rtc-1
+10AD  0606    		mvi	b,6
+10AF  0C      	gettm0:	inr	c
+10B0  CDD810  		call	inp$a
+10B3  E60F    		ani	0fh
+10B5  77      		mov	m,a
+10B6  23      		inx	h
+10B7  05      		dcr b !
+10B8  C2AF10  	 jnz gettm0
+10BB  CDD110  		call	unhold
+10BE  C9      		ret
+		
+10BF  DBAD    	hold:	in	rtc+13
+10C1  F601    		ori	0001b	; HOLD
+10C3  D3AD    		out	rtc+13
+10C5  DBAD    		in	rtc+13
+10C7  E602    		ani	0010b	; BUSY
+10C9  C8      		rz
+10CA  E60E    		ani	00001110b
+10CC  D3AD    		out	rtc+13
+			; TODO: pause?
+10CE  C3BF10  		jmp	hold
+		
+10D1  DBAD    	unhold:	in	rtc+13
+10D3  E6FE    		ani	11111110b
+10D5  D3AD    		out	rtc+13
+10D7  C9      		ret
+		
+10D8  79      	inp$a:	mov	a,c
+10D9  32DD10  		sta	inp$a0+1
+10DC  DB00    	inp$a0:	in	0
+10DE  C9      		ret
+		
+10DF          	lastsec:
+10DF  FF      		db	0ffh
+		
+10E0  00000000	time:	db	0,0,0,0,0,0	;1sec,10sec,1min,10min,1hr,10hr
+      0000
+		
+10E6  20465020	signon:	db	' FP clock',CR,LF
+      636C6F63
+      6B0D0A
+10F1  43746C2D		db	'Ctl-C to quit ',0
+      4320746F
+      20717569
+      742000
+		
+			rept	(($+0ffh) and 0ff00h)-$
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   101	symbols
+   256	bytes
+
+     0	macro calls
+    16	macro bytes
+     0	invented symbols
