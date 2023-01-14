@@ -1,0 +1,258 @@
+		; Boot Module for H37
+		; TODO: make port variable...
+		
+			maclib	ram
+**** ram.lib ****
+**** bh37.asm ****
+			maclib	core
+**** core.lib ****
+**** bh37.asm ****
+			maclib	setup
+**** setup.lib ****
+**** bh37.asm ****
+		
+1000          		org	1000h
+1000  02      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  2E04    		db	46,4	; +2,+3: phy drv base, num
+		
+1004  C31410  		jmp	init	; +4: init entry
+1007  C32910  		jmp	boot	; +7: boot entry
+		
+100A  43      		db	'C'	; +10: Boot command letter
+100B  03      		db	3	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  92E0F1  		db	10010010b,11100000b,11110001b	; +13: FP display ("H37")
+1010  48333700		db	'H37',0	; +16: mnemonic string
+		
+1014          	init:
+1014  3A0DF9  		lda	susave+h37pt
+1017  FEFF    		cpi	0ffh
+1019  C22410  		jnz	init0
+101C  DBF2    		in	0f2h
+101E  E60C    		ani	00001100b	; the only standard setup
+1020  37      		stc
+1021  C0      		rnz
+1022  3E78    		mvi	a,078h
+1024  325021  	init0:	sta	cport
+1027  AF      		xra	a	; NC
+1028  C9      		ret
+		
+1029          	boot:
+1029  21E910  		lxi	h,intz37
+102C  222920  		shld	vrst4+1
+102F  21F810  		lxi	h,nulz37
+1032  223720  		shld	l2037h
+1035  3A5021  		lda	cport
+1038  4F      		mov	c,a
+1039  3A3121  		lda	AIO$UNI
+103C  FE04    		cpi	004h
+103E  D0      		rnc
+103F  3C      		inr	a
+1040  2E08    		mvi	l,00001000b
+1042          	bz37$0:
+1042  29      		dad	h
+1043  3D      		dcr	a
+1044  C24210  		jnz	bz37$0
+1047  0C      		inr	c	; cport+1
+1048  CDE010  		call	outp	; cport+1 - A=0
+104B  0C      		inr	c	; cport+2
+104C  3ED0    		mvi	a,0d0h	; FORCE INTERRUPT
+104E  CDE010  		call	outp	; cport+2
+1051  7D      		mov	a,l
+1052  F608    		ori	00001000b	; add MOTOR ON
+1054  57      		mov	d,a
+1055  0D      		dcr	c	; cport+1
+1056  0D      		dcr	c	; cport+0
+1057  CDE010  		call	outp	; cport+0
+105A  14      		inr	d	; add INTRQ EN for later
+105B  1E19    		mvi	e,25	; number of retries
+105D  3E05    		mvi	a,5
+105F  CD4100  		call	take$A
+1062  0C      		inr	c	; cport+1
+1063  0C      		inr	c	; cport+2
+			; see 20 index pulses before continuing...
+1064  0614    		mvi	b,20
+1066          	bz37$1:
+1066  CDD910  		call	inp	; cport+2
+1069  E602    		ani	002h	; INDEX
+106B  CA6610  		jz	bz37$1
+106E  05      		dcr b !
+106F  C26610  	 jnz	bz37$1
+			; diskette must be inserted and spinning...
+1072          	bz37$2:	; C=cport+2
+1072  0D      		dcr	c	; cport+1
+1073  218022  		lxi	h,bootbf
+1076  3E01    		mvi	a,001h
+1078  CDE010  		call	outp	; cport+1 - MUX to track/sector regs
+107B  0C      		inr	c	; cport+2
+107C  CDE010  		call	outp	; cport+2 - track = 1?
+107F  0D      		dcr	c	; cport+1
+1080  0D      		dcr	c	; cport+0
+1081  7A      		mov	a,d
+1082  CDE010  		call	outp	; cport+0 - INTRQ EN now
+1085  0604    		mvi	b,4	; step in 4 tracks...
+1087  0C      		inr	c	; cport+1
+1088  0C      		inr	c	; cport+2
+1089          	bz37$3:
+1089  0D      		dcr	c	; cport+1
+108A  AF      		xra	a
+108B  CDE010  		call	outp	; cport+1 - MUX to cmd/sts/data regs
+108E  0C      		inr	c	; cport+2
+108F  3E40    		mvi	a,040h	; STEP IN
+1091  CDE010  		call	outp	; cport+2 - start command
+1094  CDF910  		call	ei$spin	; returns C=cport+2
+1097  05      		dcr b !
+1098  C28910  	 jnz	bz37$3
+109B  0D      		dcr	c	; cport+1
+109C  AF      		xra	a
+109D  CDE010  		call	outp	; cport+1 - MUX to cmd/sts/data regs
+10A0  0C      		inr	c	; cport+2
+10A1  3E0B    		mvi	a,00bh	; RESTORE
+10A3  CDE010  		call	outp	; cport+2 - start command
+10A6  CDF910  		call	ei$spin	; returns C=cport+2
+10A9  0D      		dcr	c	; cport+1
+10AA  0D      		dcr	c	; cport+0
+10AB  7A      		mov	a,d
+10AC  EE04    		xri	004h	; toggle DDEN
+10AE  57      		mov	d,a
+10AF  F602    		ori	002h	; DRQ EN
+10B1  CDE010  		call	outp	; cport+0
+10B4  0C      		inr	c	; cport+1
+10B5  0C      		inr	c	; cport+2
+10B6  3E9C    		mvi	a,09ch	; READ MULTI
+10B8  CDE010  		call	outp	; cport+2 - start command
+10BB  CDFD10  		call	hlt$ini
+			; assume C=cport+2 after intz37...
+10BE  E6EF    		ani	0efh	; ignore RNF (always set for READ MULTI)
+10C0  C2D410  		jnz	bz37$4
+10C3  7C      		mov	a,h
+10C4  FE2C    		cpi	02ch	; 2280h + 10 sectors min
+10C6  DAD410  		jc	bz37$4
+10C9  0D      		dcr	c	; cport+1
+10CA  0D      		dcr	c	; cport+0
+10CB  3E08    		mvi	a,008h	; MOTOR ON only
+10CD  CDE010  		call	outp	; cport+0
+10D0  E1      		pop	h
+10D1  C33B00  		jmp	hwboot
+10D4          	bz37$4:	; error, retry
+10D4  1D      		dcr	e
+10D5  C27210  		jnz	bz37$2
+10D8  C9      		ret
+		
+10D9  79      	inp:	mov	a,c
+10DA  32DE10  		sta	inp0+1
+10DD  DB00    	inp0:	in	0
+10DF  C9      		ret
+		
+10E0  F5      	outp:	push	psw
+10E1  79      		mov	a,c
+10E2  32E710  		sta	outp0+1
+10E5  F1      		pop	psw
+10E6  D300    	outp0:	out	0
+10E8  C9      		ret
+		
+		; must have C=cport+2... could assume came from rd316$0...
+10E9          	intz37:
+10E9  3A5021  		lda	cport
+10EC  C602    		adi	2	; cport+2
+10EE  4F      		mov	c,a
+10EF  CDD910  		call	inp
+10F2  E3      		xthl
+10F3  2A3720  		lhld	l2037h
+10F6  E3      		xthl
+10F7  FB      		ei
+10F8  C9      	nulz37:	ret
+		
+10F9  FB      	ei$spin: ei
+10FA  C3F910  		jmp	$-1	; wait for intr to break us out
+		
+10FD          	hlt$ini:	; must have C=cport+3
+10FD  3A5021  		lda	cport
+1100  C603    		adi	3	; cport+3
+1102  320811  		sta	ini0+1
+1105  FB      		ei
+1106  76      	rd316$0: hlt
+1107  DB00    	ini0:	in	0
+1109  77      		mov	m,a
+110A  23      		inx	h
+110B  C30611  		jmp	rd316$0
+		
+110E  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1200          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   117	symbols
+   512	bytes
+
+   242	macro calls
+    16	macro bytes
+     0	invented symbols
