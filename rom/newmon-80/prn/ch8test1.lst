@@ -1,0 +1,148 @@
+		; From H8 bring-up manual, initial "test" program
+		; that displays "your H8 is up and running |---| |---| |---|"
+		; on the front panel (marqui paging style).
+		
+			maclib	ram
+**** ram.lib ****
+**** ch8test1.asm ****
+			maclib	core
+**** core.lib ****
+**** ch8test1.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0003          	CTLC	equ	3
+		
+0009          	FPDSPW	equ	9	; LED display has 9 "characters"
+		
+1000          		org	1000h
+1000  01      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  FF00    		db	255,0	; +2,+3: phy drv base, num
+		
+1004  C32010  		jmp	init	; +4: init entry
+1007  C32210  		jmp	exec	; +7: action entry
+		
+100A  66      		db	'f'	; +10: Command letter
+100B  FF      		db	-1	; +11: front panel key
+100C  00      		db	0	; +12: port, 0 if variable
+100D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+1010  46502044		db	'FP Display Test',0	; +16: mnemonic string
+      6973706C
+      61792054
+      65737400
+		
+1020  AF      	init:	xra	a	; NC
+1021  C9      		ret
+		
+1022          	exec:
+1022  3A0820  		lda	MFlag
+1025  3E02    		mvi	a,00000010b	; auto disp update OFF
+1027  320820  		sta	MFlag
+102A  217F10  		lxi	h,signon
+102D  CD4400  		call	msgout
+			;
+1030  0604    	show:	mvi	b,nmsg
+1032  21A010  		lxi	h,message
+			; copy a "line" to FP display, from HL
+1035  110B20  	nxtlin:	lxi	d,fpLeds
+1038  0E09    		mvi	c,FPDSPW
+103A  7E      	msgcpy:	mov	a,m
+103B  12      		stax	d
+103C  23      		inx	h
+103D  13      		inx	d
+103E  0D      		dcr	c
+103F  C23A10  		jnz	msgcpy
+			; We can't abort delay with Ctrl-C, so must check after
+1042  0E03    		mvi	c,3	; 3*512mS = 1.536 secs
+1044  3EFF    	pause:	mvi	a,255	; 512mS
+1046  CD2B00  		call	delay
+1049  CD6910  		call	check	; jumps directly to abort...
+104C  0D      		dcr	c
+104D  C24410  		jnz	pause
+1050  05      		dcr	b
+1051  C23510  		jnz	nxtlin
+			; double "beep" the horn
+1054  3E32    		mvi	a,50	; 100mS
+1056  CD6002  		call	hhorn
+1059  3E32    		mvi	a,50	; 100mS
+105B  CD2B00  		call	delay
+105E  3E32    		mvi	a,50	; 100mS
+1060  CD6002  		call	hhorn
+1063  CD6910  		call	check	; jumps directly to abort...
+1066  C33010  		jmp	show
+		
+1069  DBED    	check:	in	0edh
+106B  0F      		rrc
+106C  D0      		rnc
+106D  DBE8    		in	0e8h
+106F  FE03    		cpi	CTLC
+1071  C0      		rnz
+1072  E1      		pop	h	; discard local return adr
+1073  CD1B00  	abort:	call	crlf
+1076  3A0820  		lda	MFlag
+1079  E6FD    		ani	11111101b	; re-enable disp update
+107B  320820  		sta	MFlag
+107E  C9      		ret
+		
+107F  20465020	signon:	db	' FP display test',CR,LF
+      64697370
+      6C617920
+      74657374
+      0D0A
+1091  43746C2D		db	'Ctl-C to quit ',0
+      4320746F
+      20717569
+      742000
+		
+10A0          	message:	; each "entry" is 9 bytes (display width)
+			; " your H8 "
+10A0  FFB2B8BA		db	11111111b,10110010b,10111000b,10111010b,10111101b,11111111b
+      BDFF
+10A6  9280FF  		db	10010010b,10000000b,11111111b
+			; "is up and"
+10A9  9FA4FFBA		db	10011111b,10100100b,11111111b,10111010b,10011000b,11111111b
+      98FF
+10AF  90D6C2  		db	10010000b,11010110b,11000010b
+			; " running "
+10B2  FFBDBAB9		db	11111111b,10111101b,10111010b,10111001b,10111001b,11111011b
+      B9FB
+10B8  B9A0FF  		db	10111001b,10100000b,11111111b
+			; "|---||---||---|"
+10BB  9EFEF29E		db	10011110b,11111110b,11110010b,10011110b,11111110b,11110010b
+      FEF2
+10C1  9EFEF2  		db	10011110b,11111110b,11110010b
+0004          	nmsg	equ	($-message)/FPDSPW
+		
+10C4  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1100          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+    92	symbols
+   256	bytes
+
+    60	macro calls
+    16	macro bytes
+     0	invented symbols
