@@ -20,6 +20,7 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 #	zout/cx.cim
 # for bringup:
 H8MODS=	../../newmon/src/2716_444-19_H17.rom \
+	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
 	zout/bh67.cim \
