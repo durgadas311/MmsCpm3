@@ -4,7 +4,7 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	0
+alpha	equ	3
 beta	equ	31
 
 	maclib	ram
@@ -2325,13 +2325,14 @@ signon:	db	CR,LF,'H8 8080A '
 vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 if alpha
 	db	'(alpha',alpha+'0',')'
-endif
+else
 if beta
 	db	'(beta'
 if beta > 9
 	db	(beta/10)+'0'
 endif
 	db	(beta MOD 10)+'0',')'
+endif
 endif
 	db	CR,LF,TRM
 

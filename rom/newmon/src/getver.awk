@@ -9,7 +9,7 @@ $1=="alpha"&&$2=="equ"{
 }
 $1=="beta"&&$2=="equ"{
 	beta=$3;
-	if (beta > 0) version=version "b" beta;
+	if (alpha == 0 && beta > 0) version=version "b" beta;
 }
 /maclib/{
 	print version;

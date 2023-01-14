@@ -78,8 +78,9 @@ loop0:	call	vdrd
 	jc	ckerr
 	; now validate product codes..
 	lhld	imgbuf+0ffeh
-	lded	0ffeh
-	ora	a
+	xchg
+	lhld	0ffeh
+	xchg
 	call	dsbc
 	mov	a,h
 	ora	l
