@@ -1,23 +1,8 @@
-H8MODS=	../../newmon/src/2716_444-19_H17.rom \
-	zout/bcf.cim \
-	zout/bh17.cim \
-	zout/bh37.cim \
-	zout/bh47.cim \
-	zout/bh67.cim \
-	zout/bsdcard.cim \
-	zout/bvdip1.cim \
-	zout/bwiznet.cim \
-	zout/chelp.cim \
-	zout/cinput.cim \
-	zout/coutput.cim \
-	zout/cterm.cim \
-	zout/ccass.cim \
-	zout/cvtalk.cim \
-	zout/ch8dcopy.cim \
-	zout/cclock.cim \
-	zout/ch8test1.cim \
-	zout/csetup.cim
-#	zout/cx.cim
+# remaining commands (?)
+#	zout/bh47.cim \
+#	zout/bsdcard.cim \
+#	zout/bwiznet.cim \
+
 # for bringup:
 H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/bcf.cim \
