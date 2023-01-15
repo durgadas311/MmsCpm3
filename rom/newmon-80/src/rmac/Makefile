@@ -8,8 +8,7 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vaflash.sys test512k.sys mtest512.sys \
-	vdump3.sys wizcfg.sys setrtc.sys vh8dutil.sys
+all: vaflash.sys asetrtc.sys vah8dutl.sys
 
 # not auto-built: diag512k, sdtest, vcpu
 
@@ -38,8 +37,8 @@ vdump.spr: vdump.rel vdip1.rel
 	vcpm link $@=vdump,vdip1'[os,nr]'
 	cp $@ ../../bin
 
-vh8dutil.spr: vh8dutil.rel vdip1.rel
-	vcpm link $@=vh8dutil,vdip1'[os,nr]'
+vah8dutl.spr: vah8dutl.rel vdip1.rel
+	vcpm link $@=vah8dutl,vdip1'[os,nr]'
 	cp $@ ../../bin
 
 wizcfg.spr: wizcfg.rel libwiznt.rel libnvram.rel
@@ -53,9 +52,9 @@ vaflash.sys: vaflash.spr
 
 # standard placement in RAM (0x3000) by default
 
-vh8dutil.rel: ram.lib core.lib vh8dutil.asm
+vah8dutl.rel: ram.lib core.lib vah8dutl.asm
 vdump.rel: ram.lib core.lib vdump.asm
-setrtc.rel: core.lib setrtc.asm
+asetrtc.rel: core.lib asetrtc.asm
 
 %.sys: %.spr
 	mknetboot -x -b 0x3000 -o $@ $^

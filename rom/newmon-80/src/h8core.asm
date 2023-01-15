@@ -4,7 +4,7 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	6
+alpha	equ	8
 beta	equ	31
 
 	maclib	ram
@@ -578,7 +578,6 @@ doboot:	; common boot path for console and keypad
 	sta	AIO$UNI	; relative unit num
 	mov	a,d
 	sta	l2034h	; boot phys drv base
-	lhld	bfmod
 	jmp	btboot
 	; btboot effectively returns here on success
 	; (in most cases)
@@ -1347,7 +1346,7 @@ h17in0:	push	d
 	mov	h,d
 	inx	d
 	mvi	c,30
-	mov	m,a
+	mov	m,a	; A=0
 	call	ldir	; fill l20a0h...
 	mvi	a,7
 	lxi	h,intvec	; vector area
@@ -1710,8 +1709,8 @@ int1$xx:
 	ani	00100000b	; MON mode?
 	jnz	intret	; skip if running monitor...
 	lda	MFlag
-	ani	10000000b	; HLT processing enabled
-	cz	chkhlt
+	ora	a
+	cp	chkhlt	; HLT processing enabled
 	rrc		; mfl$CLK private int1?
 	cc	vrst1
 	jmp	intret
@@ -2115,14 +2114,16 @@ savram0:		; total: 24 cy
 	out	rd00k	; turn off MAP bit, back to normal
 	ret
 
-ldir:	mov	a,m
+ldir:	push	psw
+ldir0:	mov	a,m
 	stax	d
 	inx	h
 	inx	d
 	dcx	b
 	mov	a,b
 	ora	c
-	jnz	ldir
+	jnz	ldir0
+	pop	psw
 	ret
 
 linix:	mvi	m,0	; terminate buffer

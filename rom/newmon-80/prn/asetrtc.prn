@@ -1,0 +1,357 @@
+                ; A util to set time/date into the RTC.
+                ; Prompts for a time/date string, and parses it and sets RTC
+                
+                	maclib	core
+                
+                sbcd	macro	?aa
+                	push	h
+                	mov	l,c
+                	mov	h,b
+                	shld	?aa
+                	pop	h
+                	endm
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0009 =         TAB	equ	9
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 0003 =         CTLC	equ	3
+                
+ 00A0 =         rtc	equ	0a0h	; standard port address
+ 2280 =         linbuf	equ	2280h
+                
+                	cseg
+                
+ 0000 C30300    	jmp	start
+                
+                	dseg
+ 0000 5254432053signon:	db	'RTC Set Time',CR,LF
+ 000E 4375727265	db	'Current time: ',0
+ 001D 4E65772074newtime: db	'New time: ',0
+ 0028 0D0A456E74enter:	db	CR,LF,'Enter MM/DD/YY HH:MM:SS (24-hour)',CR,LF
+ 004D 3E2000    	db	'> ',0
+ 0050 54696D6520noset:	db	'Time not set',CR,LF,0
+ 005F 2028524554setmsg:	db	' (RETURN to set): ',0
+ 0072 5254432073setto:	db	'RTC set to ',0
+                
+ 007E 0000000000time:	db	0,0,0,0,0,0,0,0,0,0,0,0
+ 007E =         sec1	equ	time+0
+ 007F =         sec10	equ	time+1
+ 0080 =         min1	equ	time+2
+ 0081 =         min10	equ	time+3
+ 0082 =         hrs1	equ	time+4
+ 0083 =         hrs10	equ	time+5
+ 0084 =         dom1	equ	time+6
+ 0085 =         dom10	equ	time+7
+ 0086 =         mon1	equ	time+8
+ 0087 =         mon10	equ	time+9
+ 0088 =         yrs1	equ	time+10
+ 0089 =         yrs10	equ	time+11
+ 008A 00        dow:	db	0
+                
+ 008B           	ds	64
+ 00CB           stack:	ds	0
+                
+                	cseg
+                start:
+ 0003 31CB00    	lxi	sp,stack
+ 0006 DBAF      	in	rtc+15
+ 0008 F604      	ori	00000100b ; 24-hour format
+ 000A D3AF      	out	rtc+15
+ 000C 210000    	lxi	h,signon
+ 000F CD4400    	call	msgout
+ 0012 CD8001    	call	gettime
+ 0015 CD6D00    	call	show
+ 0018 212800    	lxi	h,enter
+ 001B CD4400    	call	msgout
+                
+ 001E 218022    	lxi	h,linbuf
+ 0021 CDB801    	call	linin
+ 0024 DA5D00    	jc	quit
+ 0027 218022    	lxi	h,linbuf
+ 002A CDE700    	call	parse
+ 002D DA5D00    	jc	error
+ 0030 211D00    	lxi	h,newtime
+ 0033 CD4400    	call	msgout
+ 0036 CD6D00    	call	show
+ 0039 215F00    	lxi	h,setmsg
+ 003C CD4400    	call	msgout
+ 003F 218022    	lxi	h,linbuf
+ 0042 CDB801    	call	linin
+ 0045 DA5D00    	jc	quit
+ 0048 CD6201    	call	settime
+ 004B 217200    	lxi	h,setto
+ 004E CD4400    	call	msgout
+ 0051 CD8001    	call	gettime
+ 0054 CD6D00    	call	show
+ 0057 CD1B00    	call	crlf
+ 005A C36300    	jmp	exit
+                
+                error:	; TODO...
+ 005D 215000    quit:	lxi	h,noset
+ 0060 CD4400    	call	msgout
+ 0063 2A1E00    exit:	lhld	retmon
+ 0066 E9        	pchl
+                
+ 0067 E5        chrout:	push	h
+ 0068 2A2600    	lhld	conout
+ 006B E3        	xthl
+ 006C C9        	ret
+                
+                ; MM/DD/YY HH:MM:SS
+ 006D 3A8700    show:	lda	mon10
+ 0070 F630      	ori	'0'
+ 0072 CD6700    	call	chrout
+ 0075 3A8600    	lda	mon1
+ 0078 F630      	ori	'0'
+ 007A CD6700    	call	chrout
+ 007D 3E2F      	mvi	a,'/'
+ 007F CD6700    	call	chrout
+ 0082 3A8500    	lda	dom10
+ 0085 F630      	ori	'0'
+ 0087 CD6700    	call	chrout
+ 008A 3A8400    	lda	dom1
+ 008D F630      	ori	'0'
+ 008F CD6700    	call	chrout
+ 0092 3E2F      	mvi	a,'/'
+ 0094 CD6700    	call	chrout
+ 0097 3A8900    	lda	yrs10
+ 009A F630      	ori	'0'
+ 009C CD6700    	call	chrout
+ 009F 3A8800    	lda	yrs1
+ 00A2 F630      	ori	'0'
+ 00A4 CD6700    	call	chrout
+ 00A7 3E20      	mvi	a,' '
+ 00A9 CD6700    	call	chrout
+ 00AC 3A8300    	lda	hrs10
+ 00AF F630      	ori	'0'
+ 00B1 CD6700    	call	chrout
+ 00B4 3A8200    	lda	hrs1
+ 00B7 F630      	ori	'0'
+ 00B9 CD6700    	call	chrout
+ 00BC 3E3A      	mvi	a,':'
+ 00BE CD6700    	call	chrout
+ 00C1 3A8100    	lda	min10
+ 00C4 F630      	ori	'0'
+ 00C6 CD6700    	call	chrout
+ 00C9 3A8000    	lda	min1
+ 00CC F630      	ori	'0'
+ 00CE CD6700    	call	chrout
+ 00D1 3E3A      	mvi	a,':'
+ 00D3 CD6700    	call	chrout
+ 00D6 3A7F00    	lda	sec10
+ 00D9 F630      	ori	'0'
+ 00DB CD6700    	call	chrout
+ 00DE 3A7E00    	lda	sec1
+ 00E1 F630      	ori	'0'
+ 00E3 CD6700    	call	chrout
+ 00E6 C9        	ret
+                
+                ; TODO: support reorder/partials?
+                ; HL="MM/DD/YY HH:MM:SS"
+                parse:
+                	; TODO: skip blanks
+ 00E7 CD4901    	call	parsnm	; month
+ 00EA 7E        	mov	a,m
+ 00EB FE2F      	cpi	'/'
+ 00ED 37        	stc
+ 00EE C0        	rnz
+ 00EF 23        	inx	h
+                	sbcd	mon1
+ 00F0+E5        	PUSH	H
+ 00F1+69        	MOV	L,C
+ 00F2+60        	MOV	H,B
+ 00F3+228600    	SHLD	MON1
+ 00F6+E1        	POP	H
+ 00F7 CD4901    	call	parsnm	; day of month
+ 00FA 7E        	mov	a,m
+ 00FB FE2F      	cpi	'/'
+ 00FD 37        	stc
+ 00FE C0        	rnz
+ 00FF 23        	inx	h
+                	sbcd	dom1
+ 0100+E5        	PUSH	H
+ 0101+69        	MOV	L,C
+ 0102+60        	MOV	H,B
+ 0103+228400    	SHLD	DOM1
+ 0106+E1        	POP	H
+ 0107 CD4901    	call	parsnm	; year of century
+ 010A 7E        	mov	a,m
+ 010B FE20      	cpi	' '	; or NUL?
+ 010D 37        	stc
+ 010E C0        	rnz
+ 010F 23        	inx	h
+                	sbcd	yrs1
+ 0110+E5        	PUSH	H
+ 0111+69        	MOV	L,C
+ 0112+60        	MOV	H,B
+ 0113+228800    	SHLD	YRS1
+ 0116+E1        	POP	H
+ 0117 CD4901    	call	parsnm	; hour (24-hour)
+ 011A 7E        	mov	a,m
+ 011B FE3A      	cpi	':'
+ 011D 37        	stc
+ 011E C0        	rnz
+ 011F 23        	inx	h
+                	sbcd	hrs1
+ 0120+E5        	PUSH	H
+ 0121+69        	MOV	L,C
+ 0122+60        	MOV	H,B
+ 0123+228200    	SHLD	HRS1
+ 0126+E1        	POP	H
+ 0127 CD4901    	call	parsnm	; minutes
+ 012A 7E        	mov	a,m
+ 012B FE3A      	cpi	':'	; seconds optional?
+ 012D 37        	stc
+ 012E C0        	rnz
+ 012F 23        	inx	h
+                	sbcd	min1
+ 0130+E5        	PUSH	H
+ 0131+69        	MOV	L,C
+ 0132+60        	MOV	H,B
+ 0133+228000    	SHLD	MIN1
+ 0136+E1        	POP	H
+ 0137 CD4901    	call	parsnm	; seconds
+ 013A 7E        	mov	a,m
+ 013B FE00      	cpi	0	; blanks? others?
+ 013D 37        	stc
+ 013E C0        	rnz
+ 013F 23        	inx	h
+                	sbcd	sec1
+ 0140+E5        	PUSH	H
+ 0141+69        	MOV	L,C
+ 0142+60        	MOV	H,B
+ 0143+227E00    	SHLD	SEC1
+ 0146+E1        	POP	H
+ 0147 AF        	xra	a
+ 0148 C9        	ret
+                
+                ; parse (up to) two digits, return B=10's, C=1's
+                ; HL=input string
+                ; returns HL at next char
+                parsnm:
+ 0149 010000    	lxi	b,0
+ 014C 7E        	mov	a,m
+ 014D D630      	sui	'0'
+ 014F D8        	rc
+ 0150 FE0A      	cpi	10
+ 0152 3F        	cmc
+ 0153 D8        	rc
+ 0154 23        	inx	h
+ 0155 4F        	mov	c,a
+ 0156 7E        	mov	a,m
+ 0157 D630      	sui	'0'
+ 0159 D8        	rc
+ 015A FE0A      	cpi	10
+ 015C 3F        	cmc
+ 015D D8        	rc
+ 015E 23        	inx	h
+ 015F 41        	mov	b,c
+ 0160 4F        	mov	c,a
+ 0161 C9        	ret
+                
+                settime:
+ 0162 AF        	xra	a
+ 0163 D3AD      	out	rtc+13
+ 0165 D3AE      	out	rtc+14
+ 0167 3E04      	mvi	a,0100b	; 24-hour format
+ 0169 D3AF      	out	rtc+15
+ 016B CD9A01    	call	hold
+ 016E 217E00    	lxi	h,time
+ 0171 0E9F      	mvi	c,rtc-1
+ 0173 060D      	mvi	b,13	; TODO: day-of-week?
+ 0175 0C        settm0:	inr	c
+ 0176 CD0602    	call	outi
+ 0179 C27501    	jnz	settm0
+ 017C CDAC01    	call	unhold
+ 017F C9        	ret
+                
+                gettime:
+ 0180 CD9A01    	call	hold
+ 0183 217E00    	lxi	h,time
+ 0186 0E9F      	mvi	c,rtc-1
+ 0188 060C      	mvi	b,12
+ 018A 0C        gettm0:	inr	c
+ 018B CDFF01    	call	inp
+ 018E E60F      	ani	0fh
+ 0190 77        	mov	m,a
+ 0191 23        	inx	h
+ 0192 05C28A01  	dcr b ! jnz gettm0
+ 0196 CDAC01    	call	unhold
+ 0199 C9        	ret
+                
+ 019A DBAD      hold:	in	rtc+13
+ 019C F601      	ori	0001b	; HOLD
+ 019E D3AD      	out	rtc+13
+ 01A0 DBAD      	in	rtc+13
+ 01A2 E602      	ani	0010b	; BUSY
+ 01A4 C8        	rz
+ 01A5 E60E      	ani	00001110b
+ 01A7 D3AD      	out	rtc+13
+                	; TODO: pause?
+ 01A9 C39A01    	jmp	hold
+                
+ 01AC DBAD      unhold:	in	rtc+13
+ 01AE E6FE      	ani	11111110b
+ 01B0 D3AD      	out	rtc+13
+ 01B2 C9        	ret
+                
+ 01B3 3600      linix:	mvi	m,0	; terminate buffer
+ 01B5 C31B00    	jmp	crlf
+                
+                ; input a filename from console, allow backspace
+                ; HL=buffer
+                ; returns C=num chars, buffer NUL terminated
+                linin:
+ 01B8 0E00      	mvi	c,0	; count chars
+ 01BA CD4A00    lini0	call	conin
+ 01BD FE0D      	cpi	CR
+ 01BF CAB301    	jz	linix
+ 01C2 FE03      	cpi	CTLC	; cancel
+ 01C4 37        	stc
+ 01C5 C8        	rz
+ 01C6 FE08      	cpi	BS
+ 01C8 CAE601    	jz	backup
+ 01CB FE20      	cpi	' '
+ 01CD DADE01    	jc	chrnak
+ 01D0 FE7F      	cpi	'~'+1
+ 01D2 D2DE01    	jnc	chrnak
+ 01D5 77        chrok:	mov	m,a
+ 01D6 23        	inx	h
+ 01D7 0C        	inr	c
+ 01D8 CD6700    	call	chrout	; echo
+                	; TODO: detect overflow...
+ 01DB C3BA01    	jmp	lini0
+ 01DE 3E07      chrnak:	mvi	a,BEL
+ 01E0 CD6700    	call	chrout
+ 01E3 C3BA01    	jmp	lini0
+                backup:
+ 01E6 79        	mov	a,c
+ 01E7 B7        	ora	a
+ 01E8 CABA01    	jz	lini0
+ 01EB 0D        	dcr	c
+ 01EC 2B        	dcx	h
+ 01ED 3E08      	mvi	a,BS
+ 01EF CD6700    	call	chrout
+ 01F2 3E20      	mvi	a,' '
+ 01F4 CD6700    	call	chrout
+ 01F7 3E08      	mvi	a,BS
+ 01F9 CD6700    	call	chrout
+ 01FC C3BA01    	jmp	lini0
+                
+ 01FF 79        inp:	mov	a,c
+ 0200 320402    	sta	inp0+1
+ 0203 DB00      inp0:	in	0
+ 0205 C9        	ret
+                
+ 0206 79        outi:	mov	a,c
+ 0207 320C02    	sta	outi0+1
+ 020A 7E        	mov	a,m
+ 020B D300      outi0:	out	0
+ 020D 23        	inx	h
+ 020E 05        	dcr	b
+ 020F C9        	ret
+                
+ 0210           	end
+
