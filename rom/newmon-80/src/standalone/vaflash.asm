@@ -141,6 +141,13 @@ comm$flash:	; full ROM still mapped at 0000...
 	; restore ROM even if we don't jump to it.
 	lxi	d,done
 	call	msgout
+	; successful flash, try auto-RESET
+	out	36h
+	; delay a little,
+	; if RESET doesn't happend then print message.
+	xra	a
+dly:	dcr	a
+	jnz	dly
 error:
 	xra	a	; back to RESET state (WE off)
 	out	0f2h
@@ -196,7 +203,7 @@ cancel:	lxi	d,canc
 	jmp	0
 
 era:	db	0	; erase setup?
-signon:	db	CR,LF,'VFLASH v'
+signon:	db	CR,LF,'VFLASH 8080A v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
 	db	' - Update ROM from VDIP1',CR,LF,0
 clf:	db	'clf',CR
