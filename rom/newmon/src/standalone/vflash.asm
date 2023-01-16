@@ -303,10 +303,15 @@ sum$bc:	ldax	d
 	call	sum1
 	inx	d
 	dcx	b
-	mov	a,b
-	ora	c
+	mov	a,c
+	ora	a
 	jrnz	sum$bc
-	ret
+	mov	a,b
+	ora	a
+	rz
+	ani	00000011b
+	cz	progress
+	jr	sum$bc
 
 sum1:	lxi	h,sum
 	add	m

@@ -142,9 +142,10 @@ comm$flash:	; full ROM still mapped at 0000...
 	lxi	d,done
 	call	msgout
 	; successful flash, try auto-RESET
+	call	condrain ; ensure all conout drained
 	out	36h
-	; delay a little,
-	; if RESET doesn't happend then print message.
+	; delay a little (probably only for simulator),
+	; if RESET doesn't happen then print message.
 	xra	a
 dly:	dcr	a
 	jnz	dly
@@ -250,10 +251,15 @@ sum$bc:	ldax	d
 	call	sum1
 	inx	d
 	dcx	b
-	mov	a,b
-	ora	c
+	mov	a,c
+	ora	a
 	jnz	sum$bc
-	ret
+	mov	a,b
+	ora	a
+	rz
+	ani	00000011b
+	cz	progress
+	jmp	sum$bc
 
 sum1:	lxi	h,sum
 	add	m
@@ -332,6 +338,13 @@ cono0:	in	0edh
 	jz	cono0
 	pop	psw
 	out	0e8h
+	ret
+
+condrain:
+	in	0edh
+	ani	01100000b
+	cpi	01100000b
+	jnz	condrain
 	ret
 
 conin:	in	0edh
