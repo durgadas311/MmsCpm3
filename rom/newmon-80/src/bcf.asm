@@ -55,6 +55,8 @@ boot:
 	inx	d
 	cpi	0c3h	; JMP means no string present
 	jz	nostr
+	ora	a	; check for "", too
+	jz	nostr
 	call	trydig
 	jnc	gotdig
 	call	tryltr

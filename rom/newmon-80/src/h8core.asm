@@ -4,8 +4,8 @@ VERN	equ	020h	; ROM version
 false	equ	0
 true	equ	not false
 
-alpha	equ	9
-beta	equ	31
+alpha	equ	10
+beta	equ	32
 
 	maclib	ram
 	maclib	setup

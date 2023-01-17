@@ -42,6 +42,8 @@ boot:
 	mov	a,m
 	cpi	0c3h	; JMP means no string
 	jrz	boot5
+	ora	a	; check for "", too
+	jrz	boot5
 	; else, A=str len
 	mov	c,a
 	mvi	b,0

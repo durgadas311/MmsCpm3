@@ -82,6 +82,8 @@ cardsetup:
 	inx	d
 	cpi	0c3h	; JMP means no string present
 	jrz	nostr
+	ora	a	; check for "", too
+	jrz	nostr
 	call	trydig
 	jrnc	gotdig
 	call	tryltr
