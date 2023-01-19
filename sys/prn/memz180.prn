@@ -6,6 +6,8 @@
                 ; For Z180 MMU and 1M memory
                 	maclib z180
                 
+ 00E0 =         COMMPG	equ	0e0h
+                
  FFFF =         true	equ -1
  0000 =         false	equ not true
                 
@@ -46,18 +48,18 @@
                 	cseg		; GENCPM puts CSEG stuff in common memory
                 
  0000 04        @nbnk:	db	4	; not total, just for CP/M
- 0001 E0        @compg:	db	0e0h
+ 0001 E0        @compg:	db	COMMPG
  0002 0D0A074E6F@mmerr: db	cr,lf,bell,'No Z180$'
  000D 52414D5A31@memstr: db	'RAMZ180 ',0,'Z180 MMU 1M ',0,'v3.10'
  0028 3120      	dw	vers
  002A 24        	db	'$'
                 
-                ; Uses XMOVE semantics
+                ; Uses XMOVE semantics
                 ; C=source bank, B=dest bank, HL=address, A=num recs
-                ?mvccp:
+                ?mvccp:
  002B F5        	push	psw
  002C E5        	push	h
- 002D CDB600    	call	?xmove
+ 002D CDC600    	call	?xmove
  0030 E1        	pop	h
  0031 F1        	pop	psw
  0032 47        	mov	b,a
@@ -68,126 +70,139 @@
  0037+CB19      	DB	0CBH, 18H + C
  0039 5D        	mov	e,l
  003A 54        	mov	d,h	; same address, diff banks
- 003B CDAB00    	call	?move
+ 003B CD9700    	call	?move
  003E C9        	ret
                 
                 ; DE=src, HL=dst, BC=count
+                ; Common memory addresses must use bank 0.
+                ; A move must not span common boundary.
+                ; Also, common memory must be bank 0 = 00000.
                 xmv:
  003F AF        	xra	a
- 0040 32A600    	sta	xflag
+ 0040 32C100    	sta	xflag
  0043 E5        	push	h	; save dst
                 	out0	e,sar0l
  0044+ED1920    	DB	0EDH, E*8+01H, SAR0L
- 0047 2AA700    	lhld	xsrc
- 004A 7E        	mov	a,m
- 004B 82        	add	d
+ 0047 2AC200    	lhld	xsrc
+ 004A 7A        	mov	a,d
+ 004B FEE0      	cpi	COMMPG
+                	jrc	xmv1
+ 004D+3803      	DB	38H,XMV1-$-1
+ 004F 21B900    	lxi	h,dmatbl+0	; use bank 0
+ 0052 7E        xmv1:	mov	a,m
+ 0053 82        	add	d
                 	out0	a,sar0h
- 004C+ED3921    	DB	0EDH, A*8+01H, SAR0H
- 004F 23        	inx	h
- 0050 7E        	mov	a,m
- 0051 CE00      	aci	0
+ 0054+ED3921    	DB	0EDH, A*8+01H, SAR0H
+ 0057 23        	inx	h
+ 0058 7E        	mov	a,m
+ 0059 CE00      	aci	0
                 	out0	a,sar0b
- 0053+ED3922    	DB	0EDH, A*8+01H, SAR0B
- 0056 EB        	xchg
- 0057 E3        	xthl		; save src, get dst
- 0058 EB        	xchg		; DE=dst (TOS=src)
+ 005B+ED3922    	DB	0EDH, A*8+01H, SAR0B
+ 005E EB        	xchg
+ 005F E3        	xthl		; save src, get dst
+ 0060 EB        	xchg		; DE=dst (TOS=src)
                 	out0	e,dar0l
- 0059+ED1923    	DB	0EDH, E*8+01H, DAR0L
- 005C 2AA900    	lhld	xdst
- 005F 7E        	mov	a,m
- 0060 82        	add	d
+ 0061+ED1923    	DB	0EDH, E*8+01H, DAR0L
+ 0064 2AC400    	lhld	xdst
+ 0067 7A        	mov	a,d
+ 0068 FEE0      	cpi	COMMPG
+                	jrc	xmv2
+ 006A+3803      	DB	38H,XMV2-$-1
+ 006C 21B900    	lxi	h,dmatbl+0	; use bank 0
+ 006F 7E        xmv2:	mov	a,m
+ 0070 82        	add	d
                 	out0	a,dar0h
- 0061+ED3924    	DB	0EDH, A*8+01H, DAR0H
- 0064 23        	inx	h
- 0065 7E        	mov	a,m
- 0066 CE00      	aci	0
+ 0071+ED3924    	DB	0EDH, A*8+01H, DAR0H
+ 0074 23        	inx	h
+ 0075 7E        	mov	a,m
+ 0076 CE00      	aci	0
                 	out0	a,dar0b
- 0068+ED3925    	DB	0EDH, A*8+01H, DAR0B
- 006B E1        	pop	h	; get src
- 006C 09        	dad	b	; final src
- 006D EB        	xchg
- 006E 09        	dad	b	; final dst
+ 0078+ED3925    	DB	0EDH, A*8+01H, DAR0B
+ 007B E1        	pop	h	; get src
+ 007C 09        	dad	b	; final src
+ 007D EB        	xchg
+ 007E 09        	dad	b	; final dst
                 	out0	c,bcr0l
- 006F+ED0926    	DB	0EDH, C*8+01H, BCR0L
+ 007F+ED0926    	DB	0EDH, C*8+01H, BCR0L
                 	out0	b,bcr0h
- 0072+ED0127    	DB	0EDH, B*8+01H, BCR0H
- 0075 3E02      	mvi	a,00000010b	; mem2mem, burst mode
+ 0082+ED0127    	DB	0EDH, B*8+01H, BCR0H
+ 0085 3E02      	mvi	a,00000010b	; mem2mem, burst mode
                 	;xra	a	; mem2mem, cycle-steal
                 	out0	a,dmode
- 0077+ED3931    	DB	0EDH, A*8+01H, DMODE
- 007A 3E60      	mvi	a,01100000b	; DE0,/DWE0 - start ch 0
+ 0087+ED3931    	DB	0EDH, A*8+01H, DMODE
+ 008A 3E60      	mvi	a,01100000b	; DE0,/DWE0 - start ch 0
                 	out0	a,dstat
- 007C+ED3930    	DB	0EDH, A*8+01H, DSTAT
+ 008C+ED3930    	DB	0EDH, A*8+01H, DSTAT
                 	; DMA starts now...
                 xmv0:	in0	a,dstat
- 007F+ED3830    	DB	0EDH, A*8+00H, DSTAT
- 0082 E640      	ani	01000000b
+ 008F+ED3830    	DB	0EDH, A*8+00H, DSTAT
+ 0092 E640      	ani	01000000b
                 	jrnz	xmv0
- 0084+20F9      	DB	20H,XMV0-$-1
- 0086 C9        	ret
+ 0094+20F9      	DB	20H,XMV0-$-1
+ 0096 C9        	ret
+                
+                ; unless xflag, move between common and current bank
+ 0097 3AC100    ?move:	lda	xflag
+ 009A B7        	ora	a
+                	jrnz	xmv	; disables interrupts
+ 009B+20A2      	DB	20H,XMV-$-1
+ 009D EB        	xchg		; we are passed source in DE and dest in HL
+                	ldir		; use Z80 block move instruction
+ 009E+EDB0      	DB	0EDH,0B0H
+ 00A0 EB        	xchg		; need next addresses in same regs
+ 00A1 C9        	ret
                 
                 ; TODO: avoid redundant selection...
                 ; But must handle xmove also...
                 ?bnksl:
- 0087 320000    	sta	@cbnk		; remember current bank
- 008A C5        	push	b		; save register b for temp
- 008B E5        	push	h		;
- 008C 219A00    	lxi	h,table 	;
- 008F 4F        	mov	c,a		;
- 0090 0600      	mvi	b,0		;
- 0092 09        	dad	b		;
- 0093 7E        	mov	a,m
+ 00A2 320000    	sta	@cbnk		; remember current bank
+ 00A5 C5        	push	b		; save register b for temp
+ 00A6 E5        	push	h		;
+ 00A7 21B500    	lxi	h,table 	;
+ 00AA 4F        	mov	c,a		;
+ 00AB 0600      	mvi	b,0		;
+ 00AD 09        	dad	b		;
+ 00AE 7E        	mov	a,m
                 	out0	a,mmu$bbr
- 0094+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 0097 E1        	pop	h		;
- 0098 C1        	pop	b		; restore register b
- 0099 C9        	ret
+ 00AF+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
+ 00B2 E1        	pop	h		;
+ 00B3 C1        	pop	b		; restore register b
+ 00B4 C9        	ret
                 
                 @tz180:
- 009A 00        table:	db	BNK0$PG
- 009B 10        	db	BNK1$PG
- 009C 1E        	db	BNK2$PG
- 009D 2C        	db	BNK3$PG
+ 00B5 00        table:	db	BNK0$PG
+ 00B6 10        	db	BNK1$PG
+ 00B7 1E        	db	BNK2$PG
+ 00B8 2C        	db	BNK3$PG
                 
                 @dz180:
- 009E 0000      dmatbl:	dw	BNK0$PG SHL 4
- 00A0 0001      	dw	BNK1$PG SHL 4
- 00A2 E001      	dw	BNK2$PG SHL 4
- 00A4 C002      	dw	BNK3$PG SHL 4
+ 00B9 0000      dmatbl:	dw	BNK0$PG SHL 4
+ 00BB 0001      	dw	BNK1$PG SHL 4
+ 00BD E001      	dw	BNK2$PG SHL 4
+ 00BF C002      	dw	BNK3$PG SHL 4
                 
- 00A6 00        xflag:	db	0
- 00A7 0000      xsrc:	dw	0	; ptr to dmatbl[src]
- 00A9 0000      xdst:	dw	0	; ptr to dmatbl[dst]
-                
-                ; unless xflag, move between common and current bank
- 00AB 3AA600    ?move:	lda	xflag
- 00AE B7        	ora	a
-                	jrnz	xmv	; disables interrupts
- 00AF+208E      	DB	20H,XMV-$-1
- 00B1 EB        	xchg		; we are passed source in DE and dest in HL
-                	ldir		; use Z80 block move instruction
- 00B2+EDB0      	DB	0EDH,0B0H
- 00B4 EB        	xchg		; need next addresses in same regs
- 00B5 C9        	ret
+ 00C1 00        xflag:	db	0
+ 00C2 0000      xsrc:	dw	0	; ptr to dmatbl[src]
+ 00C4 0000      xdst:	dw	0	; ptr to dmatbl[dst]
                 
                 ; B=wr bank, C=rd bank
                 ; BDOS30 saves DE/HL
                 ?xmove:
- 00B6 119E00    	lxi	d,dmatbl
- 00B9 69        	mov	l,c	; src bnk
- 00BA 2600      	mvi	h,0
- 00BC 29        	dad	h
- 00BD 19        	dad	d
- 00BE 22A700    	shld	xsrc
- 00C1 68        	mov	l,b	; dst bnk
- 00C2 2600      	mvi	h,0
- 00C4 29        	dad	h
- 00C5 19        	dad	d
- 00C6 22A900    	shld	xdst
- 00C9 AF        	xra	a
- 00CA 3D        	dcr	a
- 00CB 32A600    	sta	xflag
- 00CE C9        	ret
+ 00C6 11B900    	lxi	d,dmatbl
+ 00C9 69        	mov	l,c	; src bnk
+ 00CA 2600      	mvi	h,0
+ 00CC 29        	dad	h
+ 00CD 19        	dad	d
+ 00CE 22C200    	shld	xsrc
+ 00D1 68        	mov	l,b	; dst bnk
+ 00D2 2600      	mvi	h,0
+ 00D4 29        	dad	h
+ 00D5 19        	dad	d
+ 00D6 22C400    	shld	xdst
+ 00D9 AF        	xra	a
+ 00DA 3D        	dcr	a
+ 00DB 32C100    	sta	xflag
+ 00DE C9        	ret
                 
                 	dseg	; this part can be banked
                 
@@ -207,36 +222,36 @@
  000C 3E20      	mvi	a,0010$0000b	; compag 2000, bnk base 0000
                 	out0	a,mmu$cbar
  000E+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
-                	;
+                	;
  0011 114000    	lxi	d,0040h	; a likely addr in low 16K
- 0014 3A9B00    	lda	table+1	; bank 1 map code
+ 0014 3AB600    	lda	table+1	; bank 1 map code
                 	out0	a,mmu$bbr
  0017+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
  001A 3E01      	mvi	a,1
  001C 12        	stax	d	;put bank number in 40h of respective bank
- 001D 3A9C00    	lda	table+2	; bank 2 map code
+ 001D 3AB700    	lda	table+2	; bank 2 map code
                 	out0	a,mmu$bbr
  0020+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
  0023 3E02      	mvi	a,2
  0025 12        	stax	d	;put bank number in 40h of respective bank
- 0026 3A9D00    	lda	table+3	; bank 3 map code
+ 0026 3AB800    	lda	table+3	; bank 3 map code
                 	out0	a,mmu$bbr
  0029+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
- 002C 3E03      	mvi	a,3
+ 002C 3E03      	mvi	a,3
  002E 12        	stax	d	;put bank number in 40h of respective bank
- 002F 3A9B00    	lda	table+1	; bank 1 map code
+ 002F 3AB600    	lda	table+1	; bank 1 map code
                 	out0	a,mmu$bbr
  0032+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
  0035 1A        	ldax	d
  0036 FE01      	cpi	1
  0038 C20000    	jnz	noram
- 003B 3A9C00    	lda	table+2	; bank 2 map code
+ 003B 3AB700    	lda	table+2	; bank 2 map code
                 	out0	a,mmu$bbr
  003E+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
  0041 1A        	ldax	d
  0042 FE02      	cpi	2
  0044 C20000    	jnz	noram
- 0047 3A9D00    	lda	table+3	; bank 3 map code
+ 0047 3AB800    	lda	table+3	; bank 3 map code
                 	out0	a,mmu$bbr
  004A+ED3939    	DB	0EDH, A*8+01H, MMU$BBR
  004D 1A        	ldax	d
@@ -250,7 +265,7 @@
                 	out0	a,mmu$cbar
  0059+ED393A    	DB	0EDH, A*8+01H, MMU$CBAR
  005C AF        	xra	a	; redundant?
- 005D CD8700    	call	?bnksl	;
+ 005D CDA200    	call	?bnksl	;
                 	; Allocate some buffers below BNKBDOS
  0060 2A0000    	lhld	@heapt
  0063 1100FC    	lxi	d,-1024	; max sector size = 1024
@@ -263,7 +278,7 @@
  0072 19        	dad	d
  0073 22A100    	shld	dtabf2
  0076 220000    	shld	@heapt
- 0079 218800    	lxi	h,dtacb1
+ 0079 218800    	lxi	h,dtacb1
  007C 220000    	shld	@dtacb
  007F 21A600    	lxi	h,dircb1
  0082 220000    	shld	@dircb
@@ -278,7 +293,7 @@
  0095 9700      	dw dtacb2
                 
  0097 FF        dtacb2: db 0ffh ;drive
- 0098 0000000000	db 0,0,0,0,0
+ 0098 0000000000	db 0,0,0,0,0
  009D 00000000  	dw 0,0
  00A1 0000      dtabf2:	dw	0
  00A3 00        	db 0
@@ -299,4 +314,4 @@
  00C2 0000      	dw 0000 ;end of DIR buffers
                 
  00C4           	end
-
+

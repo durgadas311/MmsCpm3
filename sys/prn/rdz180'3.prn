@@ -226,12 +226,14 @@
                 	jr	join$rw
  00BF+182A      	DB	18H,JOIN$RW-$-1
                 
-                ; TODO: handle buffer that crosses common boundary...
+                ; Always moving 128 bytes, so any @dma within
+                ; 256 bytes of @compg will "punt" to using the
+                ; bounce buffer.
                 setup$rw:
  00C1 AF        	xra	a
  00C2 32B000    	sta	punt
                 	; convert bank,vaddr to paddr
- 00C5 2A0000    	lhld	@dma
+ 00C5 2A0000    	lhld	@dma	; addr in bank 0/1
  00C8 EB        	xchg
  00C9 210000    	lxi	h,@dz180
  00CC 3A0000    	lda	@compg	; check for common memory buffer...
@@ -239,13 +241,13 @@
  00D0 BA        	cmp	d
                 	jrc	comm$rw	; use bank 0 for common
  00D1+380A      	DB	38H,COMM$RW-$-1
-                	jrz	punt$rw
+                	jrz	punt$rw	; within 256 bytes...
  00D3+28DC      	DB	28H,PUNT$RW-$-1
- 00D5 3A0000    	lda	@dbnk
+ 00D5 3A0000    	lda	@dbnk	; always 0/1
  00D8 87        	add	a
  00D9 4F        	mov	c,a
  00DA 0600      	mvi	b,0
- 00DC 09        	dad	b
+ 00DC 09        	dad	b	; @dz180[@dbnk]
                 comm$rw:
                 	; add 0:D:E (user dma)
                 	;   + H:L:0 (actually, (HL+1):(HL):0)
@@ -276,9 +278,9 @@
  00FD+CB19      	DB	0CBH, 18H + C
  00FF 1F        	rar		; C:A:0 = track * 128 * 128
                 	; (0000xxxx:xx000000:00000000) track  C:A:0
-                	; (00000000:00xxxxxx:x0000000) sector 0:D:E
+                	; (00000000:00xxxxxx:x0000000) sector 0:D:E
                 	; merge C:A:0 (track) and 0:D:E (sector) (no carry possible)
- 0100 B2        	ora	d
+ 0100 B2        	ora	d
  0101 57        	mov	d,a
                 	; LBA is C:D:E
  0102 21A003    	lxi	h,base$pg SHL 4	; base addr of disk
@@ -332,9 +334,9 @@
                 	out0	a,sar0h
  0151+ED3921    	DB	0EDH, A*8+01H, SAR0H
  0154 23        	inx	h
- 0155 7E        	mov	a,m
+ 0155 7E        	mov	a,m
                 	out0	a,sar0b
- 0156+ED3922    	DB	0EDH, A*8+01H, SAR0B
+ 0156+ED3922    	DB	0EDH, A*8+01H, SAR0B
  0159 1A        	ldax	d
                 	out0	a,dar0l
  015A+ED3923    	DB	0EDH, A*8+01H, DAR0L
@@ -367,4 +369,4 @@
  0182 C9        	ret
                 
  0183           	end
-
+

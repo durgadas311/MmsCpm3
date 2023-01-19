@@ -6,6 +6,8 @@ vers equ '1 ' ; Feb 14, 2020  17:00   drm "MEMZ180.ASM"
 ; For Z180 MMU and 1M memory
 	maclib z180
 
+COMMPG	equ	0e0h
+
 true	equ -1
 false	equ not true
 
@@ -46,7 +48,7 @@ BNK3$PG	equ	2ch	; 2C000-39FFF
 	cseg		; GENCPM puts CSEG stuff in common memory
 
 @nbnk:	db	4	; not total, just for CP/M
-@compg:	db	0e0h
+@compg:	db	COMMPG
 @mmerr: db	cr,lf,bell,'No Z180$'
 @memstr: db	'RAMZ180 ',0,'Z180 MMU 1M ',0,'v3.10'
 	dw	vers
@@ -70,13 +72,20 @@ BNK3$PG	equ	2ch	; 2C000-39FFF
 	ret
 
 ; DE=src, HL=dst, BC=count
+; Common memory addresses must use bank 0.
+; A move must not span common boundary.
+; Also, common memory must be bank 0 = 00000.
 xmv:
 	xra	a
 	sta	xflag
 	push	h	; save dst
 	out0	e,sar0l
 	lhld	xsrc
-	mov	a,m
+	mov	a,d
+	cpi	COMMPG
+	jrc	xmv1
+	lxi	h,dmatbl+0	; use bank 0
+xmv1:	mov	a,m
 	add	d
 	out0	a,sar0h
 	inx	h
@@ -88,7 +97,11 @@ xmv:
 	xchg		; DE=dst (TOS=src)
 	out0	e,dar0l
 	lhld	xdst
-	mov	a,m
+	mov	a,d
+	cpi	COMMPG
+	jrc	xmv2
+	lxi	h,dmatbl+0	; use bank 0
+xmv2:	mov	a,m
 	add	d
 	out0	a,dar0h
 	inx	h
@@ -110,6 +123,15 @@ xmv:
 xmv0:	in0	a,dstat
 	ani	01000000b
 	jrnz	xmv0
+	ret
+
+; unless xflag, move between common and current bank
+?move:	lda	xflag
+	ora	a
+	jrnz	xmv	; disables interrupts
+	xchg		; we are passed source in DE and dest in HL
+	ldir		; use Z80 block move instruction
+	xchg		; need next addresses in same regs
 	ret
 
 ; TODO: avoid redundant selection...
@@ -143,15 +165,6 @@ dmatbl:	dw	BNK0$PG SHL 4
 xflag:	db	0
 xsrc:	dw	0	; ptr to dmatbl[src]
 xdst:	dw	0	; ptr to dmatbl[dst]
-
-; unless xflag, move between common and current bank
-?move:	lda	xflag
-	ora	a
-	jrnz	xmv	; disables interrupts
-	xchg		; we are passed source in DE and dest in HL
-	ldir		; use Z80 block move instruction
-	xchg		; need next addresses in same regs
-	ret
 
 ; B=wr bank, C=rd bank
 ; BDOS30 saves DE/HL

@@ -212,24 +212,26 @@ punt$rw:
 	sta	punt
 	jr	join$rw
 
-; TODO: handle buffer that crosses common boundary...
+; Always moving 128 bytes, so any @dma within
+; 256 bytes of @compg will "punt" to using the
+; bounce buffer.
 setup$rw:
 	xra	a
 	sta	punt
 	; convert bank,vaddr to paddr
-	lhld	@dma
+	lhld	@dma	; addr in bank 0/1
 	xchg
 	lxi	h,@dz180
 	lda	@compg	; check for common memory buffer...
 	dcr	a
 	cmp	d
 	jrc	comm$rw	; use bank 0 for common
-	jrz	punt$rw
-	lda	@dbnk
+	jrz	punt$rw	; within 256 bytes...
+	lda	@dbnk	; always 0/1
 	add	a
 	mov	c,a
 	mvi	b,0
-	dad	b
+	dad	b	; @dz180[@dbnk]
 comm$rw:
 	; add 0:D:E (user dma)
 	;   + H:L:0 (actually, (HL+1):(HL):0)
