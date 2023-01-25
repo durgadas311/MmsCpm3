@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	32
+beta	equ	0
 
 z180	equ	false
 h8nofp	equ	false
