@@ -1,0 +1,670 @@
+                ; program to initialize and identify an SDCard attached to an H8xSPI
+                	maclib core
+                
+ 0040 =         spi	equ	40h
+                
+ 0040 =         spi?wr	equ	spi+0
+ 0040 =         spi?rd	equ	spi+0
+ 0041 =         spi?ctl	equ	spi+1
+                
+ 0001 =         CS0	equ	00000001b
+ 0002 =         CS1	equ	00000010b
+ 0004 =         CS2	equ	00000100b
+ 0008 =         CS3	equ	00001000b
+ 0004 =         NUMCS	equ	4
+ 0004 =         SDSCS0	equ	CS2	; SCS for SDCard 0
+ 0008 =         SDSCS1	equ	CS3	; SCS for SDCard 1
+ 0002 =         NUMSD	equ	2
+                
+ 0040 =         CMDST	equ	01000000b	; command start bits
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+                
+                	cseg
+ 0000 C30600    	jmp	start
+                
+ 0003 0408      cstab:	db	SDSCS0,SDSCS1
+ 0005 05        retry:	db	5
+                
+ 0006 31AE04    start:	lxi	sp,stack
+ 0009 3E04      	mvi	a,SDSCS0	; default
+ 000B 32FC00    	sta	curcs
+ 000E 218022    	lxi	h,2280h	; NUL terminated
+ 0011 23        	inx	h	; skip length
+                	; skip program name
+ 0012 7E        skp0:	mov	a,m
+ 0013 23        	inx	h
+ 0014 B7        	ora	a
+ 0015 CA2300    	jz	skp1
+ 0018 FE20      	cpi	' '
+ 001A C21200    	jnz	skp0
+ 001D CD6801    	call	parcs	; curcs revised if needed
+ 0020 DAF600    	jc	error
+                skp1:
+ 0023 F3        	di	; don't need/want interrupts
+                	; waive 1mS delay... we are well past that...
+ 0024 CDAC01    	call	run74	; must cycle >= 74 clocks
+                
+                	; CMD0 - enter SPI mode
+ 0027 21FD00    	lxi	h,cmd0
+ 002A 1601      	mvi	d,1
+ 002C 1E01      	mvi	e,1	; turn off SCS
+ 002E CDCF01    	call	sdcmd
+ 0031 DAED00    	jc	fail
+ 0034 3A0301    	lda	cmd0+6	; R1
+ 0037 FE01      	cpi	00000001b	; IDLE bit set?
+ 0039 C2ED00    	jnz	fail
+ 003C 210401    	lxi	h,cmd8
+ 003F 1605      	mvi	d,5
+ 0041 1E01      	mvi	e,1	; turn off SCS
+ 0043 CDCF01    	call	sdcmd
+ 0046 DAED00    	jc	fail
+ 0049 3A0A01    	lda	cmd8+6
+ 004C FE01      	cpi	00000001b	; no error, IDLE bit still set
+ 004E CA5B00    	jz	ok8
+ 0051 E604      	ani	0100b	; Illegal Command
+ 0053 CAED00    	jz	fail	; must be some other error - fatal
+                	; CMD8 not recognized, SD1 card... (not supported?)
+ 0056 3E00      	mvi	a,0
+ 0058 321701    	sta	acmd41+1
+                ok8:
+ 005B 3E05      	mvi	a,5
+ 005D 320500    	sta	retry
+                init:	; this could take a long time... don't flood console
+ 0060 211601    	lxi	h,acmd41
+ 0063 1601      	mvi	d,1
+ 0065 CDB501    	call	doacmd
+ 0068 DAED00    	jc	fail
+ 006B 3A1C01    	lda	acmd41+6
+ 006E FE00      	cpi	00000000b	; READY?
+ 0070 CA8500    	jz	init0
+ 0073 E67E      	ani	01111110b	; any errors?
+ 0075 CA6000    	jz	init
+ 0078 3A0500    	lda	retry
+ 007B 3D        	dcr	a
+ 007C 320500    	sta	retry
+ 007F C26000    	jnz	init
+ 0082 C3ED00    	jmp	fail
+                init0:	; done with init
+                	; now try CMD58 if applicable
+ 0085 3A1701    	lda	acmd41+1
+ 0088 B7        	ora	a
+ 0089 CA9600    	jz	next
+                	; SD2... get CMD58
+ 008C 211D01    	lxi	h,cmd58
+ 008F 1605      	mvi	d,5
+ 0091 1E01      	mvi	e,1	; turn off SCS
+ 0093 CDCF01    	call	sdcmd
+                next:
+                	; read CID...
+ 0096 213601    	lxi	h,cmd10
+ 0099 1601      	mvi	d,1
+ 009B 1E00      	mvi	e,0	; leave SCS on
+ 009D CDCF01    	call	sdcmd
+ 00A0 DAED00    	jc	fail
+ 00A3 3A3C01    	lda	cmd10+6
+ 00A6 B7        	ora	a
+ 00A7 C2D900    	jnz	bad
+ 00AA 210E04    	lxi	h,cid
+ 00AD 011001    	lxi	b,0110h	; 16 bytes, 1 loop
+ 00B0 CDFE01    	call	sdblk	; turns off SCS
+ 00B3 DAD600    	jc	badblk
+                	; read CSD...
+ 00B6 212F01    	lxi	h,cmd9
+ 00B9 1601      	mvi	d,1
+ 00BB 1E00      	mvi	e,0	; leave SCS on
+ 00BD CDCF01    	call	sdcmd
+ 00C0 DAED00    	jc	fail
+ 00C3 3A3501    	lda	cmd9+6
+ 00C6 B7        	ora	a
+ 00C7 C2D900    	jnz	bad
+ 00CA 211E04    	lxi	h,csd
+ 00CD 011001    	lxi	b,0110h	; 16 bytes, 1 loop
+ 00D0 CDFE01    	call	sdblk	; turns off SCS
+ 00D3 D2DF00    	jnc	done
+ 00D6 CD3D01    badblk:	call	hexout
+ 00D9 AF        bad:	xra	a
+ 00DA D341      	out	spi?ctl	; SCS off
+ 00DC C3ED00    	jmp	fail
+                done:
+ 00DF CD2802    	call	prcid
+ 00E2 CDB202    	call	prcsd
+ 00E5 CD1B00    	call	crlf
+                exit:
+ 00E8 FB        	ei
+ 00E9 2A1E00    	lhld	retmon
+ 00EC E9        	pchl
+                
+ 00ED 219B01    fail:	lxi	h,failms
+ 00F0 CD4400    exit0:	call	msgout
+ 00F3 C3E800    	jmp	exit
+                
+ 00F6 218A01    error:	lxi	h,synerr
+ 00F9 C3F000    	jmp	exit0
+                
+ 00FC 04        curcs:	db	SDSCS0
+                
+                ; command is always 6 bytes (?)
+                ; From RomWBW:
+                ;    AT LEAST ONE SD CARD IS KNOWN TO FAIL ANY COMMAND
+                ;    WHERE THE CRC POSITION IS NOT $FF
+                ; This explains the problems with "Samsung 32Pro",
+                ; although that card only requires the end-command bit.
+ 00FD 4000000000cmd0:	db	CMDST+0,0,0,0,0,95h
+ 0103 00        	db	0
+ 0104 48000001AAcmd8:	db	CMDST+8,0,0,01h,0aah,87h
+ 010A 0000000000	db	0,0,0,0,0
+ 010F 7700000000cmd55:	db	CMDST+55,0,0,0,0,1
+ 0115 00        	db	0
+ 0116 6940000000acmd41:	db	CMDST+41,40h,0,0,0,1
+ 011C 00        	db	0
+ 011D 7A00000000cmd58:	db	CMDST+58,0,0,0,0,1
+ 0123 0000000000ocr:	db	0,0,0,0,0
+ 0128 5100000000cmd17:	db	CMDST+17,0,0,0,0,1
+ 012E 00        	db	0
+ 012F 4900000000cmd9:	db	CMDST+9,0,0,0,0,1	; SEND_CSD
+ 0135 00        	db	0
+ 0136 4A00000000cmd10:	db	CMDST+10,0,0,0,0,1	; SEND_CID
+ 013C 00        	db	0
+                
+                hexout:
+ 013D F5        	push	psw
+ 013E 0F        	rrc
+ 013F 0F        	rrc
+ 0140 0F        	rrc
+ 0141 0F        	rrc
+ 0142 CD4601    	call	hexdig
+ 0145 F1        	pop	psw
+                hexdig:
+ 0146 E60F      	ani	0fh
+ 0148 C690      	adi	90h
+ 014A 27        	daa
+ 014B CE40      	aci	40h
+ 014D 27        	daa
+ 014E C36201    	jmp	chrout
+                
+ 0151 3E20      space:	mvi	a,' '
+ 0153 C36201    	jmp	chrout
+                
+ 0156 3E2F      slash:	mvi	a,'/'
+ 0158 C36201    	jmp	chrout
+                
+ 015B 3E2E      point:	mvi	a,'.'
+ 015D C36201    	jmp	chrout
+                
+ 0160 3E22      quote:	mvi	a,'"'
+                	;jmp	chrout
+                
+ 0162 E5        chrout:	push	h
+ 0163 2A2600    	lhld	conout
+ 0166 E3        	xthl
+ 0167 C9        	ret
+                
+                ; parse for "CS#" and update 'curcs'
+                parcs:
+ 0168 7E        par9:	mov	a,m
+ 0169 B7        	ora	a
+ 016A C8        	rz
+ 016B 23        	inx	h
+ 016C FE20      	cpi	' '
+ 016E CA6801    	jz	par9
+ 0171 FE30      	cpi	'0'
+ 0173 D8        	rc
+ 0174 FE32      	cpi	'0'+NUMSD
+ 0176 3F        	cmc
+ 0177 D8        	rc
+ 0178 23        	inx	h
+                	; check for NUL?
+ 0179 D630      	sui	'0'
+ 017B 4F        	mov	c,a
+ 017C 0600      	mvi	b,0
+ 017E EB        	xchg
+ 017F 210300    	lxi	h,cstab
+ 0182 09        	dad	b
+ 0183 7E        	mov	a,m
+ 0184 32FC00    	sta	curcs
+ 0187 EB        	xchg
+ 0188 AF        	xra	a
+ 0189 C9        	ret
+                
+ 018A 0D0A2A2A2Asynerr:	db	CR,LF,'*** syntax ***',0
+ 019B 0D0A2A2A2Afailms:	db	CR,LF,'*** failed ***',0
+                
+                ; run-out at least 74 clock cycles... with SCS off...
+ 01AC 060A      run74:	mvi	b,10	; 80 cycles
+ 01AE DB40      run740:	in	spi?rd
+ 01B0 05C2AE01  	dcr b ! jnz	run740
+ 01B4 C9        	ret
+                
+                ; always turns off SCS
+                doacmd:
+ 01B5 E5        	push	h
+ 01B6 D5        	push	d
+ 01B7 210F01    	lxi	h,cmd55
+ 01BA 1601      	mvi	d,1
+ 01BC 1E00      	mvi	e,0	; do not turn off SCS
+ 01BE CDCF01    	call	sdcmd
+                	; ignore results? CMD55 never gives error?
+ 01C1 D1        	pop	d
+ 01C2 E1        	pop	h
+ 01C3 1E01      	mvi	e,1	; do turn off SCS
+ 01C5 CDCF01    	call	sdcmd
+ 01C8 F5        	push	psw
+                	; for some reason, this is required (at least for ACMD41)
+                	; when certain cards (Flexon) are in-socket during power up.
+                	; If the card is re-seated after power up, this is not needed.
+                	; Unclear if this is a MT011 anomaly or universal.
+ 01C9 DB40      	in	spi?rd
+ 01CB DB40      	in	spi?rd
+ 01CD F1        	pop	psw
+ 01CE C9        	ret
+                
+                ; send (6 byte) command to SDCard, get response.
+                ; HL=command+response buffer, D=response length
+                ; return A=response code (00=success), HL=idle length, DE=gap length
+                sdcmd:
+ 01CF 3AFC00    	lda	curcs
+ 01D2 D341      	out	spi?ctl	; SCS on
+ 01D4 0E40      	mvi	c,spi?rd
+                	; wait for idle
+                	; TODO: timeout this loop
+ 01D6 E5        	push	h	; save command+response buffer
+ 01D7 DB40      sdcmd0:	in	spi?rd
+ 01D9 FEFF      	cpi	0ffh
+ 01DB C2D701    	jnz	sdcmd0
+ 01DE E1        	pop	h	; command buffer back
+ 01DF 0606      	mvi	b,6
+ 01E1 CD0304    	call	outir
+ 01E4 DB40      	in	spi?rd	; prime the pump
+                	; TODO: timeout this loop
+ 01E6 DB40      sdcmd2:	in	spi?rd
+ 01E8 FEFF      	cpi	0ffh
+ 01EA CAE601    	jz	sdcmd2
+ 01ED 42        	mov	b,d
+ 01EE 77        	mov	m,a
+ 01EF 23        	inx	h
+ 01F0 05        	dcr	b
+ 01F1 CAF701    	jz	sdcmd4
+ 01F4 CDF803    	call	inir	; rest of response
+ 01F7 7B        sdcmd4:	mov	a,e	; SCS flag
+ 01F8 B7        	ora	a
+ 01F9 C8        	rz
+ 01FA AF        	xra	a
+ 01FB D341      	out	spi?ctl	; SCS off
+ 01FD C9        	ret
+                
+                ; read a 512-byte data block, with packet header and CRC (ignored).
+                ; READ command was already sent and responded to.
+                ; HL=buffer, BC=length* (multiple of 256)
+                ; return CY on error (A=error), DE=gap length
+                sdblk:
+ 01FE C5        	push	b
+ 01FF 3AFC00    	lda	curcs
+ 0202 D341      	out	spi?ctl	; SCS on
+ 0204 0E40      	mvi	c,spi?rd
+                	; wait for packet header (or error)
+                	; TODO: timeout this loop
+ 0206 DB40      sdblk0:	in	spi?rd
+ 0208 FEFF      	cpi	0ffh
+ 020A CA0602    	jz	sdblk0
+ 020D D1        	pop	d		; length to DE
+ 020E FEFE      	cpi	11111110b	; data start
+ 0210 37        	stc	; else must be error
+ 0211 C22102    	jnz	sdblk2
+ 0214 43        	mov	b,e
+ 0215 CDF803    sdblk3:	call	inir
+ 0218 15        	dcr	d
+ 0219 C21502    	jnz	sdblk3
+ 021C DB40      	in	spi?rd	; CRC 1
+ 021E DB40      	in	spi?rd	; CRC 2
+ 0220 AF        	xra	a	; NC
+ 0221 F5        sdblk2:	push	psw
+ 0222 AF        	xra	a
+ 0223 D341      	out	spi?ctl	; SCS off
+ 0225 F1        	pop	psw
+ 0226 C9        	ret
+                
+                procr:	; ocr: 00 C0 FF 80 =? 80FFC000 = pwrup, 2.7-3.6V
+ 0227 C9        	ret
+                
+ 0228 210E04    prcid:	lxi	h,cid
+ 022B CD1B00    	call	crlf
+ 022E 7E        	mov	a,m	; +0	; MID
+ 022F CD3D01    	call	hexout
+ 0232 CD5101    	call	space
+ 0235 CD6001    	call	quote
+ 0238 23        	inx	h
+ 0239 7E        	mov	a,m	; +1	; OID[0]
+ 023A CD6201    	call	chrout
+ 023D 23        	inx	h
+ 023E 7E        	mov	a,m	; +2	; OID[1]
+ 023F CD6201    	call	chrout
+ 0242 CD6001    	call	quote
+ 0245 CD5101    	call	space
+ 0248 CD6001    	call	quote
+ 024B 23        	inx	h
+ 024C 7E        	mov	a,m	; +3	; PNM[0]
+ 024D CD6201    	call	chrout
+ 0250 23        	inx	h
+ 0251 7E        	mov	a,m	; +4	; PNM[1]
+ 0252 CD6201    	call	chrout
+ 0255 23        	inx	h
+ 0256 7E        	mov	a,m	; +5	; PNM[2]
+ 0257 CD6201    	call	chrout
+ 025A 23        	inx	h
+ 025B 7E        	mov	a,m	; +6	; PNM[3]
+ 025C CD6201    	call	chrout
+ 025F 23        	inx	h
+ 0260 7E        	mov	a,m	; +7	; PNM[4]
+ 0261 CD6201    	call	chrout
+ 0264 CD6001    	call	quote
+ 0267 CD5101    	call	space
+ 026A 23        	inx	h
+ 026B 7E        	mov	a,m	; +8	; PRV
+ 026C 07        	rlc
+ 026D 07        	rlc
+ 026E 07        	rlc
+ 026F 07        	rlc
+ 0270 CD4601    	call	hexdig
+ 0273 CD5B01    	call	point
+ 0276 7E        	mov	a,m	; +8	; PRV
+ 0277 CD4601    	call	hexdig
+ 027A CD5101    	call	space
+                	; s/n - for now, print in hex...
+ 027D 23        	inx	h
+ 027E 7E        	mov	a,m	; +9	; PSN[0]
+ 027F CD3D01    	call	hexout
+ 0282 23        	inx	h
+ 0283 7E        	mov	a,m	; +10	; PSN[1]
+ 0284 CD3D01    	call	hexout
+ 0287 23        	inx	h
+ 0288 7E        	mov	a,m	; +11	; PSN[2]
+ 0289 CD3D01    	call	hexout
+ 028C 23        	inx	h
+ 028D 7E        	mov	a,m	; +12	; PSN[3]
+ 028E CD3D01    	call	hexout
+ 0291 CD5101    	call	space
+ 0294 23        	inx	h
+ 0295 56        	mov	d,m	; +13	; MDT hi
+ 0296 23        	inx	h
+ 0297 5E        	mov	e,m	; +14	; MDT lo
+ 0298 D5        	push	d
+ 0299 7B        	mov	a,e
+ 029A E60F      	ani	0fh
+ 029C CDCB03    	call	decout
+ 029F CD5601    	call	slash
+ 02A2 E1        	pop	h
+ 02A3 29        	dad	h
+ 02A4 29        	dad	h
+ 02A5 29        	dad	h
+ 02A6 29        	dad	h	; shift year into H
+ 02A7 5C        	mov	e,h
+ 02A8 1600      	mvi	d,0
+ 02AA 21D007    	lxi	h,2000
+ 02AD 19        	dad	d
+ 02AE CD9F03    	call	dec16
+ 02B1 C9        	ret
+                
+ 02B2 211E04    prcsd:	lxi	h,csd
+ 02B5 CD1B00    	call	crlf
+ 02B8 3E76      	mvi	a,'v'
+ 02BA CD6201    	call	chrout
+ 02BD 7E        	mov	a,m	; +0
+ 02BE E6C0      	ani	11000000b	; CSD_STRUCTURE
+ 02C0 3E31      	mvi	a,'1'
+ 02C2 CAC702    	jz	v10
+ 02C5 3E32      	mvi	a,'2'
+ 02C7 CD6201    v10:	call	chrout
+ 02CA CD5B01    	call	point
+ 02CD 3E30      	mvi	a,'0'
+ 02CF CD6201    	call	chrout
+ 02D2 7E        	mov	a,m	; +0
+ 02D3 E6C0      	ani	11000000b	; CSD_STRUCTURE
+ 02D5 C8        	rz	; nothing more for v1.0...
+                	; v2.0...
+ 02D6 CD5101    	call	space
+                if 0
+                	ldx	l,+7	; C_SIZE...
+                	ldx	d,+8
+                	ldx	e,+9
+                	; TODO: print decimal...
+                	mov	a,l
+                	call	hexout
+                	mov	a,d
+                	call	hexout
+                	mov	a,e
+                	call	hexout
+                else
+ 02D9 23        	inx	h	; +1
+ 02DA 23        	inx	h	; +2
+ 02DB 23        	inx	h	; +3
+ 02DC 23        	inx	h	; +4
+ 02DD 23        	inx	h	; +5
+ 02DE 23        	inx	h	; +6
+ 02DF 23        	inx	h	; +7
+ 02E0 46        	mov	b,m	; +7	; C_SIZE << 10
+ 02E1 23        	inx	h
+ 02E2 4E        	mov	c,m	; +8
+ 02E3 23        	inx	h
+ 02E4 56        	mov	d,m	; +9
+ 02E5 1E00      	mvi	e,0	;	BC:DE is << 8, need two more
+ 02E7 3E01      	mvi	a,1	; C_SIZE+1
+ 02E9 82        	add	d
+ 02EA 57        	mov	d,a
+ 02EB 3E00      	mvi	a,0
+ 02ED 89        	adc	c
+ 02EE 4F        	mov	c,a
+ 02EF 3E00      	mvi	a,0
+ 02F1 88        	adc	b
+ 02F2 47        	mov	b,a
+ 02F3 CD0903    	call	shl32
+ 02F6 CD0903    	call	shl32
+ 02F9 CD1603    	call	dec32
+                endif
+ 02FC 210303    	lxi	h,blks
+ 02FF CD4400    	call	msgout
+ 0302 C9        	ret
+                
+ 0303 20626C6B73blks:	db	' blks',0
+                
+                ; BC:DE <<= 1
+                shl32:
+ 0309 7B        	mov	a,e
+ 030A 87        	add	a
+ 030B 5F        	mov	e,a
+ 030C 7A        	mov	a,d
+ 030D 17        	ral
+ 030E 57        	mov	d,a
+ 030F 79        	mov	a,c
+ 0310 17        	ral
+ 0311 4F        	mov	c,a
+ 0312 78        	mov	a,b
+ 0313 17        	ral
+ 0314 47        	mov	b,a
+ 0315 C9        	ret
+                
+                ; print number in BC:DE
+                dec32:
+ 0316 2E00      	mvi	l,0
+ 0318 2609      	mvi	h,9
+ 031A E5        	push	h	; control vars on stack
+ 031B 214A03    	lxi	h,mlt10
+ 031E AF        dd1:	xra	a
+ 031F CD8303    dd0:	call	sub32
+ 0322 3C        	inr	a
+ 0323 D21F03    	jnc	dd0
+ 0326 CD6E03    	call	add32
+ 0329 E3        	xthl	; control vars in HL
+ 032A 3D        	dcr	a
+ 032B C23303    	jnz	dd2
+ 032E 2D        	dcr	l
+ 032F 2C        	inr	l
+ 0330 CA3A03    	jz	dd3
+ 0333 2E01      dd2:	mvi	l,1
+ 0335 C630      	adi	'0'
+ 0337 CD6201    	call	chrout
+                dd3:
+ 033A 25        	dcr	h
+ 033B E3        	xthl	; control vars back on stack
+ 033C 23        	inx	h
+ 033D 23        	inx	h
+ 033E 23        	inx	h
+ 033F 23        	inx	h
+ 0340 C21E03    	jnz	dd1
+ 0343 E1        	pop	h
+ 0344 3E30      	mvi	a,'0'
+ 0346 83        	add	e
+ 0347 C36201    	jmp	chrout
+                
+                mlt10:
+ 034A 3B9ACA00  	db	3Bh,9Ah,0CAh,00h	;  1,000,000,000
+ 034E 05F5E100  	db	05h,0F5h,0E1h,00h	;    100,000,000
+ 0352 00989680  	db	00h,98h,96h,80h		;     10,000,000
+ 0356 000F4240  	db	00h,0Fh,42h,40h		;      1,000,000
+ 035A 000186A0  	db	00h,01h,86h,0A0h	;        100,000
+ 035E 00002710  	db	00h,00h,27h,10h		;         10,000
+ 0362 000003E8  	db	00h,00h,03h,0E8h	;          1,000
+ 0366 00000064  	db	00h,00h,00h,64h		;            100
+ 036A 0000000A  	db	00h,00h,00h,0ah		;             10
+                
+                ; BC:DE += (mlt10[HL])
+ 036E F5        add32:	push	psw
+ 036F 23        	inx	h
+ 0370 23        	inx	h
+ 0371 23        	inx	h
+ 0372 7B        	mov	a,e
+ 0373 86        	add	m
+ 0374 5F        	mov	e,a
+ 0375 2B        	dcx	h
+ 0376 7A        	mov	a,d
+ 0377 8E        	adc	m
+ 0378 57        	mov	d,a
+ 0379 2B        	dcx	h
+ 037A 79        	mov	a,c
+ 037B 8E        	adc	m
+ 037C 4F        	mov	c,a
+ 037D 2B        	dcx	h
+ 037E 78        	mov	a,b
+ 037F 8E        	adc	m
+ 0380 47        	mov	b,a
+ 0381 F1        	pop	psw
+ 0382 C9        	ret	; CY ignored
+                
+                ; BC:DE += (mlt10[HL])
+ 0383 F5        sub32:	push	psw
+ 0384 23        	inx	h
+ 0385 23        	inx	h
+ 0386 23        	inx	h
+ 0387 7B        	mov	a,e
+ 0388 96        	sub	m
+ 0389 5F        	mov	e,a
+ 038A 2B        	dcx	h
+ 038B 7A        	mov	a,d
+ 038C 9E        	sbb	m
+ 038D 57        	mov	d,a
+ 038E 2B        	dcx	h
+ 038F 79        	mov	a,c
+ 0390 9E        	sbb	m
+ 0391 4F        	mov	c,a
+ 0392 2B        	dcx	h
+ 0393 78        	mov	a,b
+ 0394 9E        	sbb	m
+ 0395 47        	mov	b,a
+                	; CY = borrow... must preserve
+ 0396 DA9C03    	jc	sb0
+ 0399 F1        	pop	psw
+ 039A B7        	ora	a	; NC
+ 039B C9        	ret
+ 039C F1        sb0:	pop	psw
+ 039D 37        	stc
+ 039E C9        	ret
+                
+                ; print number in HL, 0-9999
+                dec16:
+ 039F 11E803    	lxi	d,1000
+ 03A2 CDB803    	call	div16
+ 03A5 116400    	lxi	d,100
+ 03A8 CDB803    	call	div16
+ 03AB 110A00    	lxi	d,10
+ 03AE CDB803    	call	div16
+ 03B1 7D        	mov	a,l
+ 03B2 C630      	adi	'0'
+ 03B4 CD6201    	call	chrout
+ 03B7 C9        	ret
+                
+ 03B8 0600      div16:	mvi	b,0
+ 03BA B7        dv0:	ora	a
+ 03BB CDE803    	call	dsbc
+ 03BE 04        	inr	b
+ 03BF D2BA03    	jnc	dv0
+ 03C2 19        	dad	d
+ 03C3 05        	dcr	b
+ 03C4 3E30      	mvi	a,'0'
+ 03C6 80        	add	b
+ 03C7 CD6201    	call	chrout
+ 03CA C9        	ret
+                
+                ; A=number to print, 0-99
+                ; destroys B, C, D, E (and A)
+                decout:
+ 03CB 160A      	mvi	d,10
+ 03CD CDD603    	call	divide
+ 03D0 C630      	adi	'0'
+ 03D2 CD6201    	call	chrout
+ 03D5 C9        	ret
+                
+ 03D6 1E00      divide:	mvi	e,0
+ 03D8 92        div0:	sub	d
+ 03D9 1C        	inr	e
+ 03DA D2D803    	jnc	div0
+ 03DD 82        	add	d
+ 03DE 1D        	dcr	e
+ 03DF F5        	push	psw	; remainder
+ 03E0 3E30      	mvi	a,'0'
+ 03E2 83        	add	e
+ 03E3 CD6201    	call	chrout
+ 03E6 F1        	pop	psw	; remainder
+ 03E7 C9        	ret
+                
+ 03E8 F5        dsbc:	push	psw
+ 03E9 7D        	mov	a,l
+ 03EA 9B        	sbb	e
+ 03EB 6F        	mov	l,a
+ 03EC 7C        	mov	a,h
+ 03ED 9A        	sbb	d
+ 03EE 67        	mov	h,a
+ 03EF DAF503    	jc	dsbc0
+ 03F2 F1        	pop	psw
+ 03F3 B7        	ora	a
+ 03F4 C9        	ret
+ 03F5 F1        dsbc0:	pop	psw
+ 03F6 37        	stc
+ 03F7 C9        	ret
+                
+ 03F8 F5        inir:	push	psw
+ 03F9 DB40      inir0:	in	spi?rd
+ 03FB 77        	mov	m,a
+ 03FC 23        	inx	h
+ 03FD 05        	dcr	b
+ 03FE C2F903    	jnz	inir0
+ 0401 F1        	pop	psw
+ 0402 C9        	ret
+                
+ 0403 F5        outir:	push	psw
+ 0404 7E        outir1:	mov	a,m
+ 0405 D340      	out	spi?wr
+ 0407 23        	inx	h
+ 0408 05        	dcr	b
+ 0409 C20404    	jnz	outir1
+ 040C F1        	pop	psw
+ 040D C9        	ret
+                
+ 040E           cid:	ds	16
+ 041E           csd:	ds	16
+                
+ 042E           	ds	128
+ 04AE           stack:	ds	0
+                
+ 04AE           	end
+
