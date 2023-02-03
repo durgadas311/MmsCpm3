@@ -468,6 +468,7 @@ stack:	ds	0
 
 buffer:	ds	0	; 512
 if TEST
+; Data from Norberto's 4G SanDisk:
 	db	8Ah,84h,1Ch,1Fh,00h,00h,10h,00h,00h,00h,40h,02h,3Fh,00h,7Ah,00h
 	db	40h,7Eh,00h,00h,20h,20h,20h,20h,31h,30h,36h,32h,30h,31h,31h,49h
 	db	30h,39h,4Ah,38h,39h,31h,35h,32h,02h,00h,02h,00h,04h,00h,44h,48h
@@ -476,6 +477,33 @@ if TEST
 	db	20h,20h,20h,20h,20h,20h,20h,20h,20h,20h,20h,20h,20h,20h,04h,00h
 	db	00h,00h,00h,03h,00h,00h,00h,02h,00h,00h,03h,00h,1Ch,1Fh,10h,00h
 	db	3Fh,00h,40h,7Eh,7Ah,00h,00h,01h,40h,7Eh,7Ah,00h,00h,00h,07h,00h
+; 0080:
+	db	03h,00h,78h,00h,78h,00h,78h,00h,78h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	10h,00h,00h,00h,20h,00h,04h,40h,00h,40h,00h,00h,04h,00h,00h,40h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+; 0100: data not gathered
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+; 0180: data not gathered
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 endif
 
 	end
