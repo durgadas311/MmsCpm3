@@ -150,6 +150,8 @@ nodump:
 	call	msgout
 	lxi	h,buffer+DEFCAP
 	call	d32ihl
+	lxi	h,blkmsg
+	call	msgout
 	call	crlf
 exit:
 	lhld	retmon
@@ -461,6 +463,7 @@ cylmsg:	db	'Cylinders: ',0
 hdsmsg:	db	', Heads: ',0
 sptmsg:	db	', Sectors: ',0
 capmsg:	db	'Capacity: ',0
+blkmsg:	db	' blocks(sectors)',0
 errmsg:	db	'CF command failed',CR,LF,0
 
 	ds	128
