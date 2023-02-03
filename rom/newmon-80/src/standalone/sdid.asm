@@ -128,7 +128,24 @@ bad:	xra	a
 	out	spi?ctl	; SCS off
 	jmp	fail
 done:
-	call	prcid
+	ei
+	lda	dmp
+	ora	a
+	jz	nodmp
+	call	crlf
+	lxi	h,cidmsg
+	call	msgout
+	lxi	h,cid
+	call	dmpline
+	call	crlf
+	lxi	h,csdmsg
+	call	msgout
+	lxi	h,csd
+	call	dmpline
+	call	crlf
+	jmp	exit
+
+nodmp:	call	prcid
 	call	prcsd
 	call	crlf
 exit:
@@ -144,6 +161,7 @@ error:	lxi	h,synerr
 	jmp	exit0
 
 curcs:	db	SDSCS0
+dmp:	db	0
 
 ; command is always 6 bytes (?)
 ; From RomWBW:
@@ -212,9 +230,7 @@ par9:	mov	a,m
 	cpi	'0'
 	rc
 	cpi	'0'+NUMSD
-	cmc
-	rc
-	inx	h
+	jnc	par0
 	; check for NUL?
 	sui	'0'
 	mov	c,a
@@ -225,8 +241,12 @@ par9:	mov	a,m
 	mov	a,m
 	sta	curcs
 	xchg
-	xra	a
-	ret
+	jmp	par9
+par0:	ani	01011111b
+	cpi	'D'
+	jnz	par9	; error?
+	sta	dmp
+	jmp	par9
 
 synerr:	db	CR,LF,'*** syntax ***',0
 failms:	db	CR,LF,'*** failed ***',0
@@ -467,6 +487,9 @@ endif
 	ret
 
 blks:	db	' blks',0
+cidmsg:	db	'CID: ',0
+csdmsg:	db	'CSD: ',0
+spcs:	db	'  ',0
 
 ; BC:DE <<= 1
 shl32:
@@ -640,6 +663,46 @@ dsbc:	push	psw
 	ret
 dsbc0:	pop	psw
 	stc
+	ret
+
+; Dump 16 bytes at HL
+dmpline:
+	push	d
+	push	h
+	; blank space provided by dmphex
+	pop	h
+	push	h
+	call	dmphex
+	lxi	h,spcs
+	call	msgout
+	pop	h
+	push	h
+	call	dmpchr
+	pop	h
+	pop	d
+	ret
+
+dmphex:
+	mvi	b,16
+dh0:	mvi	a,' '
+	call	chrout
+	mov	a,m
+	call	hexout
+	inx	h
+	dcr b ! jnz	dh0
+	ret
+
+dmpchr:
+	mvi	b,16
+dc0:	mov	a,m
+	cpi	' '
+	jc	dc1
+	cpi	'~'+1
+	jc	dc2
+dc1:	mvi	a,'.'
+dc2:	call	chrout
+	inx	h
+	dcr b ! jnz	dc0
 	ret
 
 inir:	push	psw
