@@ -163,17 +163,25 @@ fail:
 	jmp	exit
 
 ; HL=buf, B=len in words
-string:
+string:	mvi	e,0	; leading blank suppression
 	mov	c,m
 	inx	h
 	mov	a,m
 	inx	h
-	call	chrout
+	call	debchr
 	mov	a,c
-	call	chrout
+	call	debchr
 	dcr	b
 	jnz	string
 	ret
+; suppress leading blanks...
+debchr:	cpi	' '
+	jnz	deb0
+	dcr	e
+	inr	e
+	rz
+deb0:	mvi	e,1
+	jmp	chrout
 
 ; HL=buffer, DE=length (multiple of 16)
 dump:

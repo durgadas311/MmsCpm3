@@ -21,6 +21,17 @@ CMDST	equ	01000000b	; command start bits
 CR	equ	13
 LF	equ	10
 
+; locations inside CID
+CIDMFG	equ	0	; for 1
+CIDOEM	equ	1	; for 2
+CIDPRD	equ	3	; for 5
+CIDREV	equ	8	; for 1
+CIDSN	equ	9	; for 4
+CIDMDT	equ	13	; for 2 (xY YM)
+; locations inside CSD
+CSDVER	equ	0	; various, v2 indicator
+CSDSIZ	equ	7	; for 3 (v2 only)
+
 	cseg
 	jmp	start
 
@@ -145,9 +156,37 @@ done:
 	call	crlf
 	jmp	exit
 
-nodmp:	call	prcid
-	call	prcsd
+nodmp:
 	call	crlf
+	lxi	h,model
+	call	msgout
+	call	prver	; "SDv2.0"
+	push	psw
+	call	space
+	mvi	a,'('
+	call	chrout
+	lda	cid+CIDMFG	; manufacturer ID
+	call	decout		; TODO: "(%d)"?
+	mvi	a,')'
+	call	chrout
+	call	space
+	lxi	h,cid+CIDOEM
+	mvi	b,2
+	call	numout
+	call	space
+	lxi	h,cid+CIDPRD
+	mvi	b,5
+	call	numout
+	call	space
+	call	prmdt
+	call	crlf
+	call	prsn
+	call	crlf
+	call	prrev
+	call	crlf
+	pop	psw
+	ora	a
+	cnz	prcap	; incl CR/LF
 exit:
 	ei
 	lhld	retmon
@@ -217,6 +256,14 @@ quote:	mvi	a,'"'
 chrout:	push	h
 	lhld	conout
 	xthl
+	ret
+
+; like message out, but num chrs in B (> 0)
+numout:	mov	a,m
+	inx	h
+	call	chrout
+	dcr	b
+	jnz	numout
 	ret
 
 ; parse for "CS#" and update 'curcs'
@@ -348,71 +395,15 @@ sdblk2:	push	psw
 procr:	; ocr: 00 C0 FF 80 =? 80FFC000 = pwrup, 2.7-3.6V
 	ret
 
-prcid:	lxi	h,cid
-	call	crlf
-	mov	a,m	; +0	; MID
-	call	hexout
-	call	space
-	call	quote
-	inx	h
-	mov	a,m	; +1	; OID[0]
-	call	chrout
-	inx	h
-	mov	a,m	; +2	; OID[1]
-	call	chrout
-	call	quote
-	call	space
-	call	quote
-	inx	h
-	mov	a,m	; +3	; PNM[0]
-	call	chrout
-	inx	h
-	mov	a,m	; +4	; PNM[1]
-	call	chrout
-	inx	h
-	mov	a,m	; +5	; PNM[2]
-	call	chrout
-	inx	h
-	mov	a,m	; +6	; PNM[3]
-	call	chrout
-	inx	h
-	mov	a,m	; +7	; PNM[4]
-	call	chrout
-	call	quote
-	call	space
-	inx	h
-	mov	a,m	; +8	; PRV
-	rlc
-	rlc
-	rlc
-	rlc
-	call	hexdig
-	call	point
-	mov	a,m	; +8	; PRV
-	call	hexdig
-	call	space
-	; s/n - for now, print in hex...
-	inx	h
-	mov	a,m	; +9	; PSN[0]
-	call	hexout
-	inx	h
-	mov	a,m	; +10	; PSN[1]
-	call	hexout
-	inx	h
-	mov	a,m	; +11	; PSN[2]
-	call	hexout
-	inx	h
-	mov	a,m	; +12	; PSN[3]
-	call	hexout
-	call	space
-	inx	h
+prmdt:
+	lxi	h,cid+CIDMDT
 	mov	d,m	; +13	; MDT hi
 	inx	h
 	mov	e,m	; +14	; MDT lo
 	push	d
 	mov	a,e
 	ani	0fh
-	call	decout
+	call	dec02
 	call	slash
 	pop	h
 	dad	h
@@ -426,12 +417,18 @@ prcid:	lxi	h,cid
 	call	dec16
 	ret
 
-prcsd:	lxi	h,csd
-	call	crlf
+; Print SD version from CSD
+; return A=version bits (11000000b)
+prver:
+	mvi	a,'S'
+	call	chrout
+	mvi	a,'D'
+	call	chrout
 	mvi	a,'v'
 	call	chrout
-	mov	a,m	; +0
+	lda	csd+CSDVER
 	ani	11000000b	; CSD_STRUCTURE
+	push	psw
 	mvi	a,'1'
 	jz	v10
 	mvi	a,'2'
@@ -439,30 +436,43 @@ v10:	call	chrout
 	call	point
 	mvi	a,'0'
 	call	chrout
-	mov	a,m	; +0
-	ani	11000000b	; CSD_STRUCTURE
-	rz	; nothing more for v1.0...
-	; v2.0...
-	call	space
-if 0
-	ldx	l,+7	; C_SIZE...
-	ldx	d,+8
-	ldx	e,+9
-	; TODO: print decimal...
-	mov	a,l
+	pop	psw
+	ret
+
+prrev:
+	lxi	h,rev
+	call	msgout
+	lda	cid+CIDREV ; BCD "n.m"
+	push	psw
+	rlc
+	rlc
+	rlc
+	rlc
+	call	hexdig
+	mvi	a,'.'
+	call	chrout
+	pop	psw
+	call	hexdig
+	ret
+
+; print s/n from CID
+prsn:
+	lxi	h,serial
+	call	msgout
+	lxi	h,cid+CIDSN
+	mvi	b,4
+sn0:	mov	a,m
+	inx	h
 	call	hexout
-	mov	a,d
-	call	hexout
-	mov	a,e
-	call	hexout
-else
-	inx	h	; +1
-	inx	h	; +2
-	inx	h	; +3
-	inx	h	; +4
-	inx	h	; +5
-	inx	h	; +6
-	inx	h	; +7
+	dcr	b
+	jnz	sn0
+	ret
+
+; print capacity from CSD
+prcap:
+	lxi	h,cap
+	call	msgout
+	lxi	h,csd+CSDSIZ
 	mov	b,m	; +7	; C_SIZE << 10
 	inx	h
 	mov	c,m	; +8
@@ -481,12 +491,15 @@ else
 	call	shl32
 	call	shl32
 	call	dec32
-endif
-	lxi	h,blks
+	lxi	h,blks	; incl. CR/LF
 	call	msgout
 	ret
 
-blks:	db	' blks',0
+model:	db	'Model: ',0
+serial:	db	'S/N: ',0
+rev:	db	'Rev: ',0
+cap:	db	'Capacity: ',0
+blks:	db	' blocks(sectors)',CR,LF,0
 cidmsg:	db	'CID: ',0
 csdmsg:	db	'CSD: ',0
 spcs:	db	'  ',0
@@ -507,7 +520,7 @@ shl32:
 	mov	b,a
 	ret
 
-; print number in BC:DE
+; print number in BC:DE, leading zero suppr
 dec32:
 	mvi	l,0
 	mvi	h,9
@@ -628,10 +641,17 @@ dv0:	ora	a
 	call	chrout
 	ret
 
-; A=number to print, 0-99
+; print decimal 00-99
+dec02:
+	mvi	c,1
+	jmp	dec00
+; A=number to print, 0-255 (leading zero suppr)
 ; destroys B, C, D, E (and A)
 decout:
-	mvi	d,10
+	mvi	c,0
+	mvi	d,100
+	call	divide
+dec00:	mvi	d,10
 	call	divide
 	adi	'0'
 	call	chrout
@@ -643,6 +663,11 @@ div0:	sub	d
 	jnc	div0
 	add	d
 	dcr	e
+	jnz	div1
+	dcr	c
+	inr	c
+	rz
+div1:	mvi	c,1
 	push	psw	; remainder
 	mvi	a,'0'
 	add	e
