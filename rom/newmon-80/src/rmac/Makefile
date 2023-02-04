@@ -8,7 +8,7 @@ export CPMDefault = d:
 
 .PRECIOUS: %.rel %.asm %.lib %.spr
 
-all: vaflash.sys asetrtc.sys vah8dutl.sys cfid.sys sdid.sys
+all: vaflash.sys asetrtc.sys vah8dutl.sys cfid.sys sdid.sys cputype.sys
 
 # not auto-built: diag512k, sdtest, vcpu
 
@@ -57,6 +57,7 @@ vdump.rel: ram.lib core.lib vdump.asm
 asetrtc.rel: core.lib asetrtc.asm
 cfid.rel: core.lib cfid.asm
 sdid.rel: core.lib sdid.asm
+cputype.rel: core.lib cputype.asm
 
 %.sys: %.spr
 	mknetboot -x -b 0x3000 -o $@ $^
