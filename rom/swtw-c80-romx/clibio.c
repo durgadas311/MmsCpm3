@@ -239,8 +239,8 @@ char c; int unit;
 #asm
 	POP	B
 	POP	D	/* unit in E */
-	PUSH	H	/* char in L */
-	POP	H
+	POP	H	/* char in L */
+	PUSH	H
 	PUSH	D
 	PUSH	B
 	mov	a,e
@@ -289,19 +289,18 @@ int count;
 {				/* Set up channel and addresses */
 #asm
 	lxi	h,2
-	dad	sp	/* unit */
-	mov	a,m
-	ora	a
-	jnz	reterr
+	dad	sp	/* count */
+	mov	c,m
 	inx	h
+	mov	b,m
 	inx	h	/* buf */
 	mov	e,m
 	inx	h
 	mov	d,m
-	inx	h	/* count */
-	mov	c,m
-	inx	h
-	mov	b,m
+	inx	h	/* unit */
+	mov	a,m
+	ora	a
+	jnz	reterr
 	xchg		/* buf to HL */
 	push	b	/* save count for return */
 RD0:	call	conin
@@ -316,6 +315,7 @@ RD0:	call	conin
 ?END:	DS	0	/* End of library (code segment) */
 #endasm
 }
+int fout = 0;	/* unclear why fprintf needs this */
 char Q8QENDD;		/* End of library (data segment) */
 #asm
 	END	?INIT

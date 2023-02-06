@@ -57,7 +57,15 @@ clibromx.rel: core.lib clibio.rel clibma.rel fixmso.rel end.rel
 
 # test programs
 
-tests: hello.sys argv.sys
+tests: hello.sys hell0.sys argv.sys longs.sys echo.sys stdtest.c
+
+# use long and float, with associated printf specifiers
+longs.spr: longs.rel fprintf.rel clibromx.rel
+	vcpm link $@=longs,'fprintf,a:flibrary[s],clibromx[s,os,nr]'
+
+# use routines from stdlib, avoiding file I/O.
+stdtest.spr: stdtest.rel printf.rel clibromx.rel
+	vcpm link $@=stdtest,'printf,a:stdlib[s],clibromx[s,os,nr]'
 
 %.spr: %.rel clibromx.rel printf.rel
 	vcpm link $@=$*,'printf[s],clibromx[s,os,nr]'
