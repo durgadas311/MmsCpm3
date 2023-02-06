@@ -181,17 +181,17 @@ chrin:	call	conin	/* call ROMX conin */
 puts(s) char *s; {
 #asm
 	pop	b
-	pop	h	/* buffer to HL */
-	push	h
+	pop	d	/* buffer to HL */
+	push	d
 	push	b
-PS0:	mov	a,m
+PS0:	ldax	d
 	ora	a
 	jz	PS1
-	call	chrout
-	inx	h
+	call	PC2
+	inx	d
 	jmp	PS0
 PS1:	mvi	a,LF
-	call	chrout
+	call	PC2
 #endasm
 }
 
@@ -204,11 +204,13 @@ putchar(c) char c; {
 	PUSH	D
 	PUSH	B
 PC1:	mov	a,e
-	cpi	LF
+PC2:	cpi	LF
 	jnz	PC0
+	push	psw
 	mvi	a,CR
 	call	chrout
-PC0:	mov	a,e
+	pop	psw
+PC0:
 	/*jmp	chrout*/
 chrout:	lhld	conout
 	pchl	/* call ROMX conout and return */
@@ -256,24 +258,22 @@ int count;
 {				/* Set up channel and addresses */
 #asm
 	lxi	h,2
-	dad	sp	/* unit */
-	mov	a,m
-	ora	a
-	jnz	reterr
+	dad	sp	/* count */
+	mov	c,m
 	inx	h
+	mov	b,m
 	inx	h	/* buf */
 	mov	e,m
 	inx	h
 	mov	d,m
-	inx	h	/* count */
-	mov	c,m
-	inx	h
-	mov	b,m
-	xchg		/* buf to HL */
+	inx	h	/* unit */
+	mov	a,m
+	ora	a
+	jnz	reterr
 	push	b	/* save count for return */
-WR0:	mov	a,m
-	call	chrout
-	inx	h
+WR0:	ldax	d
+	call	PC2
+	inx	d
 	dcx	b
 	mov	a,b
 	ora	c
