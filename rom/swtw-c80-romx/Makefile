@@ -57,7 +57,7 @@ clibromx.rel: core.lib clibio.rel clibma.rel fixmso.rel end.rel
 
 # test programs
 
-tests: hello.sys hell0.sys argv.sys longs.sys echo.sys stdtest.c
+tests: hello.sys hell0.sys argv.sys longs.sys echo.sys stdtest.sys
 
 # use long and float, with associated printf specifiers
 longs.spr: longs.rel fprintf.rel clibromx.rel
