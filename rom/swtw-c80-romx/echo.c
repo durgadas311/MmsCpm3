@@ -7,8 +7,8 @@ main(argc, argv)
 int argc;
 char **argv;
 {
-	while (gets(buf) && buf[0]) {
-		putchar('\n');
+	int n;
+	while ((n = gets(buf)) > 0) {
 		puts(buf);
 	}
 }

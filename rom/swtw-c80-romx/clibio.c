@@ -26,7 +26,6 @@
 
 #define	MEMTOP	0e000h	/* a reasonable end for ROMX */
 #define	ARGLIN	02280h	/* where commandline is stored */
-#define	CR	13
 #define	LF	10
 
 C_lib () {	/* this just to cause generation of code in CODE section, */
@@ -154,19 +153,6 @@ sbrk1:	POP	D
 #endasm
 }
 
-/* Get a line from the console */
-gets(s) char *s; {
-#asm
-	pop	b
-	pop	h	/* buffer to HL */
-	push	h
-	push	b
-	push	h
-	call	linin
-	pop	h	/* return 's' */
-#endasm
-}
-
 /* Get a character from the console */
 getchar() {
 /*	return getc(fin);	*/
@@ -205,12 +191,7 @@ putchar(c) char c; {
 	PUSH	B
 PC1:	mov	a,e
 PC2:	cpi	LF
-	jnz	PC0
-	push	psw
-	mvi	a,CR
-	call	chrout
-	pop	psw
-PC0:
+	jz	crlf
 	/*jmp	chrout*/
 chrout:	lhld	conout
 	pchl	/* call ROMX conout and return */

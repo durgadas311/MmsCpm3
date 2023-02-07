@@ -11,10 +11,16 @@ In all cases, outputing a LF causes a CR to be prefixed.
 
 getchar()	Input char from console.
 getc(0)		Input char from console (only unit "0" allowed).
-gets(buf)	Input a line from console into buf. The LF/CR is not
-		placed in buf. BS is recognized and works. DEL will
-		abort and return to monitor, however that behavior may
-		not be safe. Other control chars are rejected.
+gets(buf)	Input a line from console into buf. Data is NUL
+		terminated and returns number of chars in buf, unless
+		otherwise stated.  Limited to 128 chars of input.
+		Edit characters are:
+
+		CR - End input, NUL terminate and return count.
+		^C - Abort input, return -1. buf is undefined.
+		ESC - Abort input and set single ESC char.
+		BS - Erase previous char.
+
 read(0, buf, len)
 		Input len chars into buf from console.	BS is NOT
 		recognized.
