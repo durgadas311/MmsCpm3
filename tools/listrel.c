@@ -167,6 +167,21 @@ static int pname() {
 	return 0;
 }
 
+static int pext() {
+	int t = get_bits(3);
+	if (t <= 0) return -1;
+	int c = get_bits(8);
+	putchar(c);
+	--t;
+	while (t > 0) {
+		int c = get_bits(8);
+		if (c < 0) return -1;
+		printf(" \\x%02X", c);
+		--t;
+	}
+	return 0;
+}
+
 static int value(int t) {
 	int a = get_bits(2);
 	if (a < 0) return -1;
@@ -205,6 +220,8 @@ static int special() {
 	printf("%s ", op2[t].msg);
 	if (t == 0b1011) {	// set location counter
 		return setloc(p);
+	} else if (t == 0b0100) {	// extension
+		return pext();
 	} else switch (p) {
 	case 0:
 		return pname();
