@@ -63,7 +63,7 @@ expand() /* expand * and/or ? */
 	else EXPfull = EXPn = 0;  /* SY0: assumed */
 	EXPname[UNIT] = COMunit[EXPn];
 	if (rdir(EXPn)) 	/* check the directory if we haven't yet */
-	 for (EXPd = COMdir[EXPn]; *EXPd; EXPd = *EXPd) /* ck each filename */
+	 for (EXPd = COMdir[EXPn]; EXPd; EXPd = *EXPd) /* ck each filename */
 	{	EXPf = EXPd + 1;
 		while (*EXPf++ != ':');  /* skip to filename */
 		EXPa = COMarg;
