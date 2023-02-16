@@ -31,7 +31,7 @@
 #define COMB	"SELECT COMMON BLOCK"
 #define PGMN	"PROGRAM NAME"
 #define REQS	"REQUEST LIBRARY SEARCH"   // MICROSOFT ONLY
-#define NOTU	"NOT USED"
+#define NOTU	"EXTENSION"
 #define COMZ	"DEFINE COMMON SIZE"
 #define CHNE	"CHAIN EXTERNAL"
 #define DEFE	"DEFINE ENTRY POINT"
@@ -88,6 +88,21 @@ char *op3[] = {
 	PGMR,	// code "01" (Program Relative)
 	DATR,	// code "10" (Data Relative)
 	COMR,	// code "11" (Common Relative)
+};
+
+char *op4[] = {
+	"OPERAND",
+	"BYTE",
+	"WORD",
+	"HIGH",
+	"LOW",
+	"NOT",
+	"NEG",
+	"ADD",
+	"SUB",
+	"MLT",
+	"DIV",
+	"MOD",
 };
 
 uint8_t *buffer;
@@ -168,13 +183,44 @@ static int pname() {
 }
 
 static int pext() {
+	int c;
 	int t = get_bits(3);
 	if (t <= 0) return -1;
-	int c = get_bits(8);
-	putchar(c);
+	int k = get_bits(8);
+	putchar(k);
 	--t;
+	if (k == 'C' && t >= 3) {
+		c = get_bits(8);
+		--t;
+		if (c < 4) {
+			printf(" %s", op3[c]);
+		} else {
+			printf(" \\x%02X", c);
+		}
+		c = get_bits(8);
+		--t;
+		c |= get_bits(8) << 8;
+		--t;
+		printf(" %04X", c);
+	} else if (k == 'B' && t >= 1) {
+		putchar(' ');
+		putchar('"');
+		while (t > 0) {
+			c = get_bits(8);
+			--t;
+		}
+		putchar('"');
+	} else if (k == 'A' && t >= 1) {
+		c = get_bits(8);
+		--t;
+		if (c >= sizeof(op4) / sizeof(op4[0])) {
+			printf(" \\x%02X", c);
+		} else {
+			printf(" %s", op4[c]);
+		}
+	}
 	while (t > 0) {
-		int c = get_bits(8);
+		c = get_bits(8);
 		if (c < 0) return -1;
 		printf(" \\x%02X", c);
 		--t;
