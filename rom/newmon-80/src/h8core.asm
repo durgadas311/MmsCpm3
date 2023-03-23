@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	1
+beta	equ	2
 
 	maclib	ram
 	maclib	setup
@@ -274,7 +274,7 @@ cmdpc:
 	lxi	h,pcms
 	call	msgout
 	lhld	RegPtr
-	lxi	d,24	; Reg[PC]
+	lxi	d,10	; Reg[PC]
 	dad	d
 	mov	e,m
 	inx	h
@@ -855,7 +855,7 @@ kpsst:	; entry point for keypad SI command
 getpc:
 	call	msgout
 	lhld	RegPtr
-	lxi	d,24	; Reg[PC]
+	lxi	d,10	; Reg[PC]
 	dad	d	; HL=adr to store
 	call	inhexcr
 	cc	cmdpc1	; read HEX until CR, store in HL
@@ -1722,7 +1722,7 @@ int1$xx:
 chkhlt:
 	push	psw
 	lhld	RegPtr
-	lxi	d,24	; Reg[PC]
+	lxi	d,10	; Reg[PC]
 	dad	d
 	mov	e,m
 	inx	h

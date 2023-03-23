@@ -68,7 +68,7 @@ load0:	call	srs	; scan for record start...
 	mov	b,h
 	mov	c,a	; BC=PC
 	push	d
-	lxi	d,24	; get PC
+	lxi	d,10	; get PC
 	lhld	RegPtr
 	dad	d
 	pop	d
@@ -134,7 +134,7 @@ wmem1:	call	wnb
 	call	wnp
 	push	h
 	push	d
-	lxi	d,24	; get PC
+	lxi	d,10	; get PC
 	lhld	RegPtr
 	dad	d
 	mov	a,m
