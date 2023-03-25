@@ -1082,21 +1082,21 @@ DIRBUF	DS	128
 	ORG	BUFFER
 HSTBUF: DS	512
 CSV0:	DS	0  
-ALV0:	DS	0  
+ALV0:	DS	2048/8  
 CSV1:	DS	0  
-ALV1:	DS	0  
+ALV1:	DS	2048/8  
 CSV2:	DS	0  
-ALV2:	DS	0  
+ALV2:	DS	2048/8  
 CSV3:	DS	0
-ALV3:	DS	0  
+ALV3:	DS	2048/8  
 CSV4:	DS	0
-ALV4:	DS	0  
+ALV4:	DS	2048/8  
 CSV5:	DS	0
-ALV5:	DS	0  
+ALV5:	DS	2048/8  
 CSV6:	DS	0
-ALV6:	DS	0  
+ALV6:	DS	2048/8  
 CSV7:	DS	0
-ALV7:	DS	0  
+ALV7:	DS	2048/8  
 CSV8:	DS	0
 ALV8:	DS	0
 **********************************************************
