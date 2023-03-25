@@ -133,22 +133,22 @@ bcf0:
 ; trashes D, must preserve HL, BC, E
 waitcf:
 	in	CF$CS
-	mov	d,a
 	ora	a
 	jm	waitcf	; busy
-	mvi	a,1	; error
-	ana	d
-	jnz	cferr
-	mvi	a,01000000b	; ready
-	ana	d	; NC
-	jz	cferr
-	mov	a,d
-	ret
-
+	mvi	d,0
+wcf0:	in	CF$CS
+	rrc		; CY if error
+	jc	cferr
+	ani	01000000b SHR 1	; ready
+	jnz	wcf1
+	dcr	d
+	jnz	wcf0
 cferr:
 	xra	a
 	out	CF$BA	; deselect drive
 	stc
+	ret
+wcf1:	in	CF$CS
 	ret
 
 trydig:
