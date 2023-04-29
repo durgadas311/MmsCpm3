@@ -8,7 +8,23 @@ VERS	EQU   '1 '  ; Apr 03, 2020 18:46 drm "ldrsdc.asm"
 ; Must also work for RC2014/MT011
 
 	maclib	z80
-	maclib	cfgsys
+; TODO: this is bogus, need better way
+; (RMAC can only maclib from one place)
+;	maclib	cfgsys
+; H8xSPI adapter for SDCard
+h89	equ	-1	; vs. sc203/mt011
+spi	equ	40h	; same board as WizNet
+
+spi?wr	equ	spi+0
+spi?rd	equ	spi+0
+spi?ctl	equ	spi+1
+spi?sts	equ	spi+1
+
+WIZSCS	equ	0001b	;
+NVRSCS	equ	0010b	;
+SD0SCS	equ	0100b	; SCS for SDCard 0
+SD1SCS	equ	1000b	; SCS for SDCard 1
+
 	$-MACRO
 
 	public	btend		;end of system (boot stops loading there)
