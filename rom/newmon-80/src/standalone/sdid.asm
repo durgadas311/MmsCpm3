@@ -76,7 +76,7 @@ skp1:
 	jz	ok8
 	ani	0100b	; Illegal Command
 	jz	fail	; must be some other error - fatal
-	; CMD8 not recognized, SD1 card... (not supported?)
+	; CMD8 not recognized, SD1 card...
 	mvi	a,0
 	sta	acmd41+1
 ok8:
@@ -99,15 +99,11 @@ init:	; this could take a long time... don't flood console
 	jmp	fail
 init0:	; done with init
 	; now try CMD58 if applicable
-	lda	acmd41+1
-	ora	a
-	jz	next
-	; SD2... get CMD58
+	; CMD58 is listed "optional"...
 	lxi	h,cmd58
 	mvi	d,5
 	mvi	e,1	; turn off SCS
 	call	sdcmd
-next:
 	; read CID...
 	lxi	h,cmd10
 	mvi	d,1
@@ -143,6 +139,15 @@ done:
 	lda	dmp
 	ora	a
 	jz	nodmp
+	lda	ocr	; actually, the response
+	ani	0100b	; Illegal Command
+	jnz	dmp0	; No OCR returned
+	call	crlf
+	lxi	h,ocrmsg
+	call	msgout
+	lxi	h,ocr+1
+	call	dmpline
+dmp0:
 	call	crlf
 	lxi	h,cidmsg
 	call	msgout
@@ -161,7 +166,6 @@ nodmp:
 	lxi	h,model
 	call	msgout
 	call	prver	; "SDv2.0"
-	push	psw
 	call	space
 	mvi	a,'('
 	call	chrout
@@ -184,9 +188,7 @@ nodmp:
 	call	crlf
 	call	prrev
 	call	crlf
-	pop	psw
-	ora	a
-	cnz	prcap	; incl CR/LF
+	call	prcap	; incl CR/LF
 exit:
 	ei
 	lhld	retmon
@@ -218,6 +220,7 @@ acmd41:	db	CMDST+41,40h,0,0,0,1
 	db	0
 cmd58:	db	CMDST+58,0,0,0,0,1
 ocr:	db	0,0,0,0,0
+	db	0,0,0,0,0,0,0,0,0,0,0,0	; for dmpline
 cmd17:	db	CMDST+17,0,0,0,0,1
 	db	0
 cmd9:	db	CMDST+9,0,0,0,0,1	; SEND_CSD
@@ -417,13 +420,34 @@ prmdt:
 	call	dec16
 	ret
 
-; Print SD version from CSD
+prsdx:
+	mvi	a,'S'
+	call	chrout
+
+; Print SD version from CSD, preceded by SDSC/SDHC/SDXC
 ; return A=version bits (11000000b)
 prver:
 	mvi	a,'S'
 	call	chrout
 	mvi	a,'D'
 	call	chrout
+	lda	cmd58+7
+	ani	40h
+	mvi	a,'S'
+	jz	v00
+	; test for SDHC or SDXC (C_SIZE > xxx)
+	lhld	csd+CSDSIZ+1
+	lxi	d,1
+	dad	d
+	lda	csd+CSDSIZ
+	aci	0
+	mvi	a,'H'
+	jz	v00
+	mvi	a,'X'
+v00:	call	chrout
+	mvi	a,'C'
+	call	chrout
+	call	space
 	mvi	a,'v'
 	call	chrout
 	lda	csd+CSDVER
@@ -472,6 +496,9 @@ sn0:	mov	a,m
 prcap:
 	lxi	h,cap
 	call	msgout
+	lda	csd+CSDVER
+	ani	11000000b	; CSD_STRUCTURE
+	jz	prcap1		; use v1 CSD structure
 	lxi	h,csd+CSDSIZ
 	mov	b,m	; +7	; C_SIZE << 10
 	inx	h
@@ -490,19 +517,73 @@ prcap:
 	mov	b,a
 	call	shl32
 	call	shl32
-	call	dec32
+prc0:	call	dec32
 	lxi	h,blks	; incl. CR/LF
 	call	msgout
 	ret
+
+prcap1:
+	; TODO: compute CSD v1 capacity - yuk.
+	; MULT = CSD[49:47] ((csd[10] & 0x80) >> 7) | ((csd[9] & 0x03) << 1)
+	; C_SIZE = CSD[76:62] (csd[6] & 0x03) << 10) | (csd[7] << 2) | ((csd[8] & 0xc0) >> 6)
+	; CAP = (C_SIZE + 1) * MULT
+	lda	csd+6
+	ani	3
+	mov	h,a	; << 8
+	lda	csd+7
+	ora	a
+	ral
+	mov	l,a
+	mov	a,h
+	ral
+	mov	h,a
+	mov	a,l
+	ora	a
+	ral
+	mov	l,a
+	mov	a,h
+	ral
+	mov	h,a
+	lda	csd+8
+	rlc
+	rlc
+	ani	3
+	ora	l
+	mov	l,a	; HL = CSD[73:62]
+	inx	h	; HL = C_SIZE+1
+	lda	csd+9
+	ani	3
+	mov	e,a
+	lda	csd+10
+	ral
+	mov	a,e
+	ral		; A = CSD[49:47] = C_SIZE_MULT
+	adi	2	; C_SIZE_MULT+2
+	xchg		;
+	lxi	b,0	; BC:DE = C_SIZE+1, A = C_SIZE_MULT+2
+	call	shl32n	; BC:DE <<= A
+	jmp	prc0
 
 model:	db	'Model: ',0
 serial:	db	'S/N: ',0
 rev:	db	'Rev: ',0
 cap:	db	'Capacity: ',0
 blks:	db	' blocks(sectors)',CR,LF,0
+ocrmsg:	db	'OCR: ',0
 cidmsg:	db	'CID: ',0
 csdmsg:	db	'CSD: ',0
 spcs:	db	'  ',0
+
+; BC:DE <<= A
+shl32n:	ora	a	; just in case it's zero
+	rz
+shl32x:
+	push	psw
+	call	shl32
+	pop	psw
+	dcr	a
+	jnz	shl32x
+	ret
 
 ; BC:DE <<= 1
 shl32:
