@@ -165,18 +165,26 @@ cdi1:	; done with init
 	ora	a
 	rz	; no more init for SDC1... return NC
 	; SDC2... get CMD58
-; TODO: check card power-OK bit?
-;	lxi	h,cmd58
-;	mvi	d,5
-;	mvi	e,1	; turn off SCS
-;	call	sdcmd
-;	rc
-;	lda	cmd58+7 ; OCR 31:24
-;	bit	7,a	; power-up status
-;	stc
-;	rz
+	lxi	h,cmd58
+	mvi	d,5
+	mvi	e,1	; turn off SCS
+	call	sdcmd
+	rc
+	lda	cmd58+7 ; OCR 31:24
+	bit	7,a	; power-up status
+	stc
+	rz	; card failed to power-up
+	bit	6,a	; SDSC?
+	jrz	sdhc
 	xra	a
 	ret
+
+sdhc:	lxi	h,nosc
+	call	msgout
+	stc
+	ret
+
+nosc:	db	'SDSC not supported',13,10,0
 
 ; increment LBA in cmd17, and DMA
 incr:

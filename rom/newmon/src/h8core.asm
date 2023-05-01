@@ -1,11 +1,11 @@
 ; H8 Z80-CPU v3.2 Monitor (EEPROM 28C256)
-VERN	equ	020h	; ROM version
+VERN	equ	021h	; ROM version
 
 false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	0
+beta	equ	1
 
 z180	equ	false
 h8nofp	equ	false
