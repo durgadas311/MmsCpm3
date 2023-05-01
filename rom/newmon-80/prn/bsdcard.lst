@@ -1,0 +1,481 @@
+		; Boot Module for SDCard(s) on H8xSPI on 8080 CPUs
+			maclib	ram
+**** ram.lib ****
+**** bsdcard.asm ****
+			maclib	core
+**** core.lib ****
+**** bsdcard.asm ****
+		
+0050          	drv0	equ	80
+0002          	ndrv	equ	2
+		
+0040          	spi	equ	40h	; same board as WizNet
+		
+0040          	spi?dat	equ	spi+0
+0041          	spi?ctl	equ	spi+1
+0041          	spi?sts	equ	spi+1
+		
+0004          	SD0SCS	equ	0100b	; SCS for SDCard 0
+0008          	SD1SCS	equ	1000b	; SCS for SDCard 1
+		
+0040          	CMDST	equ	01000000b	; command start bits
+		
+1000          		org	1000h
+1000  03      	first:	db	HIGH (last-first)	; +0: num pages
+1001  10      		db	HIGH first		; +1: ORG page
+1002  5002    		db	drv0,ndrv	; +2,+3: phy drv base, num
+		
+1004  C31710  		jmp	init	; +4: init entry
+1007  C31910  		jmp	boot	; +7: boot entry
+		
+100A  53      		db	'S'	; +10: Boot command letter
+100B  07      		db	7	; +11: front panel key
+100C  42      		db	42h	; +12: port, 0 if variable
+100D  A4C2CE  		db	10100100b,11000010b,11001110b	; +13: FP display ("Sdc")
+1010  53444361		db	'SDCard',0	; +16: mnemonic string
+      726400
+		
+		; should do card init sequence... but don't know LUN...
+1017          	init:
+1017  AF      		xra	a	; NC
+1018  C9      		ret
+		
+1019          	boot:
+			; Partition is passed to bootloader, but we need
+			; segment offset before we can start.
+			; stack: retL, retH, str0, str1, ...
+1019  210200  		lxi	h,2
+101C  39      		dad	sp	; HL=string (maybe)
+101D  CD5010  		call	cardsetup
+1020  D8      		rc
+1021  CD9D10  		call	cardinit
+1024  D8      		rc
+			; init for reading...
+1025  2A5621  		lhld	l2156h
+1028  22B211  		shld	cmd17+1
+102B  2A5821  		lhld	l2156h+2
+102E  22B411  		shld	cmd17+3
+1031  218022  		lxi	h,bootbf
+1034  228311  		shld	dma
+1037  3E0A    		mvi	a,10	; 10 sectors to read
+1039  328511  		sta	cnt
+103C          	boot0:
+103C  2A8311  		lhld	dma
+103F  CD4411  		call	read
+1042  D8      		rc
+1043  CD2E11  		call	incr
+1046  218511  		lxi	h,cnt
+1049  35      		dcr	m
+104A  C23C10  		jnz	boot0
+104D  C33B00  		jmp	hwboot
+		
+		; HL=string
+1050          	cardsetup:
+1050  EB      		xchg		; DE=string
+1051  210000  		lxi	h,0	; def segment
+1054  225821  		shld	l2156h+2
+1057  225A21  		shld	l2156h+4
+105A  3A3121  		lda	AIO$UNI	; 0000000d = 0/1
+105D  3C      		inr	a	; 01b/10b
+105E  07      		rlc
+105F  07      		rlc		; = SD0SCS/SD1SCS
+1060  328211  		sta	scs
+1063  3E50    		mvi	a,drv0
+1065  323420  		sta	l2034h	; pre-loader expects 80-88 for partn
+1068  1A      		ldax	d
+1069  13      		inx	d
+106A  FEC3    		cpi	0c3h	; JMP means no string present
+106C  CA9810  		jz	nostr
+106F  B7      		ora	a	; check for "", too
+1070  CA9810  		jz	nostr
+1073  CD6311  		call	trydig
+1076  D28A10  		jnc	gotdig
+1079  CD7211  		call	tryltr
+107C  D8      		rc
+107D  1A      		ldax	d
+107E  13      		inx	d
+107F  B7      		ora	a
+1080  CA9810  		jz	gotit
+1083  CD6311  		call	trydig
+1086  D8      		rc
+1087  C39410  		jmp	chkend
+108A  1A      	gotdig:	ldax	d
+108B  13      		inx	d
+108C  B7      		ora	a
+108D  CA9810  		jz	gotit
+1090  CD7211  		call	tryltr
+1093  D8      		rc
+1094  1A      	chkend:	ldax	d
+1095  B7      		ora	a
+1096  37      		stc
+1097  C0      		rnz	; max two chars
+1098          	gotit:
+1098  225621  	nostr:	shld	l2156h	; l2156h[0]=31:24, l2156h[1]=23:16... (32-bit LBA)
+109B  AF      		xra	a
+109C  C9      		ret
+		
+		; perform SDCard power-on initialization
+		; returns CY on error
+109D          	cardinit:
+			; waive 1mS delay... we are well past that...
+109D  CDB811  		call	run74	; must cycle >= 74 clocks
+			; CMD0 - enter SPI mode
+10A0  218611  		lxi	h,cmd0
+10A3  1601    		mvi	d,1
+10A5  1E01    		mvi	e,1	; turn off SCS
+10A7  CDDB11  		call	sdcmd
+10AA  D8      		rc
+10AB  3A8C11  		lda	cmd0+6	; R1
+10AE  FE01    		cpi	00000001b	; IDLE bit set?
+10B0  37      		stc
+10B1  C0      		rnz
+10B2  218D11  		lxi	h,cmd8
+10B5  1605    		mvi	d,5
+10B7  1E01    		mvi	e,1	; turn off SCS
+10B9  CDDB11  		call	sdcmd
+10BC  D8      		rc
+10BD  3A9311  		lda	cmd8+6
+10C0  FE01    		cpi	00000001b	; no error, IDLE bit still set
+10C2  CACE10  		jz	ok8
+10C5  E604    		ani	00000100b	; Illegal Command
+10C7  37      		stc
+10C8  C8      		rz
+			; CMD8 not recognized, SD1 card... (not supported?)
+10C9  3E00    		mvi	a,0
+10CB  32A011  		sta	acmd41+1
+10CE          	ok8:
+10CE  210500  		lxi	h,5	; small number of errors allowed
+10D1          	cdi0:	; this could take a long time...  need timeout...
+10D1  E5      		push	h
+10D2  219F11  		lxi	h,acmd41
+10D5  1601    		mvi	d,1
+10D7  CDC111  		call	doacmd
+10DA  E1      		pop	h
+10DB  D8      		rc
+10DC  3AA511  		lda	acmd41+6
+10DF  FE00    		cpi	00000000b	; READY?
+10E1  CAF110  		jz	cdi1
+10E4  E67E    		ani	01111110b	; any errors?
+10E6  CAD110  		jz	cdi0		; loop infinitely if just "BUSY"
+10E9  2B      		dcx	h
+10EA  7C      		mov	a,h
+10EB  B5      		ora	l
+10EC  C2D110  		jnz	cdi0
+10EF  37      		stc	; timeout - error
+10F0  C9      		ret
+10F1          	cdi1:	; done with init
+			; now try CMD58 if applicable
+10F1  3AA011  		lda	acmd41+1
+10F4  B7      		ora	a
+10F5  C8      		rz	; no more init for SDC1... return NC
+			; SDC2... get CMD58
+10F6  21A611  		lxi	h,cmd58
+10F9  1605    		mvi	d,5
+10FB  1E01    		mvi	e,1	; turn off SCS
+10FD  CDDB11  		call	sdcmd
+1100  D8      		rc
+1101  21AD11  		lxi	h,cmd58+7 ; OCR 31:24
+1104  7E      		mov	a,m
+1105  E680    		ani	10000000b	; power-up status
+1107  37      		stc
+1108  C8      		rz	; card failed to power-up
+1109  7E      		mov	a,m
+110A  E640    		ani	01000000b	; SDSC?
+110C  CA1111  		jz	sdhc
+110F  AF      		xra	a
+1110  C9      		ret
+		
+1111  211911  	sdhc:	lxi	h,nosc
+1114  CD4400  		call	msgout
+1117  37      		stc
+1118  C9      		ret
+		
+1119  53445343	nosc:	db	'SDSC not supported',13,10,0
+      206E6F74
+      20737570
+      706F7274
+      65640D0A
+      00
+		
+		; increment LBA in cmd17, and DMA
+112E          	incr:
+112E  2A8311  		lhld	dma
+1131  24      		inr	h	; +256
+1132  24      		inr	h	; +512
+1133  228311  		shld	dma
+1136  21B511  		lxi	h,cmd17+4
+1139  34      		inr	m
+113A  C0      		rnz
+113B  2B      		dcx	h
+113C  34      		inr	m
+113D  C0      		rnz
+113E  2B      		dcx	h
+113F  34      		inr	m
+1140  C0      		rnz
+1141  2B      		dcx	h
+1142  34      		inr	m
+1143  C9      		ret
+		
+		; read LBA stored in cmd17...
+		; HL=buffer
+		; returns CY on error
+1144          	read:
+1144  E5      		push	h
+1145  21B111  		lxi	h,cmd17
+1148  1601    		mvi	d,1
+114A  1E00    		mvi	e,0	; leave SCS on
+114C  CDDB11  		call	sdcmd
+114F  E1      		pop	h
+1150  DA5E11  		jc	badblk	; turn off SCS
+1153  3AB711  		lda	cmd17+6
+1156  B7      		ora	a
+1157  C25E11  		jnz	badblk	; turn off SCS
+115A  CD2212  		call	sdblk	; turns off SCS
+115D  C9      		ret	; CY=error
+115E          	badblk:
+115E  AF      		xra	a
+115F  D341    		out	spi?ctl	; SCS off
+1161  37      		stc
+1162  C9      		ret
+		
+1163          	trydig:
+1163  FE30    		cpi	'0'	; digit?
+1165  D8      		rc	; error
+1166  FE3A    		cpi	'9'+1	; max 9 partitions
+1168  3F      		cmc
+1169  D8      		rc	; error - or letter
+116A  D630    		sui	'0'
+116C  C650    		adi	drv0
+116E  323420  		sta	l2034h	; pre-loader expects 70-78 for partn
+1171  C9      		ret
+		
+1172          	tryltr:
+1172  FE41    		cpi	'A'
+1174  D8      		rc	; error - or digit
+1175  E65F    		ani	5fh	; toupper
+1177  D641    		sui	'A'	; 000sssss
+1179  FE1A    		cpi	26
+117B  3F      		cmc
+117C  D8      		rc
+117D  07      		rlc
+117E  07      		rlc
+117F  07      		rlc		; sssss000 = 256M/512B
+1180  67      		mov	h,a	;
+1181  C9      		ret
+		
+1182  04      	scs:	db	SD0SCS
+1183  0000    	dma:	dw	0
+1185  00      	cnt:	db	0
+		
+		; command is always 6 bytes.
+		; CRC is ignored, but "end bit" must be "1".
+		; This explains the problems seen with "Samsung 32Pro",
+1186  40000000	cmd0:	db	CMDST+0,0,0,0,0,95h
+      0095
+118C  00      		db	0
+118D  48000001	cmd8:	db	CMDST+8,0,0,01h,0aah,87h
+      AA87
+1193  00000000		db	0,0,0,0,0
+      00
+1198  77000000	cmd55:	db	CMDST+55,0,0,0,0,1
+      0001
+119E  00      		db	0
+119F  69400000	acmd41:	db	CMDST+41,40h,0,0,0,1
+      0001
+11A5  00      		db	0
+11A6  7A000000	cmd58:	db	CMDST+58,0,0,0,0,1
+      0001
+11AC  00000000		db	0,0,0,0,0
+      00
+11B1  51000000	cmd17:	db	CMDST+17,0,0,0,0,1
+      0001
+11B7  00      		db	0
+		
+		; run-out at least 74 clock cycles... with SCS off...
+11B8  060A    	run74:	mvi	b,10	; 80 cycles
+11BA  DB40    	run740:	in	spi?dat
+11BC  05      		dcr	b
+11BD  C2BA11  		jnz	run740
+11C0  C9      		ret
+		
+		; E=dump flag, always turns off SCS
+11C1          	doacmd:
+11C1  E5      		push	h
+11C2  D5      		push	d
+11C3  219811  		lxi	h,cmd55
+11C6  1601    		mvi	d,1
+11C8  1E00    		mvi	e,0	; do not turn off SCS
+11CA  CDDB11  		call	sdcmd
+			; ignore results? CMD55 never gives error?
+11CD  D1      		pop	d
+11CE  E1      		pop	h
+11CF  1E01    		mvi	e,1
+11D1  CDDB11  		call	sdcmd
+11D4  F5      		push	psw
+			; for some reason, this is required (at least for ACMD41)
+			; when certain cards (Flexon) are in-socket during power up.
+			; If the card is re-seated after power up, this is not needed.
+			; Unclear if this is a MT011 anomaly or universal.
+11D5  DB40    		in	spi?dat
+11D7  DB40    		in	spi?dat
+11D9  F1      		pop	psw
+11DA  C9      		ret
+		
+		; send (6 byte) command to SDCard, get response.
+		; HL=command+response buffer, D=response length
+		; return A=response code (00=success), HL=idle length, DE=gap length
+11DB          	sdcmd:
+11DB  3A8211  		lda	scs
+11DE  D341    		out	spi?ctl	; SCS on
+			; wait for idle
+			; TODO: timeout this loop
+11E0  E5      		push	h	; save command+response buffer
+11E1  210001  		lxi	h,256	; idle timeout
+11E4  DB40    	sdcmd0:	in	spi?dat
+11E6  FEFF    		cpi	0ffh
+11E8  CAF411  		jz	sdcmd1
+11EB  2B      		dcx	h
+11EC  7C      		mov	a,h
+11ED  B5      		ora	l
+11EE  C2E411  		jnz	sdcmd0
+			; timeout - error
+11F1  E1      		pop	h
+11F2  37      		stc
+11F3  C9      		ret
+11F4  E1      	sdcmd1:	pop	h	; command buffer back
+11F5  0606    		mvi	b,6
+11F7  CD5D12  		call	outir
+11FA  DB40    		in	spi?dat	; prime the pump
+11FC  E5      		push	h	; points to response area...
+11FD  210001  		lxi	h,256	; gap timeout
+1200  DB40    	sdcmd2:	in	spi?dat
+1202  FEFF    		cpi	0ffh
+1204  C21012  		jnz	sdcmd3
+1207  2B      		dcx	h
+1208  7C      		mov	a,h
+1209  B5      		ora	l
+120A  C20012  		jnz	sdcmd2
+120D  E1      		pop	h
+120E  37      		stc
+120F  C9      		ret
+1210  E1      	sdcmd3:	pop	h	; response buffer back
+1211  42      		mov	b,d
+1212  77      		mov	m,a
+1213  23      		inx	h
+1214  05      		dcr	b
+1215  CA1B12  		jz	sdcmd4
+1218  CD5412  		call	inir	; rest of response
+121B  7B      	sdcmd4:	mov	a,e	; SCS flag
+121C  B7      		ora	a
+121D  C8      		rz
+121E  AF      		xra	a
+121F  D341    		out	spi?ctl	; SCS off
+1221  C9      		ret	; NC
+		
+		; read a 512-byte data block, with packet header and CRC (ignored).
+		; READ command was already sent and responded to.
+		; HL=buffer
+		; return CY on error (A=error), SCS always off
+1222          	sdblk:
+1222  3A8211  		lda	scs
+1225  D341    		out	spi?ctl	; SCS on
+			; wait for packet header (or error)
+			; TODO: timeout this loop
+1227  110001  		lxi	d,256	; gap timeout
+122A  DB40    	sdblk0:	in	spi?dat
+122C  FEFF    		cpi	0ffh
+122E  C23B12  		jnz	sdblk1
+1231  1B      		dcx	d
+1232  7A      		mov	a,d
+1233  B3      		ora	e
+1234  C22A12  		jnz	sdblk0
+1237  37      		stc
+1238  C34E12  		jmp	sdblk2
+123B          	sdblk1:	
+123B  FEFE    		cpi	11111110b	; data start
+123D  37      		stc	; else must be error
+123E  C24E12  		jnz	sdblk2
+1241  0600    		mvi	b,0	; 256 bytes at a time
+1243  CD5412  		call	inir
+1246  CD5412  		call	inir
+1249  DB40    		in	spi?dat	; CRC 1
+124B  DB40    		in	spi?dat	; CRC 2
+124D  AF      		xra	a	; NC
+124E  F5      	sdblk2:	push	psw
+124F  AF      		xra	a
+1250  D341    		out	spi?ctl	; SCS off
+1252  F1      		pop	psw
+1253  C9      		ret
+		
+		; always on spi?dat
+1254  DB40    	inir:	in	spi?dat
+1256  77      		mov	m,a
+1257  23      		inx	h
+1258  05      		dcr	b
+1259  C25412  		jnz	inir
+125C  C9      		ret
+		
+		; always on spi?dat
+125D  7E      	outir:	mov	a,m
+125E  D340    		out	spi?dat
+1260  23      		inx	h
+1261  05      		dcr	b
+1262  C25D12  		jnz	outir
+1265  C9      		ret
+		
+1266  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFF
+0000          	if ($ > 1800h)
+		endif
+		
+1300          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   129	symbols
+   768	bytes
+
+   154	macro calls
+    16	macro bytes
+     0	invented symbols

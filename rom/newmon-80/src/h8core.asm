@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	3
+beta	equ	4
 
 	maclib	ram
 	maclib	setup
