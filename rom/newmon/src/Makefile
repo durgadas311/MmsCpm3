@@ -7,6 +7,7 @@ H8MODS=	2716_444-19_H17.rom \
 	zout/bsdcard.cim \
 	zout/bvdip1.cim \
 	zout/bwiznet.cim \
+	zout/bram.cim \
 	zout/chelp.cim \
 	zout/cinput.cim \
 	zout/coutput.cim \
@@ -136,3 +137,7 @@ ship: rmac/vflash.sys $(ROMS) ../doc/H8-Monitor-2.pdf
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8nmon2z180-v$(VERN).rom
 	rsync -uvW x.htaccess \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/.htaccess
+
+clean:
+	rm -f h8nmon2z180.rom h8mon2z180.rom h8nmon2.rom h8mon2.rom
+	rm -f zout/*.cim
