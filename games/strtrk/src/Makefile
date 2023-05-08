@@ -1,4 +1,4 @@
-all: st-h19.com st-kp.com
+all: st-h19.com st-kp.com st-xt.com
 
 termh19.o: termh19.c termh19.h
 	zcc +cpm -c -o $@ $<

@@ -369,7 +369,8 @@ static void prtwin(int a) {
 		break;
 	case 2:
 		for (xx=0;xx<STROPS;++xx) {
-		cursor(opcom[xx].x,opcom[xx].y); prts(opcom[xx].str); }
+			cursor(opcom[xx].x,opcom[xx].y); prts(opcom[xx].str);
+		}
 		break;
 	case 3:     /* NAVIGATION */
 		cursor(13,52); prts("(Space) moves by impulse"); 
@@ -656,8 +657,8 @@ static char inchr() {
 			skil = c-'0';
 			c = 0;
 			cursor(stats[LEVEL].x,stats[LEVEL].y+1); outchr(skil+'0');
-			setdck(0);
 		}
+		setdck(0);
 		init = 0;
 		e = (rnd()*2+rnd())*2+rnd()+1; /* max 442 stars */
 		for (a = 0; a < e; ++a) { /* make up to 442 stars */
@@ -879,8 +880,10 @@ int c;
 static void setop(c)
 int c;
 {
-	if (oprnd == c) return;
-	cursor(opcom[OPS1ST+oprnd].x,opcom[OPS1ST+oprnd].y); outchr(' ');
+	/* if (oprnd == c) return; ** too much */
+	if (oprnd >= 0) {
+		cursor(opcom[OPS1ST+oprnd].x,opcom[OPS1ST+oprnd].y); outchr(' ');
+	}
 	cursor(opcom[OPS1ST+c].x,opcom[OPS1ST+c].y); outchr('*');
 	oprnd=c;
 }
