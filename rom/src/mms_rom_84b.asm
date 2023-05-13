@@ -803,7 +803,7 @@ bz47:
 	sta	cport
 	call	take$5	; error out after 5 seconds...
 	mvi	a,2
-	call	outport0
+	call	outport0	; RESET H47?
 	mvi	a,2
 	call	z47$cmdo
 	mov	a,e
@@ -2462,11 +2462,11 @@ bm314r:
 	in	05bh
 	ani	004h
 	rnz
-	out	05bh
+	out	05bh	; RESET Z47
 bm314$5:
 	in	05bh
 	ral
-	jrc	bm314$5
+	jrc	bm314$5	; spin while busy
 bm314$6:
 	mvi	a,007h
 	out	05ah
@@ -2477,7 +2477,7 @@ bm314$6:
 bm314$7:
 	in	05bh
 	ani	080h
-	jrz	bm314$7
+	jrz	bm314$7	; spin while not busy
 bm314$8:
 	in	05bh
 	ani	040h

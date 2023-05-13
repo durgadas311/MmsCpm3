@@ -2002,19 +2002,19 @@ J$068D:	CALL	C$0699
 	CALL	Dly
 	JP	J$068D
 ;
-;	-----------------
+;	RESET H47 Controller
 ;
 ;	  Subroutine __________________________
 ;	     Inputs  ________________________
 ;	     Outputs ________________________
 ;
 C$0699:	CALL	ByteToPortOff
-	 db	2, 0			; Output data, then port offset
+	 db	2, 0			; RESET H47
 
 	LD	A,20			; Short delay loop
 J$06A0:	DEC	A
 	JR	NZ,J$06A0
-	CALL	C_0789
+	CALL	C_0789			; wait for DONE
 	RET	C
 
 J$06A7:	CALL	C_076E
@@ -2031,8 +2031,7 @@ J$06A7:	CALL	C_076E
 	JP	NZ,J$06A7
 
 	CALL	C_06F5
-
-	INC	BC
+	db	03h	; H47 Load Sector Count
 	RET	C
 
 	CALL	C_070F
@@ -2048,8 +2047,7 @@ J$06A7:	CALL	C_076E
 	RET	C
 ;
 	 CALL	C_06F5
-;
-	RLCA
+	DB	07h	; H47 Read Sectors
 	RET	C
 ;
 	 CALL	C_070F
@@ -2079,7 +2077,7 @@ H47BtMsg:	db	10010010b, 10110010b, 11110001b	; Message 'H47'
 endif
 
 
-;	  Subroutine __________________________
+;	  Subroutine Send command to H47 (cmd = [TOS])
 ;	     Inputs  ________________________
 ;	     Outputs ________________________
 ;
@@ -2089,12 +2087,12 @@ C_06F5:	EX	(SP),HL
 	INC	HL
 	EX	(SP),HL
 J$06F9:	PUSH	AF
-	CALL	C_0789
+	CALL	C_0789		; wait for DONE
 	JP	C,J$070C
 	POP	AF
-	CALL	AtoPortOff		; **************************************
+	CALL	AtoPortOff	; send command to H47
 	 db	1
-	mvi	b,20
+	mvi	b,20		; delay briefly
 J$0707:	DEC	B
 	JR	NZ,J$0707
 	AND	A
@@ -2238,9 +2236,8 @@ R.SDP3:	LD	A,0AH	; 10	;; clone of R.SDP code
 ;	     Outputs ________________________
 ;
 C_076E:	CALL	C_06F5
-	DJNZ	J$0740
-	LD	C,B
-	RLCA
+	db	10h	; Read Ready command
+	CALL	PIN
 	RET	C
 	LD	L,A
 	CALL	C_0789
