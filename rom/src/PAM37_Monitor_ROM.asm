@@ -2017,10 +2017,10 @@ J$06A0:	DEC	A
 	CALL	C_0789			; wait for DONE
 	RET	C
 
-J$06A7:	CALL	C_076E
+J$06A7:	CALL	C_076E			; READ READY command
 	RET	C
 
-	CALL	C_076E
+	CALL	C_076E			; READ READY command (twice???)
 	RET	C
 
 	LD	A,(AIO_UNI)
@@ -2035,7 +2035,7 @@ J$06A7:	CALL	C_076E
 	RET	C
 
 	CALL	C_070F
-	NOP
+	db	0	; drive?
 	RET	C
 
 	CALL	C_070F
@@ -2280,13 +2280,13 @@ J$078C:	DEC	BC
 	CALL	ByteFromPortOff
 	 db	0
 
-	AND	20H	; " "
+	AND	20H	; DONE
 	JP	Z,J$078C
 ;
 	CALL	ByteFromPortOff
 	 db	0
 
-	AND	01H	; 1
+	AND	01H	; ERROR
 	SCF
 	RET	NZ
 ;
@@ -2869,21 +2869,21 @@ J_0A43:	call	ByteFromPortOff
 ;
 ;	-----------------
 J_0A5D:	 CALL	ByteFromPortOff			; ****************************************
-
-	LD	BC,0D0E6H
+	db	1
+	and	0d0h
 	CP	90H
 	JR	NZ,J_0A5D
 ;
 	 CALL	ByteFromPortOff
 ;
-	NOP
+	db	0
 	LD	C,A
 	LD	(D$2138),A
 J$0A6F:	CALL	ByteFromPortOff			; ****************************************
-
-	LD	BC,03247H
-	ADD	HL,SP
-	LD	HL,0E0E6H
+	db	1
+	ld	b,a
+	ld	(2139h),a
+	and	0e0h
 	CP	0A0H
 	JR	NZ,J$0A6F
 ;
@@ -2912,9 +2912,10 @@ J$0A6F:	CALL	ByteFromPortOff			; ****************************************
 ;	-----------------
 J$0A94:	LD	HL,UsrFWA
 J_0A97:	 CALL	ByteFromPortOff			; ******************************************
+	db	1
 
-	LD	BC,0E64FH
-	ADD	A,B
+	ld	c,a
+	and	80h
 	JR	Z,J_0A97
 ;
 	LD	A,C

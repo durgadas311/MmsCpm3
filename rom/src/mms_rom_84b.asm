@@ -803,8 +803,8 @@ bz47:
 	sta	cport
 	call	take$5	; error out after 5 seconds...
 	mvi	a,2
-	call	outport0	; RESET H47?
-	mvi	a,2
+	call	outport0	; RESET H47
+	mvi	a,2		; get sector size
 	call	z47$cmdo
 	mov	a,e
 	call	z47$dato
