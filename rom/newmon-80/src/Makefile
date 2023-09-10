@@ -8,6 +8,7 @@ H8MODS=	../../newmon/src/2716_444-19_H17.rom \
 	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
+        zout/bh47.cim \
 	zout/bh67.cim \
 	zout/bsdcard.cim \
 	zout/bvdip1.cim \
