@@ -14,30 +14,30 @@ nofp	set	false
 
 	maclib	ram
 	maclib	setup
-if z180
+ if z180
 pcode	set	0f180h
 	maclib	z180
 use$dma	equ	true
-if h8nofp
+ if h8nofp
 pcode	set	0f18fh
-endif
-if h89
+ endif
+ if h89
 pcode	set	0f189h
-endif
-else	; Z80 based
+ endif
+ else	; Z80 based
 pcode	set	0ff80h
 	maclib	z80
-if h8nofp
+ if h8nofp
 pcode	set	0ff8fh
-endif
-if h89
+ endif
+ if h89
 pcode	set	0ff89h
-endif
-endif	; z180 else z80
+ endif
+ endif	; z180 else z80
 
-if h8nofp or h89
+ if h8nofp or h89
 nofp	set	true
-endif
+ endif
 	$*macro
 
 CR	equ	13
@@ -62,7 +62,7 @@ mfl$NRF	equ	01000000b	; disable refresh of display
 mfl$DDU	equ	00000010b	; disable disp update (debug info)
 mfl$CLK	equ	00000001b	; allow 2mS clock hook (user hook)
 
-if z180
+ if z180
 ; Z180 internal registers (I/O ports)
 ccr	equ	1fh
 itc	equ	34h
@@ -94,7 +94,7 @@ IOW3	equ	00$11$0000b
 ; CCR register definitions:
 CLK2	equ	0$0000000b	; CLK/2
 CLK1	equ	1$0000000b	; CLK/1
-else
+ else
 ; H8-512K MMU
 mmu	equ	0	; base port
 rd	equ	0
@@ -112,7 +112,7 @@ wr00k	equ	mmu+wr+pg0k
 wr16k	equ	mmu+wr+pg16k
 wr32k	equ	mmu+wr+pg32k
 wr48k	equ	mmu+wr+pg48k
-endif
+ endif
 
 rtc	equ	0a0h	; standard port address of RTC 72421
 
@@ -135,15 +135,15 @@ mdport	equ	12	; device port, 0 if variable
 mddisp	equ	13	; boot front panel mnemonic
 mdname	equ	16	; boot string
 
-if z180
+ if z180
 ; Where ROM is mapped-in for searching...
 btmap	equ	4000h
 btmods	equ	btmap+2000h
 bterom	equ	btmap+8000h
-else
+ else
 btmods	equ	2000h	; boot modules start in ROM
 bterom	equ	8000h	; end/size of ROM
-endif
+ endif
 
 rptcnt	equ	16
 debounce equ	1
@@ -153,13 +153,13 @@ debounce equ	1
 
 rombeg:
 rst0:
-if nofp
+ if nofp
 	jmp	init	; must be JMP so Heath CP/M thinks we're an H89
 	nop
-else
+ else
 	di	; can't be JMP or Heath CP/M thinks we're an H89
 	jmp	init
-endif
+ endif
 
 	jmp	getport
 	db	0
@@ -167,9 +167,9 @@ endif
 rst1:	call	intsetup
 	lhld	ticcnt
 	jmp	int1$cont
-if ((high int1$cont) <> 0)
+ if ((high int1$cont) <> 0)
 	.error 'Overlapped NOP error'
-endif
+ endif
 
 rst2	equ	$-1	; must be a nop...
 	call	intsetup
@@ -228,28 +228,28 @@ nulint:
 	ei
 	ret
 
-if nofp
+ if nofp
 nReg	equ	13*2	; must match number of entries in intsetup/intret...
 
 	rept	0066h-$
 	db	0ffh
 	endm
-if	($ <> 0066h)
+ if	($ <> 0066h)
 	.error	'NMI overflow'
-endif
+ endif
 	jmp	nmi
-endif
+ endif
 
 int1$cont:
 	inx	h
 	shld	ticcnt
 	lda	ctl$F2
 	out	0f2h
-if nofp
+ if nofp
 	jmp	int1$xx
-else
+ else
 	jmp	int1$fp
-endif
+ endif
 
 intsetup:
 	exx
@@ -316,9 +316,9 @@ prloop:
 	jz	nocmd0	; handled my add-on
 	ani	11011111b ; toupper
 	sta	lstcmd
-if not nofp
+ if not nofp
 	jm	kpcmd	; from keypad... jumps back here...
-endif
+ endif
 cmchr:	lxi	h,cmdtab
 	mvi	b,numcmd
 cmloop:
@@ -346,7 +346,7 @@ cmdtab:
 ;	db	'A' ! dw cmdab	; Add boot module
 ;	db	'U' ! dw cmdur	; Update entire ROM
 	db	'Z' ! dw cmdsst	; Go Single-Step
-if not nofp
+ if not nofp
 	; front-panel commands    key(old)  command/action
 	db	80h ! dw kpubt	; [0]     - Universal Boot
 	db	81h ! dw kppbt	; [1]     - Pri Boot
@@ -364,10 +364,10 @@ if not nofp
 	db	8dh ! dw kprw	; [D] [/] - Display/Alter
 	db	8eh ! dw kpmem	; [E] [#] - Memory Mode
 	db	8fh ! dw kprgm	; [F] [.] - Register Mode
-endif
+ endif
 numcmd	equ	($-cmdtab)/3
 
-if nofp
+ if nofp
 nmi:	; only get here from I/O instructions on ports F0,F1,FA,FB
 	xthl
 	push	h
@@ -397,14 +397,14 @@ nmi$ign:	; ignore, but IN must get 00
 	pop	psw
 	mvi	a,0	; don't change flags...
 	jr	nmi$xit
-endif
+ endif
 
 	rept	0137h-$
 	db	0ffh
 	endm
-if	($ <> 0137h)
+ if	($ <> 0137h)
 	.error 'HDOS entry overrun 0137h'
-endif
+ endif
 	jmp	0	; initialized by H47 boot module
 
 docmd:
@@ -442,17 +442,17 @@ cmdpc1:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 int2$cont:
-if not nofp
+ if not nofp
 	ori	00010000b	; disable single-step
 	out	0f0h
 	stax	d
-else
+ else
 	lda	ctl$F2
 	ani	11111110b	; disable single-step
 	out	0f2h
 	sta	ctl$F2
 	ldax	d		;  ctl$F0
-endif
+ endif
 	ani	00100000b	; MON active?
 	jnz	start		; break to monitor code
 	jmp	vrst2		; else chain to (possible) user code.
@@ -595,16 +595,16 @@ cmdboot:
 	mvi	c,CR	; end input on CR
 	jr	boot0
 
-if z180
+ if z180
 trpms:	db	CR,LF,'*** TRAP ',TRM
-endif
+ endif
 
 	rept	0260h-$
 	db	0ffh
 	endm
-if	($ <> 0260h)
+ if	($ <> 0260h)
 	.error 'HDOS entry overrun 0260h'
-endif
+ endif
 ; Legacy entry for "Horn" - beep for num 2mS ticks in A
 hhorn:	push	h
 	call	set$horn
@@ -744,7 +744,7 @@ hxboot:	lxi	h,CLOCK
 ; But, right now, ROM is in 0000-7FFF so must copy
 ; core code and switch to RAM...
 init:
-if z180
+ if z180
 ; Might arrive here from a TRAP...
 	in0	a,itc
 	bit	7,a
@@ -762,10 +762,10 @@ init0:	lxi	h,0ffffh
 	mvi	a,1100$0100b	; ca at 0xc000, ba at 0x4000
 	out0	a,mmu$cbar
 	; both CBR and BBR are "0" - if got here via RESET
-if use$dma
+ if use$dma
 	; DMA F8000-FA000 into 00000-02000
 	call	dmarom
-else
+ else
 	mvi	a,0f8h-04h	; page offset by start
 	out0	a,mmu$bbr
 	lxi	h,04000h
@@ -775,8 +775,8 @@ else
 	; restore default map...
 	xra	a	; 00 - reset map to 0000
 	out0	a,mmu$bbr
-endif
-else
+ endif
+ else
 	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
@@ -789,7 +789,7 @@ else
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
 	ldir
-endif
+ endif
 	; save config data
 	lxi	h,suadr
 	lxi	d,susave
@@ -871,13 +871,13 @@ conot1:
 	out	0e8h
 	ret
 
-if not nofp
+ if not nofp
 	rept	03eeh-$
 	db	0ffh
 	endm
-if	($ <> 03eeh)
+ if	($ <> 03eeh)
 	.error	'Digit table overrun 03eeh'
-endif
+ endif
 
 ; octal (base 8) 7-seg translation
 doddig:	db	00000001b	; "0."
@@ -896,7 +896,7 @@ doddig:	db	00000001b	; "0."
 	db	01000010b	; "d."
 	db	00001100b	; "E."
 	db	00011100b	; "F."
-endif
+ endif
 
 ; D=term char (e.g. '.' for Substitute)
 ; HL=location to store address
@@ -1283,27 +1283,27 @@ hwinit:
 	xra	a
 	out	rtc+13	; clear pending intr, HOLD
 	; TODO: any other hardware needs init?
-if z180
+ if z180
 	lda	susave+waits
 	cpi	0ffh
 	jrnz	cfgwt
 	mvi	a,MW0+IOW3
 cfgwt:	out0	a,dcntl	; set WAIT states for memory (and I/O)
-endif
+ endif
 	ret
 
 ; Special entry points expected by HDOS, or maybe Heath CP/M boot.
 	rept	0613h-$
 	db	0ffh
 	endm
-if	($ <> 0613h)
+ if	($ <> 0613h)
 	.error 'HDOS entry overrun 0613h'
-endif
+ endif
 	jmp	0	; initialized by H47 boot module
 	db	0
 	jmp	0	; initialized by H47 boot module
 
-if nofp
+ if nofp
 nmi$f0:
 	dcx	h
 	mov	a,m
@@ -1333,7 +1333,7 @@ nmi$out:	; convert relevant F0 bits to F2 bits
 	ani	11111100b	; ensure bits are "0"
 	mov	m,a
 	jmp	nmi$xit2
-endif
+ endif
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Go command
@@ -1356,17 +1356,17 @@ cmdsst:
 	call	msgout
 kpsst:	; entry point for keypad SI command
 	di
-if not nofp
+ if not nofp
 	lda	ctl$F0
 	xri	00010000b	; toggle single-step = enable
 	out	0f0h
 	sta	ctl$F0
-else
+ else
 	lda	ctl$F2
 	ori	00000001b	; enable single-step
 	out	0f2h
 	sta	ctl$F2
-endif
+ endif
 	jr	cmdgo1
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1380,8 +1380,8 @@ getpc:
 	cc	cmdpc1	; read HEX until CR, store in HL
 	jmp	crlf
 
-if z180
-if use$dma
+ if z180
+ if use$dma
 ; DMA F8000-FA000 into 00000-02000
 ; copy core ROM (8K) into 0000 using DMAC
 dmarom:
@@ -1409,8 +1409,8 @@ dmacpy:
 init1:	tstio	01000000b	; wait for DMAC to idle
 	jrnz	init1
 	ret
-endif
-endif
+ endif
+ endif
 
 adrin3:	pop	h
 	mov	e,m
@@ -1418,7 +1418,7 @@ adrin3:	pop	h
 	mov	d,m
 	ret
 
-if not nofp
+ if not nofp
 ; ABUSS L=port, H=value
 kpin:	lhld	ABUSS
 	mov	c,l	; port
@@ -1437,7 +1437,7 @@ kprw:	; switch between display/modify
 	xri	1
 	sta	DspMod
 	ret
-endif
+ endif
 
 ; initialize monitor memory at 2000h
 meminit:
@@ -1452,11 +1452,11 @@ meminit:
 	sta	horn
 	inr	a	; 1
 	sta	Refind
-if nofp
+ if nofp
 	mvi	a,ctl$ORG0+ctl$CLK	; ORG0 on, 2mS on...
-else
+ else
 	mvi	a,ctl$ORG0	; ORG0 on, 2mS off...
-endif
+ endif
 	sta	ctl$F2	; 2mS off, ORG0 on
 	out	0f2h	; enable RAM now...
 	mvi	a,0c9h	; RET
@@ -1474,12 +1474,12 @@ cserms:	db	BEL,'Cksum error',TRM
 topms:	db	'Top of Mem: ',TRM
 
 prompt:	db	CR,LF,'H8'
-if h8nofp
+ if h8nofp
 	db	'N'
-endif
-if h89
+ endif
+ if h89
 	db	'9'
-endif
+ endif
 	db	': ',TRM
 bootms:	db	'oot ',TRM
 goms:	db	'o ',TRM
@@ -1507,7 +1507,7 @@ nocmd:
 cmerr:	call	belout
 	jmp	prloop
 
-if not nofp
+ if not nofp
 ; get "alternate" (secondary) boot device...
 galtbt:
 	lxi	d,0
@@ -1887,7 +1887,7 @@ iobo0:	cnc	keyin
 iob0:
 	; TODO: blip to ack entry?
 	ret
-endif
+ endif
 
 ; returns with interrupts disabled
 ; preserves DE
@@ -1950,11 +1950,11 @@ conin:	in	0edh
 	; flush out VDIP1 while we wait...
 	in	0dah	; VDIP1/FT245R status
 	ani	00001000b	; VDIP1 RxR
-if nofp
+ if nofp
 	jrz	conin
 	in	0d9h	; flush char, VDIP1 data reg
 	jr	conin
-else
+ else
 	jrz	novdip2
 	in	0d9h	; flush char
 novdip2:
@@ -1963,7 +1963,7 @@ novdip2:
 	jrz	conin
 	; cancel console cmd, leave keypad char for cmdin
 	jmp	start
-endif
+ endif
 
 conin0:	in	0e8h
 	ani	07fh
@@ -1979,7 +1979,7 @@ conin1:	in	0edh
 	ani	07fh
 	ret
 
-if not nofp
+ if not nofp
 ; called in the context of command on front-panel
 keyin:	lda	kpchar
 	ora	a
@@ -1990,7 +1990,7 @@ keyin:	lda	kpchar
 	; cancel kaypad cmd, leave console char for cmdin
 	; TODO: what modes need reset?
 	jmp	start
-endif
+ endif
 
 ; wait for command - console or keypad
 cmdin:
@@ -2003,11 +2003,11 @@ cmdin:
 	; INS8250 IIR always 0
 	; 16550 IIR is RxD timeout (?)
 	; 16C2550 ISR is RxD timeout (?)
-if nofp
+ if nofp
 	jrz	cmdin
 	in	0d9h	; flush char, VDIP1 data reg
 	jr	cmdin
-else
+ else
 	jrz	novdip1
 	in	0d9h	; flush char
 novdip1:
@@ -2029,9 +2029,9 @@ gotkey:	ani	00001111b
 	ori	10000000b	; distinguish from console input
 	; TODO: check for CANCEL key?
 	ret
-endif
+ endif
 
-if not nofp
+ if not nofp
 ; keypad check at 32mS
 kpchk:	lxi	h,RckA
 	in	0f0h
@@ -2288,7 +2288,7 @@ fp3:
 	pop	psw
 	ani	15	; 32mS
 	cz	kpchk
-endif
+ endif
 int1$xx:
 	; not really FP related, but no space in low ROM...
 	lda	ctl$F0
@@ -2430,11 +2430,11 @@ bfind:
 	;call	icall
 	;rz
 bfind0:
-if z180
+ if z180
 	; map ROM F8000 into 4000
 	mvi	a,0f8h-04h
 	out0	a,mmu$bbr
-else
+ else
 	; must map ROM back in, so prevent interruptions...
 	; also, we loose memory at SP...
 	di
@@ -2446,7 +2446,7 @@ else
 	ani	not ctl$ORG0	; ORG0 off
 	ori	ctl$MEM1	; MEM1 on
 	out	0f2h
-endif
+ endif
 	lxix	btmods	; start of modules...
 bf0:	call	icall
 	jrz	bf9
@@ -2463,15 +2463,15 @@ bf0:	call	icall
 	cpi	0ffh
 	jrnz	bf0
 bf1:
-if z180
+ if z180
 	xra	a
 	out0	a,mmu$bbr
-else
+ else
 	pop	psw
 	out	0f2h
 	spiy
 	ei
-endif
+ endif
 	stc	; CY = end of list (not found)
 	ret
 
@@ -2483,8 +2483,8 @@ bf9:	; match found, now load into place and init
 	mvi	e,0
 	mvi	c,0
 	push	d
-if z180
-if use$dma
+ if z180
+ if use$dma
 	mov	a,h	; L should (must) be 00... also E...
 	sui	40h	; remove offset of mapping @ 4000h
 	adi	80h	; low byte of 0f80h ROM page addr
@@ -2495,25 +2495,25 @@ if use$dma
 	mov	e,d	; shift dest addr into page addr
 	mvi	d,0	; always in low memory?
 	call	dmacpy
-else
+ else
 	; TODO: avoid redundant load... and init?
 	ldir
-endif
-else
+ endif
+ else
 	; TODO: avoid redundant load... and init?
 	ldir
-endif
+ endif
 	popix	; module load addr
 	; now call init routine... but must restore RAM...
-if z180
+ if z180
 	xra	a
 	out0	a,mmu$bbr
-else
+ else
 	pop	psw
 	out	0f2h
 	spiy
 	ei
-endif
+ endif
 	call	btinit	; CY indicates error, pass along...
 	ret
 
@@ -2661,7 +2661,7 @@ defbt:	; default boot table... port F2 bits 01110000b
 	db	60	; -110---- Network
 	db	0feh	; -111---- use setup primary
 
-if z180
+ if z180
 ; TODO: preserve CPU regs for debug/front-panel
 ; (by the time we reach intsetup, everything is trashed)
 trap:
@@ -2688,16 +2688,16 @@ trap0:
 	call	adrout
 	call	crlf
 	jmp	init0
-endif
+ endif
 
-if z180
+ if z180
 savram:	; TODO: implement this w/o DMAC?
 	lxi	h,000h	; save from 00000h
 	lxi	d,300h	; save into 30000h
 	lxi	b,16*1024	; save all 16K
 	call	dmacpy
 	ret
-else
+ else
 savram:	; interrupts are disabled
 	; init H8-512K mmu.
 	; WARNING: The H8-512K MAP FF has a R-C delay on its CLR
@@ -2742,7 +2742,7 @@ savram0:		; total: 24 cy
 	mvi	a,0
 	out	rd00k	; turn off MAP bit, back to normal
 	ret
-endif
+ endif
 
 linix:	mvi	m,0	; terminate buffer
 	ret
@@ -2866,9 +2866,9 @@ cmdlb:	lxi	h,lbmsg
 lbmsg:	db	'ist boot modules',CR,LF,0
 hbmsg:	db	'elp boot',CR,LF,0
 hbmsg2:	db	'Pri: ',0
-if not nofp
+ if not nofp
 hbmsg3:	db	'Sec: ',0
-endif
+ endif
 
 ; Help boot command
 cmdhb:	lxi	h,hbmsg
@@ -2887,12 +2887,12 @@ cmdhb:	lxi	h,hbmsg
 	jrz	cmdhb6
 	mvi	a,' '
 cmdhb6:	call	cmdhbx
-if not nofp
+ if not nofp
 	lxi	h,hbmsg3
 	lxi	d,susave+dsdev
 	mvi	a,' '	; never the default
 	call	cmdhbx
-endif
+ endif
 	ret
 
 cmdhbx:	call	conout
@@ -2968,44 +2968,44 @@ retmon:
 	di
 	xra	a	; reset state of ctl port
 	out	0f2h
-if not nofp
+ if not nofp
 	mvi	a,0dfh	; reset state of FP port 0
 	out	0f0h
-endif
+ endif
 	jmp	0
 
 signon:	db	CR,LF,'H8'
-if h8nofp
+ if h8nofp
 	db	'N'
-endif
-if h89
+ endif
+ if h89
 	db	'9'
-endif
+ endif
 	db	' '
-if z180
+ if z180
 	db	'Z180 '
-endif
+ endif
 	db	'Monitor v'
 vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
-if alpha
+ if alpha
 	db	'(alpha',alpha+'0',')'
-endif
-if beta
+ endif
+ if beta
 	db	'(beta'
-if beta > 9
+ if beta > 9
 	db	(beta/10)+'0'
-endif
+ endif
 	db	(beta MOD 10)+'0',')'
-endif
+ endif
 	db	CR,LF,TRM
 
 	rept	1000h-$-2
 	db	0ffh
 	endm
 	dw	pcode	; product code for system
-if	($ <> 1000h)
+ if	($ <> 1000h)
 	.error 'core ROM overrun'
-endif
+ endif
 
 ; module overlay area starts here...
 ; ensure this does not match any...
@@ -3015,7 +3015,7 @@ endif
 	rept	1800h-$
 	db	0ffh
 	endm
-if	($ <> 1800h)
+ if	($ <> 1800h)
 	.error 'overlay ROM overrun'
-endif
+ endif
 	end

@@ -44,16 +44,17 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
-	zout/bsdcard.cim \
-	zout/bvdip1.cim \
-	zout/bwiznet.cim \
 	zout/chelp.cim \
 	zout/cinput.cim \
 	zout/coutput.cim \
 	zout/cterm.cim \
-	zout/cvtalk.cim \
 	zout/ch8dcopy.cim \
 	zout/cspeed.cim
+# later...
+#	zout/bsdcard.cim \
+#	zout/bvdip1.cim \
+#	zout/cvtalk.cim \
+#	zout/bwiznet.cim \
 
 H8MON = zout/h8core.cim $(H8MODS) zout/csetup.cim
 H8NMON = zout/h8ncore.cim $(H8NMODS) zout/csetupn.cim
@@ -118,6 +119,10 @@ h8mon2.rom: $(H8MON)
 	cat $(H8MON) | ../../../tools/cksum -f -w -x -l 0x8000 >$@
 	cp	$@ ../bin
 
+h89mon2.rom: $(H89MON)
+	cat $(H89MON) | ../../../tools/cksum -f -w -x -l 0x8000 >$@
+	cp	$@ ../bin
+
 # Standalone programs
 %.sys:
 	$(MAKE) -C rmac $@
@@ -134,5 +139,7 @@ ship: rmac/vflash.sys $(ROMS) ../doc/H8-Monitor-2.pdf
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8mon2z180-v$(VERN).rom
 	rsync -uvW h8nmon2z180.rom \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h8nmon2z180-v$(VERN).rom
+	rsync -uvW h89mon2.rom \
+		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/h89mon2-v$(VERN).rom
 	rsync -uvW x.htaccess \
 		durgadas.com:/var/www/html/sebhc/mms89/h8mon2/.htaccess
