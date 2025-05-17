@@ -1,0 +1,396 @@
+                ; A util to set time/date into the DS1302 RTC.
+                ; Prompts for a time/date string, and parses it and sets RTC
+                
+                	maclib	core
+                	maclib	z80
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0009 =         TAB	equ	9
+ 0008 =         BS	equ	8
+ 0007 =         BEL	equ	7
+ 0003 =         CTLC	equ	3
+                
+ 0080 =         rtc	equ	080h	; bit-bang port address
+ 0008 =         ds$clk	equ	00001000b
+ 0004 =         ds$ce	equ	00000100b
+ 0010 =         ds$wd	equ	00010000b
+ 0020 =         ds$wen	equ	00100000b
+                
+ 2280 =         linbuf	equ	2280h
+                
+                	cseg
+                
+ 0000 C30300    	jmp	start
+                
+                	dseg
+ 0000 4453313330signon:	db	'DS1302 Set Time',CR,LF
+ 0011 4375727265	db	'Current time: ',0
+ 0020 4E65772074newtime: db	'New time: ',0
+ 002B 0D0A456E74enter:	db	CR,LF,'Enter MM/DD/YY HH:MM:SS (24-hour)',CR,LF
+ 0050 3E2000    	db	'> ',0
+ 0053 54696D6520noset:	db	'Time not set',CR,LF,0
+ 0062 2028524554setmsg:	db	' (RETURN to set): ',0
+ 0075 4453313330setto:	db	'DS1302 set to ',0
+                
+                time:	; buffer for burst-mode DS1302 RTC data
+ 0084 00        sec:	db	0	; bit7 = CH
+ 0085 00        min:	db	0
+ 0086 00        hrs:	db	0	; bit7 = 12/24
+ 0087 00        dom:	db	0
+ 0088 00        mon:	db	0
+ 0089 00        dow:	db	0
+ 008A 00        yrs:	db	0
+ 0007 =         timez	equ	$-time
+                ;prt:	db	0	; bit7 = prot
+                
+ 008B           	ds	64
+ 00CB           stack:	ds	0
+                
+ 00CB 00        ds$ctl:	db	0
+                
+                	cseg
+                start:
+ 0003 31CB00    	lxi	sp,stack
+ 0006 CDB201    	call	dsend	; initialzes ctl port to idle state
+ 0009 210000    	lxi	h,signon
+ 000C CD4400    	call	msgout
+ 000F CDF601    	call	gettime
+ 0012 CD7A00    	call	show
+ 0015 212B00    	lxi	h,enter
+ 0018 CD4400    	call	msgout
+                
+ 001B 218022    	lxi	h,linbuf
+ 001E CDBD00    	call	linin
+                	jrc	quit
+ 0021+3833      	DB	38H,QUIT-$-1
+ 0023 218022    	lxi	h,linbuf
+ 0026 CDFC00    	call	parse
+                	jrc	error
+ 0029+382B      	DB	38H,ERROR-$-1
+ 002B 212000    	lxi	h,newtime
+ 002E CD4400    	call	msgout
+ 0031 CD7A00    	call	show
+ 0034 216200    	lxi	h,setmsg
+ 0037 CD4400    	call	msgout
+ 003A 218022    	lxi	h,linbuf
+ 003D CDBD00    	call	linin
+                	jrc	quit
+ 0040+3814      	DB	38H,QUIT-$-1
+ 0042 CDCD01    	call	settime
+ 0045 217500    	lxi	h,setto
+ 0048 CD4400    	call	msgout
+ 004B CDF601    	call	gettime
+ 004E CD7A00    	call	show
+ 0051 CD1B00    	call	crlf
+                	jr	exit
+ 0054+1806      	DB	18H,EXIT-$-1
+                
+                error:	; TODO...
+ 0056 215300    quit:	lxi	h,noset
+ 0059 CD4400    	call	msgout
+ 005C 2A1E00    exit:	lhld	retmon
+ 005F E9        	pchl
+                
+                chrout:	liyd	conout
+ 0060+FD2A      	DB	0FDH,2AH
+ 0062+2600      	DW	CONOUT
+                	pciy
+ 0064+FDE9      	DB	0FDH,0E9H
+                
+ 0066 F5        hexout:	push	psw
+ 0067 07        	rlc
+ 0068 07        	rlc
+ 0069 07        	rlc
+ 006A 07        	rlc
+ 006B CD6F00    	call	hexdig
+ 006E F1        	pop	psw
+ 006F E60F      hexdig:	ani	0fh
+ 0071 C690      	adi	90h
+ 0073 27        	daa
+ 0074 CE40      	aci	40h
+ 0076 27        	daa
+ 0077 C36000    	jmp	chrout
+                
+                ; MM/DD/YY HH:MM:SS
+ 007A 3A8800    show:	lda	mon
+ 007D CD6600    	call	hexout
+ 0080 3E2F      	mvi	a,'/'
+ 0082 CD6000    	call	chrout
+ 0085 3A8700    	lda	dom
+ 0088 CD6600    	call	hexout
+ 008B 3E2F      	mvi	a,'/'
+ 008D CD6000    	call	chrout
+ 0090 3A8A00    	lda	yrs
+ 0093 CD6600    	call	hexout
+ 0096 3E20      	mvi	a,' '
+ 0098 CD6000    	call	chrout
+ 009B 3A8600    	lda	hrs
+ 009E CD6600    	call	hexout
+ 00A1 3E3A      	mvi	a,':'
+ 00A3 CD6000    	call	chrout
+ 00A6 3A8500    	lda	min
+ 00A9 CD6600    	call	hexout
+ 00AC 3E3A      	mvi	a,':'
+ 00AE CD6000    	call	chrout
+ 00B1 3A8400    	lda	sec
+ 00B4 CD6600    	call	hexout
+ 00B7 C9        	ret
+                
+ 00B8 3600      linix:	mvi	m,0	; terminate buffer
+ 00BA C31B00    	jmp	crlf
+                
+                ; input a filename from console, allow backspace
+                ; HL=buffer
+                ; returns C=num chars, buffer NUL terminated
+                linin:
+ 00BD 0E00      	mvi	c,0	; count chars
+ 00BF CD4A00    lini0	call	conin
+ 00C2 FE0D      	cpi	CR
+                	jrz	linix
+ 00C4+28F2      	DB	28H,LINIX-$-1
+ 00C6 FE03      	cpi	CTLC	; cancel
+ 00C8 37        	stc
+ 00C9 C8        	rz
+ 00CA FE08      	cpi	BS
+                	jrz	backup
+ 00CC+2817      	DB	28H,BACKUP-$-1
+ 00CE FE20      	cpi	' '
+                	jrc	chrnak
+ 00D0+380C      	DB	38H,CHRNAK-$-1
+ 00D2 FE7F      	cpi	'~'+1
+                	jrnc	chrnak
+ 00D4+3008      	DB	30H,CHRNAK-$-1
+ 00D6 77        chrok:	mov	m,a
+ 00D7 23        	inx	h
+ 00D8 0C        	inr	c
+ 00D9 CD6000    	call	chrout	; echo
+                	; TODO: detect overflow...
+                	jr	lini0
+ 00DC+18E1      	DB	18H,LINI0-$-1
+ 00DE 3E07      chrnak:	mvi	a,BEL
+ 00E0 CD6000    	call	chrout
+                	jr	lini0
+ 00E3+18DA      	DB	18H,LINI0-$-1
+                backup:
+ 00E5 79        	mov	a,c
+ 00E6 B7        	ora	a
+                	jrz	lini0
+ 00E7+28D6      	DB	28H,LINI0-$-1
+ 00E9 0D        	dcr	c
+ 00EA 2B        	dcx	h
+ 00EB 3E08      	mvi	a,BS
+ 00ED CD6000    	call	chrout
+ 00F0 3E20      	mvi	a,' '
+ 00F2 CD6000    	call	chrout
+ 00F5 3E08      	mvi	a,BS
+ 00F7 CD6000    	call	chrout
+                	jr	lini0
+ 00FA+18C3      	DB	18H,LINI0-$-1
+                
+                ; TODO: support reorder/partials?
+                ; HL="MM/DD/YY HH:MM:SS"
+                parse:
+                	; TODO: skip blanks
+ 00FC CD4B01    	call	parsnm	; month
+ 00FF 7E        	mov	a,m
+ 0100 FE2F      	cpi	'/'
+ 0102 37        	stc
+ 0103 C0        	rnz
+ 0104 23        	inx	h
+ 0105 79        	mov	a,c
+ 0106 328800    	sta	mon
+ 0109 CD4B01    	call	parsnm	; day of month
+ 010C 7E        	mov	a,m
+ 010D FE2F      	cpi	'/'
+ 010F 37        	stc
+ 0110 C0        	rnz
+ 0111 23        	inx	h
+ 0112 79        	mov	a,c
+ 0113 328700    	sta	dom
+ 0116 CD4B01    	call	parsnm	; year of century
+ 0119 7E        	mov	a,m
+ 011A FE20      	cpi	' '	; or NUL?
+ 011C 37        	stc
+ 011D C0        	rnz
+ 011E 23        	inx	h
+ 011F 79        	mov	a,c
+ 0120 328A00    	sta	yrs
+ 0123 CD4B01    	call	parsnm	; hour (24-hour)
+ 0126 7E        	mov	a,m
+ 0127 FE3A      	cpi	':'
+ 0129 37        	stc
+ 012A C0        	rnz
+ 012B 23        	inx	h
+ 012C 328600    	sta	hrs
+ 012F CD4B01    	call	parsnm	; minutes
+ 0132 7E        	mov	a,m
+ 0133 FE3A      	cpi	':'	; seconds optional?
+ 0135 37        	stc
+ 0136 C0        	rnz
+ 0137 23        	inx	h
+ 0138 79        	mov	a,c
+ 0139 328500    	sta	min
+ 013C CD4B01    	call	parsnm	; seconds
+ 013F 7E        	mov	a,m
+ 0140 FE00      	cpi	0	; blanks? others?
+ 0142 37        	stc
+ 0143 C0        	rnz
+ 0144 23        	inx	h
+ 0145 79        	mov	a,c
+ 0146 328400    	sta	sec
+ 0149 AF        	xra	a
+ 014A C9        	ret
+                
+                ; parse (up to) two digits, return C = BCD number
+                ; HL=input string
+                ; returns HL at next char
+ 014B CD5601    parsnm:	call	pnm
+ 014E 78        	mov	a,b
+ 014F 07        	rlc
+ 0150 07        	rlc
+ 0151 07        	rlc
+ 0152 07        	rlc
+ 0153 B1        	ora	c
+ 0154 4F        	mov	c,a
+ 0155 C9        	ret
+                
+                ; parse (up to) two digits, return B=10's, C=1's
+                ; HL=input string
+                ; returns HL at next char
+                pnm:
+ 0156 010000    	lxi	b,0
+ 0159 7E        	mov	a,m
+ 015A D630      	sui	'0'
+ 015C D8        	rc
+ 015D FE0A      	cpi	10
+ 015F 3F        	cmc
+ 0160 D8        	rc
+ 0161 23        	inx	h
+ 0162 4F        	mov	c,a
+ 0163 7E        	mov	a,m
+ 0164 D630      	sui	'0'
+ 0166 D8        	rc
+ 0167 FE0A      	cpi	10
+ 0169 3F        	cmc
+ 016A D8        	rc
+ 016B 23        	inx	h
+ 016C 41        	mov	b,c
+ 016D 4F        	mov	c,a
+ 016E C9        	ret
+                
+                ; DS1302 routines, using NC-89 ports
+                ; "in rtc" reads SDA on D0
+                ; "out rtc" ... bit bang...
+                
+                ; get a byte from DS1302. Assumes read command already sent.
+                ; return byte in E, rtc ctrl port same state as entry (ds$clk high)
+                dsget:
+ 016F 1E00      	mvi	e,0
+ 0171 0608      	mvi	b,8
+ 0173 3ACB00    	lda	ds$ctl
+ 0176 F620      	ori	ds$wen	; disable write
+                dsg1:
+ 0178 E6F7      	ani	not ds$clk	; clock low
+ 017A D380      	out	rtc
+ 017C 00        	nop		; delay >= 250nS
+ 017D F5        	push	psw
+ 017E DB80      	in	rtc		; read data line
+ 0180 1F        	rar
+                	rarr	e
+ 0181+CB1B      	DB	0CBH, 18H + E
+ 0183 F1        	pop	psw
+ 0184 F608      	ori	ds$clk
+ 0186 D380      	out	rtc
+ 0188 00        	nop		; delay >= 250nS
+                	djnz	dsg1
+ 0189+10ED      	DB	10H,DSG1-$-1
+ 018B 32CB00    	sta	ds$ctl
+ 018E C9        	ret
+                
+                ; output byte in E (destructive)
+                dsput:
+ 018F 0608      	mvi	b,8
+ 0191 3ACB00    	lda	ds$ctl
+ 0194 E6DF      	ani	not ds$wen	; /WE active
+                dsp1:
+ 0196 E6F7      	ani	not ds$clk	; clock low
+ 0198 D380      	out	rtc
+ 019A 00        	nop		; delay >= 250nS
+                	rarr	e
+ 019B+CB1B      	DB	0CBH, 18H + E
+                	jrnc	dsp2
+ 019D+3004      	DB	30H,DSP2-$-1
+ 019F F610      	ori	ds$wd
+                	jr	dsp3
+ 01A1+1802      	DB	18H,DSP3-$-1
+ 01A3 E6EF      dsp2:	ani	not ds$wd
+ 01A5 D380      dsp3:	out	rtc
+ 01A7 F608      	ori	ds$clk		; clock high
+ 01A9 D380      	out	rtc
+ 01AB 00        	nop		; delay >= 250nS
+                	djnz	dsp1
+ 01AC+10E8      	DB	10H,DSP1-$-1
+ 01AE 32CB00    	sta	ds$ctl	; leave clk high, /WE asserted, data = ?
+ 01B1 C9        	ret
+                
+                dsend:
+ 01B2 3E20      	mvi	a,ds$wen
+ 01B4 D380      	out	rtc
+ 01B6 32CB00    	sta	ds$ctl
+ 01B9 C9        	ret
+                
+                ; command byte in E (destroyed)
+                dscmd:
+ 01BA CDB201    	call	dsend	; force idle
+ 01BD 00        	nop	; delay >= 1uS
+ 01BE 00        	nop
+ 01BF 00        	nop
+ 01C0 00        	nop
+ 01C1 F604      	ori	ds$ce
+ 01C3 D380      	out	rtc
+ 01C5 00        	nop	; delay >= 1uS
+ 01C6 00        	nop
+ 01C7 00        	nop
+ 01C8 00        	nop
+ 01C9 CD8F01    	call	dsput
+ 01CC C9        	ret
+                
+                settime:
+ 01CD 1E8E      	mvi	e,10001110b	; write ctrl reg (disable prot)
+ 01CF CDBA01    	call	dscmd
+ 01D2 1E00      	mvi	e,0		; unprotect
+ 01D4 CD8F01    	call	dsput
+ 01D7 CDB201    	call	dsend
+ 01DA 1EBE      	mvi	e,10111110b	; burst write clock
+ 01DC CDBA01    	call	dscmd
+ 01DF 218400    	lxi	h,time
+ 01E2 0607      	mvi	b,timez
+ 01E4 C5        st1:	push	b
+ 01E5 5E        	mov	e,m
+ 01E6 CD8F01    	call	dsput
+ 01E9 23        	inx	h
+ 01EA C1        	pop	b
+                	djnz	st1
+ 01EB+10F7      	DB	10H,ST1-$-1
+ 01ED 1E80      	mvi	e,80h		; protect
+ 01EF CD8F01    	call	dsput
+ 01F2 C3B201    	jmp	dsend
+ 01F5 C9        	ret
+                
+                gettime:
+ 01F6 1EBF      	mvi	e,10111111b	; burst read clock
+ 01F8 CDBA01    	call	dscmd
+ 01FB 218400    	lxi	h,time
+ 01FE 0607      	mvi	b,timez
+ 0200 C5        gt1:	push	b
+ 0201 CD6F01    	call	dsget
+ 0204 73        	mov	m,e
+ 0205 23        	inx	h
+ 0206 C1        	pop	b
+                	djnz	gt1
+ 0207+10F7      	DB	10H,GT1-$-1
+ 0209 C3B201    	jmp	dsend
+                
+ 020C           	end
+
