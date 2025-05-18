@@ -1,0 +1,134 @@
+                ; Standalone utility to clear most of H8-512K
+                
+                	maclib	core
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0008 =         BS	equ	8
+                
+                ; H8x512K MMU constants - Z80 only
+ 0000 =         mmu	equ	0	; base port
+ 0000 =         rd	equ	0
+ 0004 =         wr	equ	4
+ 0000 =         pg0k	equ	0
+ 0001 =         pg16k	equ	1
+ 0002 =         pg32k	equ	2
+ 0003 =         pg48k	equ	3
+ 0080 =         ena	equ	80h
+ 0000 =         rd00k	equ	mmu+rd+pg0k
+ 0001 =         rd16k	equ	mmu+rd+pg16k
+ 0002 =         rd32k	equ	mmu+rd+pg32k
+ 0003 =         rd48k	equ	mmu+rd+pg48k
+ 0004 =         wr00k	equ	mmu+wr+pg0k
+ 0005 =         wr16k	equ	mmu+wr+pg16k
+ 0006 =         wr32k	equ	mmu+wr+pg32k
+ 0007 =         wr48k	equ	mmu+wr+pg48k
+                
+                ; e.g. org 3000h...
+                	cseg
+                begin:
+ 0000 CDCC00    	call	cpu$type
+ 0003 DA7800    	jc	error
+ 0006 F3        	di
+ 0007 312601    	lxi	sp,stack
+ 000A CDB400    	call	mmu$init
+                	; skip clearing first 16K - we're using it.
+ 000D 3E01      	mvi	a,1
+ 000F 32E500    	sta	pg
+ 0012 3AE500    loop:	lda	pg
+ 0015 CD9E00    	call	memclr
+ 0018 CD8600    	call	progress
+ 001B 3AE500    	lda	pg
+ 001E 3C        	inr	a
+ 001F 32E500    	sta	pg
+ 0022 FE20      	cpi	32
+ 0024 DA1200    	jc	loop
+ 0027 213200    	lxi	h,msg
+ 002A CD4400    	call	msgout
+ 002D F3        	di	; just to be sure
+ 002E 76        	hlt
+ 002F C32F00    	jmp	$
+                
+ 0032 0D0A4D656Dmsg:	db	CR,LF,'Memory cleared. Press RESET',0
+ 0050 0D0A556E73err:	db	CR,LF,'Unsupported CPU/RAM (Z180/MMU)',CR,LF,0
+ 0073 00        spinx:	db	0
+ 0074 2D5C7C2F  spin:	db	'-\|/'
+                
+ 0078 215000    error:	lxi	h,err
+ 007B CD4400    	call	msgout
+ 007E 2A1E00    	lhld	retmon
+ 0081 E9        	pchl
+                
+ 0082 2A2600    chrout:	lhld	conout
+ 0085 E9        	pchl
+                
+                progress:
+ 0086 217300    	lxi	h,spinx
+ 0089 34        	inr	m
+ 008A 7E        	mov	a,m
+ 008B E603      	ani	011b
+ 008D 4F        	mov	c,a
+ 008E 0600      	mvi	b,0
+ 0090 217400    	lxi	h,spin
+ 0093 09        	dad	b
+ 0094 7E        	mov	a,m
+ 0095 CD8200    	call	chrout
+ 0098 3E08      	mvi	a,BS
+ 009A CD8200    	call	chrout
+ 009D C9        	ret
+                
+                memclr:	
+ 009E F680      	ori	ena
+ 00A0 D301      	out	rd16k
+ 00A2 D305      	out	wr16k
+ 00A4 210040    	lxi	h,4000h
+ 00A7 010040    	lxi	b,16*1024
+ 00AA 3600      mc0:	mvi	m,0
+ 00AC 23        	inx	h
+ 00AD 0B        	dcx	b
+ 00AE 78        	mov	a,b
+ 00AF B1        	ora	c
+ 00B0 C2AA00    	jnz	mc0
+ 00B3 C9        	ret
+                
+                ; Create "unity" page mapping, enable MMU
+                mmu$init:
+ 00B4 3E00      	mvi	a,0	; page 0
+ 00B6 D300      	out	rd00k
+ 00B8 D304      	out	wr00k
+ 00BA 3C        	inr	a
+ 00BB D301      	out	rd16k
+ 00BD D305      	out	wr16k
+ 00BF 3C        	inr	a
+ 00C0 D302      	out	rd32k
+ 00C2 D306      	out	wr32k
+ 00C4 3C        	inr	a
+ 00C5 F680      	ori	ena
+ 00C7 D303      	out	rd48k
+ 00C9 D307      	out	wr48k
+ 00CB C9        	ret
+                
+                cpu$type:
+ 00CC 3E02      	mvi	a,2
+ 00CE 3C        	inr	a
+ 00CF EADB00    	jpe	intel
+ 00D2 3E01      	mvi	a,1
+ 00D4 ED4C      	db	0edh,04ch	; mlt b	; a.k.a. alt NEG on Z80
+ 00D6 D6FF      	sui	0ffh
+ 00D8 C8        	rz	; NC, 00 = Z80
+ 00D9 37        	stc		; CY: Z180
+ 00DA C9        	ret
+ 00DB 210100    intel:	lxi	h,1
+ 00DE 10        	db	10h	; ARHL or *NOP
+ 00DF 7C        	mov	a,h
+ 00E0 B5        	ora	l
+ 00E1 C0        	rnz		; NC, 01 = i8080
+ 00E2 F602      	ori	2	; NC, 02 = i8085
+ 00E4 C9        	ret
+                
+ 00E5 00        pg:	db	0
+ 00E6           	ds	64
+ 0126           stack:	ds	0
+                
+ 0126           	end
+

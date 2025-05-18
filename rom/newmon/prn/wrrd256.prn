@@ -1,0 +1,672 @@
+                ; Stand-alone program to read entire range by two sectors
+                
+                	maclib	core
+                	maclib	z80
+                	aseg
+                	maclib	setup
+                	maclib	ram
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+ 0008 =         BS	equ	8
+ 0003 =         CTLC	equ	3
+ 007F =         DEL	equ	127
+                
+ 0100 =         SSZ	equ	256	; default sector size, must match the device
+                
+                	cseg
+                ; get Z67 port...
+                init:
+ 0000 F3        	di
+ 0001 31BB04    	lxi	sp,stack
+ 0004 3A0BF9    	lda	susave+h67pt
+ 0007 FEFF      	cpi	0ffh
+                	jrnz	init1
+ 0009+2008      	DB	20H,INIT1-$-1
+ 000B 0E02      	mvi	c,10b
+ 000D CD0400    	call	getport	; no return on error
+                	jrnz	init0	; not fatal, if caller gets port later
+ 0010+2004      	DB	20H,INIT0-$-1
+ 0012 78        	mov	a,b
+ 0013 322204    init1:	sta	cport
+ 0016 AF        init0:	xra	a	; NC
+                	; ensure 2mS clock is enabled
+ 0017 CDC700    	call	ena2ms
+ 001A FB        	ei
+ 001B CDD002    	call	chkarg
+                
+ 001E CD1E03    	call	getok	; make sure user wants to do this...
+ 0021 DAC000    	jc	exit
+                
+                ; Now read 2 sectors into buffer...
+                boot:
+ 0024 212504    	lxi	h,tur
+ 0027 CD1D01    	call	sasi$cmd
+ 002A DAB701    	jc	sserr0	; no retries(?)
+ 002D 212B04    	lxi	h,recal
+ 0030 CD1D01    	call	sasi$cmd
+ 0033 DAC001    	jc	sserr1
+ 0036 210000    	lxi	h,0
+ 0039 222304    	shld	count
+                loop:
+ 003C CD8700    	call	progress
+ 003F CDD401    	call	fill
+ 0042 CD0701    	call	sasi$wr
+ 0045 DAC501    	jc	sserr2
+ 0048 3EFF      	mvi	a,0ffh
+ 004A 32BB04    	sta	buffer	; "poison" buffer contents
+ 004D CD1301    	call	sasi$rd
+ 0050 DAC501    	jc	sserr2
+ 0053 CDEC01    	call	check
+                	jrz	loop0
+ 0056+280F      	DB	28H,LOOP0-$-1
+                	; error... count it...
+ 0058 3E0D      	mvi	a,CR
+ 005A CD7602    	call	chrout
+ 005D 2A2304    	lhld	count
+ 0060 23        	inx	h
+ 0061 222304    	shld	count
+ 0064 CD7C02    	call	decwrd
+                	; let progress "spinner" appear imm. after
+                loop0:
+ 0067 3A2104    	lda	seed
+ 006A C601      	adi	1
+ 006C 27        	daa
+ 006D 322104    	sta	seed
+ 0070 CDB702    	call	nxtblk
+ 0073 DBED      	in	0edh	; check for key pressed...
+ 0075 E601      	ani	00000001b
+                	jrz	loop
+ 0077+28C3      	DB	28H,LOOP-$-1
+ 0079 DBE8      	in	0e8h
+ 007B E67F      	ani	01111111b
+ 007D FE03      	cpi	CTLC
+                	jrz	quit
+ 007F+2822      	DB	28H,QUIT-$-1
+ 0081 FE7F      	cpi	DEL
+                	jrz	quit
+ 0083+281E      	DB	28H,QUIT-$-1
+                	jr	loop
+ 0085+18B5      	DB	18H,LOOP-$-1
+                
+                progress:
+ 0087 219E00    	lxi	h,spinx
+ 008A 34        	inr	m
+ 008B 7E        	mov	a,m
+ 008C E603      	ani	00000011b
+ 008E 4F        	mov	c,a
+ 008F 0600      	mvi	b,0
+ 0091 219F00    	lxi	h,spin
+ 0094 09        	dad	b
+ 0095 7E        	mov	a,m
+ 0096 CD7602    	call	chrout
+ 0099 3E08      	mvi	a,BS
+ 009B C37602    	jmp	chrout
+                
+ 009E 00        spinx:	db	0
+ 009F 2D5C7C2F  spin:	db	'-\|/'
+                
+                quit:
+ 00A3 CD1B00    	call	crlf
+ 00A6 211304    	lxi	h,lstmsg
+ 00A9 CD4400    	call	msgout
+ 00AC 213104    	lxi	h,read16
+ 00AF 0606      	mvi	b,6
+ 00B1 CD3F02    	call	dh0
+ 00B4 CD1B00    	call	crlf
+                
+                ; Now dump data...
+ 00B7 21BB04    	lxi	h,buffer
+ 00BA 110002    	lxi	d,512
+ 00BD CD0602    	call	dump
+                ; Done.
+                exit:
+                	; more cleanup?
+ 00C0 CDEB00    	call	dis2ms
+ 00C3 2A1E00    	lhld	retmon
+ 00C6 E9        	pchl
+                
+                ; Turn on 2mS clock intrs, interrupts already disabled
+ 00C7 3AD503    ena2ms:	lda	nofp
+ 00CA B7        	ora	a
+                	jrnz	nfp2ms	; H89 and/or extended H8-Z80 boards
+ 00CB+200D      	DB	20H,NFP2MS-$-1
+ 00CD 210920    	lxi	h,ctl$F0
+ 00D0 7E        	mov	a,m
+ 00D1 32D603    	sta	sav$F0
+ 00D4 F640      	ori	01000000b	; 2mS ON
+ 00D6 77        	mov	m,a
+ 00D7 D3F0      	out	0f0h
+ 00D9 C9        	ret
+ 00DA 213620    nfp2ms:	lxi	h,ctl$F2
+ 00DD 7E        	mov	a,m
+ 00DE 32D703    	sta	sav$F2
+ 00E1 F602      	ori	00000010b	; 2mS ON
+ 00E3 77        	mov	m,a
+ 00E4 D3F2      	out	0f2h
+ 00E6 E602      	ani	00000010b	; unlock enable
+ 00E8 D3F3      	out	0f3h		; special Z80 board extension
+ 00EA C9        	ret
+                
+ 00EB 3AD503    dis2ms:	lda	nofp
+ 00EE B7        	ora	a
+                	jrnz	nfp0ms
+ 00EF+2009      	DB	20H,NFP0MS-$-1
+ 00F1 3AD603    	lda	sav$F0
+ 00F4 320920    	sta	ctl$F0
+ 00F7 D3F0      	out	0f0h
+ 00F9 C9        	ret
+ 00FA 3AD703    nfp0ms:	lda	sav$F2
+ 00FD 323620    	sta	ctl$F2
+ 0100 D3F2      	out	0f2h
+ 0102 E602      	ani	00000010b	; unlock enable
+ 0104 D3F3      	out	0f3h		; special Z80 board extension
+ 0106 C9        	ret
+                
+                sasi$wr:
+ 0107 3EA3      	mvi	a,0a3h	; OUTI
+ 0109 328801    	sta	fixcmd+1
+ 010C 213104    	lxi	h,read16
+ 010F 360A      	mvi	m,0ah	; WRITE16 command
+                	jr	sasi$cmd
+ 0111+180A      	DB	18H,SASI$CMD-$-1
+                
+                sasi$rd:
+ 0113 3EA2      	mvi	a,0a2h	; INI
+ 0115 328801    	sta	fixcmd+1
+ 0118 213104    	lxi	h,read16
+ 011B 3608      	mvi	m,08h	; READ16 command
+                ;	jr	sasi$cmd
+                
+                ; send SASI read command, get results
+                ; HL=cmd buffer
+                sasi$cmd:
+ 011D 223704    	shld	cmdptr
+ 0120 3A2204    	lda	cport
+ 0123 3C        	inr	a
+ 0124 4F        	mov	c,a
+ 0125 AF        	xra	a
+                	outp	a
+ 0126+ED79      	DB	0EDH,A*8+41H
+                
+ 0128 1600      	mvi	d,0	; controller number
+ 012A 3E04      	mvi	a,4	; delay 8mS, also NZ
+ 012C B7        	ora	a
+                bsasi0:
+ 012D CD2B00    	call	delay
+ 0130 F3        	di
+ 0131 0600      	mvi	b,0	; wait for "not BUSY" first
+ 0133 1E06      	mvi	e,6	;
+ 0135 210000    	lxi	h,0	; 0x060000 loop/timeout count
+                sscmd0:
+                	inp	a
+ 0138+ED78      	DB	0EDH,A*8+40H
+ 013A E608      	ani	00001000b
+ 013C B8        	cmp	b
+                	jrz	sscmd1
+ 013D+280A      	DB	28H,SSCMD1-$-1
+ 013F 2B        	dcx	h
+ 0140 7D        	mov	a,l
+ 0141 B4        	ora	h
+                	jrnz	sscmd0
+ 0142+20F4      	DB	20H,SSCMD0-$-1
+ 0144 1D        	dcr	e
+                	jrnz	sscmd0
+ 0145+20F1      	DB	20H,SSCMD0-$-1
+ 0147 37        	stc
+ 0148 C9        	ret
+                sscmd1:
+ 0149 78        	mov	a,b
+ 014A EE08      	xri	00001000b	; wait for BUSY
+                	jrz	sscmd2		; got BUSY...
+ 014C+2810      	DB	28H,SSCMD2-$-1
+ 014E 47        	mov	b,a
+ 014F 0D        	dcr	c
+ 0150 AF        	xra	a
+                	outp	a
+ 0151+ED79      	DB	0EDH,A*8+41H
+ 0153 0C        	inr	c
+ 0154 0C        	inr	c
+                	outp	d	; controller number
+ 0155+ED51      	DB	0EDH,D*8+41H
+ 0157 0D        	dcr	c
+ 0158 3E40      	mvi	a,040h	; SELECT
+                	outp	a
+ 015A+ED79      	DB	0EDH,A*8+41H
+                	jr	sscmd0	; wait for BUSY now...
+ 015C+18DA      	DB	18H,SSCMD0-$-1
+                
+                sscmd2:
+ 015E 3E02      	mvi	a,002h	; enable INTR
+                	outp	a
+ 0160+ED79      	DB	0EDH,A*8+41H
+ 0162 2A3704    	lhld	cmdptr
+                sscmd3:
+                	inp	a
+ 0165+ED78      	DB	0EDH,A*8+40H
+                	bit	7,a	; REQ
+ 0167+CB7F      	DB	0CBH,7*8+A+40H
+                	jrz	sscmd3
+ 0169+28FA      	DB	28H,SSCMD3-$-1
+                	bit	4,a	; CMD
+ 016B+CB67      	DB	0CBH,4*8+A+40H
+                	jrz	sscmd4
+ 016D+280A      	DB	28H,SSCMD4-$-1
+                	bit	6,a	; MSG
+ 016F+CB77      	DB	0CBH,6*8+A+40H
+                	jrz	sscmd6
+ 0171+2819      	DB	28H,SSCMD6-$-1
+ 0173 0D        	dcr	c
+                	outi		; output command byte
+ 0174+EDA3      	DB	0EDH,0A3H
+ 0176 0C        	inr	c
+                	jr	sscmd3
+ 0177+18EC      	DB	18H,SSCMD3-$-1
+                
+                sscmd4:
+ 0179 21BB04    	lxi	h,buffer
+                sscmd5:
+                	inp	a
+ 017C+ED78      	DB	0EDH,A*8+40H
+                	bit	7,a	; REQ
+ 017E+CB7F      	DB	0CBH,7*8+A+40H
+                	jrz	sscmd5
+ 0180+28FA      	DB	28H,SSCMD5-$-1
+                	bit	4,a	; CMD - indicates data done
+ 0182+CB67      	DB	0CBH,4*8+A+40H
+                	jrnz	sscmd6
+ 0184+2006      	DB	20H,SSCMD6-$-1
+ 0186 0D        	dcr	c
+                fixcmd:	ini		; input/output data byte
+ 0187+EDA2      	DB	0EDH,0A2H
+ 0189 0C        	inr	c
+                	jr	sscmd5
+ 018A+18F0      	DB	18H,SSCMD5-$-1
+                sscmd6:
+                	inp	a
+ 018C+ED78      	DB	0EDH,A*8+40H
+ 018E E6D0      	ani	0d0h	; REQ, OUT, CMD
+ 0190 FE90      	cpi	090h	; must be REQ, CMD
+                	jrnz	sscmd6	; wait for it...
+ 0192+20F8      	DB	20H,SSCMD6-$-1
+ 0194 0D        	dcr	c
+                	inp	l	; result 0
+ 0195+ED68      	DB	0EDH,L*8+40H
+ 0197 0C        	inr	c
+                sscmd7:
+                	inp	h	; status
+ 0198+ED60      	DB	0EDH,H*8+40H
+ 019A 7C        	mov	a,h
+ 019B E6E0      	ani	0e0h	; REG, OUT, MSG
+ 019D FEA0      	cpi	0a0h	; must be REQ, MSG
+                	jrnz	sscmd7
+ 019F+20F7      	DB	20H,SSCMD7-$-1
+ 01A1 223904    	shld	resbuf	; command results
+ 01A4 0D        	dcr	c
+                	inp	a	; last data byte
+ 01A5+ED78      	DB	0EDH,A*8+40H
+ 01A7 0C        	inr	c
+ 01A8 FB        	ei
+ 01A9 B7        	ora	a
+ 01AA 37        	stc
+ 01AB C0        	rnz		; error
+                	bit	0,l	; SASI error bit
+ 01AC+CB45      	DB	0CBH,0*8+L+40H
+ 01AE C0        	rnz
+                	bit	1,l	; or other error?
+ 01AF+CB4D      	DB	0CBH,1*8+L+40H
+ 01B1 C0        	rnz
+                	bit	1,h	; ACK
+ 01B2+CB4C      	DB	0CBH,1*8+H+40H
+ 01B4 C0        	rnz
+ 01B5 AF        	xra	a	; success
+ 01B6 C9        	ret
+                
+ 01B7 21D803    sserr0:	lxi	h,err0
+ 01BA CD4400    sserrs:	call	msgout
+ 01BD C3C000    	jmp	exit
+                
+ 01C0 21E703    sserr1:	lxi	h,err1
+                	jr	sserrs
+ 01C3+18F5      	DB	18H,SSERRS-$-1
+                
+ 01C5 3A3104    sserr2:	lda	read16
+ 01C8 E602      	ani	00000010b	; "1" if WRITE
+ 01CA 21F603    	lxi	h,err2r
+                	jrz	sserrs
+ 01CD+28EB      	DB	28H,SSERRS-$-1
+ 01CF 210404    	lxi	h,err2w
+                	jr	sserrs
+ 01D2+18E6      	DB	18H,SSERRS-$-1
+                
+                ; Fill 'buffer' with pattern for 'seed'
+ 01D4 21BB04    fill:	lxi	h,buffer
+ 01D7 010002    	lxi	b,512
+ 01DA 3A2104    	lda	seed
+ 01DD F5        	push	psw
+ 01DE F1        fil0:	pop	psw
+ 01DF 77        	mov	m,a
+ 01E0 C601      	adi	1
+ 01E2 27        	daa
+ 01E3 F5        	push	psw
+ 01E4 23        	inx	h
+ 01E5 0B        	dcx	b
+ 01E6 78        	mov	a,b
+ 01E7 B1        	ora	c
+                	jrnz	fil0
+ 01E8+20F4      	DB	20H,FIL0-$-1
+ 01EA F1        	pop	psw
+ 01EB C9        	ret
+                
+                ; Verify that 'buffer' contains pattern for 'seed'
+                ; Returns NZ if failed verification
+ 01EC 21BB04    check:	lxi	h,buffer
+ 01EF 010002    	lxi	b,512
+ 01F2 3A2104    	lda	seed
+ 01F5 F5        	push	psw
+ 01F6 F1        chk0:	pop	psw
+ 01F7 BE        	cmp	m
+ 01F8 C0        	rnz	; NZ - failed
+ 01F9 C601      	adi	1
+ 01FB 27        	daa
+ 01FC F5        	push	psw
+ 01FD 23        	inx	h
+ 01FE 0B        	dcx	b
+ 01FF 78        	mov	a,b
+ 0200 B1        	ora	c
+                	jrnz	chk0
+ 0201+20F3      	DB	20H,CHK0-$-1
+ 0203 F1        	pop	psw
+ 0204 AF        	xra	a
+ 0205 C9        	ret	; ZR
+                
+                ; HL=buffer, DE=length (multiple of 16)
+                dump:
+ 0206 CD1A02    	call	dmpline
+ 0209 CD1B00    	call	crlf
+ 020C 011000    	lxi	b,16
+ 020F 09        	dad	b
+ 0210 EB        	xchg
+ 0211 B7        	ora	a
+                	dsbc	b
+ 0212+ED42      	DB	0EDH,B*8+42H
+ 0214 EB        	xchg
+ 0215 7A        	mov	a,d
+ 0216 B3        	ora	e
+                	jrnz	dump
+ 0217+20ED      	DB	20H,DUMP-$-1
+ 0219 C9        	ret
+                
+                ; Dump 16 bytes at HL
+                dmpline:
+ 021A D5        	push	d
+ 021B E5        	push	h
+                	; yuk... need offset, not address...
+ 021C 11BB04    	lxi	d,buffer
+ 021F B7        	ora	a
+                	dsbc	d
+ 0220+ED52      	DB	0EDH,D*8+42H
+ 0222 CD6002    	call	hexwrd
+ 0225 3E3A      	mvi	a,':'
+ 0227 CD7602    	call	chrout
+                	; blank space provided by dmphex
+ 022A E1        	pop	h
+ 022B E5        	push	h
+ 022C CD3D02    	call	dmphex
+ 022F 21D003    	lxi	h,spcs
+ 0232 CD4400    	call	msgout
+ 0235 E1        	pop	h
+ 0236 E5        	push	h
+ 0237 CD4C02    	call	dmpchr
+ 023A E1        	pop	h
+ 023B D1        	pop	d
+ 023C C9        	ret
+                
+                dmphex:
+ 023D 0610      	mvi	b,16
+ 023F 3E20      dh0:	mvi	a,' '
+ 0241 CD7602    	call	chrout
+ 0244 7E        	mov	a,m
+ 0245 CD6502    	call	hexout
+ 0248 23        	inx	h
+                	djnz	dh0
+ 0249+10F4      	DB	10H,DH0-$-1
+ 024B C9        	ret
+                
+                dmpchr:
+ 024C 0610      	mvi	b,16
+ 024E 7E        dc0:	mov	a,m
+ 024F FE20      	cpi	' '
+                	jrc	dc1
+ 0251+3804      	DB	38H,DC1-$-1
+ 0253 FE7F      	cpi	'~'+1
+                	jrc	dc2
+ 0255+3802      	DB	38H,DC2-$-1
+ 0257 3E20      dc1:	mvi	a,' '
+ 0259 CD7602    dc2:	call	chrout
+ 025C 23        	inx	h
+                	djnz	dc0
+ 025D+10EF      	DB	10H,DC0-$-1
+ 025F C9        	ret
+                
+                ; HL=word
+ 0260 7C        hexwrd:	mov	a,h
+ 0261 CD6502    	call	hexout
+ 0264 7D        	mov	a,l
+ 0265 F5        hexout:	push	psw
+ 0266 07        	rlc
+ 0267 07        	rlc
+ 0268 07        	rlc
+ 0269 07        	rlc
+ 026A CD6E02    	call	hexdig
+ 026D F1        	pop	psw
+ 026E E60F      hexdig:	ani	0fh
+ 0270 C690      	adi	90h
+ 0272 27        	daa
+ 0273 CE40      	aci	40h
+ 0275 27        	daa
+                chrout:	lixd	conout
+ 0276+DD2A      	DB	0DDH,2AH
+ 0278+2600      	DW	CONOUT
+                	pcix
+ 027A+DDE9      	DB	0DDH,0E9H
+                
+                ; Print out HL in decimal
+                decwrd:
+ 027C 0E00      	mvi	c,0	; leading zero suppression
+ 027E 111027    	lxi	d,10000
+ 0281 CD9D02    	call	div16
+ 0284 11E803    	lxi	d,1000
+ 0287 CD9D02    	call	div16
+ 028A 116400    	lxi	d,100
+ 028D CD9D02    	call	div16
+ 0290 110A00    	lxi	d,10
+ 0293 CD9D02    	call	div16
+ 0296 7D        	mov	a,l
+ 0297 C630      	adi	'0'
+ 0299 CD7602    	call	chrout
+ 029C C9        	ret
+                
+ 029D 0600      div16:	mvi	b,0
+ 029F B7        dv0:	ora	a
+                	dsbc	d
+ 02A0+ED52      	DB	0EDH,D*8+42H
+ 02A2 04        	inr	b
+                	jrnc	dv0
+ 02A3+30FA      	DB	30H,DV0-$-1
+ 02A5 19        	dad	d
+ 02A6 05        	dcr	b
+                	jrnz	dv1
+ 02A7+2005      	DB	20H,DV1-$-1
+                	bit	0,c
+ 02A9+CB41      	DB	0CBH,0*8+C+40H
+                	jrnz	dv1
+ 02AB+2001      	DB	20H,DV1-$-1
+ 02AD C9        	ret
+                dv1:	setb	0,c
+ 02AE+CBC1      	DB	0CBH,0*8+C+0C0H
+ 02B0 3E30      	mvi	a,'0'
+ 02B2 80        	add	b
+ 02B3 CD7602    	call	chrout
+ 02B6 C9        	ret
+                
+                ; Advance LBA in 'read16' to next block (1 or two sectors).
+                nxtblk:
+ 02B7 213504    	lxi	h,read16+4	; "num secs" field: 1 or 2
+ 02BA 7E        	mov	a,m
+ 02BB 2B        	dcx	h
+ 02BC 86        	add	m
+ 02BD 77        	mov	m,a
+ 02BE 2B        	dcx	h
+ 02BF 3E00      	mvi	a,0
+ 02C1 8E        	adc	m
+ 02C2 77        	mov	m,a
+ 02C3 2B        	dcx	h	; now at LUN/hi-lba, must splice
+ 02C4 3E00      	mvi	a,0
+ 02C6 8E        	adc	m
+ 02C7 E61F      	ani	00011111b	; wrap back to 0
+ 02C9 4F        	mov	c,a
+ 02CA 7E        	mov	a,m
+ 02CB E6E0      	ani	11100000b	; get LUN
+ 02CD B1        	ora	c		; splice LUN into hi-lba
+ 02CE 77        	mov	m,a
+ 02CF C9        	ret
+                
+                ; Scan past ":wrrd256" to see if anything follows...
+                ; Valid args: '0' or '1' for LUN.
+                chkarg:
+ 02D0 CD0603    	call	chkssz
+ 02D3 218022    	lxi	h,2280h
+ 02D6 46        	mov	b,m
+ 02D7 23        	inx	h
+ 02D8 7E        ca0:	mov	a,m
+ 02D9 23        	inx	h
+ 02DA B7        	ora	a
+ 02DB C8        	rz
+ 02DC FE20      	cpi	' '
+                	jrz	ca1	; HL=next char after ' '
+ 02DE+2803      	DB	28H,CA1-$-1
+                	djnz	ca0
+ 02E0+10F6      	DB	10H,CA0-$-1
+ 02E2 C9        	ret	; no paramters
+ 02E3 7E        ca1:	mov	a,m
+ 02E4 23        	inx	h
+ 02E5 FE20      	cpi	' '
+                	jrnz	ca2
+ 02E7+2003      	DB	20H,CA2-$-1
+                	djnz	ca1
+ 02E9+10F8      	DB	10H,CA1-$-1
+ 02EB C9        	ret	; done with parameters
+ 02EC B7        ca2:	ora	a
+ 02ED C8        	rz	; no more parameters
+                	; parse param...
+ 02EE FE30      	cpi	'0'
+                	jrc	ca1	; skip invalid
+ 02F0+38F1      	DB	38H,CA1-$-1
+ 02F2 FE31      	cpi	'1'
+                	jrnc	ca1	; skip invalid
+ 02F4+30ED      	DB	30H,CA1-$-1
+ 02F6 E601      	ani	1	; -------d
+ 02F8 0F        	rrc		; d-------
+ 02F9 0F        	rrc		; -d------
+ 02FA 0F        	rrc		; --d-----
+ 02FB 322604    	sta	tur+1
+ 02FE 322C04    	sta	recal+1
+ 0301 323204    	sta	read16+1
+                	jr	ca1
+ 0304+18DD      	DB	18H,CA1-$-1
+                
+                chkssz:
+ 0306 3A8522    	lda	2280h+1+4	; "wrrdXYZ": get 'X'
+ 0309 FE32      	cpi	'2'		; 256-byte sectors
+                	jrz	ssz256
+ 030B+2805      	DB	28H,SSZ256-$-1
+ 030D FE35      	cpi	'5'
+                	jrz	ssz512
+ 030F+2807      	DB	28H,SSZ512-$-1
+                	; error?
+                
+ 0311 C9        	ret	; no change
+ 0312 3E02      ssz256:	mvi	a,512/256
+ 0314 323504    	sta	read16+4
+ 0317 C9        	ret
+ 0318 3E01      ssz512:	mvi	a,512/512
+ 031A 323504    	sta	read16+4
+ 031D C9        	ret
+                
+ 031E 3A3204    getok:	lda	read16+1	; LUN
+ 0321 E6E0      	ani	11100000b
+ 0323 07        	rlc
+ 0324 07        	rlc
+ 0325 07        	rlc
+ 0326 C630      	adi	'0'
+ 0328 32B203    	sta	okmsg0
+ 032B 328B03    	sta	usg1
+ 032E 216803    	lxi	h,usgmsg
+ 0331 CD4400    	call	msgout
+ 0334 3A3504    	lda	read16+4	; 1=512, 2=256
+ 0337 FE02      	cpi	2
+ 0339 210001    	lxi	h,256
+                	jrz	getok0
+ 033C+2803      	DB	28H,GETOK0-$-1
+ 033E 210002    	lxi	h,512
+ 0341 CD7C02    getok0:	call	decwrd
+ 0344 217203    	lxi	h,usg0
+ 0347 CD4400    	call	msgout
+ 034A 218F03    	lxi	h,okmsg
+ 034D CD4400    	call	msgout
+ 0350 CD5D03    	call	conin
+ 0353 F5        	push	psw
+ 0354 CD1B00    	call	crlf
+ 0357 F1        	pop	psw
+ 0358 FE0D      	cpi	CR
+ 035A C8        	rz
+ 035B 37        	stc	; abort!
+ 035C C9        	ret
+                
+ 035D DBED      conin:	in	0edh
+ 035F E601      	ani	00000001b
+                	jrz	conin
+ 0361+28FA      	DB	28H,CONIN-$-1
+ 0363 DBE8      	in	0e8h
+ 0365 E67F      	ani	01111111b
+ 0367 C9        	ret
+                
+ 0368 417373756Dusgmsg:	db	'Assuming ',0
+ 0372 2D62797465usg0:	db	'-byte sectors, using LUN '
+ 038B 580D0A00  usg1:	db	'X',CR,LF,0
+                	
+ 038F 5468697320okmsg:	db	'This will destroy data on Z67 unit '
+ 03B2 5821205072okmsg0:	db	'X! Press RETURN to continue: ',0
+                
+ 03D0 2020202000spcs:	db	'    ',0
+ 03D5 00        nofp:	db	0
+ 03D6 00        sav$F0:	db	0
+ 03D7 00        sav$F2:	db	0
+                
+ 03D8 5265736574err0:	db	'Reset failed',CR,LF,0
+ 03E7 526563616Cerr1:	db	'Recal failed',CR,LF,0
+ 03F6 5265616420err2r:	db	'Read failed',CR,LF,0
+ 0404 5772697465err2w:	db	'Write failed',CR,LF,0
+                
+ 0413 4C61737420lstmsg:	db	'Last command:',0
+                
+ 0421 00        seed:	db	0
+ 0422 00        cport:	db	0
+ 0423 0000      count:	dw	0
+ 0425 0020000000tur:	db	00h,20h,00h,00h,00h,00h	; Test Unit Ready, unit 1
+ 042B 0120000000recal:	db	01h,20h,00h,00h,00h,00h	; Recalibrate, unit 1
+                
+                ; Read or Write, unit 1, 2 sectors
+ 0431 0820000002read16:	db	08h,20h,00h,00h,512/SSZ,00h
+                
+ 0437 0000      cmdptr:	dw	0
+ 0439 0000      resbuf:	dw	0
+                
+ 043B           	ds	128
+ 04BB           stack:	ds	0
+                
+ 04BB           buffer:	ds	0	; 512 bytes
+                
+ 04BB           	end
+

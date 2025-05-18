@@ -1,0 +1,487 @@
+                ;****************************************************************
+                ; H8-512K Banked Memory Test Program		 		*
+                ; stand-alone version                		 		*
+                ; Diag/experimental version to check MEM1/ORG0 issues		*
+                ;****************************************************************
+                	$*MACRO
+ 0058 =         rev	equ	'X'
+                
+                ; NOTE: This does not test every single bit in memory,
+                ; but does confirm that 32 unique 16K pages can be mapped
+                ; into block 8000H while MEM1 is on and ORG0 is off.
+                ; Must run in high memory. Uses 8000-BFFF as the map region,
+                ; Orged/run above C000. Must keep clear of 0000-7FFF since
+                ; ROM will be mapped over that address range.
+                
+ 0000 =         SEED0	equ	0	; initial pattern seed
+                
+                	maclib z80
+                	maclib core
+                
+ FFFF =         true	equ -1
+ 0000 =         false	equ not true
+                
+ 000D =         cr	equ 13
+ 000A =         lf	equ 10
+ 0007 =         bell	equ 7
+                
+ 0000 =         mmu	equ	000h	; H8-512K Bank Switch Board base port
+ 0000 =         rd00K	equ	mmu+0
+ 0001 =         rd16K	equ	mmu+1
+ 0002 =         rd32K	equ	mmu+2
+ 0003 =         rd48K	equ	mmu+3
+ 0004 =         wr00K	equ	mmu+4
+ 0005 =         wr16K	equ	mmu+5
+ 0006 =         wr32K	equ	mmu+6
+ 0007 =         wr48K	equ	mmu+7
+                
+ 4000 =         buf16K	equ	4000h
+ 8000 =         buf32K	equ	8000h
+                
+                	cseg
+                begin:
+ 0000 316104    	lxi	sp,stack
+ 0003 3E00      	mvi	a,mmu
+ 0005 21C802    	lxi	h,port
+ 0008 CD3E02    	call	hexout
+ 000B 11B002    	lxi	d,signon
+ 000E CD5202    	call	msgout
+ 0011 C39D00    	jmp	start
+                
+ 0014 00        seed:	db	0
+ 0015 00        pgnum:	db	0
+ 0016 00        err0:	db	0
+ 0017 00        npgs:	db	0
+                
+                ; If current mapping is not the default/disabled,
+                ; things will likely crash here.
+                mmu$init:
+ 0018 F3        	di
+ 0019 3E00      	mvi	a,0	; page 0
+ 001B D300      	out	rd00K
+ 001D D304      	out	wr00K
+ 001F 3C        	inr	a
+ 0020 D301      	out	rd16K
+ 0022 D305      	out	wr16K
+ 0024 3C        	inr	a
+ 0025 D302      	out	rd32K
+ 0027 D306      	out	wr32K
+ 0029 3C        	inr	a
+ 002A F680      	ori	080h	; MMU enable
+ 002C D303      	out	rd48K
+ 002E D307      	out	wr48K
+ 0030 3E08      	mvi	a,00001000b	; MEM1 on, ORG0 off (2mS off)
+ 0032 D3F2      	out	0f2h
+                	; leave interrupts disabled, since ROM mapping
+                	; precludes that.
+ 0034 C9        	ret
+                
+                ; interrupts already disabled.
+                mmu$deinit:
+                	; leave 080h off, disable MMU and force "pass-thru" mapping.
+                	; really, only one OUT needs to be done, but just restore all.
+                	; overkill, since we only ever changed rd/wr32K.
+ 0035 3E00      	mvi	a,0
+ 0037 D300      	out	rd00K
+ 0039 D304      	out	wr00K
+ 003B 3C        	inr	a
+ 003C D301      	out	rd16K
+ 003E D305      	out	wr16K
+ 0040 3C        	inr	a
+ 0041 D302      	out	rd32K
+ 0043 D306      	out	wr32K
+ 0045 3C        	inr	a
+ 0046 D303      	out	rd48K
+ 0048 D307      	out	wr48K
+ 004A C9        	ret
+                
+                ; A=page num, HL=ref buf
+                minchk:
+ 004B F680      	ori	080h
+ 004D D302      	out	rd32K	; map into 32K
+                	;out	wr32K	; (not used - yet)
+ 004F 110080    	lxi	d,buf32K
+ 0052 0680      	mvi	b,128
+ 0054 CD5800    	call	compare
+ 0057 C9        	ret
+                
+                ; IX=current bank results
+                ; HL=ref buffer
+                ; DE=test buffer
+                ; B=count
+                compare:
+ 0058 1A        	ldax	d
+ 0059 BE        	cmp	m
+                	jrz	comp0
+ 005A+280C
+                	inrx	+1
+ 005C+DD3401
+                	ldx	a,+2
+ 005F+DD7E02
+ 0062 3C        	inr	a
+                	jrnz	comp0
+ 0063+2003
+                	stx	e,+2
+ 0065+DD7302
+                comp0:
+ 0068 23        	inx	h
+ 0069 13        	inx	d
+                	djnz	compare
+ 006A+10EC
+                	ldx	a,+1
+ 006C+DD7E01
+ 006F B7        	ora	a
+ 0070 C9        	ret
+                
+                ; A=seed (BCD)
+                setpat:
+ 0071 210080    	lxi	h,buf32K
+ 0074 0680      	mvi	b,128
+                setpat0:
+ 0076 77        	mov	m,a
+ 0077 23        	inx	h
+ 0078 C601      	adi	1
+ 007A 27        	daa
+                	djnz	setpat0
+ 007B+10F9
+ 007D C9        	ret
+                
+                ; A=seed (BCD), IX=bank results
+                chkpat:
+ 007E 210080    	lxi	h,buf32K
+ 0081 0680      	mvi	b,128
+                chkpat0:
+ 0083 BE        	cmp	m
+                	jrz	chkpat1
+ 0084+280C
+                	inrx	+1
+ 0086+DD3401
+                	ldx	e,+2
+ 0089+DD5E02
+ 008C 1C        	inr	e
+                	jrnz	chkpat1
+ 008D+2003
+                	stx	l,+2
+ 008F+DD7502
+                chkpat1:
+ 0092 23        	inx	h
+ 0093 C601      	adi	1
+ 0095 27        	daa
+                	djnz	chkpat0
+ 0096+10EB
+                	ldx	a,+1
+ 0098+DD7E01
+ 009B B7        	ora	a
+ 009C C9        	ret
+                
+                start:
+                	; setup results buffer
+ 009D 21E102    	lxi	h,banks
+ 00A0 36FF      	mvi	m,0ffh	; pattern (none)
+ 00A2 23        	inx	h
+ 00A3 3600      	mvi	m,0	; num errs
+ 00A5 23        	inx	h
+ 00A6 36FF      	mvi	m,0ffh	; 1st err
+ 00A8 23        	inx	h
+ 00A9 3600      	mvi	m,0	; not used
+ 00AB 2B        	dcx	h
+ 00AC 2B        	dcx	h
+ 00AD 2B        	dcx	h
+ 00AE 11E502    	lxi	d,banks+4
+ 00B1 017C00    	lxi	b,lenbnks-4
+                	ldir
+ 00B4+EDB0
+                	; initialize buffer to detect errors
+ 00B6 3E99      	mvi	a,099h
+ 00B8 CD7100    	call	setpat
+                
+ 00BB CD1800    	call	mmu$init
+                
+                	lxix	banks
+ 00BE+DD21
+ 00C0+E102
+                	; First check if low 4 pages work (3, actually)
+                	; Because of MEM1, this can only check 2 or 3 pages...
+ 00C2 210000    	lxi	h,0000h
+ 00C5 3E00      	mvi	a,0	; page 0
+ 00C7 CD4B00    	call	minchk
+ 00CA 321600    	sta	err0
+ 00CD 211700    	lxi	h,npgs
+ 00D0 34        	inr	m
+ 00D1 110400    	lxi	d,4
+                	dadx	d
+ 00D4+DD19
+                if 0
+                	lxi	h,4000h
+                	mvi	a,1	; page 1 - no-op
+                	call	minchk
+                	mov	c,a
+                	lxi	h,npgs
+                	inr	m
+                	lda	err0
+                	ora	c
+                	sta	err0
+                endif
+ 00D6 110400    	lxi	d,4
+                	dadx	d
+ 00D9+DD19
+ 00DB 210080    	lxi	h,8000h
+ 00DE 3E02      	mvi	a,2	; page 2
+ 00E0 CD4B00    	call	minchk
+ 00E3 4F        	mov	c,a
+ 00E4 211700    	lxi	h,npgs
+ 00E7 34        	inr	m
+ 00E8 3A1600    	lda	err0
+ 00EB B1        	ora	c
+ 00EC 321600    	sta	err0
+ 00EF 110400    	lxi	d,4
+                	dadx	d
+ 00F2+DD19
+ 00F4 2100C0    	lxi	h,0c000h
+ 00F7 3E03      	mvi	a,3	; page 3
+ 00F9 CD4B00    	call	minchk
+ 00FC 4F        	mov	c,a
+ 00FD 211700    	lxi	h,npgs
+ 0100 34        	inr	m
+ 0101 3A1600    	lda	err0
+ 0104 B1        	ora	c
+ 0105 321600    	sta	err0
+ 0108 C28601    	jnz	nommu
+ 010B 3E82      	mvi	a,2+80h	; restore neutral map
+ 010D D302      	out	rd32K	;
+ 010F 110400    	lxi	d,4
+                	dadx	d
+ 0112+DD19
+                	; Now can do write tests...
+ 0114 3E00      	mvi	a,SEED0
+ 0116 321400    	sta	seed
+ 0119 3E04      	mvi	a,4	; page number
+ 011B 321500    	sta	pgnum
+                loop1:
+ 011E 3A1400    	lda	seed
+                	stx	a,+0
+ 0121+DD7700
+ 0124 4F        	mov	c,a
+ 0125 C601      	adi	1
+ 0127 27        	daa
+ 0128 321400    	sta	seed
+ 012B 3A1500    	lda	pgnum
+ 012E F680      	ori	080h
+                	;out	rd32K
+ 0130 D306      	out	wr32K	; map into 32K
+ 0132 79        	mov	a,c
+ 0133 CD7100    	call	setpat
+ 0136 110400    	lxi	d,4
+                	dadx	d
+ 0139+DD19
+ 013B 3A1500    	lda	pgnum
+ 013E 3C        	inr	a
+ 013F 321500    	sta	pgnum
+ 0142 FE20      	cpi	32
+ 0144 DA1E01    	jc	loop1
+ 0147 3E82      	mvi	a,2+80h	; restore neutral map
+ 0149 D306      	out	wr32K	;
+                	; Now can check write...
+                	lxix	banks+4*4
+ 014B+DD21
+ 014D+F102
+ 014F 3E00      	mvi	a,SEED0
+ 0151 321400    	sta	seed
+ 0154 3E04      	mvi	a,4	; page number
+ 0156 321500    	sta	pgnum
+                loop2:
+ 0159 3A1400    	lda	seed
+                	stx	a,+0
+ 015C+DD7700
+ 015F 4F        	mov	c,a
+ 0160 C601      	adi	1
+ 0162 27        	daa
+ 0163 321400    	sta	seed
+ 0166 3A1500    	lda	pgnum
+ 0169 F680      	ori	080h
+ 016B D302      	out	rd32K	; map into 32K
+                	;out	wr32K	; both RD and WR
+ 016D 79        	mov	a,c
+ 016E CD7E00    	call	chkpat
+ 0171 211700    	lxi	h,npgs
+ 0174 34        	inr	m
+ 0175 110400    	lxi	d,4
+                	dadx	d
+ 0178+DD19
+ 017A 3A1500    	lda	pgnum
+ 017D 3C        	inr	a
+ 017E 321500    	sta	pgnum
+ 0181 FE20      	cpi	32
+ 0183 DA5901    	jc	loop2
+                
+                nommu:
+                	; done with MMU, report results...
+ 0186 CD3500    	call	mmu$deinit
+                
+                	lxix	banks
+ 0189+DD21
+ 018B+E102
+ 018D AF        	xra	a
+ 018E 321500    	sta	pgnum
+ 0191 0600      	mvi	b,0
+                done0:
+                	ldx	a,+1	; num errs
+ 0193+DD7E01
+ 0196 B7        	ora	a
+ 0197 CACB01    	jz	done1
+ 019A 04        	inr	b
+ 019B 3A1500    	lda	pgnum
+ 019E 216A02    	lxi	h,res0
+ 01A1 CD1102    	call	decout
+                	ldx	a,+0
+ 01A4+DD7E00
+ 01A7 217302    	lxi	h,res1
+ 01AA CD3E02    	call	hexout
+                	ldx	a,+1
+ 01AD+DD7E01
+ 01B0 217B02    	lxi	h,res2
+ 01B3 CD1102    	call	decout
+                	ldx	a,+2
+ 01B6+DD7E02
+ 01B9 217F02    	lxi	h,res3
+ 01BC CD3E02    	call	hexout
+ 01BF C5        	push	b
+                	pushix
+ 01C0+DDE5
+ 01C2 116602    	lxi	d,result
+ 01C5 CD5202    	call	msgout
+                	popix
+ 01C8+DDE1
+ 01CA C1        	pop	b
+ 01CB 110400    done1:	lxi	d,4
+                	dadx	d
+ 01CE+DD19
+ 01D0 3A1500    	lda	pgnum
+ 01D3 3C        	inr	a
+ 01D4 321500    	sta	pgnum
+ 01D7 FE04      	cpi	4
+ 01D9 C2E601    	jnz	done2
+ 01DC 3A1600    	lda	err0
+ 01DF B7        	ora	a
+ 01E0 C20602    	jnz	nommu0
+ 01E3 3A1500    	lda	pgnum
+                done2:
+ 01E6 FE20      	cpi	32
+ 01E8 DA9301    	jc	done0
+ 01EB 78        	mov	a,b
+ 01EC B7        	ora	a
+                	jrnz	cpm	; already reported results
+ 01ED+201D
+ 01EF 118402    	lxi	d,noerr
+ 01F2 CD5202    	call	msgout
+ 01F5 21CD02    	lxi	h,tpgs
+ 01F8 3A1700    	lda	npgs
+ 01FB CD1102    	call	decout
+ 01FE 11CD02    	lxi	d,tpgs
+ 0201 CD5202    	call	msgout
+                	; TODO: restore and return to monitor
+                	jr	cpm
+ 0204+1806
+                
+ 0206 119702    nommu0:	lxi	d,mmuerr
+ 0209 CD5202    	call	msgout
+                	; TODO: restore and return to monitor
+                	;jr	cpm
+                
+                ; restore and return to monitor...
+ 020C F3        cpm:	di	; already disabled
+ 020D 2A1E00    	lhld	retmon
+ 0210 E9        	pchl
+                
+                ; leading zeroes blanked - must preserve B
+                decout:
+ 0211 0E00      	mvi	c,0
+ 0213 1664      	mvi	d,100
+ 0215 CD2202    	call	divide
+ 0218 160A      	mvi	d,10
+ 021A CD2202    	call	divide
+ 021D C630      	adi	'0'
+ 021F 77        	mov	m,a
+ 0220 23        	inx	h
+ 0221 C9        	ret
+                
+ 0222 1E00      divide:	mvi	e,0
+ 0224 92        div0:	sub	d
+ 0225 1C        	inr	e
+                	jrnc	div0
+ 0226+30FC
+ 0228 82        	add	d
+ 0229 1D        	dcr	e
+                	jrnz	div1
+ 022A+2008
+                	bit	0,c
+ 022C+CB41
+                	jrnz	div1
+ 022E+2004
+ 0230 3620      	mvi	m,' '
+ 0232 23        	inx	h
+ 0233 C9        	ret
+                div1:	setb	0,c
+ 0234+CBC1
+ 0236 F5        	push	psw	; remainder
+ 0237 3E30      	mvi	a,'0'
+ 0239 83        	add	e
+ 023A 77        	mov	m,a
+ 023B 23        	inx	h
+ 023C F1        	pop	psw	; remainder
+ 023D C9        	ret
+                
+ 023E F5        hexout:	push	psw
+ 023F 07        	rlc
+ 0240 07        	rlc
+ 0241 07        	rlc
+ 0242 07        	rlc
+ 0243 CD4702    	call	hex0
+ 0246 F1        	pop	psw
+ 0247 E60F      hex0:	ani	0fh
+ 0249 C690      	adi	90h
+ 024B 27        	daa
+ 024C CE40      	aci	40h
+ 024E 27        	daa
+ 024F 77        	mov	m,a
+ 0250 23        	inx	h
+ 0251 C9        	ret
+                
+ 0252 1A        msgout:	ldax	d
+ 0253 B7        	ora	a
+ 0254 C8        	rz
+ 0255 13        	inx	d
+ 0256 CD5B02    	call	conout
+                	jr	msgout
+ 0259+18F7
+                
+ 025B F5        conout:	push	psw
+ 025C DBED      cono0:	in	0edh
+ 025E E620      	ani	00100000b
+                	jrz	cono0
+ 0260+28FA
+ 0262 F1        	pop	psw
+ 0263 D3E8      	out	0e8h
+ 0265 C9        	ret
+                
+ 0266 50616765  result:	db	'Page'
+ 026A 6E6E6E2070res0:	db	'nnn patn '
+ 0273 6868206572res1:	db	'hh errs '
+ 027B 6E6E6E20  res2:	db	'nnn '
+ 027F 68680D0A00res3:	db	'hh',cr,lf,0
+                
+ 0284 4E6F206572noerr:	db	'No errors found.',cr,lf,0
+ 0297 41626F7274mmuerr:	db	'Aborting test: No MMU?',cr,lf,0
+ 02B0 5465737420signon:	db	'Test H8-512K rev ',rev,' port '
+ 02C8 68680D0A00port:	db	'hh',cr,lf,0
+ 02CD 6E6E6E2050tpgs:	db	'nnn Pages checked',cr,lf,0
+                
+                banks:
+ 02E1           	ds	32*4	; pattern seed or 0FFH, num errs, 1st err, n/u
+ 0080 =         lenbnks	equ	$-banks
+                
+ 0361           	ds	256
+ 0461           stack:	ds	0
+                
+ 0461           	end	begin
+

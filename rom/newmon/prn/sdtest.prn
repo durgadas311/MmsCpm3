@@ -1,0 +1,610 @@
+                ; Stand-alone program to test initialization of an SDCard attached to an H8xSPI
+                
+                	maclib	z80
+                
+ 0042 =         spi	equ	42h	; separate board from WizNet
+                
+ 0042 =         spi?dat	equ	spi+0
+ 0043 =         spi?ctl	equ	spi+1
+ 0043 =         spi?sts	equ	spi+1
+                
+ 0001 =         SDSCS	equ	01b	; SCS for SDCard
+                
+ 0040 =         CMDST	equ	01000000b	; command start bits
+                
+ 000D =         CR	equ	13
+ 000A =         LF	equ	10
+                
+                	cseg
+                
+ 0000 F3        	di	; don't need/want interrupts
+ 0001 314E06    	lxi	sp,stack
+                	; waive 1mS delay... we are well past that...
+ 0004 CDF602    	call	run74	; must cycle >= 74 clocks
+                
+                	; CMD0 - enter SPI mode
+ 0007 215001    	lxi	h,cmd0
+ 000A 1601      	mvi	d,1
+ 000C 1E01      	mvi	e,1	; turn off SCS
+ 000E CD0303    	call	docmd
+ 0011 DA0801    	jc	fail
+ 0014 3A5601    	lda	cmd0+6	; R1
+ 0017 FE01      	cpi	00000001b	; IDLE bit set?
+ 0019 C20801    	jnz	fail
+ 001C 215701    	lxi	h,cmd8
+ 001F 1605      	mvi	d,5
+ 0021 1E01      	mvi	e,1	; turn off SCS
+ 0023 CD0303    	call	docmd
+ 0026 DA0801    	jc	fail
+ 0029 3A5D01    	lda	cmd8+6
+ 002C FE01      	cpi	00000001b	; no error, IDLE bit still set
+                	jrz	ok8
+ 002E+280A      	DB	28H,OK8-$-1
+                	bit	2,a	; Illegal Command
+ 0030+CB57      	DB	0CBH,2*8+A+40H
+ 0032 CA0801    	jz	fail	; must be some other error - fatal
+                	; CMD8 not recognized, SD1 card... (not supported?)
+ 0035 3E00      	mvi	a,0
+ 0037 326A01    	sta	acmd41+1
+                ok8:
+ 003A CD2901    	call	zero
+                init:	; this could take a long time... don't flood console
+ 003D CD1E01    	call	iszero
+ 0040 5F        	mov	e,a
+ 0041 216901    	lxi	h,acmd41
+ 0044 1601      	mvi	d,1
+ 0046 CD1003    	call	doacmd
+ 0049 DA0801    	jc	fail
+ 004C CD1001    	call	incr
+ 004F 3A6F01    	lda	acmd41+6
+ 0052 FE00      	cpi	00000000b	; READY?
+                	jrnz	init
+ 0054+20E7      	DB	20H,INIT-$-1
+                	; done with init
+ 0056 CD3301    	call	show	; print count
+ 0059 216901    	lxi	h,acmd41	; dump last command
+ 005C 1601      	mvi	d,1
+ 005E CD9001    	call	dumpa
+                	; now try CMD58 if applicable
+ 0061 3A6A01    	lda	acmd41+1
+ 0064 B7        	ora	a
+                	jrz	next
+ 0065+280A      	DB	28H,NEXT-$-1
+                	; SD2... get CMD58
+ 0067 217001    	lxi	h,cmd58
+ 006A 1605      	mvi	d,5
+ 006C 1E01      	mvi	e,1	; turn off SCS
+ 006E CD0303    	call	docmd
+                next:
+                	; read CID...
+ 0071 218901    	lxi	h,cmd10
+ 0074 1601      	mvi	d,1
+ 0076 1E00      	mvi	e,0	; leave SCS on
+ 0078 CD0303    	call	docmd
+ 007B DA0801    	jc	fail
+ 007E 3A8F01    	lda	cmd10+6
+ 0081 B7        	ora	a
+                	jrnz	bad
+ 0082+206E      	DB	20H,BAD-$-1
+ 0084 21CE03    	lxi	h,buf
+ 0087 011001    	lxi	b,0110h	; 16 bytes, 1 loop
+ 008A CD9003    	call	sdblk	; turns off SCS
+ 008D F5        	push	psw
+ 008E CD9C02    	call	crlf
+ 0091 F1        	pop	psw
+                	jrc	badblk
+ 0092+3858      	DB	38H,BADBLK-$-1
+ 0094 21CE03    	lxi	h,buf
+ 0097 CD1102    	call	dump16
+                	; read CSD...
+ 009A 218201    	lxi	h,cmd9
+ 009D 1601      	mvi	d,1
+ 009F 1E00      	mvi	e,0	; leave SCS on
+ 00A1 CD0303    	call	docmd
+                	jrc	fail
+ 00A4+3862      	DB	38H,FAIL-$-1
+ 00A6 3A8801    	lda	cmd9+6
+ 00A9 B7        	ora	a
+                	jrnz	bad
+ 00AA+2046      	DB	20H,BAD-$-1
+ 00AC 21CE03    	lxi	h,buf
+ 00AF 011001    	lxi	b,0110h	; 16 bytes, 1 loop
+ 00B2 CD9003    	call	sdblk	; turns off SCS
+ 00B5 F5        	push	psw
+ 00B6 CD9C02    	call	crlf
+ 00B9 F1        	pop	psw
+                	jrc	badblk
+ 00BA+3830      	DB	38H,BADBLK-$-1
+ 00BC 21CE03    	lxi	h,buf
+ 00BF CD1102    	call	dump16
+                	; read block LBA 0
+ 00C2 217B01    	lxi	h,cmd17
+ 00C5 1601      	mvi	d,1
+ 00C7 1E00      	mvi	e,0	; leave SCS on
+ 00C9 CD0303    	call	docmd
+                	jrc	bad
+ 00CC+3824      	DB	38H,BAD-$-1
+ 00CE 3A8101    	lda	cmd17+6
+ 00D1 B7        	ora	a
+                	jrnz	bad
+ 00D2+201E      	DB	20H,BAD-$-1
+ 00D4 21CE03    	lxi	h,buf
+ 00D7 010002    	lxi	b,512
+ 00DA CD9003    	call	sdblk	; turns off SCS
+ 00DD F5        	push	psw
+ 00DE CD9C02    	call	crlf
+ 00E1 F1        	pop	psw
+                	jrc	badblk
+ 00E2+3808      	DB	38H,BADBLK-$-1
+ 00E4 21CE03    	lxi	h,buf
+ 00E7 CDE701    	call	dumpb
+                	jr	done
+ 00EA+180B      	DB	18H,DONE-$-1
+ 00EC CD8802    badblk:	call	hexout
+ 00EF CDFA01    	call	dumpb0
+ 00F2 AF        bad:	xra	a
+ 00F3 D343      	out	spi?ctl	; SCS off
+                	jr	fail
+ 00F5+1811      	DB	18H,FAIL-$-1
+ 00F7 11D702    done:	lxi	d,donems
+ 00FA CDA502    	call	msgout
+                exit:
+ 00FD 11E802    	lxi	d,reset
+ 0100 CDA502    	call	msgout
+ 0103 F3        	di
+ 0104 76        	hlt
+ 0105 C30000    	jmp	0
+                
+ 0108 11C602    fail:	lxi	d,failms
+ 010B CDA502    	call	msgout
+                	jr	exit
+ 010E+18ED      	DB	18H,EXIT-$-1
+                
+ 0110 214C01    incr:	lxi	h,count
+ 0113 34        	inr	m
+ 0114 C0        	rnz
+ 0115 23        	inx	h
+ 0116 34        	inr	m
+ 0117 C0        	rnz
+ 0118 23        	inx	h
+ 0119 34        	inr	m
+ 011A C0        	rnz
+ 011B 23        	inx	h
+ 011C 34        	inr	m
+ 011D C9        	ret
+                
+ 011E 214C01    iszero:	lxi	h,count
+ 0121 7E        	mov	a,m
+ 0122 23        	inx	h
+ 0123 B6        	ora	m
+ 0124 23        	inx	h
+ 0125 B6        	ora	m
+ 0126 23        	inx	h
+ 0127 B6        	ora	m
+ 0128 C9        	ret
+                
+ 0129 210000    zero:	lxi	h,0
+ 012C 224C01    	shld	count
+ 012F 224E01    	shld	count+2
+ 0132 C9        	ret
+                
+ 0133 CD9C02    show:	call	crlf
+ 0136 214F01    	lxi	h,count+3
+ 0139 7E        	mov	a,m
+ 013A CD8802    	call	hexout
+ 013D 2B        	dcx	h
+ 013E 7E        	mov	a,m
+ 013F CD8802    	call	hexout
+ 0142 2B        	dcx	h
+ 0143 7E        	mov	a,m
+ 0144 CD8802    	call	hexout
+ 0147 2B        	dcx	h
+ 0148 7E        	mov	a,m
+ 0149 C38802    	jmp	hexout
+                
+ 014C 00000000  count:	dw	0,0
+                
+                ; command is always 6 bytes (?)
+ 0150 4000000000cmd0:	db	CMDST+0,0,0,0,0,95h
+ 0156 00        	db	0
+ 0157 48000001AAcmd8:	db	CMDST+8,0,0,01h,0aah,87h
+ 015D 0000000000	db	0,0,0,0,0
+ 0162 7700000000cmd55:	db	CMDST+55,0,0,0,0,0
+ 0168 00        	db	0
+ 0169 6940000000acmd41:	db	CMDST+41,40h,0,0,0,0
+ 016F 00        	db	0
+ 0170 7A00000000cmd58:	db	CMDST+58,0,0,0,0,0
+ 0176 0000000000	db	0,0,0,0,0
+ 017B 5100000000cmd17:	db	CMDST+17,0,0,0,0,0
+ 0181 00        	db	0
+ 0182 4900000000cmd9:	db	CMDST+9,0,0,0,0,0
+ 0188 00        	db	0
+ 0189 4A00000000cmd10:	db	CMDST+10,0,0,0,0,0
+ 018F 00        	db	0
+                
+                ; HL=command+response buffer, D=response length
+ 0190 D5        dumpa:	push	d
+ 0191 11B902    	lxi	d,acmdms
+                	jr	dump9
+ 0194+1804      	DB	18H,DUMP9-$-1
+ 0196 D5        dump:	push	d
+ 0197 11C002    	lxi	d,cmdmsg
+ 019A CDA502    dump9:	call	msgout
+ 019D 7E        	mov	a,m
+ 019E 23        	inx	h
+ 019F E63F      	ani	00111111b
+ 01A1 CD5C02    	call	decout
+ 01A4 0605      	mvi	b,5
+ 01A6 3E20      dump0:	mvi	a,' '
+ 01A8 CDAE02    	call	chrout
+ 01AB 7E        	mov	a,m
+ 01AC 23        	inx	h
+ 01AD CD8802    	call	hexout
+                	djnz	dump0
+ 01B0+10F4      	DB	10H,DUMP0-$-1
+ 01B2 3E3A      	mvi	a,':'
+ 01B4 CDAE02    	call	chrout
+ 01B7 C1        	pop	b	; B=response length
+ 01B8 3E20      dump1:	mvi	a,' '
+ 01BA CDAE02    	call	chrout
+ 01BD 7E        	mov	a,m
+ 01BE 23        	inx	h
+ 01BF CD8802    	call	hexout
+                	djnz	dump1
+ 01C2+10F4      	DB	10H,DUMP1-$-1
+                	; now dump idle/gap
+ 01C4 3E20      	mvi	a,' '
+ 01C6 CDAE02    	call	chrout
+ 01C9 3E28      	mvi	a,'('
+ 01CB CDAE02    	call	chrout
+ 01CE 2AFF02    	lhld	idle
+ 01D1 EB        	xchg
+ 01D2 CD2002    	call	dec16
+ 01D5 3E2F      	mvi	a,'/'
+ 01D7 CDAE02    	call	chrout
+ 01DA 2A0103    	lhld	gap
+ 01DD EB        	xchg
+ 01DE CD2002    	call	dec16
+ 01E1 3E29      	mvi	a,')'
+ 01E3 CDAE02    	call	chrout
+ 01E6 C9        	ret
+                
+                ; dump sector buffer, first and last 16 bytes...
+                ; HL=buffer
+ 01E7 CD1102    dumpb:	call	dump16
+ 01EA 11E001    	lxi	d,512-16-16
+ 01ED 19        	dad	d
+ 01EE 11DF02    	lxi	d,elipss
+ 01F1 CDA502    	call	msgout
+ 01F4 CD1102    	call	dump16
+                	; now dump gap
+ 01F7 CD9C02    	call	crlf
+ 01FA 3E20      dumpb0:	mvi	a,' '
+ 01FC CDAE02    	call	chrout
+ 01FF 3E28      	mvi	a,'('
+ 0201 CDAE02    	call	chrout
+ 0204 2A0103    	lhld	gap
+ 0207 EB        	xchg
+ 0208 CD2002    	call	dec16
+ 020B 3E29      	mvi	a,')'
+ 020D CDAE02    	call	chrout
+ 0210 C9        	ret
+                
+                ; dump 16 bytes at HL
+                dump16:
+ 0211 0610      	mvi	b,16
+ 0213 3E20      dumpb1:	mvi	a,' '
+ 0215 CDAE02    	call	chrout
+ 0218 7E        	mov	a,m
+ 0219 23        	inx	h
+ 021A CD8802    	call	hexout
+                	djnz	dumpb1
+ 021D+10F4      	DB	10H,DUMPB1-$-1
+ 021F C9        	ret
+                
+                dec16:
+ 0220 EB        	xchg	; remainder in HL
+ 0221 0E00      	mvi	c,0
+ 0223 111027    	lxi	d,10000
+ 0226 CD4202    	call	div16
+ 0229 11E803    	lxi	d,1000
+ 022C CD4202    	call	div16
+ 022F 116400    	lxi	d,100
+ 0232 CD4202    	call	div16
+ 0235 110A00    	lxi	d,10
+ 0238 CD4202    	call	div16
+ 023B 7D        	mov	a,l
+ 023C C630      	adi	'0'
+ 023E CDAE02    	call	chrout
+ 0241 C9        	ret
+                
+ 0242 0600      div16:	mvi	b,0
+ 0244 B7        dv0:	ora	a
+                	dsbc	d
+ 0245+ED52      	DB	0EDH,D*8+42H
+ 0247 04        	inr	b
+                	jrnc	dv0
+ 0248+30FA      	DB	30H,DV0-$-1
+ 024A 19        	dad	d
+ 024B 05        	dcr	b
+                	jrnz	dv1
+ 024C+2005      	DB	20H,DV1-$-1
+                	bit	0,c
+ 024E+CB41      	DB	0CBH,0*8+C+40H
+                	jrnz	dv1
+ 0250+2001      	DB	20H,DV1-$-1
+ 0252 C9        	ret
+                dv1:	setb	0,c
+ 0253+CBC1      	DB	0CBH,0*8+C+0C0H
+ 0255 3E30      	mvi	a,'0'
+ 0257 80        	add	b
+ 0258 CDAE02    	call	chrout
+ 025B C9        	ret
+                
+                ; A=number to print
+                ; destroys B, C, D, E (and A)
+                decout:
+ 025C 0E00      	mvi	c,0
+ 025E 1664      	mvi	d,100
+ 0260 CD6E02    	call	divide
+ 0263 160A      	mvi	d,10
+ 0265 CD6E02    	call	divide
+ 0268 C630      	adi	'0'
+ 026A CDAE02    	call	chrout
+ 026D C9        	ret
+                
+ 026E 1E00      divide:	mvi	e,0
+ 0270 92        div0:	sub	d
+ 0271 1C        	inr	e
+                	jrnc	div0
+ 0272+30FC      	DB	30H,DIV0-$-1
+ 0274 82        	add	d
+ 0275 1D        	dcr	e
+                	jrnz	div1
+ 0276+2005      	DB	20H,DIV1-$-1
+                	bit	0,c
+ 0278+CB41      	DB	0CBH,0*8+C+40H
+                	jrnz	div1
+ 027A+2001      	DB	20H,DIV1-$-1
+ 027C C9        	ret
+                div1:	setb	0,c
+ 027D+CBC1      	DB	0CBH,0*8+C+0C0H
+ 027F F5        	push	psw	; remainder
+ 0280 3E30      	mvi	a,'0'
+ 0282 83        	add	e
+ 0283 CDAE02    	call	chrout
+ 0286 F1        	pop	psw	; remainder
+ 0287 C9        	ret
+                
+                hexout:
+ 0288 F5        	push	psw
+ 0289 0F        	rrc
+ 028A 0F        	rrc
+ 028B 0F        	rrc
+ 028C 0F        	rrc
+ 028D CD9102    	call	hexdig
+ 0290 F1        	pop	psw
+                hexdig:
+ 0291 E60F      	ani	0fh
+ 0293 C690      	adi	90h
+ 0295 27        	daa
+ 0296 CE40      	aci	40h
+ 0298 27        	daa
+ 0299 C3AE02    	jmp	chrout
+                
+ 029C 3E0D      crlf:	mvi	a,CR
+ 029E CDAE02    	call	chrout
+ 02A1 3E0A      	mvi	a,LF
+                	jr	chrout
+ 02A3+1809      	DB	18H,CHROUT-$-1
+                
+ 02A5 1A        msgout:	ldax	d
+ 02A6 B7        	ora	a
+ 02A7 C8        	rz
+ 02A8 13        	inx	d
+ 02A9 CDAE02    	call	chrout
+                	jr	msgout
+ 02AC+18F7      	DB	18H,MSGOUT-$-1
+                
+ 02AE F5        chrout:	push	psw
+ 02AF DBED      cono0:	in	0edh
+ 02B1 E620      	ani	00100000b
+                	jrz	cono0
+ 02B3+28FA      	DB	28H,CONO0-$-1
+ 02B5 F1        	pop	psw
+ 02B6 D3E8      	out	0e8h
+ 02B8 C9        	ret
+                
+ 02B9 0D0A41434Dacmdms:	db	CR,LF,'ACMD',0
+ 02C0 0D0A434D44cmdmsg:	db	CR,LF,'CMD',0
+ 02C6 0D0A2A2A2Afailms:	db	CR,LF,'*** failed ***',0
+ 02D7 0D0A446F6Edonems:	db	CR,LF,'Done.',0
+ 02DF 0D0A202E2Eelipss:	db	CR,LF,' ...',CR,LF,0
+ 02E8 0D0A507265reset:	db	CR,LF,'Press RESET',0
+                
+                ; run-out at least 74 clock cycles... with SCS off...
+ 02F6 060A      run74:	mvi	b,10	; 80 cycles
+ 02F8 0E42      	mvi	c,spi?dat
+                run740:	inp	a
+ 02FA+ED78      	DB	0EDH,A*8+40H
+                	djnz	run740
+ 02FC+10FC      	DB	10H,RUN740-$-1
+ 02FE C9        	ret
+                
+ 02FF 0000      idle:	dw	0
+ 0301 0000      gap:	dw	0
+                
+                ; HL=command, D=resp len, E=scs flag
+                docmd:
+ 0303 E5        	push	h
+ 0304 D5        	push	d
+ 0305 CD2F03    	call	sdcmd
+ 0308 D1        	pop	d
+ 0309 E1        	pop	h
+ 030A F5        	push	psw
+ 030B CD9601    	call	dump
+ 030E F1        	pop	psw
+ 030F C9        	ret
+                
+                ; E=dump flag, always turns off SCS
+                doacmd:
+ 0310 E5        	push	h
+ 0311 D5        	push	d
+ 0312 216201    	lxi	h,cmd55
+ 0315 1601      	mvi	d,1
+ 0317 1E00      	mvi	e,0	; do not turn off SCS
+ 0319 CD2F03    	call	sdcmd
+                	; ignore results? CMD55 never gives error?
+ 031C D1        	pop	d
+ 031D E1        	pop	h
+ 031E E5        	push	h
+ 031F D5        	push	d
+ 0320 1E01      	mvi	e,1
+ 0322 CD2F03    	call	sdcmd
+ 0325 D1        	pop	d
+ 0326 E1        	pop	h
+ 0327 F5        	push	psw
+ 0328 7B        	mov	a,e
+ 0329 B7        	ora	a
+ 032A CC9001    	cz	dumpa
+ 032D F1        	pop	psw
+ 032E C9        	ret
+                
+                ; send (6 byte) command to SDCard, get response.
+                ; HL=command+response buffer, D=response length
+                ; return A=response code (00=success), HL=idle length, DE=gap length
+                sdcmd:
+ 032F 3E01      	mvi	a,SDSCS
+ 0331 D343      	out	spi?ctl	; SCS on
+ 0333 0E42      	mvi	c,spi?dat
+                	; wait for idle
+                	; TODO: timeout this loop
+ 0335 E5        	push	h	; save command+response buffer
+ 0336 210000    	lxi	h,0	; count idle length
+ 0339 22FF02    	shld	idle
+ 033C 220103    	shld	gap
+                sdcmd0:	inp	a
+ 033F+ED78      	DB	0EDH,A*8+40H
+ 0341 FEFF      	cpi	0ffh
+                	jrz	sdcmd1
+ 0343+2807      	DB	28H,SDCMD1-$-1
+ 0345 23        	inx	h
+ 0346 7C        	mov	a,h
+ 0347 B5        	ora	l
+                	jrz	sdcmd5	; timeout at overflow...
+ 0348+2830      	DB	28H,SDCMD5-$-1
+                	jr	sdcmd0
+ 034A+18F3      	DB	18H,SDCMD0-$-1
+ 034C 22FF02    sdcmd1:	shld	idle
+ 034F E1        	pop	h	; command buffer back
+ 0350 0606      	mvi	b,6
+                	outir
+ 0352+EDB3      	DB	0EDH,0B3H
+                	inp	a	; prime the pump
+ 0354+ED78      	DB	0EDH,A*8+40H
+ 0356 E5        	push	h	; points to response area...
+                	; TODO: timeout this loop
+ 0357 210000    	lxi	h,0	; count gap length
+                sdcmd2:	inp	a
+ 035A+ED78      	DB	0EDH,A*8+40H
+ 035C FEFF      	cpi	0ffh
+                	jrnz	sdcmd3
+ 035E+2007      	DB	20H,SDCMD3-$-1
+ 0360 23        	inx	h
+ 0361 7C        	mov	a,h
+ 0362 B5        	ora	l
+                	jrz	sdcmd6	; timeout at overflow...
+ 0363+2823      	DB	28H,SDCMD6-$-1
+                	jr	sdcmd2
+ 0365+18F3      	DB	18H,SDCMD2-$-1
+ 0367 220103    sdcmd3:	shld	gap
+ 036A E1        	pop	h	; response buffer back
+ 036B 42        	mov	b,d
+ 036C 77        	mov	m,a
+ 036D 23        	inx	h
+ 036E 05        	dcr	b
+                	jrz	sdcmd4
+ 036F+2802      	DB	28H,SDCMD4-$-1
+                	inir	; rest of response
+ 0371+EDB2      	DB	0EDH,0B2H
+ 0373 7B        sdcmd4:	mov	a,e	; SCS flag
+ 0374 B7        	ora	a
+ 0375 C8        	rz
+ 0376 AF        	xra	a
+ 0377 D343      	out	spi?ctl	; SCS off
+ 0379 C9        	ret
+ 037A 21FFFF    sdcmd5:	lxi	h,-1
+ 037D 22FF02    	shld	idle
+ 0380 E1        sdcmd7:	pop	h
+ 0381 CD7303    	call	sdcmd4
+ 0384 37        	stc
+ 0385 3EFF      	mvi	a,0ffh
+ 0387 C9        	ret
+ 0388 21FFFF    sdcmd6:	lxi	h,-1
+ 038B 220103    	shld	gap
+                	jr	sdcmd7
+ 038E+18F0      	DB	18H,SDCMD7-$-1
+                
+                ; read a 512-byte data block, with packet header and CRC (ignored).
+                ; READ command was already sent and responded to.
+                ; HL=buffer, BC=length*
+                ; return CY on error (A=error), DE=gap length
+                sdblk:
+ 0390 C5        	push	b
+ 0391 3E01      	mvi	a,SDSCS
+ 0393 D343      	out	spi?ctl	; SCS on
+ 0395 0E42      	mvi	c,spi?dat
+                	; wait for packet header (or error)
+                	; TODO: timeout this loop
+ 0397 110000    	lxi	d,0	; count gap length
+                sdblk0:	inp	a
+ 039A+ED78      	DB	0EDH,A*8+40H
+ 039C FEFF      	cpi	0ffh
+                	jrnz	sdblk1
+ 039E+2007      	DB	20H,SDBLK1-$-1
+ 03A0 13        	inx	d
+ 03A1 7A        	mov	a,d
+ 03A2 B3        	ora	e
+                	jrz	sdblk4	; timeout at overflow...
+ 03A3+281D      	DB	28H,SDBLK4-$-1
+                	jr	sdblk0
+ 03A5+18F3      	DB	18H,SDBLK0-$-1
+                sdblk1:	sded	gap
+ 03A7+ED53      	DB	0EDH,53H
+ 03A9+0103      	DW	GAP
+ 03AB D1        	pop	d
+ 03AC FEFE      	cpi	11111110b	; data start
+ 03AE 37        	stc	; else must be error
+                	jrnz	sdblk2
+ 03AF+200B      	DB	20H,SDBLK2-$-1
+ 03B1 43        	mov	b,e
+                sdblk3:	inir
+ 03B2+EDB2      	DB	0EDH,0B2H
+ 03B4 15        	dcr	d
+                	jrnz	sdblk3
+ 03B5+20FB      	DB	20H,SDBLK3-$-1
+                	inp	a	; CRC 1
+ 03B7+ED78      	DB	0EDH,A*8+40H
+                	inp	a	; CRC 2
+ 03B9+ED78      	DB	0EDH,A*8+40H
+ 03BB AF        	xra	a	; NC
+ 03BC F5        sdblk2:	push	psw
+ 03BD AF        	xra	a
+ 03BE D343      	out	spi?ctl	; SCS off
+ 03C0 F1        	pop	psw
+ 03C1 C9        	ret
+ 03C2 21FFFF    sdblk4:	lxi	h,-1
+ 03C5 220103    	shld	gap
+ 03C8 C1        	pop	b
+ 03C9 37        	stc
+ 03CA 3EFF      	mvi	a,0ffh
+                	jr	sdblk2
+ 03CC+18EE      	DB	18H,SDBLK2-$-1
+                
+ 03CE           buf:	ds	512
+                
+ 05CE           	ds	128
+ 064E           stack:	ds	0
+                
+ 064E           	end
+

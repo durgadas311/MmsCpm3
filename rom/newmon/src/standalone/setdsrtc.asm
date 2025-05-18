@@ -42,7 +42,7 @@ mon:	db	0
 dow:	db	0
 yrs:	db	0
 timez	equ	$-time
-;prt:	db	0	; bit7 = prot
+;prt:	db	80h	; bit7 = prot
 
 	ds	64
 stack:	ds	0
@@ -207,6 +207,7 @@ parse:
 	stc
 	rnz
 	inx	h
+	mov	a,c
 	sta	hrs
 	call	parsnm	; minutes
 	mov	a,m
@@ -328,6 +329,7 @@ dscmd:
 	nop
 	ori	ds$ce
 	out	rtc
+	sta	ds$ctl
 	nop	; delay >= 1uS
 	nop
 	nop

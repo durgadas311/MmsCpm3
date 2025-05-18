@@ -39,21 +39,20 @@ H8NMODS= 2716_444-19_H17.rom \
 
 # TODO: what will this include?
 H89MODS= 2716_444-19_H17.rom \
-	zout/bcf.cim \
 	zout/bh17.cim \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
+	zout/bvdip1.cim \
 	zout/chelp.cim \
 	zout/cinput.cim \
 	zout/coutput.cim \
 	zout/cterm.cim \
+	zout/cvtalk.cim \
 	zout/ch8dcopy.cim \
 	zout/cspeed.cim
 # later...
 #	zout/bsdcard.cim \
-#	zout/bvdip1.cim \
-#	zout/cvtalk.cim \
 #	zout/bwiznet.cim \
 
 H8MON = zout/h8core.cim $(H8MODS) zout/csetup.cim
