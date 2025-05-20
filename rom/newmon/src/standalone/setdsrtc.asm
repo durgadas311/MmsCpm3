@@ -12,10 +12,10 @@ BEL	equ	7
 CTLC	equ	3
 
 rtc	equ	080h	; bit-bang port address
-ds$clk	equ	00001000b
-ds$ce	equ	00000100b
-ds$wd	equ	00010000b
+ds$ce	equ	00010000b
 ds$wen	equ	00100000b
+ds$clk	equ	01000000b
+ds$wd	equ	10000000b
 
 linbuf	equ	2280h
 
@@ -301,11 +301,13 @@ dsp1:
 	ani	not ds$clk	; clock low
 	out	rtc
 	nop		; delay >= 250nS
-	rarr	e
-	jrnc	dsp2
-	ori	ds$wd
-	jr	dsp3
-dsp2:	ani	not ds$wd
+	ral		; pop old data bit off...
+	rarr	e	; CY = next data bit
+	rar		; new data bit in place
+;	jrnc	dsp2
+;	ori	ds$wd
+;	jr	dsp3
+;dsp2:	ani	not ds$wd
 dsp3:	out	rtc
 	ori	ds$clk		; clock high
 	out	rtc

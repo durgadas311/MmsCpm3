@@ -12,10 +12,10 @@
  0003 =         CTLC	equ	3
                 
  0080 =         rtc	equ	080h	; bit-bang port address
- 0008 =         ds$clk	equ	00001000b
- 0004 =         ds$ce	equ	00000100b
- 0010 =         ds$wd	equ	00010000b
+ 0010 =         ds$ce	equ	00010000b
  0020 =         ds$wen	equ	00100000b
+ 0040 =         ds$clk	equ	01000000b
+ 0080 =         ds$wd	equ	10000000b
                 
  2280 =         linbuf	equ	2280h
                 
@@ -52,10 +52,10 @@
                 	cseg
                 start:
  0003 31CB00    	lxi	sp,stack
- 0006 CDB301    	call	dsend	; initialzes ctl port to idle state
+ 0006 CDAD01    	call	dsend	; initialzes ctl port to idle state
  0009 210000    	lxi	h,signon
  000C CD4400    	call	msgout
- 000F CDFA01    	call	gettime
+ 000F CDF401    	call	gettime
  0012 CD7A00    	call	show
  0015 212B00    	lxi	h,enter
  0018 CD4400    	call	msgout
@@ -77,10 +77,10 @@
  003D CDBD00    	call	linin
                 	jrc	quit
  0040+3814      	DB	38H,QUIT-$-1
- 0042 CDD101    	call	settime
+ 0042 CDCB01    	call	settime
  0045 217500    	lxi	h,setto
  0048 CD4400    	call	msgout
- 004B CDFA01    	call	gettime
+ 004B CDF401    	call	gettime
  004E CD7A00    	call	show
  0051 CD1B00    	call	crlf
                 	jr	exit
@@ -292,7 +292,7 @@
  0174 3ACB00    	lda	ds$ctl
  0177 F620      	ori	ds$wen	; disable write
                 dsg1:
- 0179 E6F7      	ani	not ds$clk	; clock low
+ 0179 E6BF      	ani	not ds$clk	; clock low
  017B D380      	out	rtc
  017D 00        	nop		; delay >= 250nS
  017E F5        	push	psw
@@ -301,7 +301,7 @@
                 	rarr	e
  0182+CB1B      	DB	0CBH, 18H + E
  0184 F1        	pop	psw
- 0185 F608      	ori	ds$clk
+ 0185 F640      	ori	ds$clk
  0187 D380      	out	rtc
  0189 00        	nop		; delay >= 250nS
                 	djnz	dsg1
@@ -315,84 +315,84 @@
  0192 3ACB00    	lda	ds$ctl
  0195 E6DF      	ani	not ds$wen	; /WE active
                 dsp1:
- 0197 E6F7      	ani	not ds$clk	; clock low
+ 0197 E6BF      	ani	not ds$clk	; clock low
  0199 D380      	out	rtc
  019B 00        	nop		; delay >= 250nS
-                	rarr	e
- 019C+CB1B      	DB	0CBH, 18H + E
-                	jrnc	dsp2
- 019E+3004      	DB	30H,DSP2-$-1
- 01A0 F610      	ori	ds$wd
-                	jr	dsp3
- 01A2+1802      	DB	18H,DSP3-$-1
- 01A4 E6EF      dsp2:	ani	not ds$wd
- 01A6 D380      dsp3:	out	rtc
- 01A8 F608      	ori	ds$clk		; clock high
- 01AA D380      	out	rtc
- 01AC 00        	nop		; delay >= 250nS
+ 019C 17        	ral		; pop old data bit off...
+                	rarr	e	; CY = next data bit
+ 019D+CB1B      	DB	0CBH, 18H + E
+ 019F 1F        	rar		; new data bit in place
+                ;	jrnc	dsp2
+                ;	ori	ds$wd
+                ;	jr	dsp3
+                ;dsp2:	ani	not ds$wd
+ 01A0 D380      dsp3:	out	rtc
+ 01A2 F640      	ori	ds$clk		; clock high
+ 01A4 D380      	out	rtc
+ 01A6 00        	nop		; delay >= 250nS
                 	djnz	dsp1
- 01AD+10E8      	DB	10H,DSP1-$-1
- 01AF 32CB00    	sta	ds$ctl	; leave clk high, /WE asserted, data = ?
- 01B2 C9        	ret
+ 01A7+10EE      	DB	10H,DSP1-$-1
+ 01A9 32CB00    	sta	ds$ctl	; leave clk high, /WE asserted, data = ?
+ 01AC C9        	ret
                 
                 dsend:
- 01B3 3E20      	mvi	a,ds$wen
- 01B5 D380      	out	rtc
- 01B7 32CB00    	sta	ds$ctl
- 01BA C9        	ret
+ 01AD 3E20      	mvi	a,ds$wen
+ 01AF D380      	out	rtc
+ 01B1 32CB00    	sta	ds$ctl
+ 01B4 C9        	ret
                 
                 ; command byte in E (destroyed)
                 dscmd:
- 01BB CDB301    	call	dsend	; force idle
- 01BE 00        	nop	; delay >= 1uS
- 01BF 00        	nop
- 01C0 00        	nop
- 01C1 00        	nop
- 01C2 F604      	ori	ds$ce
- 01C4 D380      	out	rtc
- 01C6 32CB00    	sta	ds$ctl
- 01C9 00        	nop	; delay >= 1uS
- 01CA 00        	nop
- 01CB 00        	nop
- 01CC 00        	nop
- 01CD CD9001    	call	dsput
- 01D0 C9        	ret
+ 01B5 CDAD01    	call	dsend	; force idle
+ 01B8 00        	nop	; delay >= 1uS
+ 01B9 00        	nop
+ 01BA 00        	nop
+ 01BB 00        	nop
+ 01BC F610      	ori	ds$ce
+ 01BE D380      	out	rtc
+ 01C0 32CB00    	sta	ds$ctl
+ 01C3 00        	nop	; delay >= 1uS
+ 01C4 00        	nop
+ 01C5 00        	nop
+ 01C6 00        	nop
+ 01C7 CD9001    	call	dsput
+ 01CA C9        	ret
                 
                 settime:
- 01D1 1E8E      	mvi	e,10001110b	; write ctrl reg (disable prot)
- 01D3 CDBB01    	call	dscmd
- 01D6 1E00      	mvi	e,0		; unprotect
- 01D8 CD9001    	call	dsput
- 01DB CDB301    	call	dsend
- 01DE 1EBE      	mvi	e,10111110b	; burst write clock
- 01E0 CDBB01    	call	dscmd
- 01E3 218400    	lxi	h,time
- 01E6 0607      	mvi	b,timez
- 01E8 C5        st1:	push	b
- 01E9 5E        	mov	e,m
- 01EA CD9001    	call	dsput
- 01ED 23        	inx	h
- 01EE C1        	pop	b
+ 01CB 1E8E      	mvi	e,10001110b	; write ctrl reg (disable prot)
+ 01CD CDB501    	call	dscmd
+ 01D0 1E00      	mvi	e,0		; unprotect
+ 01D2 CD9001    	call	dsput
+ 01D5 CDAD01    	call	dsend
+ 01D8 1EBE      	mvi	e,10111110b	; burst write clock
+ 01DA CDB501    	call	dscmd
+ 01DD 218400    	lxi	h,time
+ 01E0 0607      	mvi	b,timez
+ 01E2 C5        st1:	push	b
+ 01E3 5E        	mov	e,m
+ 01E4 CD9001    	call	dsput
+ 01E7 23        	inx	h
+ 01E8 C1        	pop	b
                 	djnz	st1
- 01EF+10F7      	DB	10H,ST1-$-1
- 01F1 1E80      	mvi	e,80h		; protect
- 01F3 CD9001    	call	dsput
- 01F6 C3B301    	jmp	dsend
- 01F9 C9        	ret
+ 01E9+10F7      	DB	10H,ST1-$-1
+ 01EB 1E80      	mvi	e,80h		; protect
+ 01ED CD9001    	call	dsput
+ 01F0 C3AD01    	jmp	dsend
+ 01F3 C9        	ret
                 
                 gettime:
- 01FA 1EBF      	mvi	e,10111111b	; burst read clock
- 01FC CDBB01    	call	dscmd
- 01FF 218400    	lxi	h,time
- 0202 0607      	mvi	b,timez
- 0204 C5        gt1:	push	b
- 0205 CD7001    	call	dsget
- 0208 73        	mov	m,e
- 0209 23        	inx	h
- 020A C1        	pop	b
+ 01F4 1EBF      	mvi	e,10111111b	; burst read clock
+ 01F6 CDB501    	call	dscmd
+ 01F9 218400    	lxi	h,time
+ 01FC 0607      	mvi	b,timez
+ 01FE C5        gt1:	push	b
+ 01FF CD7001    	call	dsget
+ 0202 73        	mov	m,e
+ 0203 23        	inx	h
+ 0204 C1        	pop	b
                 	djnz	gt1
- 020B+10F7      	DB	10H,GT1-$-1
- 020D C3B301    	jmp	dsend
+ 0205+10F7      	DB	10H,GT1-$-1
+ 0207 C3AD01    	jmp	dsend
                 
- 0210           	end
-
+ 020A           	end
+
