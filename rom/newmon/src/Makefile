@@ -60,7 +60,7 @@ H8NMON = zout/h8ncore.cim $(H8NMODS) zout/csetupn.cim
 H89MON = zout/h89core.cim $(H89MODS) zout/csetupn.cim
 H8Z180 = zout/h8z180.cim $(H8MODS) zout/csetup180.cim
 H8NZ180 = zout/h8nz180.cim $(H8NMODS) zout/csetup180n.cim
-ROMS = h8mon2.rom h8nmon2.rom h8mon2z180.rom h8nmon2z180.rom
+ROMS = h8mon2.rom h8nmon2.rom h8mon2z180.rom h8nmon2z180.rom h89mon2.rom
 
 VERN = $(shell awk -f getver.awk h8core.asm)
 

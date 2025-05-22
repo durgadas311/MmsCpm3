@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	1
+beta	equ	2
 
 z180	equ	false
 h8nofp	equ	false
@@ -393,6 +393,8 @@ nmi$ign:	; ignore, but IN must get 00
 	dcx	h
 	mov	a,m
 	cpi	0d3h	; OUT
+	jrz	nmi$xit2
+	cpi	0dbh	; IN
 	jrnz	nmi$xit2
 	pop	psw
 	mvi	a,0	; don't change flags...
@@ -607,11 +609,19 @@ trpms:	db	CR,LF,'*** TRAP ',TRM
  endif
 ; Legacy entry for "Horn" - beep for num 2mS ticks in A
 hhorn:	push	h
+	push	psw
+ if nofp
+	call	belout	; make some sort of noise
+	lxi	h,ticcnt ; delay is not really relevant, but...
+	add	m
+ else
 	call	set$horn
 	lxi	h,horn
 	xra	a
+ endif
 hhorn0:	cmp	m
 	jrnz	hhorn0
+	pop	psw
 	pop	h
 	ret
 bterr:
@@ -780,6 +790,10 @@ init0:	lxi	h,0ffffh
 	lxi	h,0ffffh
 	sphl
 	push	h	; save top on stack
+ if h89	; must be NC-89
+	mvi	a,00100100b	; WE off, SCL high
+	out	080h		; safe for DS1302 and I2C
+ endif
 	mvi	a,ctl$MEM1	; MEM1 = full ROM
 	out	0f2h	; enable full ROM
 	lda	suadr+m512k
@@ -1253,6 +1267,7 @@ mtestH:
 mtestZ	equ	$
 ;------------------------------------------------
 
+ if not nofp
 ; must be called with interrupts off
 ; A = horn delay, in 2mS ticks
 ; A,HL used
@@ -1272,6 +1287,7 @@ set$horn0:
 	call	set$horn
 	ei
 	ret
+ endif
 
 ; If this gets much bigger, needs to move
 hwinit:
@@ -1319,6 +1335,10 @@ nmi$in:	; simulate IN returning FF
 	jmp	nmi$xit
 
 nmi$out:	; convert relevant F0 bits to F2 bits
+	lxi	h,ctl$F2
+	mov	a,m
+	ani	11111100b	; ensure bits are "0"
+	mov	m,a
 	pop	psw
 	push	psw	; _  7 6 5 4 3 2 1 0
 	ral		; 7  6 5 4 3 2 1 0 _
@@ -1327,11 +1347,9 @@ nmi$out:	; convert relevant F0 bits to F2 bits
 	ral		; 5' 4'3'2'1'0'_ 7'6
 	rlc		; 4' 3'2'1'0'_ 7'6 4'
 	ani	03h	; _  _ _ _ _ _ _ 6 4'
-	lxi	h,ctl$F2
 	ora	m	; this assumes ctl$F2 bits 0,1 are "0"
-	out	0f2h
-	ani	11111100b	; ensure bits are "0"
 	mov	m,a
+	out	0f2h
 	jmp	nmi$xit2
  endif
 
