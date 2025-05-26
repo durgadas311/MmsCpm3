@@ -1,0 +1,551 @@
+		; A command to display logo on SSD1306 OLED
+		
+			maclib	core
+**** core.lib ****
+**** alogo.asm ****
+			maclib	z80
+**** z80.lib ****
+**** alogo.asm ****
+		
+000D          	CR	equ	13
+000A          	LF	equ	10
+0009          	TAB	equ	9
+0008          	BS	equ	8
+0007          	BEL	equ	7
+0003          	CTLC	equ	3
+		
+			maclib	ram
+**** ram.lib ****
+**** alogo.asm ****
+			maclib	z80
+**** z80.lib ****
+**** alogo.asm ****
+		
+0080          	rtc	equ	080h	; bit-bang port address
+0004          	ss$clk	equ	00000100b
+0010          	ds$ce	equ	00010000b
+0020          	ds$wen	equ	00100000b
+0040          	ds$clk	equ	01000000b
+0080          	ds$wd	equ	10000000b
+007F          	ds$wdn	equ	01111111b
+		
+0400          	oledz	equ	128*64/8
+		
+8000          		org	8000h
+8000  06      	first:	db	HIGH (last-first)	; +0: num pages
+8001  80      		db	HIGH first		; +1: ORG page
+8002  FF00    		db	255,0	; ; +2,+3: phy drv base, num
+		
+8004  C31D80  		jmp	init	; +4: init entry
+8007  C31F80  		jmp	exec	; +7: action entry
+		
+800A  40      		db	'@'	; +10: Command letter
+800B  FF      		db	-1	; +11: front panel key
+800C  00      		db	0	; +12: port, 0 if variable
+800D  FFFFFF  		db	11111111b,11111111b,11111111b	; +13: FP display
+8010  44697370		db	'Display logo',0	; +16: mnemonic string
+      6C617920
+      6C6F676F
+      00
+		
+801D  AF      	init:	xra	a
+801E  C9      		ret
+		
+801F          	exec:
+801F  3A2D81  		lda	ds$ctl
+8022  D380    		out	rtc	; initialzes ctl port to idle state
+		
+8024  210E81  		lxi	h,initc
+8027  011F00  		lxi	b,initz
+802A  1E00    		mvi	e,00	; command bytes
+802C  CDE180  		call	ssbuf
+802F  D8      		rc	; fail
+		
+8030  212F81  		lxi	h,oledbuf
+8033  010004  		lxi	b,oledz
+8036  1E40    		mvi	e,40h	; (display) data bytes
+8038  CDE180  		call	ssbuf
+803B  D8      		rc	; fail
+		
+803C  C9      		ret
+		
+803D  FD2A2600	chrout:	liyd	conout
+8041  FDE9    		pciy
+		
+		; I2C routines, using NC-89 ports
+		; "in rtc" reads SDA on D0
+		; "out rtc" ... bit bang...
+		
+8043  00      	std:	db	0	; 00=STOP was done last
+		
+8044  CD4780  	dly2:	call	dly1
+8047  C9      	dly1:	ret
+		
+		; assert I2C START condition, leave ready for clocking
+		; returns WEN low (on), SDA and SCL low (ready)
+8048          	start:
+8048  3A2D81  		lda	ds$ctl
+804B  E6DF    		ani	not ds$wen	; /WE active
+804D  F684    		ori	ds$wd+ss$clk	; SDA and SCL high
+804F  D380    		out	rtc
+8051  CD4480  		call	dly2		; need at least 1.3 uS "idle" time
+8054  E67F    		ani	ds$wdn		; SDA goes low while SCL high = START
+8056  D380    		out	rtc
+8058  E6FB    		ani	not ss$clk
+805A  D380    		out	rtc
+805C  322D81  		sta	ds$ctl
+805F  F6FF    		ori	0ffh
+8061  324380  		sta	std
+8064  C9      		ret
+		
+		; assert I2C STOP condition, assuming SDA and SCL currently low
+		; returns WEN high (off), SDA and SCL high
+8065          	stop:
+8065  3A2D81  		lda	ds$ctl
+8068  E6DF    		ani	not ds$wen	; /WE active - just in case
+806A  E67F    		ani	ds$wdn		; SDA low - just in case
+806C  F604    		ori	ss$clk		; SCL high
+806E  D380    		out	rtc
+8070  F680    		ori	ds$wd		; SDA goes high while SCL high = STOP
+8072  D380    		out	rtc
+8074  F620    		ori	ds$wen		; WEN off
+8076  D380    		out	rtc
+8078  322D81  		sta	ds$ctl
+807B  AF      		xra	a
+807C  324380  		sta	std
+807F  C9      		ret
+		
+		; output byte in E (destructive) over I2C
+		; returns ACK bit (0=success)
+		; assumes SDA and SCL low
+8080          	ssput:
+8080  C5      		push	b
+8081  0608    		mvi	b,8
+8083  3A2D81  		lda	ds$ctl
+8086  E6DF    		ani	not ds$wen	; /WE active - just in case
+8088  D380    		out	rtc
+808A          	ssp1:
+808A  17      		ral		; pop old data bit off...
+808B  CB13    		ralr	e	; CY = next data bit
+808D  1F      		rar		; new data bit in place
+808E  D380    		out	rtc
+8090  F604    		ori	ss$clk		; clock high
+8092  D380    		out	rtc
+8094  E6FB    		ani	not ss$clk	; clock low
+8096  D380    		out	rtc
+8098  10F0    		djnz	ssp1
+			; go into ACK mode...
+809A  F620    		ori	ds$wen		; stop driving SDA
+809C  D380    		out	rtc
+809E  F604    		ori	ss$clk		; clock high
+80A0  D380    		out	rtc
+80A2  F5      		push	psw
+80A3  DB80    		in	rtc		; get ACK in D0
+80A5  5F      		mov	e,a
+80A6  F1      		pop	psw
+80A7  E6FB    		ani	not ss$clk	; clock low
+80A9  D380    		out	rtc
+80AB  322D81  		sta	ds$ctl	; leave clk high, /WE asserted, data = ?
+80AE  7B      		mov	a,e
+80AF  E601    		ani	1
+80B1  C1      		pop	b
+80B2  C9      		ret
+		
+		; command byte in E (destroyed)
+		; assume always write
+		; caller must STOP when done...
+		; return CY on error (STOP done)
+80B3          	sscmd:
+80B3  D5      		push	d	;
+80B4  3A4380  		lda	std
+80B7  B7      		ora	a
+80B8  2013    		jrnz	ssc0
+80BA  CD4880  		call	start
+80BD  1E78    		mvi	e,78h	; SSD1306 address, WR
+80BF  CD8080  		call	ssput
+80C2  C2D680  		jnz	err
+80C5  1E00    		mvi	e,0	; command(s) follow
+80C7  CD8080  		call	ssput
+80CA  C2D680  		jnz	err
+80CD  D1      	ssc0:	pop	d
+80CE  CD8080  		call	ssput
+80D1  C2D780  		jnz	err1
+80D4  AF      		xra	a
+80D5  C9      		ret
+		
+80D6  D1      	err:	pop	d
+80D7  CD6580  	err1:	call	stop
+		
+80DA  3E2A    		mvi	a,'*'
+80DC  CD3D80  		call	chrout
+80DF  37      		stc
+80E0  C9      		ret
+		
+		; data in (HL), BC=length, E=cmd/data (00/40)
+		; return CY on error (STOP done)
+80E1          	ssbuf:
+80E1  D5      		push	d
+80E2  3A4380  		lda	std
+80E5  B7      		ora	a
+80E6  C46580  		cnz	stop	; must STOP before this?
+80E9  CD4880  		call	start
+80EC  1E78    		mvi	e,78h	; SSD1306 address, WR
+80EE  CD8080  		call	ssput
+80F1  C2D680  		jnz	err
+80F4  D1      		pop	d	; E=cmd/data ctrl byte
+80F5  CD8080  		call	ssput
+80F8  C2D780  		jnz	err1
+80FB  5E      	ssb0:	mov	e,m
+80FC  23      		inx	h
+80FD  CD8080  		call	ssput
+8100  C2D780  		jnz	err1
+8103  0B      		dcx	b
+8104  78      		mov	a,b
+8105  B1      		ora	c
+8106  C2FB80  		jnz	ssb0
+8109  CD6580  		call	stop	; always STOP?
+810C  AF      		xra	a
+810D  C9      		ret
+		
+810E          	initc:
+810E  AE2000C8		db	0aeh, 20h,0, 0c8h, 40h, 81h,7fh, 0a1h
+      40817FA1
+8116  A6A83FD3		db	0a6h, 0a8h,3fh, 0d3h,0, 0d5h,80h, 0d9h,22h
+      00D580D9
+      22
+811F  DA12DB20		db	0dah,12h, 0dbh,20h, 8dh,14h, 0a4h, 0afh
+      8D14A4AF
+			; now reset address
+8127  21007F22		db	21h,0,127, 22h,0,7
+      0007
+001F          	initz	equ	$-initc
+		
+812D  24      	ds$ctl:	db	ss$clk+ds$wen
+812E  00      	col:	db	0
+		
+812F          	oledbuf:	; "NC Super89", zilog-inside
+812F  00FFFF0F		db	000h,0ffh,0ffh,00fh,03ch,0f0h,0c0h,000h
+      3CF0C000
+8137  0000FFFF		db	000h,000h,0ffh,0ffh,000h,000h,080h,0e0h
+      000080E0
+813F  703C0E07		db	070h,03ch,00eh,007h,003h,003h,003h,003h
+      03030303
+8147  03000000		db	003h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+814F  00000000		db	000h,000h,000h,000h,000h,000h,000h,00eh
+      0000000E
+8157  1F3B73E3		db	01fh,03bh,073h,0e3h,0c3h,003h,003h,003h
+      C3030303
+815F  0F0E0000		db	00fh,00eh,000h,000h,0e0h,0e0h,000h,000h
+      E0E00000
+8167  00000000		db	000h,000h,000h,000h,000h,0e0h,0e0h,000h
+      00E0E000
+816F  00E0E060		db	000h,0e0h,0e0h,060h,060h,060h,060h,060h
+      60606060
+8177  6060E0C0		db	060h,060h,0e0h,0c0h,000h,000h,0e0h,0e0h
+      0000E0E0
+817F  60606060		db	060h,060h,060h,060h,060h,060h,060h,060h
+      60606060
+8187  0000E0E0		db	000h,000h,0e0h,0e0h,060h,060h,060h,060h
+      60606060
+818F  606060E0		db	060h,060h,060h,0e0h,0c0h,000h,000h,000h
+      C0000000
+8197  8080FEFF		db	080h,080h,0feh,0ffh,083h,083h,0ffh,0feh
+      8383FFFE
+819F  80800000		db	080h,080h,000h,000h,000h,03eh,07fh,063h
+      003E7F63
+81A7  63636363		db	063h,063h,063h,063h,063h,0ffh,0feh,000h
+      63FFFE00
+81AF  00FFFF00		db	000h,0ffh,0ffh,000h,000h,000h,003h,00fh
+      0000030F
+81B7  3CF0FFFF		db	03ch,0f0h,0ffh,0ffh,000h,000h,001h,007h
+      00000107
+81BF  0E3C70E0		db	00eh,03ch,070h,0e0h,0c0h,0c0h,0c0h,0c0h
+      C0C0C0C0
+81C7  C0000000		db	0c0h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+81CF  00000000		db	000h,000h,000h,000h,000h,000h,000h,070h
+      00000070
+81D7  F0C0C0C1		db	0f0h,0c0h,0c0h,0c1h,0c3h,0c7h,0ceh,0dch
+      C3C7CEDC
+81DF  F8700000		db	0f8h,070h,000h,000h,03fh,07fh,0e0h,0c0h
+      3F7FE0C0
+81E7  C0C0C0C0		db	0c0h,0c0h,0c0h,0c0h,0e0h,07fh,03fh,000h
+      E07F3F00
+81EF  00FFFF0C		db	000h,0ffh,0ffh,00ch,00ch,00ch,00ch,00ch
+      0C0C0C0C
+81F7  0C0C0F07		db	00ch,00ch,00fh,007h,000h,000h,0ffh,0ffh
+      0000FFFF
+81FF  CCCCCCCC		db	0cch,0cch,0cch,0cch,0c0h,0c0h,0c0h,0c0h
+      C0C0C0C0
+8207  0000FFFF		db	000h,000h,0ffh,0ffh,00ch,00ch,00ch,00ch
+      0C0C0C0C
+820F  1C3C7CEF		db	01ch,03ch,07ch,0efh,0c7h,000h,000h,07fh
+      C700007F
+8217  FFC1C1C1		db	0ffh,0c1h,0c1h,0c1h,0c1h,0c1h,0c1h,0c1h
+      C1C1C1C1
+821F  C1FF7F00		db	0c1h,0ffh,07fh,000h,000h,000h,000h,000h
+      00000000
+8227  00000000		db	000h,000h,000h,000h,0c0h,0ffh,07fh,000h
+      C0FF7F00
+822F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8237  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+823F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8247  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+824F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8257  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+825F  000080C0		db	000h,000h,080h,0c0h,0c0h,0e0h,0e0h,0f0h
+      C0E0E0F0
+8267  F0787878		db	0f0h,078h,078h,078h,03ch,03ch,03ch,01ch
+      3C3C3C1C
+826F  1E1E1E1E		db	01eh,01eh,01eh,01eh,01eh,00eh,00fh,00fh
+      1E0E0F0F
+8277  0F0F9F9F		db	00fh,00fh,09fh,09fh,01eh,01eh,01eh,01eh
+      1E1E1E1E
+827F  3E3E7E60		db	03eh,03eh,07eh,060h,000h,000h,000h,000h
+      00000000
+8287  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+828F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8297  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+829F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82A7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82AF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82B7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82BF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82C7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82CF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+82D7  0080C0E0		db	000h,080h,0c0h,0e0h,070h,038h,01ch,00eh
+      70381C0E
+82DF  0F070303		db	00fh,007h,003h,003h,001h,001h,000h,000h
+      01010000
+82E7  00F8F800		db	000h,0f8h,0f8h,000h,000h,000h,080h,080h
+      00008080
+82EF  80000080		db	080h,000h,000h,080h,0e0h,030h,030h,060h
+      E0303060
+82F7  F0000707		db	0f0h,000h,007h,007h,00fh,00fh,00fh,01fh
+      0F0F0F1F
+82FF  1E1E3C78		db	01eh,01eh,03ch,078h,078h,0f0h,0e0h,0c0h
+      78F0E0C0
+8307  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+830F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8317  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+831F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8327  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+832F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8337  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+833F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8347  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+834F  00000000		db	000h,000h,000h,000h,000h,000h,0f0h,07ch
+      0000F07C
+8357  1F070330		db	01fh,007h,003h,030h,018h,00ch,00ch,0e6h
+      180C0CE6
+835F  FE1E0000		db	0feh,01eh,000h,000h,008h,0f9h,0f9h,000h
+      08F9F900
+8367  00FF0100		db	000h,0ffh,001h,000h,01eh,073h,041h,040h
+      1E734140
+836F  613F0003		db	061h,03fh,000h,003h,08eh,088h,088h,0cch
+      8E8888CC
+8377  7F000000		db	07fh,000h,000h,000h,040h,0c0h,000h,000h
+      40C00000
+837F  00000000		db	000h,000h,000h,000h,000h,000h,003h,007h
+      00000307
+8387  1FFCE000		db	01fh,0fch,0e0h,000h,000h,000h,000h,000h
+      00000000
+838F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8397  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+839F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83A7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83AF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83B7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83BF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83C7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+83CF  00000000		db	000h,000h,000h,000h,000h,03fh,0ffh,000h
+      003FFF00
+83D7  00000000		db	000h,000h,000h,000h,030h,03ch,03fh,01bh
+      303C3F1B
+83DF  180C0C00		db	018h,00ch,00ch,000h,000h,087h,080h,000h
+      00878000
+83E7  80810000		db	080h,081h,000h,000h,000h,000h,000h,000h
+      00000000
+83EF  C0602030		db	0c0h,060h,020h,030h,000h,000h,0f4h,0f4h
+      0000F4F4
+83F7  00E03018		db	000h,0e0h,030h,018h,008h,0ffh,000h,000h
+      08FF0000
+83FF  FCB61399		db	0fch,0b6h,013h,099h,0cfh,000h,000h,000h
+      CF000000
+8407  C0FF1F00		db	0c0h,0ffh,01fh,000h,000h,000h,000h,000h
+      00000000
+840F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8417  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+841F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8427  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+842F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8437  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+843F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8447  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+844F  00000000		db	000h,000h,000h,000h,000h,000h,003h,00fh
+      0000030F
+8457  3C70E0C0		db	03ch,070h,0e0h,0c0h,080h,000h,000h,000h
+      80000000
+845F  00000000		db	000h,000h,000h,000h,000h,0fch,07ch,000h
+      00FC7C00
+8467  00FF0E03		db	000h,0ffh,00eh,003h,003h,03fh,0feh,000h
+      033FFE00
+846F  81C3663C		db	081h,0c3h,066h,03ch,018h,000h,01fh,001h
+      18001F01
+8477  00070C06		db	000h,007h,00ch,006h,003h,007h,000h,000h
+      03070000
+847F  0081C1E1		db	000h,081h,0c1h,0e1h,070h,038h,01ch,00fh
+      70381C0F
+8487  03000000		db	003h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+848F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8497  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+849F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84A7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84AF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84B7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84BF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84C7  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84CF  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+84D7  00000001		db	000h,000h,000h,001h,003h,007h,00eh,00ch
+      03070E0C
+84DF  1C183838		db	01ch,018h,038h,038h,030h,073h,070h,060h
+      30737060
+84E7  606160E0		db	060h,061h,060h,0e0h,0e0h,0e0h,0e0h,0e0h
+      E0E0E0E0
+84EF  E0606060		db	0e0h,060h,060h,060h,060h,070h,070h,030h
+      60707030
+84F7  30381818		db	030h,038h,018h,018h,01ch,00ch,006h,007h
+      1C0C0607
+84FF  03030100		db	003h,003h,001h,000h,000h,000h,000h,000h
+      00000000
+8507  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+850F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8517  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+851F  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+8527  00000000		db	000h,000h,000h,000h,000h,000h,000h,000h
+      00000000
+		
+852F  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FFFFFFFF
+      FF
+		
+8600          	last:	end
+
+
+
+Statistics:
+
+     4	passes
+     0	jr promotions
+   117	symbols
+  1536	bytes
+
+   218	macro calls
+  7502	macro bytes
+     0	invented symbols

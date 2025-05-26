@@ -50,7 +50,8 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/cterm.cim \
 	zout/cvtalk.cim \
 	zout/ch8dcopy.cim \
-	zout/cspeed.cim
+	zout/cspeed.cim \
+	zout/alogo.cim
 # later...
 #	zout/bsdcard.cim \
 #	zout/bwiznet.cim \

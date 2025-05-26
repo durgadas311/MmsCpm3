@@ -40,6 +40,11 @@ nofp	set	true
  endif
 	$*macro
 
+oled	set	false
+ if h89
+oled	set	true
+ endif
+
 CR	equ	13
 LF	equ	10
 BEL	equ	7
@@ -287,6 +292,10 @@ intsetup:
 	shld	monstk	; a.k.a. RegPtr
 	ret
 
+cold$entry:		; re-entry point for RESET
+ if oled
+	call	auto
+ endif
 re$entry:		; re-entry point for errors, etc.
 	lxi	h,ctl$F0
 	mvi	m,0f0h	; !beep, 2mS, MON, !SI
@@ -809,7 +818,7 @@ init0:	lxi	h,0ffffh
 	lxi	d,susave
 	lxi	b,sumax
 	ldir
-	lxi	h,re$entry
+	lxi	h,cold$entry
 	push	h
 	call	hwinit
 	call	coninit
@@ -1524,6 +1533,22 @@ nocmd:
 
 cmerr:	call	belout
 	jmp	prloop
+
+ if oled	; for now, only this
+auto:
+	in	0efh	; INS8250 scratch reg - power-on FF (!= 0)
+	ora	a
+	rz
+	xra	a
+	out	0efh	; should persist through RESET
+	mvi	c,'@'
+	mvi	b,0	; no boot modules
+	lxi	h,bfchr
+	call	bfind
+	rc
+	call	cmexec
+	ret
+ endif
 
  if not nofp
 ; get "alternate" (secondary) boot device...
