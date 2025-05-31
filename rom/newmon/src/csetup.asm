@@ -9,11 +9,11 @@ nofp	equ	false
 
 	maclib	ram
 	maclib	setup
-if z180
+ if z180
 	maclib	z180
-else
+ else
 	maclib	z80
-endif
+ endif
 
 CR	equ	13
 LF	equ	10
@@ -22,11 +22,11 @@ CTLC	equ	3
 BEL	equ	7
 ESC	equ	27
 
-if z180
+ if z180
 mmu$cbr	equ	38h
 mmu$bbr	equ	39h
 mmu$cbar equ	3ah
-endif
+ endif
 
 	org	8000h	; out of reach of ROM overlay...
 first:	db	HIGH (last-first)	; +0: num pages
@@ -61,7 +61,7 @@ exec:
 	lxi	d,gpstr
 	lxi	h,last+dpstr
 	call	getstr
-if not nofp
+ if not nofp
 	; Secondary boot options
 	lxi	d,gsdev
 	lxi	h,last+dsdev
@@ -72,13 +72,13 @@ if not nofp
 	lxi	d,gsstr
 	lxi	h,last+dsstr
 	call	getstr
-endif
+ endif
 	; Add-ons Installed
-if not z180
+ if not z180
 	lxi	d,g512k
 	lxi	h,last+m512k
 	call	getyn
-endif
+ endif
 
 	mvi	a,'6'
 	sta	dport+1
@@ -98,18 +98,21 @@ endif
 	lxi	h,last+h37pt
 	call	gethex
 
-if 0	; H17 is not configurable?
+ if 0	; H17 is not configurable?
 	mvi	a,'1'
 	sta	dport+1
 	lxi	d,dport
 	lxi	h,last+h17pt
 	call	gethex
-endif
-if z180
+ endif
+	lxi	d,vport
+	lxi	h,last+vdipt
+	call	gethex
+ if z180
 	lxi	d,gwait
 	lxi	h,last+waits
 	call	getwt
-endif
+ endif
 
 	; TODO: more setup?
 	lda	dirty
@@ -132,7 +135,7 @@ mkchg:	lxi	d,dochg
 	lhld	sum
 	shld	ssum
 	di
-if z180
+ if z180
 	in0	a,mmu$cbar	; preserve monitor CBAR
 	push	psw
 	lda	ctl$F2
@@ -145,13 +148,13 @@ if z180
 	out0	b,mmu$bbr
 	ori	10100000b	; WE, no legacy ROM
 	out	0f2h
-else
+ else
 	lda	ctl$F2
 	push	psw
 	ani	11011111b	; ORG0 off
 	ori	10001000b	; WE, MEM1
 	out	0f2h
-endif
+ endif
 	lxi	h,last
 	lxi	d,suadr
 	lxi	b,susize/64
@@ -172,12 +175,12 @@ endif
 	jrnz	error
 	pop	psw
 	out	0f2h
-if z180
+ if z180
 	xra	a
 	out	mmu$bbr
 	pop	psw
 	out0	a,mmu$cbar
-endif
+ endif
 	ei
 	lxi	d,saved
 	call	msgout
@@ -195,7 +198,7 @@ error:	pop	psw
 	ret	; what else can we do?
 
 get$su:	di
-if z180
+ if z180
 	in0	a,mmu$cbar	; preserve monitor CBAR
 	push	psw
 	lda	ctl$F2
@@ -218,7 +221,7 @@ if z180
 	out0	a,mmu$bbr
 	pop	psw
 	out0	a,mmu$cbar
-else
+ else
 	lda	ctl$F2
 	push	psw
 	ani	11011111b	; ORG0 off
@@ -230,7 +233,7 @@ else
 	ldir
 	pop	psw
 	out	0f2h
-endif
+ endif
 	ei
 	lxi	d,last
 	lxi	b,sulen
@@ -780,7 +783,7 @@ getst1:	mvi	m,0
 	sta	dirty
 	ret
 
-if z180
+ if z180
 getwte:	mvi	a,BEL
 	call	conout
 getwt:
@@ -867,7 +870,7 @@ parwt1:
 	cpi	'3'-'0'+1
 	cmc
 	ret
-endif
+ endif
 
 signon:	db	'onfig setup v'
 	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
@@ -883,18 +886,19 @@ gpunn:	db	'): ',0
 gpdev:	db	'Primary/Default boot device (',0
 gpuni:	db	'Primary/Default boot unit (',0
 gpstr:	db	'Primary/Default boot string (',0
-if not nofp
+ if not nofp
 gsdev:	db	'Secondary boot device (',0
 gsuni:	db	'Secondary boot unit (',0
 gsstr:	db	'Secondary boot string (',0
-endif
-if not z180
+ endif
+ if not z180
 g512k:	db	'H8-512K RAM installed (',0
-endif
+ endif
 dport:	db	'H_7 Port (FF=use SW1) (',0
-if z180
+vport:	db	'VDIP1 Port (FF=(D8)) (',0
+ if z180
 gwait:	db	'WAIT states (MEM,I/O) (',0
-endif
+ endif
 
 dirty:	db	0
 curmsg:	dw	0

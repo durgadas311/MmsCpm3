@@ -10,7 +10,7 @@ export CPMDefault = d:
 
 all: vflash.sys test512k.sys mtest512.sys mtest180.sys \
 	vdump3.sys wizcfg.sys setrtc.sys vh8dutil.sys setdsrtc.sys \
-	oledtest.sys
+	oledtest.sys oledlogo.sys
 
 # not auto-built: diag512k, sdtest, vcpu
 

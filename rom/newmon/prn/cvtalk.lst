@@ -5,6 +5,9 @@
 			maclib	core
 **** core.lib ****
 **** cvtalk.asm ****
+			maclib	setup
+**** setup.lib ****
+**** cvtalk.asm ****
 			maclib	z80
 **** z80.lib ****
 **** cvtalk.asm ****
@@ -20,7 +23,7 @@
 1002  FF00    		db	255,0	; +2,+3: phy drv base, num
 		
 1004  C31B10  		jmp	init	; +4: init entry
-1007  C31D10  		jmp	exec	; +7: action entry
+1007  C32910  		jmp	exec	; +7: action entry
 		
 100A  76      		db	'v'	; +10: Command letter
 100B  FF      		db	-1	; +11: front panel key
@@ -31,84 +34,96 @@
       6C6B00
 		
 101B          	init:
-101B  AF      		xra	a	; NC
-101C  C9      		ret
+101B  3A10F9  		lda	susave+vdipt
+101E  FEFF    		cpi	0ffh
+1020  2002    		jrnz	init0
+1022  3ED8    		mvi	a,0d8h
+1024  325021  	init0:	sta	cport
+1027  AF      		xra	a	; NC
+1028  C9      		ret
 		
-101D          	exec:
-101D  219010  		lxi	h,signon
-1020  CD4400  		call	msgout
-1023  CD8310  		call	waitcr
-1026  219C10  		lxi	h,ready
-1029  CD4400  		call	msgout
-102C          	loop:
-102C  DBED    		in	0edh
-102E  0F      		rrc
-102F  301A    		jrnc	nokey
-1031  DBE8    		in	0e8h	; char from user
-1033  FE03    		cpi	CTLC
-1035  2839    		jrz	done
-1037  CD7410  		call	vdpout
-103A  CD7F10  		call	chrout
-103D  FE0D    		cpi	CR
-103F  200A    		jrnz	nokey
-1041  3E0A    		mvi	a,LF
-1043  CD7F10  		call	chrout
-1046  3EFF    		mvi	a,0ffh
-1048  328F10  		sta	pend
-104B          	nokey:
-104B  DBDA    		in	0dah
-104D  E608    		ani	00001000b	; FIFO data ready
-104F  28DB    		jrz	loop
+1029          	exec:
+1029  21A610  		lxi	h,signon
+102C  CD4400  		call	msgout
+102F  CD9910  		call	waitcr
+1032  21B210  		lxi	h,ready
+1035  CD4400  		call	msgout
+1038  3A5021  		lda	cport
+103B  C602    		adi	2
+103D  4F      		mov	c,a
+103E          	loop:
+103E  DBED    		in	0edh
+1040  0F      		rrc
+1041  301A    		jrnc	nokey
+1043  DBE8    		in	0e8h	; char from user
+1045  FE03    		cpi	CTLC
+1047  283B    		jrz	done
+1049  CD8810  		call	vdpout
+104C  CD9510  		call	chrout
+104F  FE0D    		cpi	CR
+1051  200A    		jrnz	nokey
+1053  3E0A    		mvi	a,LF
+1055  CD9510  		call	chrout
+1058  3EFF    		mvi	a,0ffh
+105A  32A510  		sta	pend
+105D          	nokey:
+105D  ED78    		inp	a	; vd$sts
+105F  E608    		ani	00001000b	; FIFO data ready
+1061  28DB    		jrz	loop
 			; VDIP1 char ready
-1051  3A8F10  		lda	pend
-1054  B7      		ora	a
-1055  2807    		jrz	nocr
-1057  CD1B00  		call	crlf
-105A  AF      		xra	a
-105B  328F10  		sta	pend
-105E          	nocr:
-105E  DBD9    		in	0d9h	; get VDIP1 data
-1060  FE0D    		cpi	CR
-1062  2805    		jrz	vdcr
-1064  CD7F10  		call	chrout
-1067  18C3    		jr	loop
-1069  3EFF    	vdcr:	mvi	a,0ffh
-106B  328F10  		sta	pend
-106E  18BC    		jr	loop
-1070          	done:
-1070  CD1B00  		call	crlf
-1073  C9      		ret
+1063  3AA510  		lda	pend
+1066  B7      		ora	a
+1067  2807    		jrz	nocr
+1069  CD1B00  		call	crlf
+106C  AF      		xra	a
+106D  32A510  		sta	pend
+1070          	nocr:
+1070  0D      		dcr	c
+1071  ED78    		inp	a	; get VDIP1 data
+1073  0C      		inr	c
+1074  FE0D    		cpi	CR
+1076  2805    		jrz	vdcr
+1078  CD9510  		call	chrout
+107B  18C1    		jr	loop
+107D  3EFF    	vdcr:	mvi	a,0ffh
+107F  32A510  		sta	pend
+1082  18BA    		jr	loop
+1084          	done:
+1084  CD1B00  		call	crlf
+1087  C9      		ret
 		
-1074  F5      	vdpout:	push	psw
-1075  DBDA    	vdpo0:	in	0dah
-1077  E604    		ani	00000100b	; Tx space avail
-1079  28FA    		jrz	vdpo0
-107B  F1      		pop	psw
-107C  D3D9    		out	0d9h
-107E  C9      		ret
+1088  F5      	vdpout:	push	psw
+1089  ED78    	vdpo0:	inp	a
+108B  E604    		ani	00000100b	; Tx space avail
+108D  28FA    		jrz	vdpo0
+108F  F1      		pop	psw
+1090  0D      		dcr	c
+1091  ED79    		outp	a
+1093  0C      		inr	c
+1094  C9      		ret
 		
-107F  2A2600  	chrout:	lhld	conout
-1082  E9      		pchl
+1095  2A2600  	chrout:	lhld	conout
+1098  E9      		pchl
 		
-1083          	waitcr:
-1083  CD4A00  		call	conin
-1086  FE0D    		cpi	CR
-1088  C8      		rz
-1089  FE7F    		cpi	DEL
-108B  20F6    		jrnz	waitcr	; TODO: beep?
-108D  E1      		pop	h
-108E  C9      		ret
+1099          	waitcr:
+1099  CD4A00  		call	conin
+109C  FE0D    		cpi	CR
+109E  C8      		rz
+109F  FE7F    		cpi	DEL
+10A1  20F6    		jrnz	waitcr	; TODO: beep?
+10A3  E1      		pop	h
+10A4  C9      		ret
 		
-108F  00      	pend:	db	0	; CR/LF pending?
+10A5  00      	pend:	db	0	; CR/LF pending?
 		
-1090  20564449	signon:	db	' VDIP1 talk',0
+10A6  20564449	signon:	db	' VDIP1 talk',0
       50312074
       616C6B00
-109C  0D0A5265	ready:	db	CR,LF,'Ready.',CR,LF,0
+10B2  0D0A5265	ready:	db	CR,LF,'Ready.',CR,LF,0
       6164792E
       0D0A00
 		
-10A7  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
+10BD  FFFFFFFF		rept	(($+0ffh) and 0ff00h)-$
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
@@ -124,13 +139,7 @@
       FFFFFFFF
       FFFFFFFF
       FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FFFFFFFF
-      FF
+      FFFFFF
 0000          	if ($ > 1800h)
 		endif
 		
@@ -142,9 +151,9 @@ Statistics:
 
      4	passes
      0	jr promotions
-   100	symbols
+   124	symbols
    256	bytes
 
-   119	macro calls
+   104	macro calls
   3759	macro bytes
      0	invented symbols

@@ -1,6 +1,7 @@
 ; VTALK to VDIP1
 	maclib	ram
 	maclib	core
+	maclib	setup
 	maclib	z80
 
 CR	equ	13
@@ -23,6 +24,11 @@ first:	db	HIGH (last-first)	; +0: num pages
 	db	'VDIP1 Talk',0	; +16: mnemonic string
 
 init:
+	lda	susave+vdipt
+	cpi	0ffh
+	jrnz	init0
+	mvi	a,0d8h
+init0:	sta	cport
 	xra	a	; NC
 	ret
 
@@ -32,6 +38,9 @@ exec:
 	call	waitcr
 	lxi	h,ready
 	call	msgout
+	lda	cport
+	adi	2
+	mov	c,a
 loop:
 	in	0edh
 	rrc
@@ -48,7 +57,7 @@ loop:
 	mvi	a,0ffh
 	sta	pend
 nokey:
-	in	0dah
+	inp	a	; vd$sts
 	ani	00001000b	; FIFO data ready
 	jrz	loop
 	; VDIP1 char ready
@@ -59,7 +68,9 @@ nokey:
 	xra	a
 	sta	pend
 nocr:
-	in	0d9h	; get VDIP1 data
+	dcr	c
+	inp	a	; get VDIP1 data
+	inr	c
 	cpi	CR
 	jrz	vdcr
 	call	chrout
@@ -72,11 +83,13 @@ done:
 	ret
 
 vdpout:	push	psw
-vdpo0:	in	0dah
+vdpo0:	inp	a
 	ani	00000100b	; Tx space avail
 	jrz	vdpo0
 	pop	psw
-	out	0d9h
+	dcr	c
+	outp	a
+	inr	c
 	ret
 
 chrout:	lhld	conout

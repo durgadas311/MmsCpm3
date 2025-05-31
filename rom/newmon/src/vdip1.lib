@@ -1,11 +1,6 @@
 ; util routines for accessing VDIP1
-; caller must define 'vdbuf' as input buffer,
-; and 'vdip1' as base port.
-
-vdip1	equ	0d8h	; base port
-
-vd$dat	equ	vdip1+1
-vd$sts	equ	vdip1+2
+; caller must define 'vdbuf' as input buffer.
+; 'cport' contains our port number base
 
 vd$txe	equ	00000100b	; Tx ready
 vd$rxr	equ	00001000b	; Rx data ready
@@ -130,38 +125,51 @@ vdi2:	call	vdinc
 vdinz:
 	mvi	b,50		; 100mS timeout
 	push	h
+	push	d
 	lxi	h,ticcnt	; use 2mS increments
-	mov	c,m
-	jr	vdi0
+	mov	e,m
+	jr	vdix
 
 ; avoid hung situations
 vdinc:
 	mvi	b,6		; 2.5-3 second timeout
 	push	h
+	push	d
 	lxi	h,ticcnt+1	; hi byte ticks at 512mS
-	mov	c,m		; current tick...
-vdi0:	in	vd$sts
+	mov	e,m		; current tick...
+vdix:	lda	cport
+	adi	2	; vd$sts
+	mov	c,a
+vdi0:	inp	a	; vd$sts
 	ani	vd$rxr
 	jrnz	vdi1
 	mov	a,m
-	cmp	c
+	cmp	e
 	jrz	vdi0
-	mov	c,a
+	mov	e,a
 	djnz	vdi0
+	pop	d
 	pop	h
 	stc
 	ret
-vdi1:	in	vd$dat
+vdi1:	dcr	c	; vd$dat
+	inp	a
+	pop	d
 	pop	h
 	ret
 
 ; get read data.
 ; HL=buffer, length always 128
 vdinb:	mvi	b,128
-vdb0:	in	vd$sts
+	lda	cport
+	adi	2	; vd$sts
+	mov	c,a
+vdb0:	inp	a
 	ani	vd$rxr
 	jrz	vdb0
-	in	vd$dat
+	dcr	c
+	inp	a
+	inr	c
 	mov	m,a
 	inx	h
 	djnz	vdb0
@@ -169,24 +177,35 @@ vdb0:	in	vd$sts
 
 ; send char to VDIP1
 ; A=char
-vdout:	push	psw
-vdo0:	in	vd$sts
+vdout:	push	b
+	push	psw
+	lda	cport
+	adi	2	; vd$sts
+	mov	c,a
+vdo0:	inp	a
 	ani	vd$txe
 	jrz	vdo0
 	pop	psw
-	out	vd$dat
+	dcr	c
+	outp	a
+	pop	b
 	ret
 
 ; HL=message, terminated by CR
 vdmsg:
-	in	vd$sts
+	lda	cport
+	adi	2	; vd$sts
+	mov	c,a
+vdmsg0:	inp	a
 	ani	vd$txe
-	jrz	vdmsg
+	jrz	vdmsg0
 	mov	a,m
-	out	vd$dat
+	dcr	c
+	outp	a
+	inr	c
 	cpi	CR	; CR
 	rz
 	inx	h
-	jr	vdmsg
+	jr	vdmsg0
 
 ; end of library

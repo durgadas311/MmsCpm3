@@ -5,7 +5,7 @@ false	equ	0
 true	equ	not false
 
 alpha	equ	0
-beta	equ	2
+beta	equ	3
 
 z180	equ	false
 h8nofp	equ	false
@@ -608,6 +608,18 @@ cmdboot:
 
  if z180
 trpms:	db	CR,LF,'*** TRAP ',TRM
+ if not nofp	; need the space
+; C *must* contain vd$sts port from getvdpt
+flsvdip:
+	; flush out VDIP1 while we wait...
+	inp	a	; VDIP1/FT245R status
+	ani	00001000b	; VDIP1 RxR
+	rz
+	dcr	c
+	inp	a	; flush char, VDIP1 data reg
+	inr	c
+	ret
+ endif
  endif
 
 	rept	0260h-$
@@ -805,9 +817,13 @@ init0:	lxi	h,0ffffh
  endif
 	mvi	a,ctl$MEM1	; MEM1 = full ROM
 	out	0f2h	; enable full ROM
+ if h89	; NC-89
+	call	savram	; H89-512K built-in, save RAM
+ else
 	lda	suadr+m512k
 	ora	a
 	cz	savram	; H8-512K installed, save RAM
+ endif
 	lxi	h,0
 	lxi	d,0
 	lxi	b,2000h	; copy everything?
@@ -895,6 +911,16 @@ conot1:
 	ret
 
  if not nofp
+ if z180	; need the space...
+getvdpt:
+	lda	susave+vdipt
+	cpi	0ffh
+	jrnz	gvp0
+	mvi	a,0d8h
+gvp0:	adi	2	; status port
+	mov	c,a
+	ret
+ endif
 	rept	03eeh-$
 	db	0ffh
 	endm
@@ -1987,31 +2013,28 @@ msgout:
 	jr	msgout
 
 ; called in the context of a command on console
-conin:	in	0edh
+conin:	push	b
+	call	getvdpt	; vd$sts in C
+conin2:	in	0edh
 	rrc
 	jrc	conin0
-	; flush out VDIP1 while we wait...
-	in	0dah	; VDIP1/FT245R status
-	ani	00001000b	; VDIP1 RxR
+	call	flsvdip	; flush out VDIP1 while we wait...
  if nofp
-	jrz	conin
-	in	0d9h	; flush char, VDIP1 data reg
-	jr	conin
+	jr	conin2
  else
-	jrz	novdip2
-	in	0d9h	; flush char
-novdip2:
 	lda	kpchar
 	ora	a
-	jrz	conin
+	jrz	conin2
 	; cancel console cmd, leave keypad char for cmdin
+	pop	b
 	jmp	start
  endif
 
-conin0:	in	0e8h
+conin0:	pop	b
+conin3:	in	0e8h
 	ani	07fh
 	cpi	DEL	; DEL key restarts from anywhere?
-	jz	re$entry
+	jz	re$entry	; resets SP
 	ret
 
 ; Pure console input, no tricks
@@ -2036,27 +2059,21 @@ keyin:	lda	kpchar
  endif
 
 ; wait for command - console or keypad
-cmdin:
+cmdin:	call	getvdpt	; gets vd$sts in C
+cmdin0:
 	in	0edh
 	rrc
-	jrc	conin0
-	; flush out VDIP1 while we wait...
-	in	0dah	; VDIP1/FT245R status
-	ani	00001000b	; VDIP1 RxR
+	jrc	conin3
+	call	flsvdip ; flush out VDIP1 while we wait...
 	; INS8250 IIR always 0
 	; 16550 IIR is RxD timeout (?)
 	; 16C2550 ISR is RxD timeout (?)
  if nofp
-	jrz	cmdin
-	in	0d9h	; flush char, VDIP1 data reg
-	jr	cmdin
+	jr	cmdin0
  else
-	jrz	novdip1
-	in	0d9h	; flush char
-novdip1:
 	lda	kpchar
 	ora	a
-	jrz	cmdin
+	jrz	cmdin0
 getkey:	push	psw	; A=scan code
 	xra	a
 	sta	kpchar
@@ -3005,6 +3022,28 @@ prtver:
 
 versms:	db	'ersion ',TRM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+if not z180 or nofp
+getvdpt:
+	lda	susave+vdipt
+	cpi	0ffh
+	jrnz	gvp0
+	mvi	a,0d8h
+gvp0:	adi	2	; status port
+	mov	c,a
+	ret
+
+; C *must* contain vd$sts port from getvdpt
+flsvdip:
+	; flush out VDIP1 while we wait...
+	inp	a	; VDIP1/FT245R status
+	ani	00001000b	; VDIP1 RxR
+	rz
+	dcr	c
+	inp	a	; flush char, VDIP1 data reg
+	inr	c
+	ret
+ endif
 
 ; code required to return to monitor from stand-alone programs.
 retmon:

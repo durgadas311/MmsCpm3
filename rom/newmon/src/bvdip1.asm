@@ -1,10 +1,9 @@
 ; Boot Module for VDIP1 (USB thumb drive)
 ; TODO: make port variable?
 
-vdip1	equ	0d8h	; assume part of Z80-DUART
-
 	maclib	ram
 	maclib	core
+	maclib	setup
 	maclib	z80
 
 CR	equ	13
@@ -22,7 +21,7 @@ first:	db	HIGH (last-first)	; +0: num pages
 
 	db	'V'	; +10: Boot command letter
 	db	6	; +11: front panel key
-	db	vdip1	; +12: port, 0 if variable
+	db	0	; +12: port, 0 if variable
 	db	10000011b,10100100b,10000110b	; +13: FP display ("USb")
 	db	'VDIP1',0	; +16: mnemonic string
 
@@ -30,6 +29,11 @@ sfx:	db	'.sys'
 sfxlen	equ	$-sfx
 
 init:
+	lda	susave+vdipt
+	cpi	0ffh
+	jrnz	init0
+	mvi	a,0d8h	; default
+init0:	sta	cport	; for everyone to use (incl. utils)
 	call	runout
 	call	sync
 	ret	; pass/fail based on CY
