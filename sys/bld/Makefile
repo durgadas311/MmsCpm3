@@ -37,10 +37,13 @@ ldr%.com: ldr%.rel ldrb%.rel ldrprog.rel ldrbdos.rel ldrbios.rel
 b3z17krr.spr: $(BASE) m320'3.rel z17'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
 	vcpm link "b3z17krr=mbios3,chrio3,m320'3,z17'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(Z17DRVS) $(Z17MODS) $(RDDRVS) $(DSO) $@
-	
 
 b3z37krr.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
 	vcpm link "b3z37krr=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+
+b3z37krd.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc1302.rel mem512k.rel
+	vcpm link "b3z37krd=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc1302,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
 b3f37krr.spr: $(BASE) h8cf'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldrcf.com
