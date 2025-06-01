@@ -1,3 +1,7 @@
+/*
+ * Program to send a 1024-byte binary bitmap image to
+ * an SSD1306-based OLED display.
+ */
 
 #include <printf.h>
 #include "oledlib.h"
@@ -31,14 +35,6 @@ static char buf[128*64/8];
 	0x00,	/* 00000000 */
 #endif
 
-static char init[] = {
-	0xae, 0x20,0, 0xc8, 0x40, 0x81,0x7f, 0xa1,
-	0xa6, 0xa8,0x3f, 0xd3,0, 0xd5,0x80, 0xd9,0x22,
-	0xda,0x12, 0xdb,0x20, 0x8d,0x14, 0xa4, 0xaf,
-/* now reset address */
-	0x21,0,127,0x22,0,7
-};
-
 int main(argc, argv)
 int argc;
 char **argv;
@@ -62,8 +58,7 @@ char **argv;
 		return 1;
 	}
 
-	oledinit();
-	e = oledbuf(init, sizeof(init), OLED_CMD);
+	e = oledinit();
 	if (e) {
 		printf("Failed to send init\n");
 		return 1;

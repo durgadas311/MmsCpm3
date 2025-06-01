@@ -75,7 +75,6 @@ char dat;
 	lda	@ctl
 	ani	not SS_WEN
 	out	PORT
-	mov	c,a
 	mvi	b,8
 i2cp1:
 	ral
@@ -121,7 +120,7 @@ int i2cget()
 	ori	SS_WEN
 	out	PORT
 	mvi	b,8
-i2cp1:
+i2cg1:
 	ori	I2C_CLK
 	out	PORT
 	push	psw
@@ -134,7 +133,7 @@ i2cp1:
 	ani	not I2C_CLK
 	out	PORT
 	dcr	b
-	jnz	i2cp1
+	jnz	i2cg1
 	ani	not SS_WEN
 	ani	SS_WDN
 	out	PORT

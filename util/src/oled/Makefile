@@ -9,7 +9,7 @@ export CPMDrive_C = $(PWD)
 export CPMDrive_D = $(CSRC)
 export CPMDefault = c:
 
-TARGETS = oledldr.com
+TARGETS = oledldr.com oledtype.com
 DEPS = i2clib.rel oledlib.rel
 
 all: $(TARGETS)
@@ -34,4 +34,8 @@ i2clib.rel: i2clib.c
 
 oledldr.com: printf.h printf.rel oledldr.rel $(DEPS)
 	vcpm link oledldr=oledldr,oledlib,i2clib,printf,a:stdlib'[s]',a:clibrary'[s,oc,nr]'
+	@test -s $@
+
+oledtype.com: printf.h printf.rel oledtype.rel $(DEPS)
+	vcpm link oledtype=oledtype,oledlib,i2clib,printf,a:stdlib'[s]',a:clibrary'[s,oc,nr]'
 	@test -s $@
