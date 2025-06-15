@@ -11,7 +11,7 @@ BS	equ	8
 BEL	equ	7
 CTLC	equ	3
 
-rtc	equ	080h	; bit-bang port address
+rtc	equ	081h	; bit-bang port address
 ds$ce	equ	00010000b
 ds$wen	equ	00100000b
 ds$clk	equ	01000000b

@@ -43,6 +43,9 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/bh37.cim \
 	zout/bh47.cim \
 	zout/bh67.cim \
+	zout/bcf.cim \
+	zout/bsdcard.cim \
+	zout/bwiznet.cim \
 	zout/bvdip1.cim \
 	zout/chelp.cim \
 	zout/cinput.cim \
@@ -52,9 +55,6 @@ H89MODS= 2716_444-19_H17.rom \
 	zout/ch8dcopy.cim \
 	zout/cspeed.cim \
 	zout/alogo.cim
-# later...
-#	zout/bsdcard.cim \
-#	zout/bwiznet.cim \
 
 H8MON = zout/h8core.cim $(H8MODS) zout/csetup.cim
 H8NMON = zout/h8ncore.cim $(H8NMODS) zout/csetupn.cim

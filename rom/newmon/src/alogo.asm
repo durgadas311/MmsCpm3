@@ -13,7 +13,7 @@ CTLC	equ	3
 	maclib	ram
 	maclib	z80
 
-rtc	equ	080h	; bit-bang port address
+rtc	equ	081h	; bit-bang port address
 ss$clk	equ	00000100b
 ds$ce	equ	00010000b
 ds$wen	equ	00100000b
