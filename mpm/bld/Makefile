@@ -25,6 +25,8 @@ DEF_H8 = h8v4
 
 all: m3sdczrr.sys mldrsdc.img
 
+nc89: m3z67kd m3cfkd m3sdckd
+
 %.rel: %.asm cfgsys.lib
 	vcpm rmac "$<" '$$SZ'
 
@@ -55,7 +57,10 @@ bwbwbot.cim: bwbwbot.asm
 # Rules to configure/make XIOS and loader
 # H8/H8-512K/H67 MP/M XIOS
 m3z67kr: $(DEF_H8) m3z67kr.sys mldr320.com
-m3z67kd: $(DEF_H8) m3z67kd.sys mldr320.com
+# NC89, new DS1302 RTC chip
+m3z67kd: $(DEF_H8) m3z67kd.sys mldr320.img
+m3cfkd: $(DEF_H8) m3cfkd.sys mldrcf.img
+m3sdckd: $(DEF_H8) m3sdckd.sys mldrsdc.img
 
 # H8/H8-512K/CF MP/M XIOS
 m3cfkr: $(DEF_H8) m3cfkr.sys mldrcf.com
@@ -73,10 +78,6 @@ m3z67kr.spr: $(BASE) z67.rel rtc72421.rel mem512k.rel
 	vcpm link "m3z67kr=mxios,cio8250,z67,end,lptbl,mem512k,rtc72421[b,os,nr]"
 	setup30 $(Z67DRVS) $@
 
-m3z67kd.spr: $(BASE) z67.rel rtc1302.rel mem512k.rel
-	vcpm link "m3z67kd=mxios,cio8250,z67,end,lptbl,mem512k,rtc1302[b,os,nr]"
-	setup30 $(Z67DRVS) $@
-
 m3cfkr.spr: $(BASE) h8cf.rel rtc72421.rel mem512k.rel
 	vcpm link "m3cfkr=mxios,cio8250,h8cf,end,lptbl,mem512k,rtc72421[b,os,nr]"
 	setup30 $(CFDRVS) $@
@@ -91,6 +92,19 @@ m3rcz1sd.spr: $(RCBASE) sdc.rel nortc.rel memz180.rel
 
 m3rcz1cf.spr: $(RCBASE) cf2014.rel nortc.rel memz180.rel
 	vcpm link "m3rcz180=mxios,cioz180,cf2014,end,lptbl,memz180,nortc[b,os,nr]"
+	setup30 $(CFDRVS) $@
+
+# NC-89
+m3z67kd.spr: $(BASE) z67.rel rtc1302.rel mem512k.rel
+	vcpm link "m3z67kd=mxios,cio8250,z67,end,lptbl,mem512k,rtc1302[b,os,nr]"
+	setup30 $(Z67DRVS) $@
+
+m3cfkd.spr: $(BASE) h8cf.rel rtc1302.rel mem512k.rel
+	vcpm link "m3cfkd=mxios,cio8250,h8cf,end,lptbl,mem512k,rtc1302[b,os,nr]"
+	setup30 $(CFDRVS) $@
+
+m3sdckd.spr: $(BASE) sdc.rel rtc1302.rel mem512k.rel
+	vcpm link "m3sdckd=mxios,cio8250,sdc,end,lptbl,mem512k,rtc1302[b,os,nr]"
 	setup30 $(CFDRVS) $@
 
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present

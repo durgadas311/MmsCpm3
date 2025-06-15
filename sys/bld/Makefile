@@ -28,6 +28,8 @@ ALLSYS = $(Z67SYS) $(CFSYS) $(SDCSYS)
 
 all: $(ALLSYS)
 
+nc89: c3z37krd.sys c3s37krd.sys c3f37krd.sys
+
 %.rel: %.asm
 	vcpm rmac "$?" '$$SZLA'
 
@@ -42,10 +44,6 @@ b3z37krr.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel
 	vcpm link "b3z37krr=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
-b3z37krd.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc1302.rel mem512k.rel
-	vcpm link "b3z37krd=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc1302,mem512k,getdp,scb[b,os,nr]"
-	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
-
 b3f37krr.spr: $(BASE) h8cf'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel ldrcf.com
 	vcpm link "b3f37krr=mbios3,chrio3,h8cf'3,z37'3,rd512k'3,end,lptbl,rtc72421,mem512k,getdp,scb[b,os,nr]"
 	setup30 $(CFDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
@@ -57,6 +55,19 @@ b3s37krr.spr: $(BASE) sdc'3.rel z37'3.rel rd512k'3.rel rtc72421.rel mem512k.rel 
 b3z67mr.spr: $(BASE) m320'3.rel m316'3.rel nortc.rel mem318.rel
 	vcpm link "b3z67mr=mbios3,chrio3,m320'3,m316'3,end,lptbl,nortc,mem318,getdp,scb[b,os,nr]"
 	setup30 $(Z67DRVS) $(M316DRVS) $(M316MODS) $(DSO) $@
+
+# For NC-89 (new RTC chip)
+b3z37krd.spr: $(BASE) m320'3.rel z37'3.rel rd512k'3.rel rtc1302.rel mem512k.rel
+	vcpm link "b3z37krd=mbios3,chrio3,m320'3,z37'3,rd512k'3,end,lptbl,rtc1302,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(Z67DRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+
+b3f37krd.spr: $(BASE) h8cf'3.rel z37'3.rel rd512k'3.rel rtc1302.rel mem512k.rel ldrcf.com
+	vcpm link "b3f37krd=mbios3,chrio3,h8cf'3,z37'3,rd512k'3,end,lptbl,rtc1302,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(CFDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
+
+b3s37krd.spr: $(BASE) sdc'3.rel z37'3.rel rd512k'3.rel rtc1302.rel mem512k.rel ldrsdc.com
+	vcpm link "b3s37krd=mbios3,chrio3,sdc'3,z37'3,rd512k'3,end,lptbl,rtc1302,mem512k,getdp,scb[b,os,nr]"
+	setup30 $(SDCDRVS) $(Z37DRVS) $(Z37MODS) $(RDDRVS) $(DSO) $@
 
 # Z180 versions
 mbios3z.asm: mbios3.asm

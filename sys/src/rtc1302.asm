@@ -1,4 +1,4 @@
-vers equ '1 ' ; May 19, 2025  17:06   drm "RTC1302.ASM"
+vers equ '2 ' ; Jun 15, 2025  08:03   drm "RTC1302.ASM"
 ;****************************************************************
 ; DS1302 RTC (Time) BIOS module for CP/M 3 (CP/M plus),		*
 ; Copyright (c) 2017 Douglas Miller <durgadas311@gmail.com>	*
@@ -7,7 +7,7 @@ vers equ '1 ' ; May 19, 2025  17:06   drm "RTC1302.ASM"
 
 epoch2k	equ	8035	; CP/M date for Jan 1 2000.
 
-rtc	equ	080h	; bit-bang port address
+rtc	equ	081h	; bit-bang port address
 ds$ce	equ	00010000b
 ds$wen	equ	00100000b
 ds$clk	equ	01000000b

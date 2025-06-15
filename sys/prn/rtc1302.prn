@@ -1,0 +1,437 @@
+ 2032 =         vers equ '2 ' ; Jun 15, 2025  08:03   drm "RTC1302.ASM"
+                ;****************************************************************
+                ; DS1302 RTC (Time) BIOS module for CP/M 3 (CP/M plus),		*
+                ; Copyright (c) 2017 Douglas Miller <durgadas311@gmail.com>	*
+                ;****************************************************************
+                	maclib	z80
+                
+ 1F63 =         epoch2k	equ	8035	; CP/M date for Jan 1 2000.
+                
+ 0081 =         rtc	equ	081h	; bit-bang port address
+ 0010 =         ds$ce	equ	00010000b
+ 0020 =         ds$wen	equ	00100000b
+ 0040 =         ds$clk	equ	01000000b
+ 0080 =         ds$wd	equ	10000000b
+                
+                	extrn @cbnk
+                	extrn ?bnksl
+                	extrn @sec,@min,@hour,@date
+                
+                	public ?time,?itime,@rtcstr
+                
+                	cseg
+                
+ 0000 4453313330@rtcstr: db	'DS1302 ',0,'RTC Driver ',0,'v3.10'
+ 0019 3220      	dw	vers
+ 001B 24        	db	'$'
+                
+                ; C=0 GET TIME (BDOS is about to read SCB), else SET TIME (BDOS just updated SCB)
+                ; Typically, only C1=0 (SET) is used, to update the RTC chip.
+                ; Cold Boot will call ?itime to force read of RTC chip.
+                ; Must preserve HL, DE. Must be called with intrs enabled.
+                ; Cannot depend on Bank 0 on entry...
+                ?time:
+ 001C 79        	mov	a,c
+ 001D B7        	ora	a
+ 001E C8        	rz	; we keep time ourselves, not in RTC
+ 001F 3A0000    	lda	@cbnk
+ 0022 322A00    	sta	savbnk
+ 0025 F3        	di
+ 0026 AF        	xra	a
+ 0027 CD0000    	call	?bnksl
+                	sspd	savsp
+ 002A+ED73      	DB	0EDH,73H
+ 002C+2800      	DW	SAVSP
+ 002E 312800    	lxi	sp,stack
+ 0031 FB        	ei	; TODO: bother with this?
+ 0032 CD2B00    	call	settm
+ 0035 F3        	di
+ 0036 3A2A00    	lda	savbnk
+ 0039 CD0000    	call	?bnksl
+                	lspd	savsp
+ 003C+ED7B      	DB	0EDH,07BH
+ 003E+2800      	DW	SAVSP
+ 0040 FB        	ei
+ 0041 C9        	ret
+                
+                	dseg
+                
+                time:	; buffer for burst-mode DS1302 RTC data
+ 0000 00        sec:	db	0	; bit7 = CH
+ 0001 00        min:	db	0
+ 0002 00        hrs:	db	0	; bit7 = 12/24
+ 0003 00        dom:	db	0
+ 0004 00        mon:	db	0
+ 0005 00        dow:	db	0
+ 0006 00        yrs:	db	0
+ 0007 =         timez	equ	$-time
+                ;prt:	db	80h	; bit7 = prot
+                
+ 0007 00        ds$ctl:	db	0
+                
+ 0008           	ds	32
+ 0028           stack:	ds	0
+ 0028 0000      savsp:	dw	0
+ 002A 00        savbnk:	db	0
+                
+                ; This also must initialize the entire chip
+ 002B E5        settm:	push	h
+ 002C D5        	push	d
+ 002D C5        	push	b
+ 002E 210000    	lxi	h,time
+ 0031 3A0000    	lda	@sec
+ 0034 77        	mov	m,a
+ 0035 23        	inx	h
+ 0036 3A0000    	lda	@min
+ 0039 77        	mov	m,a
+ 003A 23        	inx	h
+ 003B 3A0000    	lda	@hour
+ 003E 77        	mov	m,a
+ 003F 23        	inx	h
+ 0040 E5        	push	h
+                	lded	@date
+ 0041+ED5B      	DB	0EDH,5BH
+ 0043+0000      	DW	@DATE
+ 0045 CDE200    	call	dt2mdy
+                	; A=dom, E=month, D=year(BCD)
+ 0048 E1        	pop	h
+ 0049 CD6F01    	call	stbin	; dom
+ 004C 7B        	mov	a,e	; mon
+ 004D CD6F01    	call	stbin
+ 0050 E5        	push	h	; save dow
+ 0051 23        	inx	h
+ 0052 72        	mov	m,d	; already in BCD
+ 0053 2A0000    	lhld	@date
+ 0056 CDBB00    	call	weekdy
+ 0059 E1        	pop	h
+ 005A 77        	mov	m,a	; dow
+ 005B CDE601    	call	settime
+ 005E C1        	pop	b
+ 005F D1        	pop	d
+ 0060 E1        	pop	h
+ 0061 C9        	ret
+                
+                ?itime:	; initialize RTC and get time
+ 0062 E5        	push	h
+ 0063 D5        	push	d
+ 0064 C5        	push	b
+                	; TODO: force 24-hour?
+ 0065 CD0F02    	call	gettime
+ 0068 210000    	lxi	h,time
+ 006B 7E        	mov	a,m
+ 006C 23        	inx	h
+ 006D 320000    	sta	@sec
+ 0070 7E        	mov	a,m
+ 0071 23        	inx	h
+ 0072 320000    	sta	@min
+ 0075 7E        	mov	a,m
+ 0076 23        	inx	h
+ 0077 320000    	sta	@hour
+ 007A CD6001    	call	gtbin	; day of month
+ 007D 5F        	mov	e,a
+ 007E CD6001    	call	gtbin	; month (1-12)
+ 0081 3D        	dcr	a	; 0-11
+ 0082 87        	add	a	; * 2 for table lookup
+ 0083 57        	mov	d,a
+ 0084 23        	inx	h	; skip DOW (unused)
+                	; assume RTC is never set for 20th cetnury...
+                	; i.e. year is always 20xx.
+ 0085 CD6001    	call	gtbin	; year (century)
+ 0088 47        	mov	b,a
+ 0089 4F        	mov	c,a
+ 008A 0D        	dcr	c	; could be -1
+                	srar	c	;
+ 008B+CB29      	DB	0CBH, 28H+C
+                	srar	c	;
+ 008D+CB29      	DB	0CBH, 28H+C
+ 008F 0C        	inr	c	; C=number of leap years before
+ 0090 E603      	ani	00000011b	; check leap year
+ 0092 213001    	lxi	h,month0
+                	jrnz	gettm2
+ 0095+2003      	DB	20H,GETTM2-$-1
+ 0097 214801    	lxi	h,month1
+                gettm2:	
+ 009A D5        	push	d	; save day of month
+ 009B 5A        	mov	e,d
+ 009C 1600      	mvi	d,0
+ 009E 19        	dad	d
+ 009F 7E        	mov	a,m
+ 00A0 23        	inx	h
+ 00A1 66        	mov	h,m
+ 00A2 6F        	mov	l,a	; number of days before this month
+ 00A3 E5        	push	h	; save current month offset
+ 00A4 21631F    	lxi	h,epoch2k
+ 00A7 116D01    	lxi	d,365
+ 00AA 19        gettm1:	dad	d
+                	djnz	gettm1
+ 00AB+10FD      	DB	10H,GETTM1-$-1
+ 00AD 09        	dad	b	; add leap years (B=0 now)
+ 00AE C1        	pop	b	; current month offset
+ 00AF 09        	dad	b
+ 00B0 C1        	pop	b	; day of month
+ 00B1 0600      	mvi	b,0	;
+ 00B3 09        	dad	b
+ 00B4 220000    	shld	@date
+ 00B7 C1        	pop	b
+ 00B8 D1        	pop	d
+ 00B9 E1        	pop	h
+ 00BA C9        	ret
+                
+                ; HL=CP/M date value (days since epoch)
+                ; From DATE.PLM: week$day = (word$value + base$day - 1) mod 7;
+                ;                base$day  lit '0',
+ 00BB 2B        weekdy:	dcx	h	; 1/1/78 is "0" (Sun), -1 for offset
+ 00BC 11581B    	lxi	d,7000
+ 00BF B7        	ora	a
+                wd0:	dsbc	d
+ 00C0+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd0
+ 00C2+30FC      	DB	30H,WD0-$-1
+ 00C4 19        	dad	d
+ 00C5 11BC02    	lxi	d,700
+ 00C8 B7        	ora	a
+                wd1:	dsbc	d
+ 00C9+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd1
+ 00CB+30FC      	DB	30H,WD1-$-1
+ 00CD 19        	dad	d
+ 00CE 114600    	lxi	d,70
+ 00D1 B7        	ora	a
+                wd2:	dsbc	d
+ 00D2+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd2
+ 00D4+30FC      	DB	30H,WD2-$-1
+ 00D6 19        	dad	d
+ 00D7 110700    	lxi	d,7
+ 00DA B7        	ora	a
+                wd3:	dsbc	d
+ 00DB+ED52      	DB	0EDH,D*8+42H
+                	jrnc	wd3
+ 00DD+30FC      	DB	30H,WD3-$-1
+ 00DF 19        	dad	d
+ 00E0 7D        	mov	a,l
+ 00E1 C9        	ret
+                
+                ; DE=CP/M date value (days since epoch)
+ 00E2 0E4E      dt2mdy:	mvi	c,78	; Epoch year, binary
+ 00E4 0678      	mvi	b,078h	; Epoch year, BCD
+ 00E6 7B        	mov	a,e
+ 00E7 B2        	ora	d
+                	jrnz	d2mdy0
+ 00E8+2001      	DB	20H,D2MDY0-$-1
+ 00EA 13        	inx	d
+ 00EB 216D01    d2mdy0:	lxi	h,365
+ 00EE 79        	mov	a,c
+ 00EF E603      	ani	03h	; Not strictly true, but works until year 2100...
+                	jrnz	d2mdy1
+ 00F1+2001      	DB	20H,D2MDY1-$-1
+ 00F3 23        	inx	h
+ 00F4 E5        d2mdy1:	push	h
+ 00F5 B7        	ora	a
+                	dsbc	d
+ 00F6+ED52      	DB	0EDH,D*8+42H
+ 00F8 E1        	pop	h
+                	jrnc	d2mdy2	; done computing year...
+ 00F9+300D      	DB	30H,D2MDY2-$-1
+ 00FB EB        	xchg
+ 00FC B7        	ora	a
+                	dsbc	d
+ 00FD+ED52      	DB	0EDH,D*8+42H
+ 00FF EB        	xchg
+ 0100 0C        	inr	c	; does not wrap at 100
+ 0101 78        	mov	a,b
+ 0102 C601      	adi	1
+ 0104 27        	daa
+ 0105 47        	mov	b,a
+                	jr	d2mdy0
+ 0106+18E3      	DB	18H,D2MDY0-$-1
+ 0108 C5        d2mdy2:	push	b	; DE = days within year 'C'
+ 0109 214801    	lxi	h,month0+24
+ 010C 79        	mov	a,c
+ 010D E603      	ani	03h
+                	jrnz	d2mdy3
+ 010F+2003      	DB	20H,D2MDY3-$-1
+ 0111 216001    	lxi	h,month1+24
+ 0114 060C      d2mdy3:	mvi	b,12
+ 0116 2B        d2mdy4:	dcx	h
+ 0117 2B        	dcx	h
+ 0118 05        	dcr	b
+ 0119 FA2A01    	jm	d2mdy5
+ 011C E5        	push	h
+ 011D D5        	push	d
+ 011E 7E        	mov	a,m
+ 011F 23        	inx	h
+ 0120 66        	mov	h,m
+ 0121 6F        	mov	l,a
+                	; DE = days in year, HL = ytd[month]
+ 0122 B7        	ora	a
+                	dsbc	d
+ 0123+ED52      	DB	0EDH,D*8+42H
+ 0125 7D        	mov	a,l	; potential remainder (neg)
+ 0126 D1        	pop	d
+ 0127 E1        	pop	h
+                	jrnc	d2mdy4
+ 0128+30EC      	DB	30H,D2MDY4-$-1
+                d2mdy5:	neg	; B = month, 0-11; A = -dom
+ 012A+ED44      	DB	0EDH,44H
+ 012C D1        	pop	d	; D=year (BCD)
+ 012D 04        	inr	b	; month (1-12)
+ 012E 58        	mov	e,b	; E=month
+ 012F C9        	ret		; A=dom
+                
+                ;               J   F   M   A   M   J   J   A   S   O   N   D
+ 0130 00001F003Bmonth0: dw       0, 31, 59, 90,120,151,181,212,243,273,304,334
+ 0148 00001F003Cmonth1: dw       0, 31, 60, 91,121,152,182,213,244,274,305,335
+                
+                ; Get (BCD digit) value from regs[] in binary
+ 0160 7E        gtbin:	mov	a,m
+ 0161 E60F      	ani	00fh	; LSD
+ 0163 47        	mov	b,a
+ 0164 7E        	mov	a,m
+ 0165 E6F0      	ani	0f0h	; MSD as X * 16
+ 0167 0F        	rrc		; X * 8
+ 0168 4F        	mov	c,a
+ 0169 0F        	rrc		; X * 4
+ 016A 0F        	rrc		; X * 2
+ 016B 81        	add	c	; (X * 8 + X * 2) = X * 10
+ 016C 80        	add	b	; + LSD
+ 016D 23        	inx	h
+ 016E C9        	ret
+                
+                ; store binary value into (BCD) digit registers
+ 016F D664      stbin:	sui	100
+                	jrnc	stbin
+ 0171+30FC      	DB	30H,STBIN-$-1
+ 0173 C664      	adi	100
+ 0175 0E00      	mvi	c,0
+ 0177 D60A      stbin0:	sui	10
+ 0179 0C        	inr	c
+                	jrnc	stbin0
+ 017A+30FB      	DB	30H,STBIN0-$-1
+ 017C C60A      	adi	10
+ 017E 0D        	dcr	c
+                	rlcr	c
+ 017F+CB01      	DB	0CBH, 00H + C
+                	rlcr	c
+ 0181+CB01      	DB	0CBH, 00H + C
+                	rlcr	c
+ 0183+CB01      	DB	0CBH, 00H + C
+                	rlcr	c
+ 0185+CB01      	DB	0CBH, 00H + C
+ 0187 B1        	ora	c
+ 0188 77        	mov	m,a
+ 0189 23        	inx	h
+ 018A C9        	ret
+                
+                ; DS1302 routines, using NC-89 ports
+                ; "in rtc" reads SDA on D0
+                ; "out rtc" ... bit bang...
+                
+                ; get a byte from DS1302. Assumes read command already sent.
+                ; return byte in E, rtc ctrl port same state as entry (ds$clk high)
+                dsget:
+ 018B 1E00      	mvi	e,0
+ 018D 0608      	mvi	b,8
+ 018F 3A0700    	lda	ds$ctl
+ 0192 F620      	ori	ds$wen	; disable write
+                dsg1:
+ 0194 E6BF      	ani	not ds$clk	; clock low
+ 0196 D381      	out	rtc
+ 0198 00        	nop		; delay >= 250nS
+ 0199 F5        	push	psw
+ 019A DB81      	in	rtc		; read data line
+ 019C 1F        	rar
+                	rarr	e
+ 019D+CB1B      	DB	0CBH, 18H + E
+ 019F F1        	pop	psw
+ 01A0 F640      	ori	ds$clk
+ 01A2 D381      	out	rtc
+ 01A4 00        	nop		; delay >= 250nS
+                	djnz	dsg1
+ 01A5+10ED      	DB	10H,DSG1-$-1
+ 01A7 320700    	sta	ds$ctl
+ 01AA C9        	ret
+                
+                ; output byte in E (destructive)
+                dsput:
+ 01AB 0608      	mvi	b,8
+ 01AD 3A0700    	lda	ds$ctl
+ 01B0 E6DF      	ani	not ds$wen	; /WE active
+                dsp1:
+ 01B2 E6BF      	ani	not ds$clk	; clock low
+ 01B4 D381      	out	rtc
+ 01B6 00        	nop		; delay >= 250nS
+ 01B7 17        	ral		; pop off data bit
+                	rarr	e	; next data bit to CY
+ 01B8+CB1B      	DB	0CBH, 18H + E
+ 01BA 1F        	rar		; new data bit in place
+ 01BB D381      	out	rtc
+ 01BD F640      	ori	ds$clk		; clock high
+ 01BF D381      	out	rtc
+ 01C1 00        	nop		; delay >= 250nS
+                	djnz	dsp1
+ 01C2+10EE      	DB	10H,DSP1-$-1
+ 01C4 320700    	sta	ds$ctl	; leave clk high, /WE asserted, data = ?
+ 01C7 C9        	ret
+                
+                dsend:
+ 01C8 3E20      	mvi	a,ds$wen
+ 01CA D381      	out	rtc
+ 01CC 320700    	sta	ds$ctl
+ 01CF C9        	ret
+                
+                ; command byte in E (destroyed)
+                dscmd:
+ 01D0 CDC801    	call	dsend	; force idle
+ 01D3 00        	nop	; delay >= 1uS
+ 01D4 00        	nop
+ 01D5 00        	nop
+ 01D6 00        	nop
+ 01D7 F610      	ori	ds$ce
+ 01D9 D381      	out	rtc
+ 01DB 320700    	sta	ds$ctl
+ 01DE 00        	nop	; delay >= 1uS
+ 01DF 00        	nop
+ 01E0 00        	nop
+ 01E1 00        	nop
+ 01E2 CDAB01    	call	dsput
+ 01E5 C9        	ret
+                
+                settime:
+ 01E6 1E8E      	mvi	e,10001110b	; write ctrl reg (disable prot)
+ 01E8 CDD001    	call	dscmd
+ 01EB 1E00      	mvi	e,0		; unprotect
+ 01ED CDAB01    	call	dsput
+ 01F0 CDC801    	call	dsend
+ 01F3 1EBE      	mvi	e,10111110b	; burst write clock
+ 01F5 CDD001    	call	dscmd
+ 01F8 210000    	lxi	h,time
+ 01FB 0607      	mvi	b,timez
+ 01FD C5        st1:	push	b
+ 01FE 5E        	mov	e,m
+ 01FF CDAB01    	call	dsput
+ 0202 23        	inx	h
+ 0203 C1        	pop	b
+                	djnz	st1
+ 0204+10F7      	DB	10H,ST1-$-1
+ 0206 1E80      	mvi	e,80h		; protect
+ 0208 CDAB01    	call	dsput
+ 020B C3C801    	jmp	dsend
+ 020E C9        	ret
+                
+                gettime:
+ 020F 1EBF      	mvi	e,10111111b	; burst read clock
+ 0211 CDD001    	call	dscmd
+ 0214 210000    	lxi	h,time
+ 0217 0607      	mvi	b,timez
+ 0219 C5        gt1:	push	b
+ 021A CD8B01    	call	dsget
+ 021D 73        	mov	m,e
+ 021E 23        	inx	h
+ 021F C1        	pop	b
+                	djnz	gt1
+ 0220+10F7      	DB	10H,GT1-$-1
+ 0222 C3C801    	jmp	dsend
+                
+ 0225           	end
+

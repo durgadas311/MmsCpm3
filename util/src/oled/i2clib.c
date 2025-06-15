@@ -1,7 +1,7 @@
 /*
  * Low level I2C/OLED bit-banging
  */
-#define PORT	80h
+#define PORT	81h
 
 #define I2C_CLK	04h
 #define DS_CE	10h
