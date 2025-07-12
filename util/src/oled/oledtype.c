@@ -54,9 +54,10 @@ char **argv;
 		return 1;
 	}
 	n = 0;
-	while ((e = fngets(fp, line, sizeof(line))) != -1) {
+	while (n < 8 && (e = fngets(fp, line, sizeof(line))) != -1) {
 		addtxt(buf, n++, line);
 	}
+	fclose(fp);
 
 	e = oledinit();
 	if (e) {
@@ -86,14 +87,16 @@ char *txt;
 	int ch;
 	int xx;
 
+	if (lno > 7) return -1;
 	pg = lno * 128; /* start of page/row in display memory */
 	ci = 0;
-	while (txt[ci]) {
+	while (ci < 21 && txt[ci]) {
 		ch = (txt[ci++] - ' ') * 5; /* location in font[] for char */
 		if (ch < 0 || ch > sizeof(font5x7)) continue;
 		for (xx = 0; xx < 5; ++xx) {
 			dsp[pg++] = font5x7[ch++];
 		}
-		dsp[pg++] = 0;
+		dsp[pg++] = 0; /* space btw chars */
 	}
+	return 0;
 }
