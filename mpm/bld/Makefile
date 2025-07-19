@@ -105,7 +105,7 @@ m3cfkd.spr: $(BASE) h8cf.rel rtc1302.rel mem512k.rel
 
 m3sdckd.spr: $(BASE) sdc.rel rtc1302.rel mem512k.rel
 	vcpm link "m3sdckd=mxios,cio8250,sdc,end,lptbl,mem512k,rtc1302[b,os,nr]"
-	setup30 $(CFDRVS) $@
+	setup30 $(SDCDRVS) $@
 
 # SDCard MP/M+CP/NET - assumes CP/NET RSP(s) present
 m3sdcnet.sys: m3sdczr.spr netservr.rsp netservr.brs

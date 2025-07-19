@@ -228,23 +228,23 @@
                 	; This only works if SDC was boot device
  1081 3A4D00    	lda	nsegmt-1	; LUN, 0 or 1
  1084 B7        	ora	a
- 1085 3E10      	mvi	a,SD0SCS
+ 1085 3E04      	mvi	a,SD0SCS
  1087           	jrz	is0
 CP/M RMAC ASSEM 1.1	#005	SDC - DRIVER FOR MMS MP/M WITH SDCARD INTERFACE
 
- 1089 3E00      	mvi	a,SD1SCS	; might be non-functional
- 108B 328312    is0:	sta	scs	; SD0SCS, SD1SCS
- 108E CD7B12    	call	sdcini
+ 1089 3E08      	mvi	a,SD1SCS	; might be non-functional
+ 108B 328C12    is0:	sta	scs	; SD0SCS, SD1SCS
+ 108E CD8412    	call	sdcini
  1091 2A4E00    	lhld	nsegmt		;grab this before it's gone...
- 1094 228412    	shld	segoff
+ 1094 228D12    	shld	segoff
                 endif
  1097 AF        	xra	a
  1098 C9        	ret
                 
- 1099 3AAE12    login:	lda	init
+ 1099 3AB712    login:	lda	init
  109C 3C        	inr	a
  109D           	jrnz	login0
- 109F 32AE12    	sta	init
+ 109F 32B712    	sta	init
  10A2 CDBC10    	call	init$hard
                 login0:
  10A5 3A8010    	lda	nparts
@@ -273,11 +273,11 @@
  10BF 220E01    	shld	bdma
  10C2 3A0E00    	lda	@scrcb+14	; hstbnk
  10C5 320D01    	sta	bbnk
- 10C8 2A8412    	lhld	segoff
- 10CB 228612    	shld	curlba+0
+ 10C8 2A8D12    	lhld	segoff
+ 10CB 228F12    	shld	curlba+0
  10CE 210000    	lxi	h,0
- 10D1 228812    	shld	curlba+2		; phy sec 0 = partition table
- 10D4 CDC511    	call	stlba2
+ 10D1 229112    	shld	curlba+2		; phy sec 0 = partition table
+ 10D4 CDD411    	call	stlba2
  10D7 CD5411    	call	read$raw
  10DA C0        	rnz	; error
  10DB 3E13      	mvi	a,NPART
@@ -356,16 +356,16 @@
  1148           	ldy	l,+12	; buffer address
  114B           	ldy	h,+13
  114E 220E01    	shld	bdma
- 1151 CD8A11    	call	set$lba
+ 1151 CD9911    	call	set$lba
                 read$raw:
  1154 3E51      	mvi	a,CMDST+17
- 1156 327C12    	sta	cmd
- 1159 217C12    	lxi	h,cmd
+ 1156 328512    	sta	cmd
+ 1159 218512    	lxi	h,cmd
  115C 1601      	mvi	d,1
  115E 1E00      	mvi	e,0	; leave SCS on (unless error)
- 1160 CDD211    	call	sdcmd
+ 1160 CDE111    	call	sdcmd
  1163           	jrc	rwerr
- 1165 CD1D12    	call	sdrblk	; turns off SCS
+ 1165 CD2812    	call	sdrblk	; turns off SCS
  1168           	jrc	rwerr
  116A AF        	xra	a
  116B C9        	ret
@@ -377,243 +377,248 @@
                 
                 ;
                 ;	WRITE A PHYSICAL SECTOR CODE
-                ;
+                ; IY=buffer header
                 write$sdc:
- 116F CD8A11    	call	set$lba
- 1172 3E58      	mvi	a,CMDST+24
- 1174 327C12    	sta	cmd
- 1177 217C12    	lxi	h,cmd
- 117A 1601      	mvi	d,1
- 117C 1E00      	mvi	e,0	; leave SCS on (unless error)
- 117E CDD211    	call	sdcmd
- 1181           	jrc	rwerr
- 1183 CD4712    	call	sdwblk	; turns off SCS
- 1186           	jrc	rwerr
- 1188 AF        	xra	a
- 1189 C9        	ret
+ 116F           	ldy	a,+14	; buffer bank
+ 1172 320D01    	sta	bbnk
+ 1175           	ldy	l,+12	; buffer address
+ 1178           	ldy	h,+13
+ 117B 220E01    	shld	bdma
+ 117E CD9911    	call	set$lba
+ 1181 3E58      	mvi	a,CMDST+24
+ 1183 328512    	sta	cmd
+ 1186 218512    	lxi	h,cmd
+ 1189 1601      	mvi	d,1
+ 118B 1E00      	mvi	e,0	; leave SCS on (unless error)
+ 118D CDE111    	call	sdcmd
+ 1190           	jrc	rwerr
+ 1192 CD5212    	call	sdwblk	; turns off SCS
+ 1195           	jrc	rwerr
+ 1197 AF        	xra	a
+ 1198 C9        	ret
                 
                 ;	CALCULATE THE REQUESTED SECTOR
                 ; IY=buffer cb
                 set$lba:
                 	; note: LBA is stored big-endian, LHLD/SHLD are little-endian
                 	; so H,D are LSB and L,E are MSB.
- 118A           	ldy	h,+8		; get requested track, byte-swapped
- 118D           	ldy	l,+9		;
- 1190 110000    	lxi	d,0
- 1193 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
-                stlba0:
- 1195           	slar	h
- 1197           	ralr	l
+ 1199           	ldy	h,+8		; get requested track, byte-swapped
+ 119C           	ldy	l,+9		;
 CP/M RMAC ASSEM 1.1	#008	SDC - DRIVER FOR MMS MP/M WITH SDCARD INTERFACE
 
- 1199           	ralr	d	; can't carry out
- 119B           	djnz	stlba0
+ 119F 110000    	lxi	d,0
+ 11A2 0604      	mvi	b,4		; shift 4 bits left (16 psec/trk)
+                stlba0:
+ 11A4           	slar	h
+ 11A6           	ralr	l
+ 11A8           	ralr	d	; can't carry out
+ 11AA           	djnz	stlba0
                 	; sector can't carry - 0-15 into vacated bits
- 119D           	ldy	a,+10		; get requested sector (phy)
- 11A0 B4        	ora	h
- 11A1 67        	mov	h,a
- 11A2 228812    	shld	curlba+2
- 11A5 EB        	xchg
- 11A6 228612    	shld	curlba+0	; CURLBA = (@trk << 4) | @sec
+ 11AC           	ldy	a,+10		; get requested sector (phy)
+ 11AF B4        	ora	h
+ 11B0 67        	mov	h,a
+ 11B1 229112    	shld	curlba+2
+ 11B4 EB        	xchg
+ 11B5 228F12    	shld	curlba+0	; CURLBA = (@trk << 4) | @sec
                 	; compute &partbl[@rdrv]+3.
                 	; We'd like to only do this only if seldsk changes,
                 	; but we have no callback for that.
- 11A9 3A0000    	lda	@rdrv
- 11AC 87        	add	a
- 11AD 87        	add	a	; *4
- 11AE C603      	adi	3	; can't carry
- 11B0 5F        	mov	e,a
- 11B1 1600      	mvi	d,0
- 11B3 218A12    	lxi	h,partbl
- 11B6 19        	dad	d
- 11B7 EB        	xchg		; DE = &partbl[@rdrv]+3
+ 11B8 3A0000    	lda	@rdrv
+ 11BB 87        	add	a
+ 11BC 87        	add	a	; *4
+ 11BD C603      	adi	3	; can't carry
+ 11BF 5F        	mov	e,a
+ 11C0 1600      	mvi	d,0
+ 11C2 219312    	lxi	h,partbl
+ 11C5 19        	dad	d
+ 11C6 EB        	xchg		; DE = &partbl[@rdrv]+3
                 	; add 32-bit values CURLBA += PARTBL[@rdrv]
- 11B8 218912    	lxi	h,curlba+3
- 11BB AF        	xra	a	; clear CY
- 11BC 0604      	mvi	b,4
+ 11C7 219212    	lxi	h,curlba+3
+ 11CA AF        	xra	a	; clear CY
+ 11CB 0604      	mvi	b,4
                 stlba1:
- 11BE 1A        	ldax	d
- 11BF 8E        	adc	m
- 11C0 77        	mov	m,a
- 11C1 2B        	dcx	h
- 11C2 1B        	dcx	d
- 11C3           	djnz	stlba1
+ 11CD 1A        	ldax	d
+ 11CE 8E        	adc	m
+ 11CF 77        	mov	m,a
+ 11D0 2B        	dcx	h
+ 11D1 1B        	dcx	d
+ 11D2           	djnz	stlba1
                 stlba2:	; setup controller regs from CURLBA
- 11C5 2A8612    	lhld	curlba+0
- 11C8 227D12    	shld	cmd+1
- 11CB 2A8812    	lhld	curlba+2
- 11CE 227F12    	shld	cmd+3
- 11D1 C9        	ret
+ 11D4 2A8F12    	lhld	curlba+0
+ 11D7 228612    	shld	cmd+1
+ 11DA 2A9112    	lhld	curlba+2
+ 11DD 228812    	shld	cmd+3
+ 11E0 C9        	ret
                 
                 ; send (6 byte) command to SDCard, get response.
                 ; HL=command+response buffer, D=response length
                 ; return A=response code (00=success), HL=idle length, DE=gap length
                 sdcmd:
- 11D2 3A8312    	lda	scs
+ 11E1 3A8C12    	lda	scs
                 	; drop out here if no device...
- 11D5 B7        	ora	a
- 11D6 37        	stc
- 11D7 C8        	rz
- 11D8 D35E      	out	spi?ctl	; SCS on
- 11DA 0E5D      	mvi	c,spi?rd
+ 11E4 B7        	ora	a
+ 11E5 37        	stc
+ 11E6 C8        	rz
+ 11E7 D341      	out	spi?ctl	; SCS on
+ 11E9 0E40      	mvi	c,spi?rd
                 	; wait for idle
-                	; TODO: timeout this loop
- 11DC E5        	push	h	; save command+response buffer
- 11DD 210000    	lxi	h,0	; idle timeout
- 11E0           sdcmd0:	inp	a
- 11E2 FEFF      	cpi	0ffh
 CP/M RMAC ASSEM 1.1	#009	SDC - DRIVER FOR MMS MP/M WITH SDCARD INTERFACE
 
- 11E4           	jrz	sdcmd1
- 11E6 2B        	dcx	h
- 11E7 7C        	mov	a,h
- 11E8 B5        	ora	l
- 11E9           	jrnz	sdcmd0
+                	; TODO: timeout this loop
+ 11EB E5        	push	h	; save command+response buffer
+ 11EC 210000    	lxi	h,0	; idle timeout
+ 11EF           sdcmd0:	inp	a
+ 11F1 FEFF      	cpi	0ffh
+ 11F3           	jrz	sdcmd1
+ 11F5 2B        	dcx	h
+ 11F6 7C        	mov	a,h
+ 11F7 B5        	ora	l
+ 11F8           	jrnz	sdcmd0
                 	; timeout - error
                 sdcmd5:
- 11EB E1        	pop	h
- 11EC AF        	xra	a
- 11ED D35E      	out	spi?ctl	; SCS off
- 11EF 37        	stc
- 11F0 C9        	ret
- 11F1 E1        sdcmd1:	pop	h	; command buffer back
+ 11FA E1        	pop	h
+ 11FB AF        	xra	a
+ 11FC D341      	out	spi?ctl	; SCS off
+ 11FE 37        	stc
+ 11FF C9        	ret
+ 1200 E1        sdcmd1:	pop	h	; command buffer back
                  if spi?rd <> spi?wr
- 11F2 0E5C      	mvi	c,spi?wr
+                	mvi	c,spi?wr
                  endif
- 11F4 0606      	mvi	b,6
- 11F6           	outir
+ 1201 0606      	mvi	b,6
+ 1203           	outir
                  if spi?rd <> spi?wr
- 11F8 0E5D      	mvi	c,spi?rd
+                	mvi	c,spi?rd
                  endif
- 11FA           	inp	a	; prime the pump
- 11FC E5        	push	h	; points to response area...
- 11FD 210000    	lxi	h,0	; gap timeout
- 1200           sdcmd2:	inp	a
- 1202 FEFF      	cpi	0ffh
- 1204           	jrnz	sdcmd3
- 1206 2B        	dcx	h
- 1207 7C        	mov	a,h
- 1208 B5        	ora	l
- 1209           	jrnz	sdcmd2
- 120B           	jr	sdcmd5
- 120D E1        sdcmd3:	pop	h	; response buffer back
- 120E 42        	mov	b,d
- 120F 77        	mov	m,a
- 1210 23        	inx	h
- 1211 05        	dcr	b
- 1212           	jrz	sdcmd4
- 1214           	inir	; rest of response
- 1216 7B        sdcmd4:	mov	a,e	; SCS flag
- 1217 B7        	ora	a
- 1218 C8        	rz	; NC
- 1219 AF        	xra	a
- 121A D35E      	out	spi?ctl	; SCS off
- 121C C9        	ret	; NC
+ 1205           	inp	a	; prime the pump
+ 1207 E5        	push	h	; points to response area...
+ 1208 210000    	lxi	h,0	; gap timeout
+ 120B           sdcmd2:	inp	a
+ 120D FEFF      	cpi	0ffh
+ 120F           	jrnz	sdcmd3
+ 1211 2B        	dcx	h
+ 1212 7C        	mov	a,h
+ 1213 B5        	ora	l
+ 1214           	jrnz	sdcmd2
+ 1216           	jr	sdcmd5
+ 1218 E1        sdcmd3:	pop	h	; response buffer back
+ 1219 42        	mov	b,d
+ 121A 77        	mov	m,a
+ 121B 23        	inx	h
+ 121C 05        	dcr	b
+ 121D           	jrz	sdcmd4
+ 121F           	inir	; rest of response
+ 1221 7B        sdcmd4:	mov	a,e	; SCS flag
+ 1222 B7        	ora	a
+ 1223 C8        	rz	; NC
+ 1224 AF        	xra	a
+ 1225 D341      	out	spi?ctl	; SCS off
+ 1227 C9        	ret	; NC
                 
                 ; read a 512-byte data block, with packet header and CRC (ignored).
                 ; READ command was already sent and responded to.
                 ; SCS must already be ON.
                 ; return CY on error (A=error), SCS always off
                 sdrblk:
- 121D 0E5D      	mvi	c,spi?rd
-                	; wait for packet header (or error)
- 121F 110000    	lxi	d,0	; gap timeout
- 1222           sdrbk0:	inp	a
- 1224 FEFF      	cpi	0ffh
 CP/M RMAC ASSEM 1.1	#010	SDC - DRIVER FOR MMS MP/M WITH SDCARD INTERFACE
 
- 1226           	jrnz	sdrbk1
- 1228 1B        	dcx	d
- 1229 7A        	mov	a,d
- 122A B3        	ora	e
- 122B           	jrnz	sdrbk0
- 122D 37        	stc
- 122E           	jr	sdrbk2
+ 1228 0E40      	mvi	c,spi?rd
+                	; wait for packet header (or error)
+ 122A 110000    	lxi	d,0	; gap timeout
+ 122D           sdrbk0:	inp	a
+ 122F FEFF      	cpi	0ffh
+ 1231           	jrnz	sdrbk1
+ 1233 1B        	dcx	d
+ 1234 7A        	mov	a,d
+ 1235 B3        	ora	e
+ 1236           	jrnz	sdrbk0
+ 1238 37        	stc
+ 1239           	jr	sdrbk2
                 sdrbk1:	
- 1230 FEFE      	cpi	11111110b	; data start
- 1232 37        	stc	; else must be error
- 1233           	jrnz	sdrbk2
- 1235 0600      	mvi	b,0	; 256 bytes at a time
- 1237 2A0E01    	lhld	bdma
- 123A CD1001    	call	sdcrd
- 123D           	inp	a	; CRC 1
- 123F           	inp	a	; CRC 2
- 1241 AF        	xra	a	; NC
- 1242 3E00      sdrbk2:	mvi	a,0	; don't disturb CY
- 1244 D35E      	out	spi?ctl	; SCS off
- 1246 C9        	ret
+ 123B FEFE      	cpi	11111110b	; data start
+ 123D 37        	stc	; else must be error
+ 123E           	jrnz	sdrbk2
+ 1240 0600      	mvi	b,0	; 256 bytes at a time
+ 1242 2A0E01    	lhld	bdma
+ 1245 CD1001    	call	sdcrd
+ 1248           	inp	a	; CRC 1
+ 124A           	inp	a	; CRC 2
+ 124C AF        	xra	a	; NC
+ 124D 3E00      sdrbk2:	mvi	a,0	; don't disturb CY
+ 124F D341      	out	spi?ctl	; SCS off
+ 1251 C9        	ret
                 
                 ; write a 512-byte data block, with packet header and CRC (ignored).
                 ; WRITE command was already sent and responded to.
                 ; SCS must already be ON.
                 ; return CY on error (A=error), SCS always off
                 sdwblk:
- 1247 0E5C      	mvi	c,spi?wr
+ 1252 0E40      	mvi	c,spi?wr
                 	; TODO: wait for idle?
- 1249 3EFE      	mvi	a,11111110b	; data start token
- 124B           	outp	a
- 124D 0600      	mvi	b,0	; 256 bytes at a time
- 124F 2A0E01    	lhld	bdma
- 1252 CD1F01    	call	sdcwr	; send 512B block
- 1255           	outp	a	; CRC-1
- 1257           	outp	a	; CRC-2
+ 1254 3EFE      	mvi	a,11111110b	; data start token
+ 1256           	outp	a
+ 1258 0600      	mvi	b,0	; 256 bytes at a time
+ 125A 2A0E01    	lhld	bdma
+ 125D CD1F01    	call	sdcwr	; send 512B block
+ 1260           	outp	a	; CRC-1
+ 1262           	outp	a	; CRC-2
                  if spi?rd <> spi?wr
- 1259 0E5D      	mvi	c,spi?rd
+                	mvi	c,spi?rd
                  endif
- 125B           	inp	a	; prime the pump
+ 1264           	inp	a	; prime the pump
                 	; wait for response...
- 125D 110000    	lxi	d,0	; gap timeout
- 1260           sdwbk0:	inp	a
- 1262 FEFF      	cpi	0ffh
- 1264           	jrnz	sdwbk1
- 1266 1B        	dcx	d
- 1267 7A        	mov	a,d
- 1268 B3        	ora	e
- 1269           	jrnz	sdwbk0
- 126B 37        	stc
- 126C           	jr	sdwbk2
+ 1266 110000    	lxi	d,0	; gap timeout
+ 1269           sdwbk0:	inp	a
+ 126B FEFF      	cpi	0ffh
+ 126D           	jrnz	sdwbk1
+ 126F 1B        	dcx	d
+ 1270 7A        	mov	a,d
+ 1271 B3        	ora	e
+ 1272           	jrnz	sdwbk0
+ 1274 37        	stc
+ 1275           	jr	sdwbk2
                 sdwbk1:	
- 126E E61F      	ani	00011111b	; mask off unknown bits
- 1270 FE05      	cpi	00000101b	; data accepted
- 1272 37        	stc	; else must be error
- 1273           	jrnz	sdwbk2
- 1275 AF        	xra	a	; NC
 CP/M RMAC ASSEM 1.1	#011	SDC - DRIVER FOR MMS MP/M WITH SDCARD INTERFACE
 
- 1276 3E00      sdwbk2:	mvi	a,0	; don't disturb CY
- 1278 D35E      	out	spi?ctl	; SCS off
- 127A C9        	ret
+ 1277 E61F      	ani	00011111b	; mask off unknown bits
+ 1279 FE05      	cpi	00000101b	; data accepted
+ 127B 37        	stc	; else must be error
+ 127C           	jrnz	sdwbk2
+ 127E AF        	xra	a	; NC
+ 127F 3E00      sdwbk2:	mvi	a,0	; don't disturb CY
+ 1281 D341      	out	spi?ctl	; SCS off
+ 1283 C9        	ret
                 
                 sdcini:
                 	; TODO: initialize card
- 127B C9        	ret
+ 1284 C9        	ret
                 
                 ;
                 ;	DATA BUFFERS AND STORAGE
                 ;
                 
- 127C 0000000000cmd:	db	0,0,0,0,0,1 ; command buffer w/end bit
- 1282 00        	db	0	; response
- 1283 00        scs:	db	0
- 1284 0000      segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
- 1286 00000000  curlba:	db	0,0,0,0
+ 1285 0000000000cmd:	db	0,0,0,0,0,1 ; command buffer w/end bit
+ 128B 00        	db	0	; response
+ 128C 00        scs:	db	0
+ 128D 0000      segoff:	dw	0	; orig from ROM, passed in nsegmt by CPM3LDR
+ 128F 00000000  curlba:	db	0,0,0,0
                 
                 ; Partition start LBAs for each partition.
                 ; Loaded from the magic sector, converted to LBA.
                 
                 partbl:
- 128A 00000000  	db	0,0,0,0
- 128E 00000000  	db	0,0,0,0
- 1292 00000000  	db	0,0,0,0
- 1296 00000000  	db	0,0,0,0
- 129A 00000000  	db	0,0,0,0
- 129E 00000000  	db	0,0,0,0
- 12A2 00000000  	db	0,0,0,0
- 12A6 00000000  	db	0,0,0,0
- 12AA 00000000  	db	0,0,0,0
+ 1293 00000000  	db	0,0,0,0
+ 1297 00000000  	db	0,0,0,0
+ 129B 00000000  	db	0,0,0,0
+ 129F 00000000  	db	0,0,0,0
+ 12A3 00000000  	db	0,0,0,0
+ 12A7 00000000  	db	0,0,0,0
+ 12AB 00000000  	db	0,0,0,0
+ 12AF 00000000  	db	0,0,0,0
+ 12B3 00000000  	db	0,0,0,0
                 
- 12AE FF        init:	db	0ffh	; one-time initialization
- 12AF 00        dskerr:	db	0
+ 12B7 FF        init:	db	0ffh	; one-time initialization
+ 12B8 00        dskerr:	db	0
                 
- 12B0           	END
-
+ 12B9           	END
+
