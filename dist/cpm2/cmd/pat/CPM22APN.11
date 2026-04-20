@@ -1,0 +1,216 @@
+                                      CP/M   V2.2
+                              Application Note 11 9/30/82
+                                   Chaining Programs
+
+                          Copyright   1982 by Digital Research
+             CP/M and CP/NET are registered trademarks of Digital Research.
+                MP/M II and PL/I-80 are trademarks of Digital Research.
+                                 Compiled October 1982
+
+          Applicable products and version numbers:  CP/M    V2.2,  CP/NET    ,
+          and MP/M II   .
+
+          Program:  CHAIN1.COM and CHAIN2.COM
+
+                Menu-driven applications can be written to  run  under  CP/M.
+          If  you  develop  applications  using  PL/I-80   , you can write the
+          programs as a set of overlays.  Often, the programs are  written  in
+          assembly  language,  or  require too much memory to make the overlay
+          feature of PL/I-80 appropriate.  Without using overlays,  there  are
+          only two effective methods of chaining under CP/M V2.2.
+
+                The first method uses the CP/M SUBMIT facility, in which  the
+          main  menu  program creates a SUBMIT file that lists the programs to
+          be chained.  The file must be written to drive A, and have the  name
+          $$$.SUB.
+
+                The SUBMIT file consists of compatible  lines,  exactly  like
+          those  you  type  at  the console, following the system prompt.  The
+          commands are placed in reverse order, so the  last  command  in  the
+          file  is the first to be executed.  Each command is placed in a 128-
+          byte record with the following format:
+
+                  :n:C1:C2:...:cn:0:...:
+
+                The  first  byte  of  the  record  contains  the  number   of
+          characters  in  the command (n), followed by the characters (c1-cn),
+          and terminated with a zero.  The number of characters in the command
+          is  written  as a binary number and each character is represented in
+          ASCII format.  It does not matter what follows the terminating  zero
+          in  the  record.  For example, if the command was STAT*.*, the first
+          byte would be a binary  8,  followed  by  the  letters  STAT*.*  and
+          terminated with a zero.
+
+                The second  method  of  program  chaining  is  simpler.   You
+          include  a procedure in the menu program that loads the next program
+          and chains to it.  Each program that might chain to another  program
+          must include a copy of the procedure.  The procedure must first move
+          itself out of the way so that it is not overwritten by  the  program
+          it is loading.
+
+              The example assembly language procedure is  written  to  link
+          with  PL/I-80 modules as an external procedure.  It can also be used
+          in an assembly language menu program.  To link to a PL/I-80 program,
+          the  following  entry  declaration  must  be included in the PL/I-80
+          program that does the chaining:
+
+                  dcl chain entry (char(12));
+
+                The character 12 variable consists of the standard CP/M  File
+          Control  Block (FCB) format.  The format can be created in the PL/I-
+          80 program as a structure.  A char(12) variable can then be based at
+          the  same  address  as  the  structure  for interfacing to the chain
+          procedure.  (See the following PL/I-80 program.)
+
+          Note:  the drive is not an ASCII  character,  but  a  binary  number
+          between 0 and 16, where 0 is the current default drive and 1 through
+          16 represent the CP/M drives A through P, respectively.
+
+                  chain 1: proc options(main);
+                  /* chain subroutine tester */
+                     dcl 1 fcb static
+                      2 drive fixed(7) init(0),
+                      2 name char(8) init('CHAIN2');
+                      2 type char(3) init('COM'),
+                     dummy char(12) based(db),
+                     dp pointer,
+                    chain entry(char(12));
+                    put skip list('Chain Text program 1');
+                    dp = addr(fcb);
+                    call chain(dummy);
+                    put skip(2) list('Shouldn''t be here!!);
+                  end chain 1;
+
+                This program prints the message Chain  Test  program  1,  and
+          chains  to the program CHAIN2.COM on the default drive.  CHAIN2 is a
+          program identical to  CHAIN1,  except  that  it  prints  Chain  Test
+          Program 2 and chains to CHAIN1.COM.  CHAIN1 and CHAIN2 then continue
+          to chain back and forth to each other.
+
+          Note:  any statements following the call to the chain procedure  are
+          not executed because the chain procedure never returns.
+
+                The  chain  procedure   consists   of   two   routines.    An
+          initialization  routine  initializes  the  FCB for the program to be
+          loaded.  Then, the initialization routine relocates the  loader  and
+          FCB to the very top of the Transient Program Area (TPA), immediately
+          below the BDOS, so it will not be overwritten by the loaded program.
+          The  loader  begins  at the label, code:, and ends at the end of the
+          FCB, at the statement, codelen equ $-code.
+
+                The loader routine sets the  DMA  address,  reads  a  sector,
+          checks  for  an  end-of-file,  increments  the  DMA addresses by 128
+          bytes, and repeats the process.  When the end-of-file  is  detected,
+          it jumps to the chained program.  The code is as follows:
+
+                      public chain                         char(12)
+                      extrn      ?signal
+                      ,/* loads another COM file, and
+                      executes it */
+          bdos        equ      5
+          openf       equ      15
+          readf       equ      20
+          dmaf        equ      26
+
+                      cseq
+          chain.      mov e,m ! inx h ! mov d, m ! xchg    ;get first arg address
+                      lxi d, fcb ! mvi c, 12 ! call move   ;move string to FCB
+                      lxi d, fcb+12 ! mvi a, 0 ! mvi c, 21
+                      call fill                            ;zero rest of FCB
+                      lhld bdos+1 ! lxi b, -code$len
+                      dad b                                ;make space at
+                                                           ;top of TPA
+                      shld jmpr + 1                        ;jump address
+                      push h                               ;save code address
+                                                           ;for RET
+                      xchg ! lxi h, fcb-code ! dad d       ;make address of FCB
+                      shld FCBR+1                          ;and fix LXI
+                      push h                               ;save FCB
+                                                           ;destination address
+
+                      lxi h, code ! mvi c, code$len
+                      call move                            ;dest in DE
+                      pop d                                ;recover address of FCB
+                      mvi c, openf ! call BDOS             ;open file
+                      inr a ! jz sig                       ;if any error,
+                                                           ;signal error
+                      pop h ! sphl ! push h                ;point stack to top
+                                                           ;of TPA
+                                                           ;and save code addr
+                      lxi h, 100h                          ;point to start of
+                                                           ;TPA
+                      ret                                  ;to loader "code"
+
+          code:       push h ! xchg ! mvi c, dmaf
+                      call BDOS                            ;set the DMA address
+
+          FCBR        lxi d, $-$ ! mvi c, readf !
+                      call BDOS                            ;read the next record
+                      ora a ! jnz 100h                     ;EOF -| start TPA
+                      pop h ! lxi d, 128 ! dad D           ;recover and bump DMA
+
+          jmpr        jmp $-$                              ;jump to code
+          FCB:        ds       1                           ;drive code
+                      ds       8                           ;filename
+                      ds       3                           ;filetype
+                      ds       4                           ;control info
+                      ds       16                          ;disk map
+                      ds       1                           ;rrec
+          codelen     equ      $-code
+
+          move:       ;c = # bytes, hi = source, de = desti-
+                      nation
+                      mov a,m ! stax d
+                      inx h ! inx d ! dcr c
+                      jnz move
+                      ret
+          fill:       ;a = byte to fill, c = # bytes, de = start ad-
+                      dress
+                      stax d ! inx d
+                      dcr c ! jnz fill
+                      ret
+          sig:        lxi h, siglist ! call ?signal ! jmp 0;signal error
+          siglist:                                         ;(fixed(6),
+                                                           ;bit(8),ptr,ptr)
+                      dw sigcode, sigsub, sigfil, message
+          sigcode     db      6                            ;undefined file
+                                                           ;error
+          sigsub      db      2                            ;arbitrary subcode
+                                                           ;for id
+          sigfil      dw     fpb                           ;ptr to file
+                                                           ;parameter block
+          message     dw     quack                         ;auxiliary
+                                                           ;operator message
+          fpb                                              ;PL/I fuke
+                                                           ;oaraneter bkicj
+          fcbptr      dw     FCB-1                         ;fcb-1
+          fpblst      dw      0                            ;(unused)ptr
+          column      dw      0                            ;current column
+                                                           ;fixed(15)
+          curline     dw      0                            ;current line
+                                                           ;fixed(15)
+          curpage     dw      0                            ;current page
+                                                           ;fixed(15)
+          currec      dw      0                            ;(unused)fixed(15)
+          lookchr     db      0                            ;look ahead char
+                                                           ;char(1)
+          ioend       dw      0                            ;i/o end address
+          iostk       dw      0                            ;user stack upon
+                                                           ;sio entry
+          spacer      ds      4                            ;spacer
+          linesz      dw      0                            ;line size
+                                                           ;fixed(15)
+          pagesz      dw      0                            ;page size
+                                                           ;fixed(15)
+          fixedsz     dw      0                            ;fixed size
+                                                           ;fixed(15)
+          blocksz     dw      0                            ;block size
+                                                           ;fixed(15)
+          filedes     dw      0                            ;block size
+                                                           ;fixed(15)
+          dtitle      db      0                            ;default title
+                                                           ;char(14)varying
+          quack       db      17,'Bad Chain Attempt',0     ;error message
+
+                Licensed  users  are  granted  the  right  to  include  these
+          modifications in CP/M, CP/NET and MP/M II software.

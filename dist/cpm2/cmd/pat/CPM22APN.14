@@ -1,0 +1,113 @@
+                                      CP/M   V2.2
+                              Application Note 14, 8/11/82
+             Turning CTRL-P On and Off from within a CP/M V2.2 SUBMIT File
+
+                          Copyright   1982 by Digital Research
+                  CP/M is a registered trademark of Digital Research.
+                                 Compiled November 1982
+
+          Applicable products and version numbers:  CP/M   V2.2
+
+               You can use the SUBMIT facility for  batching  job  streams  to
+          turn  the  CTRL-P  toggle  on  and off from within that SUBMIT file.
+          Although there is a patch to SUBMIT that forces it to accept control
+          characters when preceded by an up-arrow, ^, SUBMIT does not act on a
+          CTRL-C nor a CTRL-P.
+
+               The assembly-language program which follows turns CTRL-P on  or
+          off  from  within a SUBMIT file.  The same assembly code can be used
+          from within an applications program to turn CTRL-P on and off.  This
+          program must be executed before XSUB, if XSUB is to be active in the
+          SUBMIT file.  Although the CP/M V2.2 Operating System Manual states,
+          "The  XSUB  command  is  included  as  the first line of your submit
+          file...,"  this  is  not  necessary.   XSUB  can  be  activated  and
+          deactivated  within  a SUBMIT file.  An assembly-language program is
+          listed that deactivates XSUB and also turns off CTRL-P if it is  on.
+
+               Use  this  program  from  within  a  SUBMIT file to turn the ^P
+          toggle on and off.  This  program  can  also  be  invoked  from  the
+          console.   If  the CTRL-P toggle is off,  this program turns it on; if 
+          on,  the  program turns it off.   It issues an appropriate message  to  
+          the console that is also echoed on the list device.
+
+               The program calculates the location of the  ^P  toggle  in  the
+          BDOS  by  getting the BDOS address from the jump instruction located
+          at 0005h in page zero and adding 307h to that address.  It then does
+          an exclusive on of the toggle byte to turn ^P on or off.
+
+          Note:  if XSUB is to be active in the submit file, ^P must be turned
+          on  before executing XSUB.  To turn off ^P in a submit file in which
+          XSUB is active, execute a program that deactivates XSUB, such as the
+          DEXSUB program which is listed following this program.
+
+          CntlP:
+                  org     100h            ;start of TPA
+          bdos    equ     5h              ;BDOS jump instruction
+          bdosa   equ     bdos+1          ;BDOS entry address
+          pstr    equ     9               ;print string function
+          testoff equ     2feh            ;offset for verification
+          listcp  equ     0dh             ;^P offset in page
+          mvic    equ     3eh             ;MVI C,x instruction
+          cr      equ     0dh             ;carriage return
+          lf      equ     0ah             ;line feed
+
+                 lhld     bdosa           ;pick up address of BDOS in HL
+                  lxi     d,testoff       ;offset of ^P page in DE for add
+                  dad     d               ;HL= compare area in BDOS
+                  lxi     d,string        ;DE= compare string
+          compare:
+                 ldax     d               ;is character a 0?
+                  ora     a               ;
+                   jz     ok              ;yes, we're done
+                  cmp     m               ;is BDOS same as string?
+                  inx     h               ;next byte
+                  inx     d               ;
+                   jz     compare         ;BDOS = string keep looping
+          error:  mvi     c,pstr          ;else print error message
+                  lxi     d,errormsg      ;
+                  jmp     bdos            ;return to CCP from BDOS
+          ok:     mvi     l,listcp        ;listcp page offset
+                  mvi     a,1             ;toggle ^P byte on or off
+                  sub     m               ;true = 1, false = 0
+                  mov     m,a             ;put results back in memory
+                  cpi     0h              ;see if on or off
+                   jz     othermsg        ;to issue appropriate message
+                  lxi     d,onmsg         ;^P turned on
+                  jmp     print           ;go around
+          othermsg:
+                  lxi     d,offmsg        ;^P turned off
+          print   mvi     c,pstr          ;print sign-on message
+                  jmp     bdos            ;return to CCP from BDOS
+          onmsg:  db      cr,lf,'(^P turned on)$'
+          offmsg  db      cr,lf,'(^P turned off)$'
+          errormsg:
+                  db      cr,lf,'Unable to find BDOS$'
+          string  db      ret,mvic,1,jmp,0
+                  end
+
+          Dexsub:
+                  org     100h    ;start of TPA
+          bdos    equ     0005h   ;bdos location in base page
+                  mvi     c,9     ;print string = function 9
+                  lxi     d,msg   ;
+                 call     bdos    ;
+                  mvi     c,0     ;system reset = function 0
+                  jmp     bdos    ;exit bdos to ccp
+          msg     db      0dh,0ah,'(xsub deactivated; ^P turned off if on)$'
+                  end
+
+
+               This application was developed and tested by  Digital  Research
+          Technical   Support   using   standard  Digital  Research  products.
+          Modifications required to assemble, compile, or execute  under  non-
+          standard  or non-Digital Research products are the responsibility of
+          the user.
+
+               Digital Research specifically disclaims any express or  implied
+          warranty  and  shall  not be liable for any loss of profits, loss of
+          business, loss of use or of data, interruption of business, nor  for
+          indirect,  special, incidental, or consequential damages of any kind
+          caused by the use or adaptation of this application note.
+
+               Licensed users are granted the right to include  these  changes
+          in CP/M software.
