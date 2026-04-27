@@ -1,0 +1,147 @@
+                ; PROGRAM TO RAND READ A FILE, TRACING EACH BDOS CALL
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+ 0000 =         CPM	EQU	0
+ 0005 =         BDOS	EQU	5
+ 005C =         DEFFCB	EQU	5CH
+ 0080 =         DEFDMA	EQU	80H
+                
+ 0002 =         CONOUTF	EQU	2
+ 000F =         OPENF	EQU	15
+ 0014 =         READF	EQU	20
+ 0021 =         RREADF	EQU	33
+ 0010 =         CLOSEF	EQU	16
+                
+ 0100           	ORG	100H
+                
+ 0100 C30601    	JMP	START
+                
+ 0103 00        FUNC:	DB	0
+ 0104 0000      RETVAL:	DW	0
+                
+                START:
+ 0106 3A5D00    	LDA	DEFFCB+1
+ 0109 FE20      	CPI	' '
+ 010B C8        	RZ
+ 010C 310F02    	LXI	SP,STACK
+                
+                	; DUMP INITIAL STATE
+ 010F CD5801    	CALL	DODUMP
+                
+ 0112 3E0F      	MVI	A,OPENF
+ 0114 CD4B01    	CALL	DOFUNC
+ 0117 FEFF      	CPI	255
+ 0119 CA0000    	JZ	CPM
+ 011C AF        	XRA	A
+ 011D 327C00    	STA	DEFFCB+32
+                	; ZERO RR
+ 0120 327D00    	STA	DEFFCB+33
+ 0123 327E00    	STA	DEFFCB+34
+ 0126 327F00    	STA	DEFFCB+35
+                
+ 0129 3E21      LOOP:	MVI	A,RREADF
+ 012B CD4B01    	CALL	DOFUNC
+ 012E B7        	ORA	A
+ 012F C23801    	JNZ	DONE
+ 0132 CD4001    	CALL	NEXTRR
+ 0135 C32901    	JMP	LOOP
+                
+ 0138 3E10      DONE:	MVI	A,CLOSEF
+ 013A CD4B01    	CALL	DOFUNC
+                
+ 013D C30000    	JMP	CPM
+                
+                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                
+ 0140 217D00    NEXTRR:	LXI	H,DEFFCB+33
+ 0143 34        	INR	M
+ 0144 C0        	RNZ
+ 0145 23        	INX	H
+ 0146 34        	INR	M
+ 0147 C0        	RNZ
+ 0148 23        	INX	H
+ 0149 34        	INR	M
+ 014A C9        	RET
+                
+                DOFUNC:
+ 014B 320301    	STA	FUNC
+ 014E 4F        	MOV	C,A
+ 014F 115C00    	LXI	D,DEFFCB
+ 0152 CD0500    	CALL	BDOS
+ 0155 220401    	SHLD	RETVAL
+                	; NOW DUMP EVERYTHING
+                DODUMP:
+ 0158 3A0301    	LDA	FUNC
+ 015B CDB101    	CALL	HEXOUT
+ 015E CD9D01    	CALL	SPACE
+ 0161 2A0401    	LHLD	RETVAL
+ 0164 CDAC01    	CALL	HEXADR
+ 0167 3E3A      	MVI	A,':'
+ 0169 CDC201    	CALL	CONOUT
+ 016C 215C00    	LXI	H,DEFFCB
+ 016F CD8E01    	CALL	DUMP16
+ 0172 CD9D01    	CALL	SPACE
+ 0175 3E2D      	MVI	A,'-'
+ 0177 CDC201    	CALL	CONOUT
+ 017A CD9D01    	CALL	SPACE
+ 017D 111000    	LXI	D,16
+ 0180 19        	DAD	D
+ 0181 7E        	MOV	A,M
+ 0182 CDB101    	CALL	HEXOUT
+ 0185 CDA201    	CALL	CRLF
+                	; SAME AS 'RETMON' IN BDOS
+ 0188 2A0401    	LHLD	RETVAL
+ 018B 7D        	MOV	A,L
+ 018C 44        	MOV	B,H
+ 018D C9        	RET
+                
+ 018E 1E10      DUMP16:	MVI	E,16
+ 0190 CD9D01    DMP16:	CALL	SPACE
+ 0193 7E        	MOV	A,M
+ 0194 23        	INX	H
+ 0195 CDB101    	CALL	HEXOUT
+ 0198 1D        	DCR	E
+ 0199 C29001    	JNZ	DMP16
+ 019C C9        	RET
+                
+ 019D 3E20      SPACE:	MVI	A,' '
+ 019F C3C201    	JMP	CONOUT
+                
+ 01A2 3E0D      CRLF:	MVI	A,CR
+ 01A4 CDC201    	CALL	CONOUT
+ 01A7 3E0A      	MVI	A,LF
+ 01A9 C3C201    	JMP	CONOUT
+                
+ 01AC 7C        HEXADR:	MOV	A,H
+ 01AD CDB101    	CALL	HEXOUT
+ 01B0 7D        	MOV	A,L
+ 01B1 F5        HEXOUT:	PUSH	PSW
+ 01B2 07        	RLC
+ 01B3 07        	RLC
+ 01B4 07        	RLC
+ 01B5 07        	RLC
+ 01B6 CDBA01    	CALL	HEXNIB
+ 01B9 F1        	POP	PSW
+ 01BA E60F      HEXNIB:	ANI	0FH
+ 01BC C690      	ADI	90H
+ 01BE 27        	DAA
+ 01BF CE40      	ACI	40H
+ 01C1 27        	DAA
+ 01C2 C5        CONOUT:	PUSH	B
+ 01C3 D5        	PUSH	D
+ 01C4 E5        	PUSH	H
+ 01C5 5F        	MOV	E,A
+ 01C6 0E02      	MVI	C,CONOUTF
+ 01C8 CD0500    	CALL	BDOS
+ 01CB E1        	POP	H
+ 01CC D1        	POP	D
+ 01CD C1        	POP	B
+ 01CE C9        	RET
+                
+ 01CF           	DS	64
+ 020F           STACK:	DS	0
+                
+ 020F           	END
+

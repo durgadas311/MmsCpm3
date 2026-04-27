@@ -1,0 +1,134 @@
+                ; PROGRAM TO READ (MATCHING) DIRECTORY ENTRIES, TRACING EACH BDOS CALL
+                
+ 000D =         CR	EQU	13
+ 000A =         LF	EQU	10
+                
+ 0000 =         CPM	EQU	0
+ 0005 =         BDOS	EQU	5
+ 005C =         DEFFCB	EQU	5CH
+ 0080 =         DEFDMA	EQU	80H
+                
+ 0002 =         CONOUTF	EQU	2
+ 000F =         OPENF	EQU	15
+ 0014 =         READF	EQU	20
+ 0010 =         CLOSEF	EQU	16
+ 0011 =         FIRSTF	EQU	17
+ 0012 =         NEXTF	EQU	18
+                
+ 0100           	ORG	100H
+                
+ 0100 C30601    	JMP	START
+                
+ 0103 00        FUNC:	DB	0
+ 0104 0000      RETVAL:	DW	0
+                
+                START:
+ 0106 3A5D00    	LDA	DEFFCB+1
+ 0109 FE20      	CPI	' '
+ 010B C8        	RZ
+ 010C 31F201    	LXI	SP,STACK
+ 010F 3E3F      	MVI	A,'?'
+ 0111 326800    	STA	DEFFCB+12	; EX='?' FOR ALL
+ 0114 3A6D00    	LDA	DEFFCB+16+1	; OPTION?
+ 0117 FE3F      	CPI	'?'
+ 0119 C21F01    	JNZ	NOGLOB
+ 011C 325C00    	STA	DEFFCB+0
+                NOGLOB:
+                
+                	; DUMP INITIAL STATE
+ 011F 215C00    	LXI	H,DEFFCB
+ 0122 CD4F01    	CALL	DODUMP
+                
+ 0125 3E11      	MVI	A,FIRSTF
+                LOOP:
+ 0127 CD3401    	CALL	DOFUNC
+ 012A FEFF      	CPI	255
+ 012C CA0000    	JZ	CPM
+ 012F 3E12      	MVI	A,NEXTF
+ 0131 C32701    	JMP	LOOP
+                
+                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                
+                DOFUNC:
+ 0134 320301    	STA	FUNC
+ 0137 4F        	MOV	C,A
+ 0138 115C00    	LXI	D,DEFFCB
+ 013B CD0500    	CALL	BDOS
+ 013E 220401    	SHLD	RETVAL
+ 0141 E603      	ANI	3
+ 0143 07        	RLC
+ 0144 07        	RLC
+ 0145 07        	RLC
+ 0146 07        	RLC
+ 0147 07        	RLC
+ 0148 5F        	MOV	E,A
+ 0149 1600      	MVI	D,0
+ 014B 218000    	LXI	H,DEFDMA
+ 014E 19        	DAD	D
+                	; NOW DUMP EVERYTHING
+                DODUMP:	; HL = "FCB" TO DUMP
+ 014F E5        	PUSH	H
+ 0150 3A0301    	LDA	FUNC
+ 0153 CD9401    	CALL	HEXOUT
+ 0156 CD8001    	CALL	SPACE
+ 0159 2A0401    	LHLD	RETVAL
+ 015C CD8F01    	CALL	HEXADR
+ 015F 3E3A      	MVI	A,':'
+ 0161 CDA501    	CALL	CONOUT
+ 0164 E1        	POP	H
+ 0165 CD7101    	CALL	DUMP16
+ 0168 CD8501    	CALL	CRLF
+                	; SAME AS 'RETMON' IN BDOS
+ 016B 2A0401    	LHLD	RETVAL
+ 016E 7D        	MOV	A,L
+ 016F 44        	MOV	B,H
+ 0170 C9        	RET
+                
+ 0171 1E10      DUMP16:	MVI	E,16
+ 0173 CD8001    DMP16:	CALL	SPACE
+ 0176 7E        	MOV	A,M
+ 0177 23        	INX	H
+ 0178 CD9401    	CALL	HEXOUT
+ 017B 1D        	DCR	E
+ 017C C27301    	JNZ	DMP16
+ 017F C9        	RET
+                
+ 0180 3E20      SPACE:	MVI	A,' '
+ 0182 C3A501    	JMP	CONOUT
+                
+ 0185 3E0D      CRLF:	MVI	A,CR
+ 0187 CDA501    	CALL	CONOUT
+ 018A 3E0A      	MVI	A,LF
+ 018C C3A501    	JMP	CONOUT
+                
+ 018F 7C        HEXADR:	MOV	A,H
+ 0190 CD9401    	CALL	HEXOUT
+ 0193 7D        	MOV	A,L
+ 0194 F5        HEXOUT:	PUSH	PSW
+ 0195 07        	RLC
+ 0196 07        	RLC
+ 0197 07        	RLC
+ 0198 07        	RLC
+ 0199 CD9D01    	CALL	HEXNIB
+ 019C F1        	POP	PSW
+ 019D E60F      HEXNIB:	ANI	0FH
+ 019F C690      	ADI	90H
+ 01A1 27        	DAA
+ 01A2 CE40      	ACI	40H
+ 01A4 27        	DAA
+ 01A5 C5        CONOUT:	PUSH	B
+ 01A6 D5        	PUSH	D
+ 01A7 E5        	PUSH	H
+ 01A8 5F        	MOV	E,A
+ 01A9 0E02      	MVI	C,CONOUTF
+ 01AB CD0500    	CALL	BDOS
+ 01AE E1        	POP	H
+ 01AF D1        	POP	D
+ 01B0 C1        	POP	B
+ 01B1 C9        	RET
+                
+ 01B2           	DS	64
+ 01F2           STACK:	DS	0
+                
+ 01F2           	END
+
