@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	010h
+VERN	equ	011h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -34,7 +34,9 @@ dabort	equ	2061h	; jmp L1bf6
 dsdp	equ	2085h
 dsdt	equ	2076h
 dsts	equ	2088h
+dstz	equ	208bh
 clock	equ	1c19h	; 034.031 CLOCK
+rlps	equ	1dd1h	; 035.321 R.LPS - locate sector
 rsdp	equ	1e32h	; 036.062 R.SDP
 wsp1	equ	1eedh	; 036.355 W.SP1
 dwnb	equ	2097h
@@ -54,7 +56,7 @@ ddts	equ	2073h
 dudly	equ	208eh
 dwsc	equ	2091h
 drdb	equ	2082h
-
+dlpsa	equ	204eh
 
 	cseg
 	di
@@ -63,9 +65,12 @@ drdb	equ	2082h
 	ani	prnofp	; No FP?
 	sta	nofp
 
-	; hack R.SDP to work for 3 drives
-	lxi	h,m$sdp
+	; These hacks do not need to be un-done because the
+	; ROM always re-initializes before any boot.
+	lxi	h,m$sdp	; hack R.SDP to work for 3 drives
 	shld	D$CONST+62
+	lxi	h,m$lps	; hack R.LPS to ignore volume ID (format still sets it)
+	shld	D$CONST+56
 
 	mvi	a,0c3h	; jmp
 	sta	uivec
@@ -143,7 +148,7 @@ sav$F0:	db	0
 sav$F2:	db	0
 
 ; format a single track
-; B = track C = vol#
+; B = track, C = vol# (not used)
 ftrk:
 	di
 	lxi	h,mflag	; turn on counter
@@ -158,12 +163,8 @@ ftrk:
 	out	7fh
 	sta	ddvctl
 	sta	ddlymo
-	lxi	h,ddrvtb+1
-	shld	dvolpt
-	mov	m,c
 	ei
-	call	m$sdp	; hacked sdp
-	call	dsdt	; dis intrs
+	call	dsdt	; seek to track (dis intrs)
 	xra	a
 	out	7eh
 	inr	a
@@ -177,8 +178,8 @@ trk1:
 	ana	a
 	jnz	trk1	; wait delay
 	lhld	dvolpt
-	mov	b,m	; vol#
-	lhld	secpntr	; sec interleave table
+	mov	b,m	; vol# (0/curvol)
+	lhld	secpntr	; HL = ptr into sec interleave table
 trk2:
 	mvi	c,10
 	call	wsp1	; writes 0's
@@ -264,17 +265,22 @@ vdwr0:	ldax	d
 
 wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
 
+setup:	; similar to R.MOUNT
+	call	m$sdp	; select unit number from AIO$UNI
+	call	dstz	; home - seek track zero
+	; dvolpt is not set - do not change
+	ret
+
 ; Copy tracks from image file onto H17
 wrimg:
-	call	m$sdp	; select unit number from AIO$UNI
+	call	setup	; select driver, etc
 	xra	a
 	sta	secnum
 	sta	secnum+1
 	sta	curtrk
 wrimg1:
-	lxi	h,ddrvtb+1
-	mov	m,a
-	shld	dvolpt
+	lhld	dvolpt
+	mov	m,a	; volid starts at 0 for track 0
 ;
 	call	vrtrk	; read track from image
 	rc
@@ -308,9 +314,9 @@ wrimg3:
 	lxi	d,-400	; 400 sectors max
 	dad	d
 	mov	a,h
-	ora	l
+	ora	l	; last track? ZR=yes
 	lda	curvol
-	jnz	wrimg1	; last track?
+	jnz	wrimg1
 	jmp	crlf
 
 ; Write sector(s) to H17
@@ -325,14 +331,13 @@ wrbuf:
 
 ; Copy all tracks from H17 to image file
 rdimg:
-	call	m$sdp	; select unit number from AIO$UNI
+	call	setup	; select driver, etc
 	xra	a
 	sta	secnum
 	sta	secnum+1
 rdimg1:
-	lxi	h,ddrvtb+1
-	mov	m,a
-	shld	dvolpt
+	lhld	dvolpt
+	mov	m,a	; volid starts at 0 for track 0
 ;
 	lxi	b,zbuf
 	lxi	d,buffer
@@ -354,7 +359,7 @@ rdimg1:
 	lxi	d,-400	; 400 sectors max
 	dad	d
 	mov	a,h
-	ora	l
+	ora	l	; last track? ZR=yes
 	lda	curvol
 	jnz	rdimg1
 	jmp	crlf
@@ -759,6 +764,46 @@ m$sdp:
 	adi	-2	;
 	aci	3	; 1,2,4
 	jmp	rsdp+10	; hacked R.SDP for 3-drives
+	; after this, dvolpt is setup correctly - leave it be
+
+; Make a copy of the ROM's R.LPS routine, modified to neuter
+; the volume ID stuff.
+lps0:	call	dsts
+m$lps:
+	lda	dlpsa	; num retries
+	mov	b,a
+	lda	ddlyhs
+	ora	a
+	jnz	lps0
+lps1:	di
+	call	dwsc	; wait for SYNC
+	jc	lps$err
+; just skip volume ID - do not enforce "protection".
+; Note: none of this works for (MMS) double-sided CP/M disks.
+;;;	lhld	dvolpt
+	call	drdb	; side/volume
+;;;	cmp	m
+;;;	jnz	lps$err
+	lxi	h,dtt
+	call	drdb	; track
+	cmp	m
+	jnz	lps$err
+	inx	h
+	call	drdb	; sector
+	cmp	m
+	jnz	lps9
+	mov	h,d	; save CRC
+	call	drdb	; CRC
+	cmp	h
+	rz	; all good - found sector
+	; CRC error
+lps$err:
+	; update counters?
+lps9:	call	dsts
+	dcr	b
+	jnz	lps1
+	stc	; out of chances - return failure
+	ret
 
 msgusg:	db	'Using drive ',0
 usg1:	db	', volume ',0
