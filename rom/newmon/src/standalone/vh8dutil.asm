@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	011h
+VERN	equ	012h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -302,8 +302,12 @@ wrimg3:
 	lhld	secnum
 	call	wrbuf
 ;
+	lda	opsts
+	ora	a
 	mvi	a,'R'
-	call	chrout
+	jz	wrimg2
+	mvi	a,'e'
+wrimg2:	call	chrout
 	call	ckctlc
 	jc	abort
 
@@ -327,6 +331,7 @@ wrbuf:
 	mvi	a,2
 	sta	ddlyhs
 	call	dwrite
+	sta	opsts
 	ret
 
 ; Copy all tracks from H17 to image file
@@ -346,8 +351,12 @@ rdimg1:
 ;
 	call	vwtrk
 	rc
+	lda	opsts
+	ora	a
 	mvi	a,'S'
-	call	chrout
+	jz	rdimg2
+	mvi	a,'e'
+rdimg2:	call	chrout
 	call	ckctlc
 	jc	abort
 
@@ -371,10 +380,8 @@ rdimg1:
 rdbuf:
 	mvi	a,2
 	sta	ddlyhs
-	call	dread	; if carry, read error
-	cmc		; if carry, no error
-	sbb	a	; -1 if good read, else 0
-	sta	goodrd
+	call	dread	;
+	sta	opsts
 	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -830,7 +837,7 @@ curvol:	db	0
 sectbl:	db	0,1,2,3,4,5,6,7,8,9
 secend:	db	0	; still used?
 
-goodrd:	db	0
+opsts:	db	0
 secpntr: dw	sectbl
 curtrk:	db	0
 secnum:	dw	0	; 100K disk = 400 sectors max
