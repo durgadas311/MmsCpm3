@@ -1,6 +1,6 @@
                 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
                 ; linked with vdip1.rel
- 0012 =         VERN	equ	012h
+ 0013 =         VERN	equ	013h
                 
                 	extrn	strcpy,strcmp,sync,runout
                 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -60,42 +60,42 @@
                 
                 	cseg
  0000 F3        	di
- 0001 31BC13    	lxi	sp,spint
+ 0001 31BF13    	lxi	sp,spint
  0004 3AFE0F    	lda	prodid	; LSB of product ID
  0007 E601      	ani	prnofp	; No FP?
  0009 32A000    	sta	nofp
                 
                 	; These hacks do not need to be un-done because the
                 	; ROM always re-initializes before any boot.
- 000C 21E504    	lxi	h,m$sdp	; hack R.SDP to work for 3 drives
+ 000C 21E804    	lxi	h,m$sdp	; hack R.SDP to work for 3 drives
  000F 228620    	shld	D$CONST+62
- 0012 21F804    	lxi	h,m$lps	; hack R.LPS to ignore volume ID (format still sets it)
+ 0012 21FB04    	lxi	h,m$lps	; hack R.LPS to ignore volume ID (format still sets it)
  0015 228020    	shld	D$CONST+56
                 
  0018 3EC3      	mvi	a,0c3h	; jmp
  001A 321F20    	sta	uivec
  001D 21191C    	lxi	h,clock
  0020 222020    	shld	uivec+1
- 0023 31BC13    	lxi	sp,spint
+ 0023 31BF13    	lxi	sp,spint
  0026 210820    	lxi	h,mflag	; turn on counter
  0029 7E        	mov	a,m
  002A F601      	ori	00000001b
  002C 77        	mov	m,a
  002D CD6000    	call	ena2ms
  0030 FB        	ei
- 0031 115805    	lxi	d,signon
- 0034 CDDC04    	call	print
- 0037 116505    	lxi	d,phelp
- 003A CDDC04    	call	print
+ 0031 115B05    	lxi	d,signon
+ 0034 CDDF04    	call	print
+ 0037 116805    	lxi	d,phelp
+ 003A CDDF04    	call	print
                 	; (2mS intr must be ON) track 0
- 003D CD8903    	call	shwprm
- 0040 3AA506    	lda	curdrv
+ 003D CD8C03    	call	shwprm
+ 0040 3AA806    	lda	curdrv
  0043 323121    	sta	AIO$UNI
                 main1:
                 	; Prompt for command and params,
                 	; perform command,
                 	; close file...
- 0046 CD3502    	call	comnd
+ 0046 CD3802    	call	comnd
                 	jrnc	main1
  0049+30FB      	DB	30H,MAIN1-$-1
                 exit:
@@ -103,9 +103,9 @@
  004E 2A1E00    	lhld	retmon
  0051 E9        	pchl
                 
- 0052 119706    abort:	lxi	d,abrted
- 0055 CDDC04    	call	print
- 0058 213403    	lxi	h,clf
+ 0052 119A06    abort:	lxi	d,abrted
+ 0055 CDDF04    	call	print
+ 0058 213703    	lxi	h,clf
  005B CD0000    	call	vdcmd
                 	jr	main1
  005E+18E6      	DB	18H,MAIN1-$-1
@@ -164,738 +164,739 @@
  00AF 3E02      	mvi	a,2
  00B1 32A420    	sta	ddlyhs
  00B4 AF        	xra	a
- 00B5 D37F      	out	7fh
+ 00B5 D37F      	out	7fh	; de-selects drive, motors off, ... (why?)
  00B7 32A220    	sta	ddvctl
  00BA 32A320    	sta	ddlymo
  00BD FB        	ei
- 00BE CD7620    	call	dsdt	; seek to track (dis intrs)
- 00C1 AF        	xra	a
- 00C2 D37E      	out	7eh
- 00C4 3C        	inr	a
- 00C5 325320    	sta	dwhda
- 00C8 3AA220    	lda	ddvctl
- 00CB 3C        	inr	a
- 00CC D37F      	out	7fh
+ 00BE CDE804    	call	m$sdp	; hacked sdp - restart motors, too
+ 00C1 CD7620    	call	dsdt	; seek to track (dis intrs)
+ 00C4 AF        	xra	a
+ 00C5 D37E      	out	7eh
+ 00C7 3C        	inr	a
+ 00C8 325320    	sta	dwhda
+ 00CB 3AA220    	lda	ddvctl
+ 00CE 3C        	inr	a
+ 00CF D37F      	out	7fh
                 trk1:
- 00CE CD8820    	call	dsts	; skip this sector
- 00D1 3AA420    	lda	ddlyhs
- 00D4 A7        	ana	a
- 00D5 C2CE00    	jnz	trk1	; wait delay
- 00D8 2AA720    	lhld	dvolpt
- 00DB 46        	mov	b,m	; vol# (0/curvol)
- 00DC 2AB306    	lhld	secpntr	; HL = ptr into sec interleave table
+ 00D1 CD8820    	call	dsts	; skip this sector
+ 00D4 3AA420    	lda	ddlyhs
+ 00D7 A7        	ana	a
+ 00D8 C2D100    	jnz	trk1	; wait delay
+ 00DB 2AA720    	lhld	dvolpt
+ 00DE 46        	mov	b,m	; vol# (0/curvol)
+ 00DF 2AB606    	lhld	secpntr	; HL = ptr into sec interleave table
                 trk2:
- 00DF 0E0A      	mvi	c,10
- 00E1 CDED1E    	call	wsp1	; writes 0's
- 00E4 78        	mov	a,b	; vol#
- 00E5 CD9720    	call	dwnb
- 00E8 3AA020    	lda	dtt	; track
- 00EB CD9720    	call	dwnb
- 00EE 7E        	mov	a,m	; sec#
- 00EF CD9720    	call	dwnb
- 00F2 23        	inx	h	; incr sec pntr
- 00F3 7A        	mov	a,d	; ?chksum?
- 00F4 CD9720    	call	dwnb
- 00F7 0E10      	mvi	c,16
- 00F9 CDED1E    	call	wsp1
+ 00E2 0E0A      	mvi	c,10
+ 00E4 CDED1E    	call	wsp1	; writes 0's
+ 00E7 78        	mov	a,b	; vol#
+ 00E8 CD9720    	call	dwnb
+ 00EB 3AA020    	lda	dtt	; track
+ 00EE CD9720    	call	dwnb
+ 00F1 7E        	mov	a,m	; sec#
+ 00F2 CD9720    	call	dwnb
+ 00F5 23        	inx	h	; incr sec pntr
+ 00F6 7A        	mov	a,d	; ?chksum?
+ 00F7 CD9720    	call	dwnb
+ 00FA 0E10      	mvi	c,16
+ 00FC CDED1E    	call	wsp1
                 trk3:
- 00FC CD9720    	call	dwnb
- 00FF 0D        	dcr	c	; 256 0's
- 0100 C2FC00    	jnz	trk3
+ 00FF CD9720    	call	dwnb
+ 0102 0D        	dcr	c	; 256 0's
+ 0103 C2FF00    	jnz	trk3
                 trk4:
- 0103 AF        	xra	a
- 0104 CD9720    	call	dwnb	; end pad
- 0107 DB7F      	in	7fh
- 0109 1F        	rar
- 010A D20301    	jnc	trk4	; until sec end
- 010D 7E        	mov	a,m
- 010E B7        	ora	a	; 0 marks end of sectable
- 010F C2DF00    	jnz	trk2	; until end of track
- 0112 3AA220    	lda	ddvctl
- 0115 D37F      	out	7fh
- 0117 FB        	ei
- 0118 CD5E20    	call	dxok
- 011B 3E14      	mvi	a,20
- 011D 325320    	sta	dwhda
- 0120 210820    	lxi	h,mflag	; turn off counter ?
- 0123 7E        	mov	a,m
- 0124 E6FE      	ani	11111110b
- 0126 77        	mov	m,a
- 0127 C9        	ret
-                
+ 0106 AF        	xra	a
+ 0107 CD9720    	call	dwnb	; end pad
+ 010A DB7F      	in	7fh
+ 010C 1F        	rar
+ 010D D20601    	jnc	trk4	; until sec end
+ 0110 7E        	mov	a,m
+ 0111 B7        	ora	a	; 0 marks end of sectable
+ 0112 C2E200    	jnz	trk2	; until end of track
+ 0115 3AA220    	lda	ddvctl
+ 0118 D37F      	out	7fh
+ 011A FB        	ei
+ 011B CD5E20    	call	dxok
+ 011E 3E14      	mvi	a,20
+ 0120 325320    	sta	dwhda
+ 0123 210820    	lxi	h,mflag	; turn off counter ?
+ 0126 7E        	mov	a,m
+ 0127 E6FE      	ani	11111110b
+ 0129 77        	mov	m,a
+ 012A C9        	ret
+                
                 ; Read file from VDIP1 into 'buffer'.
                 ; Reads 1 H17 track - 10x256 sectors.
                 ; File was already opened.
                 ; Read 128 bytes at a time, as per vdrd routine.
- 0128 21BC06    vrtrk:	lxi	h,buffer
- 012B 0614      	mvi	b,20	; 20 records == 10 sectors
- 012D C5        vrt0:	push	b
- 012E CD0000    	call	vdrd
- 0131 C1        	pop	b
- 0132 D8        	rc	; error
+ 012B 21BF06    vrtrk:	lxi	h,buffer
+ 012E 0614      	mvi	b,20	; 20 records == 10 sectors
+ 0130 C5        vrt0:	push	b
+ 0131 CD0000    	call	vdrd
+ 0134 C1        	pop	b
+ 0135 D8        	rc	; error
                 	djnz	vrt0
- 0133+10F8      	DB	10H,VRT0-$-1
- 0135 C9        	ret
+ 0136+10F8      	DB	10H,VRT0-$-1
+ 0138 C9        	ret
                 
                 ; Write to file on VDIP1 from 'buffer'.
                 ; Writes 1 H17 track - 10x256 sectors.
                 ; File was already opened (for write).
                 ; Write 512 bytes at a time.
- 0136 11BC06    vwtrk:	lxi	d,buffer
- 0139 0605      	mvi	b,5	; 5x512 == 10x256
- 013B C5        vwt0:	push	b
- 013C CD4401    	call	vdwr
- 013F C1        	pop	b
- 0140 D8        	rc
+ 0139 11BF06    vwtrk:	lxi	d,buffer
+ 013C 0605      	mvi	b,5	; 5x512 == 10x256
+ 013E C5        vwt0:	push	b
+ 013F CD4701    	call	vdwr
+ 0142 C1        	pop	b
+ 0143 D8        	rc
                 	djnz	vwt0
- 0141+10F8      	DB	10H,VWT0-$-1
- 0143 C9        	ret
+ 0144+10F8      	DB	10H,VWT0-$-1
+ 0146 C9        	ret
                 
                 ; This probably should be in vdip1.asm...
                 ; DE=data buffer (dma adr)
                 ; Returns DE=next
- 0144 215D01    vdwr:	lxi	h,wrf
- 0147 CD0000    	call	vdmsg
- 014A 010002    	lxi	b,512
- 014D 1A        vdwr0:	ldax	d
- 014E CD0000    	call	vdout
- 0151 13        	inx	d
- 0152 0B        	dcx	b
- 0153 78        	mov	a,b
- 0154 B1        	ora	c
+ 0147 216001    vdwr:	lxi	h,wrf
+ 014A CD0000    	call	vdmsg
+ 014D 010002    	lxi	b,512
+ 0150 1A        vdwr0:	ldax	d
+ 0151 CD0000    	call	vdout
+ 0154 13        	inx	d
+ 0155 0B        	dcx	b
+ 0156 78        	mov	a,b
+ 0157 B1        	ora	c
                 	jrnz	vdwr0
- 0155+20F6      	DB	20H,VDWR0-$-1
- 0157 D5        	push	d
- 0158 CD0000    	call	vdend
- 015B D1        	pop	d
- 015C C9        	ret	; CY=error
+ 0158+20F6      	DB	20H,VDWR0-$-1
+ 015A D5        	push	d
+ 015B CD0000    	call	vdend
+ 015E D1        	pop	d
+ 015F C9        	ret	; CY=error
                 
- 015D 7772662000wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
+ 0160 7772662000wrf:	db	'wrf ',0,0,2,0,CR,0	; 512 byte writes
                 
                 setup:	; similar to R.MOUNT
- 0167 CDE504    	call	m$sdp	; select unit number from AIO$UNI
- 016A CD8B20    	call	dstz	; home - seek track zero
+ 016A CDE804    	call	m$sdp	; select unit number from AIO$UNI
+ 016D CD8B20    	call	dstz	; home - seek track zero
                 	; dvolpt is not set - do not change
- 016D C9        	ret
-                
-                ; Copy tracks from image file onto H17
+ 0170 C9        	ret
+                
+                ; Copy tracks from image file onto H17
                 wrimg:
- 016E CD6701    	call	setup	; select driver, etc
- 0171 AF        	xra	a
- 0172 32B606    	sta	secnum
- 0175 32B706    	sta	secnum+1
- 0178 32B506    	sta	curtrk
+ 0171 CD6A01    	call	setup	; select driver, etc
+ 0174 AF        	xra	a
+ 0175 32B906    	sta	secnum
+ 0178 32BA06    	sta	secnum+1
+ 017B 32B806    	sta	curtrk
                 wrimg1:
- 017B 2AA720    	lhld	dvolpt
- 017E 77        	mov	m,a	; volid starts at 0 for track 0
+ 017E 2AA720    	lhld	dvolpt
+ 0181 77        	mov	m,a	; volid starts at 0 for track 0
                 ;
- 017F CD2801    	call	vrtrk	; read track from image
- 0182 D8        	rc
+ 0182 CD2B01    	call	vrtrk	; read track from image
+ 0185 D8        	rc
                 ;
- 0183 3AB506    	lda	curtrk
- 0186 47        	mov	b,a
- 0187 B7        	ora	a
- 0188 CA8E01    	jz	wrimg3	; c is zero from above
- 018B 3AA606    	lda	curvol	;  on first track
+ 0186 3AB806    	lda	curtrk
+ 0189 47        	mov	b,a
+ 018A B7        	ora	a
+ 018B CA9101    	jz	wrimg3	; c is zero from above
+ 018E 3AA906    	lda	curvol	;  on first track
                 wrimg3:
- 018E 4F        	mov	c,a	;  use vol# on the rest
- 018F CDA300    	call	ftrk	; format this track (B=track, C=volume
- 0192 3AB506    	lda	curtrk
- 0195 3C        	inr	a
- 0196 32B506    	sta	curtrk	; only used to detect track 0
+ 0191 4F        	mov	c,a	;  use vol# on the rest
+ 0192 CDA300    	call	ftrk	; format this track (B=track, C=volume
+ 0195 3AB806    	lda	curtrk
+ 0198 3C        	inr	a
+ 0199 32B806    	sta	curtrk	; only used to detect track 0
                 ;
- 0199 01000A    	lxi	b,zbuf
- 019C 11BC06    	lxi	d,buffer
- 019F 2AB606    	lhld	secnum
- 01A2 CDD201    	call	wrbuf
+ 019C 01000A    	lxi	b,zbuf
+ 019F 11BF06    	lxi	d,buffer
+ 01A2 2AB906    	lhld	secnum
+ 01A5 CDD501    	call	wrbuf
                 ;
- 01A5 3AB206    	lda	opsts
- 01A8 B7        	ora	a
- 01A9 3E52      	mvi	a,'R'
- 01AB CAB001    	jz	wrimg2
- 01AE 3E65      	mvi	a,'e'
- 01B0 CDB804    wrimg2:	call	chrout
- 01B3 CDCE04    	call	ckctlc
- 01B6 DA5200    	jc	abort
+ 01A8 3AB506    	lda	opsts
+ 01AB B7        	ora	a
+ 01AC 3E52      	mvi	a,'R'
+ 01AE CAB301    	jz	wrimg2
+ 01B1 3E65      	mvi	a,'e'
+ 01B3 CDBB04    wrimg2:	call	chrout
+ 01B6 CDD104    	call	ckctlc
+ 01B9 DA5200    	jc	abort
                 
- 01B9 2AB606    	lhld	secnum
- 01BC 110A00    	lxi	d,10	; sec/trk
- 01BF 19        	dad	d
- 01C0 22B606    	shld	secnum
- 01C3 1170FE    	lxi	d,-400	; 400 sectors max
- 01C6 19        	dad	d
- 01C7 7C        	mov	a,h
- 01C8 B5        	ora	l	; last track? ZR=yes
- 01C9 3AA606    	lda	curvol
- 01CC C27B01    	jnz	wrimg1
- 01CF C34D04    	jmp	crlf
+ 01BC 2AB906    	lhld	secnum
+ 01BF 110A00    	lxi	d,10	; sec/trk
+ 01C2 19        	dad	d
+ 01C3 22B906    	shld	secnum
+ 01C6 1170FE    	lxi	d,-400	; 400 sectors max
+ 01C9 19        	dad	d
+ 01CA 7C        	mov	a,h
+ 01CB B5        	ora	l	; last track? ZR=yes
+ 01CC 3AA906    	lda	curvol
+ 01CF C27E01    	jnz	wrimg1
+ 01D2 C35004    	jmp	crlf
                 
                 ; Write sector(s) to H17
                 ; BC = buffer size
                 ; DE = buffer addr
-                ; HL = first sec#
-                wrbuf:
- 01D2 3E02      	mvi	a,2
- 01D4 32A420    	sta	ddlyhs
- 01D7 CD6D20    	call	dwrite
- 01DA 32B206    	sta	opsts
- 01DD C9        	ret
+                ; HL = first sec#
+                wrbuf:
+ 01D5 3E02      	mvi	a,2
+ 01D7 32A420    	sta	ddlyhs
+ 01DA CD6D20    	call	dwrite
+ 01DD 32B506    	sta	opsts
+ 01E0 C9        	ret
                 
                 ; Copy all tracks from H17 to image file
                 rdimg:
- 01DE CD6701    	call	setup	; select driver, etc
- 01E1 AF        	xra	a
- 01E2 32B606    	sta	secnum
- 01E5 32B706    	sta	secnum+1
+ 01E1 CD6A01    	call	setup	; select driver, etc
+ 01E4 AF        	xra	a
+ 01E5 32B906    	sta	secnum
+ 01E8 32BA06    	sta	secnum+1
                 rdimg1:
- 01E8 2AA720    	lhld	dvolpt
- 01EB 77        	mov	m,a	; volid starts at 0 for track 0
+ 01EB 2AA720    	lhld	dvolpt
+ 01EE 77        	mov	m,a	; volid starts at 0 for track 0
                 ;
- 01EC 01000A    	lxi	b,zbuf
- 01EF 11BC06    	lxi	d,buffer
- 01F2 2AB606    	lhld	secnum
- 01F5 CD2902    	call	rdbuf	; read track off diskette
+ 01EF 01000A    	lxi	b,zbuf
+ 01F2 11BF06    	lxi	d,buffer
+ 01F5 2AB906    	lhld	secnum
+ 01F8 CD2C02    	call	rdbuf	; read track off diskette
                 ;
- 01F8 CD3601    	call	vwtrk
- 01FB D8        	rc
- 01FC 3AB206    	lda	opsts
- 01FF B7        	ora	a
- 0200 3E53      	mvi	a,'S'
- 0202 CA0702    	jz	rdimg2
- 0205 3E65      	mvi	a,'e'
- 0207 CDB804    rdimg2:	call	chrout
- 020A CDCE04    	call	ckctlc
- 020D DA5200    	jc	abort
+ 01FB CD3901    	call	vwtrk
+ 01FE D8        	rc
+ 01FF 3AB506    	lda	opsts
+ 0202 B7        	ora	a
+ 0203 3E53      	mvi	a,'S'
+ 0205 CA0A02    	jz	rdimg2
+ 0208 3E65      	mvi	a,'e'
+ 020A CDBB04    rdimg2:	call	chrout
+ 020D CDD104    	call	ckctlc
+ 0210 DA5200    	jc	abort
                 
                 	; next sector...
- 0210 2AB606    	lhld	secnum
- 0213 110A00    	lxi	d,10	; sec/trk
- 0216 19        	dad	d
- 0217 22B606    	shld	secnum
- 021A 1170FE    	lxi	d,-400	; 400 sectors max
- 021D 19        	dad	d
- 021E 7C        	mov	a,h
- 021F B5        	ora	l	; last track? ZR=yes
- 0220 3AA606    	lda	curvol
- 0223 C2E801    	jnz	rdimg1
- 0226 C34D04    	jmp	crlf
+ 0213 2AB906    	lhld	secnum
+ 0216 110A00    	lxi	d,10	; sec/trk
+ 0219 19        	dad	d
+ 021A 22B906    	shld	secnum
+ 021D 1170FE    	lxi	d,-400	; 400 sectors max
+ 0220 19        	dad	d
+ 0221 7C        	mov	a,h
+ 0222 B5        	ora	l	; last track? ZR=yes
+ 0223 3AA906    	lda	curvol
+ 0226 C2EB01    	jnz	rdimg1
+ 0229 C35004    	jmp	crlf
                 
                 ; Read sector(s) from H17
                 ; BC = buffer size
                 ; DE = buffer addr
                 ; HL = first sec#
                 rdbuf:
- 0229 3E02      	mvi	a,2
- 022B 32A420    	sta	ddlyhs
- 022E CD6720    	call	dread	;
- 0231 32B206    	sta	opsts
- 0234 C9        	ret
-                
+ 022C 3E02      	mvi	a,2
+ 022E 32A420    	sta	ddlyhs
+ 0231 CD6720    	call	dread	;
+ 0234 32B506    	sta	opsts
+ 0237 C9        	ret
+                
                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
                 ; Routines for interactive, VDIP1
                 
                 ; Read a command line, parse it, execute it.
                 ; Return CY if Ctrl-C
                 comnd:
- 0235 114E05    	lxi	d,prompt
- 0238 CDDC04    	call	print
- 023B CD0104    	call	linein	; if NC, C=length
- 023E D8        	rc
- 023F 21BC06    	lxi	h,buffer
- 0242 CD7D03    	call	skipb
+ 0238 115105    	lxi	d,prompt
+ 023B CDDF04    	call	print
+ 023E CD0404    	call	linein	; if NC, C=length
+ 0241 D8        	rc
+ 0242 21BF06    	lxi	h,buffer
+ 0245 CD8003    	call	skipb
                 	jrc	comnd
- 0245+38EE      	DB	38H,COMND-$-1
- 0247 23        	inx	h
- 0248 E65F      	ani	01011111b	; toupper
- 024A FE48      	cpi	'H'
+ 0248+38EE      	DB	38H,COMND-$-1
+ 024A 23        	inx	h
+ 024B E65F      	ani	01011111b	; toupper
+ 024D FE48      	cpi	'H'
                 	jrz	chelp
- 024C+2835      	DB	28H,CHELP-$-1
- 024E FE44      	cpi	'D'
+ 024F+2835      	DB	28H,CHELP-$-1
+ 0251 FE44      	cpi	'D'
                 	jrz	cdrive
- 0250+2847      	DB	28H,CDRIVE-$-1
- 0252 FE56      	cpi	'V'
+ 0253+2847      	DB	28H,CDRIVE-$-1
+ 0255 FE56      	cpi	'V'
                 	jrz	cvolnm
- 0254+285B      	DB	28H,CVOLNM-$-1
- 0256 FE49      	cpi	'I'
+ 0257+285B      	DB	28H,CVOLNM-$-1
+ 0259 FE49      	cpi	'I'
                 	jrz	cintlv
- 0258+2865      	DB	28H,CINTLV-$-1
- 025A FE52      	cpi	'R'
+ 025B+2865      	DB	28H,CINTLV-$-1
+ 025D FE52      	cpi	'R'
                 	jrz	crestr
- 025C+2873      	DB	28H,CRESTR-$-1
- 025E FE53      	cpi	'S'
- 0260 CAFD02    	jz	csave
- 0263 116506    invcmd:	lxi	d,invld
- 0266 CDDC04    	call	print
+ 025F+2873      	DB	28H,CRESTR-$-1
+ 0261 FE53      	cpi	'S'
+ 0263 CA0003    	jz	csave
+ 0266 116806    invcmd:	lxi	d,invld
+ 0269 CDDF04    	call	print
                 	jr	chelp
- 0269+1818      	DB	18H,CHELP-$-1
+ 026C+1818      	DB	18H,CHELP-$-1
                 badcmd:
- 026B E5        	push	h
- 026C 3E22      	mvi	a,'"'
- 026E CDB804    	call	chrout
- 0271 D1        	pop	d
- 0272 CDDC04    	call	print
- 0275 3E22      	mvi	a,'"'
- 0277 CDB804    	call	chrout
- 027A CD4D04    	call	crlf
- 027D 117706    	lxi	d,syntax
- 0280 CDDC04    	call	print
+ 026E E5        	push	h
+ 026F 3E22      	mvi	a,'"'
+ 0271 CDBB04    	call	chrout
+ 0274 D1        	pop	d
+ 0275 CDDF04    	call	print
+ 0278 3E22      	mvi	a,'"'
+ 027A CDBB04    	call	chrout
+ 027D CD5004    	call	crlf
+ 0280 117A06    	lxi	d,syntax
+ 0283 CDDF04    	call	print
                 chelp:
- 0283 115805    	lxi	d,signon
- 0286 CDDC04    	call	print
- 0289 117E05    	lxi	d,help
- 028C CDDC04    	call	print
+ 0286 115B05    	lxi	d,signon
+ 0289 CDDF04    	call	print
+ 028C 118105    	lxi	d,help
+ 028F CDDF04    	call	print
                 	jr	comnd
- 028F+18A4      	DB	18H,COMND-$-1
-                
+ 0292+18A4      	DB	18H,COMND-$-1
+                
                 failvd:	; TODO: dump vdbuf?
- 0291 118606    	lxi	d,failed
- 0294 CDDC04    	call	print
+ 0294 118906    	lxi	d,failed
+ 0297 CDDF04    	call	print
                 	jr	comnd
- 0297+189C      	DB	18H,COMND-$-1
+ 029A+189C      	DB	18H,COMND-$-1
                 
- 0299 CD7D03    cdrive:	call	skipb
- 029C CD9904    	call	parsnm
+ 029C CD8003    cdrive:	call	skipb
+ 029F CD9C04    	call	parsnm
                 	jrc	badcmd
- 029F+38CA      	DB	38H,BADCMD-$-1
- 02A1 7A        	mov	a,d
- 02A2 FE03      	cpi	3	; 3 drives supported by hacking ROM routine
+ 02A2+38CA      	DB	38H,BADCMD-$-1
+ 02A4 7A        	mov	a,d
+ 02A5 FE03      	cpi	3	; 3 drives supported by hacking ROM routine
                 	jrnc	badcmd
- 02A4+30C5      	DB	30H,BADCMD-$-1
- 02A6 32A506    	sta	curdrv
- 02A9 323121    	sta	AIO$UNI
- 02AC CD8903    showup:	call	shwprm
+ 02A7+30C5      	DB	30H,BADCMD-$-1
+ 02A9 32A806    	sta	curdrv
+ 02AC 323121    	sta	AIO$UNI
+ 02AF CD8C03    showup:	call	shwprm
                 	jr	comnd
- 02AF+1884      	DB	18H,COMND-$-1
+ 02B2+1884      	DB	18H,COMND-$-1
                 
- 02B1 CD7D03    cvolnm:	call	skipb
- 02B4 CD9904    	call	parsnm
+ 02B4 CD8003    cvolnm:	call	skipb
+ 02B7 CD9C04    	call	parsnm
                 	jrc	badcmd
- 02B7+38B2      	DB	38H,BADCMD-$-1
- 02B9 7A        	mov	a,d
- 02BA 32A606    	sta	curvol
+ 02BA+38B2      	DB	38H,BADCMD-$-1
+ 02BC 7A        	mov	a,d
+ 02BD 32A906    	sta	curvol
                 	jr	showup
- 02BD+18ED      	DB	18H,SHOWUP-$-1
+ 02C0+18ED      	DB	18H,SHOWUP-$-1
                 
- 02BF CD7D03    cintlv:	call	skipb
- 02C2 CD9904    	call	parsnm
+ 02C2 CD8003    cintlv:	call	skipb
+ 02C5 CD9C04    	call	parsnm
                 	jrc	badcmd
- 02C5+38A4      	DB	38H,BADCMD-$-1
- 02C7 7A        	mov	a,d
- 02C8 FE0A      	cpi	10
+ 02C8+38A4      	DB	38H,BADCMD-$-1
+ 02CA 7A        	mov	a,d
+ 02CB FE0A      	cpi	10
                 	jrnc	badcmd
- 02CA+309F      	DB	30H,BADCMD-$-1
- 02CC CDB403    	call	mkmap
+ 02CD+309F      	DB	30H,BADCMD-$-1
+ 02CF CDB703    	call	mkmap
                 	jr	showup
- 02CF+18DB      	DB	18H,SHOWUP-$-1
+ 02D2+18DB      	DB	18H,SHOWUP-$-1
                 
                 ; Restore image file onto a diskette
- 02D1 CD7D03    crestr:	call	skipb
- 02D4 115F03    	lxi	d,opr+4
- 02D7 CD0000    	call	strcpy
- 02DA 3E0D      	mvi	a,CR	; TODO: need to trim?
- 02DC 12        	stax	d
- 02DD 215B03    	lxi	h,opr
- 02E0 CD0000    	call	vdcmd
- 02E3 DA9102    	jc	failvd	; no need for close...
- 02E6 CD8903    	call	shwprm
- 02E9 CD2903    	call	dinit
- 02EC CD6E01    	call	wrimg
+ 02D4 CD8003    crestr:	call	skipb
+ 02D7 116203    	lxi	d,opr+4
+ 02DA CD0000    	call	strcpy
+ 02DD 3E0D      	mvi	a,CR	; TODO: need to trim?
+ 02DF 12        	stax	d
+ 02E0 215E03    	lxi	h,opr
+ 02E3 CD0000    	call	vdcmd
+ 02E6 DA9402    	jc	failvd	; no need for close...
+ 02E9 CD8C03    	call	shwprm
+ 02EC CD2C03    	call	dinit
+ 02EF CD7101    	call	wrimg
                 	; CY if error
- 02EF F5        	push	psw
- 02F0 213403    	lxi	h,clf
- 02F3 CD0000    	call	vdcmd
- 02F6 F1        	pop	psw
- 02F7 DA9102    	jc	failvd
- 02FA C33502    	jmp	comnd
+ 02F2 F5        	push	psw
+ 02F3 213703    	lxi	h,clf
+ 02F6 CD0000    	call	vdcmd
+ 02F9 F1        	pop	psw
+ 02FA DA9402    	jc	failvd
+ 02FD C33802    	jmp	comnd
                 
                 ; Save diskette image in file
- 02FD CD7D03    csave:	call	skipb
- 0300 113D03    	lxi	d,opw+4
- 0303 CD0000    	call	strcpy
- 0306 3E0D      	mvi	a,CR	; TODO: need to trim?
- 0308 12        	stax	d
- 0309 213903    	lxi	h,opw
- 030C CD0000    	call	vdcmd
- 030F DA9102    	jc	failvd	; no need for close...
+ 0300 CD8003    csave:	call	skipb
+ 0303 114003    	lxi	d,opw+4
+ 0306 CD0000    	call	strcpy
+ 0309 3E0D      	mvi	a,CR	; TODO: need to trim?
+ 030B 12        	stax	d
+ 030C 213C03    	lxi	h,opw
+ 030F CD0000    	call	vdcmd
+ 0312 DA9402    	jc	failvd	; no need for close...
                 	; TODO: need to truncate?
- 0312 CD8903    	call	shwprm
- 0315 CD2903    	call	dinit
- 0318 CDDE01    	call	rdimg
+ 0315 CD8C03    	call	shwprm
+ 0318 CD2C03    	call	dinit
+ 031B CDE101    	call	rdimg
                 	; CY if error
- 031B F5        	push	psw
- 031C 213403    	lxi	h,clf
- 031F CD0000    	call	vdcmd
- 0322 F1        	pop	psw
- 0323 DA9102    	jc	failvd
- 0326 C33502    	jmp	comnd
+ 031E F5        	push	psw
+ 031F 213703    	lxi	h,clf
+ 0322 CD0000    	call	vdcmd
+ 0325 F1        	pop	psw
+ 0326 DA9402    	jc	failvd
+ 0329 C33802    	jmp	comnd
                 
- 0329 21A406    dinit:	lxi	h,isinit
- 032C 7E        	mov	a,m
- 032D D601      	sui	1
- 032F D0        	rnc
- 0330 77        	mov	m,a
- 0331 C36120    	jmp	dabort	; (2mS intr must be ON) track 0, select AIO$UNI
+ 032C 21A706    dinit:	lxi	h,isinit
+ 032F 7E        	mov	a,m
+ 0330 D601      	sui	1
+ 0332 D0        	rnc
+ 0333 77        	mov	m,a
+ 0334 C36120    	jmp	dabort	; (2mS intr must be ON) track 0, select AIO$UNI
                 
- 0334 636C660D00clf:	db	'clf',CR,0
- 0339 6F70772066opw:	db	'opw ','filename.typ',CR,0
- 034B           	ds	16	; safety margin
- 035B 6F70722066opr:	db	'opr ','filename.typ',CR,0
- 036D           	ds	16	; safety margin
+ 0337 636C660D00clf:	db	'clf',CR,0
+ 033C 6F70772066opw:	db	'opw ','filename.typ',CR,0
+ 034E           	ds	16	; safety margin
+ 035E 6F70722066opr:	db	'opr ','filename.typ',CR,0
+ 0370           	ds	16	; safety margin
                 
                 ; Skip blanks.
                 ; HL=buffer curptr
                 ; Return: CY if EOL, A=non-blank-char
- 037D 7E        skipb:	mov	a,m
- 037E FE20      	cpi	' '
+ 0380 7E        skipb:	mov	a,m
+ 0381 FE20      	cpi	' '
                 	jrz	skb0
- 0380+2804      	DB	28H,SKB0-$-1
- 0382 B7        	ora	a
- 0383 C0        	rnz
- 0384 37        	stc
- 0385 C9        	ret
- 0386 23        skb0:	inx	h
+ 0383+2804      	DB	28H,SKB0-$-1
+ 0385 B7        	ora	a
+ 0386 C0        	rnz
+ 0387 37        	stc
+ 0388 C9        	ret
+ 0389 23        skb0:	inx	h
                 	jr	skipb
- 0387+18F4      	DB	18H,SKIPB-$-1
+ 038A+18F4      	DB	18H,SKIPB-$-1
                 
-                shwprm:
- 0389 112E05    	lxi	d,msgusg
- 038C CDDC04    	call	print
- 038F 3AA506    	lda	curdrv
- 0392 C630      	adi	'0'
- 0394 CDB804    	call	chrout
- 0397 113B05    	lxi	d,usg1
- 039A CDDC04    	call	print
- 039D 3AA606    	lda	curvol
- 03A0 CD5704    	call	decout
- 03A3 114505    	lxi	d,usg2
- 03A6 CDDC04    	call	print
- 03A9 11A706    	lxi	d,sectbl
- 03AC 060A      	mvi	b,10
- 03AE CDF203    	call	aryout
- 03B1 C34D04    	jmp	crlf
+                shwprm:
+ 038C 113105    	lxi	d,msgusg
+ 038F CDDF04    	call	print
+ 0392 3AA806    	lda	curdrv
+ 0395 C630      	adi	'0'
+ 0397 CDBB04    	call	chrout
+ 039A 113E05    	lxi	d,usg1
+ 039D CDDF04    	call	print
+ 03A0 3AA906    	lda	curvol
+ 03A3 CD5A04    	call	decout
+ 03A6 114805    	lxi	d,usg2
+ 03A9 CDDF04    	call	print
+ 03AC 11AA06    	lxi	d,sectbl
+ 03AF 060A      	mvi	b,10
+ 03B1 CDF503    	call	aryout
+ 03B4 C35004    	jmp	crlf
                 
                 ; Create the 10-sector interleave table for formatting
                 ; A = interleave factor (0 => 1)
- 03B4 B7        mkmap:	ora	a
+ 03B7 B7        mkmap:	ora	a
                 	jrnz	mkm4
- 03B5+2001      	DB	20H,MKM4-$-1
- 03B7 3C        	inr	a
- 03B8 F5        mkm4:	push	psw
- 03B9 21BC06    	lxi	h,buffer
- 03BC 060A      	mvi	b,10
- 03BE AF        	xra	a
- 03BF 77        mkm1:	mov	m,a
- 03C0 23        	inx	h
- 03C1 05        	dcr	b
- 03C2 C2BF03    	jnz	mkm1
- 03C5 21BC06    	lxi	h,buffer
- 03C8 11A706    	lxi	d,sectbl
- 03CB 010000    	lxi	b,0
- 03CE 3601      mkm0:	mvi	m,1	; flag as used
- 03D0 EB        	xchg
- 03D1 71        	mov	m,c
- 03D2 23        	inx	h
+ 03B8+2001      	DB	20H,MKM4-$-1
+ 03BA 3C        	inr	a
+ 03BB F5        mkm4:	push	psw
+ 03BC 21BF06    	lxi	h,buffer
+ 03BF 060A      	mvi	b,10
+ 03C1 AF        	xra	a
+ 03C2 77        mkm1:	mov	m,a
+ 03C3 23        	inx	h
+ 03C4 05        	dcr	b
+ 03C5 C2C203    	jnz	mkm1
+ 03C8 21BF06    	lxi	h,buffer
+ 03CB 11AA06    	lxi	d,sectbl
+ 03CE 010000    	lxi	b,0
+ 03D1 3601      mkm0:	mvi	m,1	; flag as used
  03D3 EB        	xchg
- 03D4 F1        	pop	psw
- 03D5 F5        	push	psw
- 03D6 81        	add	c
- 03D7 FE0A      	cpi	10
- 03D9 DADE03    	jc	mkm3
- 03DC D60A      	sui	10
- 03DE 4F        mkm3:	mov	c,a
- 03DF 21BC06    	lxi	h,buffer
- 03E2 09        	dad	b
- 03E3 7E        mkm2:	mov	a,m
- 03E4 B7        	ora	a
- 03E5 CACE03    	jz	mkm0
- 03E8 0C        	inr	c
- 03E9 23        	inx	h
- 03EA 79        	mov	a,c
- 03EB FE0A      	cpi	10
- 03ED DAE303    	jc	mkm2
- 03F0 F1        	pop	psw
- 03F1 C9        	ret
+ 03D4 71        	mov	m,c
+ 03D5 23        	inx	h
+ 03D6 EB        	xchg
+ 03D7 F1        	pop	psw
+ 03D8 F5        	push	psw
+ 03D9 81        	add	c
+ 03DA FE0A      	cpi	10
+ 03DC DAE103    	jc	mkm3
+ 03DF D60A      	sui	10
+ 03E1 4F        mkm3:	mov	c,a
+ 03E2 21BF06    	lxi	h,buffer
+ 03E5 09        	dad	b
+ 03E6 7E        mkm2:	mov	a,m
+ 03E7 B7        	ora	a
+ 03E8 CAD103    	jz	mkm0
+ 03EB 0C        	inr	c
+ 03EC 23        	inx	h
+ 03ED 79        	mov	a,c
+ 03EE FE0A      	cpi	10
+ 03F0 DAE603    	jc	mkm2
+ 03F3 F1        	pop	psw
+ 03F4 C9        	ret
                 
                 ; Print Array of values 0-9.
                 ; DE = array, B = num elements
                 aryout:
- 03F2 3E20      	mvi	a,' '
- 03F4 CDB804    	call	chrout
- 03F7 1A        	ldax	d
- 03F8 13        	inx	d
- 03F9 C630      	adi	'0'
- 03FB CDB804    	call	chrout
+ 03F5 3E20      	mvi	a,' '
+ 03F7 CDBB04    	call	chrout
+ 03FA 1A        	ldax	d
+ 03FB 13        	inx	d
+ 03FC C630      	adi	'0'
+ 03FE CDBB04    	call	chrout
                 	djnz	aryout
- 03FE+10F2      	DB	10H,ARYOUT-$-1
- 0400 C9        	ret
+ 0401+10F2      	DB	10H,ARYOUT-$-1
+ 0403 C9        	ret
                 
                 ; input a line from console, allow backspace
                 ; returns C=num chars
                 linein:
- 0401 21BC06    	lxi	h,buffer
- 0404 0E00      	mvi	c,0	; count chars
- 0406 CDC304    lini0	call	chrin
- 0409 FE0D      	cpi	CR
+ 0404 21BF06    	lxi	h,buffer
+ 0407 0E00      	mvi	c,0	; count chars
+ 0409 CDC604    lini0	call	chrin
+ 040C FE0D      	cpi	CR
                 	jrz	linix
- 040B+281B      	DB	28H,LINIX-$-1
- 040D FE03      	cpi	CTLC	; cancel
- 040F 37        	stc
- 0410 C8        	rz
- 0411 FE08      	cpi	BS
+ 040E+281B      	DB	28H,LINIX-$-1
+ 0410 FE03      	cpi	CTLC	; cancel
+ 0412 37        	stc
+ 0413 C8        	rz
+ 0414 FE08      	cpi	BS
                 	jrz	backup
- 0413+2821      	DB	28H,BACKUP-$-1
- 0415 FE20      	cpi	' '
+ 0416+2821      	DB	28H,BACKUP-$-1
+ 0418 FE20      	cpi	' '
                 	jrc	chrnak
- 0417+3816      	DB	38H,CHRNAK-$-1
- 0419 FE7F      	cpi	'~'+1
+ 041A+3816      	DB	38H,CHRNAK-$-1
+ 041C FE7F      	cpi	'~'+1
                 	jrnc	chrnak
- 041B+3012      	DB	30H,CHRNAK-$-1
- 041D 77        chrok:	mov	m,a
- 041E 23        	inx	h
- 041F 0C        	inr	c
- 0420 FA2D04    	jm	chrovf	; 128 chars max
- 0423 CDB804    	call	chrout
+ 041E+3012      	DB	30H,CHRNAK-$-1
+ 0420 77        chrok:	mov	m,a
+ 0421 23        	inx	h
+ 0422 0C        	inr	c
+ 0423 FA3004    	jm	chrovf	; 128 chars max
+ 0426 CDBB04    	call	chrout
                 	; TODO: detect overflow...
                 	jr	lini0
- 0426+18DE      	DB	18H,LINI0-$-1
+ 0429+18DE      	DB	18H,LINI0-$-1
                 
- 0428 3600      linix:	mvi	m,0	; terminate buffer
- 042A C34D04    	jmp	crlf
+ 042B 3600      linix:	mvi	m,0	; terminate buffer
+ 042D C35004    	jmp	crlf
                 
- 042D 2B        chrovf:	dcx	h
- 042E 0D        	dcr	c
- 042F 3E07      chrnak:	mvi	a,BEL
- 0431 CDB804    	call	chrout
+ 0430 2B        chrovf:	dcx	h
+ 0431 0D        	dcr	c
+ 0432 3E07      chrnak:	mvi	a,BEL
+ 0434 CDBB04    	call	chrout
                 	jr	lini0
- 0434+18D0      	DB	18H,LINI0-$-1
+ 0437+18D0      	DB	18H,LINI0-$-1
                 backup:
- 0436 79        	mov	a,c
- 0437 B7        	ora	a
+ 0439 79        	mov	a,c
+ 043A B7        	ora	a
                 	jrz	lini0
- 0438+28CC      	DB	28H,LINI0-$-1
- 043A 0D        	dcr	c
- 043B 2B        	dcx	h
- 043C 3E08      	mvi	a,BS
- 043E CDB804    	call	chrout
- 0441 3E20      	mvi	a,' '
- 0443 CDB804    	call	chrout
- 0446 3E08      	mvi	a,BS
- 0448 CDB804    	call	chrout
+ 043B+28CC      	DB	28H,LINI0-$-1
+ 043D 0D        	dcr	c
+ 043E 2B        	dcx	h
+ 043F 3E08      	mvi	a,BS
+ 0441 CDBB04    	call	chrout
+ 0444 3E20      	mvi	a,' '
+ 0446 CDBB04    	call	chrout
+ 0449 3E08      	mvi	a,BS
+ 044B CDBB04    	call	chrout
                 	jr	lini0
- 044B+18B9      	DB	18H,LINI0-$-1
+ 044E+18B9      	DB	18H,LINI0-$-1
                 
- 044D 3E0D      crlf:	mvi	a,CR
- 044F CDB804    	call	chrout
- 0452 3E0A      	mvi	a,LF
- 0454 C3B804    	jmp	chrout
+ 0450 3E0D      crlf:	mvi	a,CR
+ 0452 CDBB04    	call	chrout
+ 0455 3E0A      	mvi	a,LF
+ 0457 C3BB04    	jmp	chrout
                 
                 ; A=number to print
                 ; leading zeroes blanked - must preserve B
                 decout:
- 0457 C5        	push	b
- 0458 0E00      	mvi	c,0
- 045A 1664      	mvi	d,100
- 045C CD7F04    	call	divide
- 045F 160A      	mvi	d,10
- 0461 CD7F04    	call	divide
- 0464 C630      	adi	'0'
- 0466 CDB804    	call	chrout
- 0469 C1        	pop	b
- 046A C9        	ret
+ 045A C5        	push	b
+ 045B 0E00      	mvi	c,0
+ 045D 1664      	mvi	d,100
+ 045F CD8204    	call	divide
+ 0462 160A      	mvi	d,10
+ 0464 CD8204    	call	divide
+ 0467 C630      	adi	'0'
+ 0469 CDBB04    	call	chrout
+ 046C C1        	pop	b
+ 046D C9        	ret
                 
                 hexout:
- 046B F5        	push	psw
- 046C 07        	rlc
- 046D 07        	rlc
- 046E 07        	rlc
+ 046E F5        	push	psw
  046F 07        	rlc
- 0470 CD7404    	call	hexdig
- 0473 F1        	pop	psw
- 0474 E60F      hexdig:	ani	0fh
- 0476 C690      	adi	90h
- 0478 27        	daa
- 0479 CE40      	aci	40h
+ 0470 07        	rlc
+ 0471 07        	rlc
+ 0472 07        	rlc
+ 0473 CD7704    	call	hexdig
+ 0476 F1        	pop	psw
+ 0477 E60F      hexdig:	ani	0fh
+ 0479 C690      	adi	90h
  047B 27        	daa
- 047C C3B804    	jmp	chrout
+ 047C CE40      	aci	40h
+ 047E 27        	daa
+ 047F C3BB04    	jmp	chrout
                 
- 047F 1E00      divide:	mvi	e,0
- 0481 92        div0:	sub	d
- 0482 1C        	inr	e
+ 0482 1E00      divide:	mvi	e,0
+ 0484 92        div0:	sub	d
+ 0485 1C        	inr	e
                 	jrnc	div0
- 0483+30FC      	DB	30H,DIV0-$-1
- 0485 82        	add	d
- 0486 1D        	dcr	e
-                	jrnz	div1
- 0487+2005      	DB	20H,DIV1-$-1
+ 0486+30FC      	DB	30H,DIV0-$-1
+ 0488 82        	add	d
+ 0489 1D        	dcr	e
+                	jrnz	div1
+ 048A+2005      	DB	20H,DIV1-$-1
                 	bit	0,c
- 0489+CB41      	DB	0CBH,0*8+C+40H
+ 048C+CB41      	DB	0CBH,0*8+C+40H
                 	jrnz	div1
- 048B+2001      	DB	20H,DIV1-$-1
- 048D C9        	ret
+ 048E+2001      	DB	20H,DIV1-$-1
+ 0490 C9        	ret
                 div1:	setb	0,c
- 048E+CBC1      	DB	0CBH,0*8+C+0C0H
- 0490 F5        	push	psw	; remainder
- 0491 3E30      	mvi	a,'0'
- 0493 83        	add	e
- 0494 CDB804    	call	chrout
- 0497 F1        	pop	psw	; remainder
- 0498 C9        	ret
+ 0491+CBC1      	DB	0CBH,0*8+C+0C0H
+ 0493 F5        	push	psw	; remainder
+ 0494 3E30      	mvi	a,'0'
+ 0496 83        	add	e
+ 0497 CDBB04    	call	chrout
+ 049A F1        	pop	psw	; remainder
+ 049B C9        	ret
                 
                 ; Parse a 8-bit (max) decimal number
                 ; HL=string, NUL terminated
                 ; Returns D=number, CY=error
                 parsnm:
- 0499 110000    	lxi	d,0
- 049C 7E        pd0:	mov	a,m
- 049D B7        	ora	a
- 049E C8        	rz
- 049F FE30      	cpi	'0'
- 04A1 D8        	rc
- 04A2 FE3A      	cpi	'9'+1
- 04A4 3F        	cmc
- 04A5 D8        	rc
- 04A6 E60F      	ani	0fh
- 04A8 5F        	mov	e,a
- 04A9 7A        	mov	a,d
- 04AA 87        	add	a	; *2
- 04AB D8        	rc	
- 04AC 87        	add	a	; *4
- 04AD D8        	rc	
- 04AE 82        	add	d	; *5
- 04AF D8        	rc	
- 04B0 87        	add	a	; *10
- 04B1 D8        	rc	
- 04B2 83        	add	e	;
- 04B3 D8        	rc
- 04B4 57        	mov	d,a
- 04B5 23        	inx	h
+ 049C 110000    	lxi	d,0
+ 049F 7E        pd0:	mov	a,m
+ 04A0 B7        	ora	a
+ 04A1 C8        	rz
+ 04A2 FE30      	cpi	'0'
+ 04A4 D8        	rc
+ 04A5 FE3A      	cpi	'9'+1
+ 04A7 3F        	cmc
+ 04A8 D8        	rc
+ 04A9 E60F      	ani	0fh
+ 04AB 5F        	mov	e,a
+ 04AC 7A        	mov	a,d
+ 04AD 87        	add	a	; *2
+ 04AE D8        	rc	
+ 04AF 87        	add	a	; *4
+ 04B0 D8        	rc	
+ 04B1 82        	add	d	; *5
+ 04B2 D8        	rc	
+ 04B3 87        	add	a	; *10
+ 04B4 D8        	rc	
+ 04B5 83        	add	e	;
+ 04B6 D8        	rc
+ 04B7 57        	mov	d,a
+ 04B8 23        	inx	h
                 	jr	pd0
- 04B6+18E4      	DB	18H,PD0-$-1
+ 04B9+18E4      	DB	18H,PD0-$-1
                 
- 04B8 F5        chrout:	push	psw
- 04B9 DBED      cono0:	in	0edh
- 04BB E620      	ani	00100000b
+ 04BB F5        chrout:	push	psw
+ 04BC DBED      cono0:	in	0edh
+ 04BE E620      	ani	00100000b
                 	jrz	cono0
- 04BD+28FA      	DB	28H,CONO0-$-1
- 04BF F1        	pop	psw
- 04C0 D3E8      	out	0e8h
- 04C2 C9        	ret
+ 04C0+28FA      	DB	28H,CONO0-$-1
+ 04C2 F1        	pop	psw
+ 04C3 D3E8      	out	0e8h
+ 04C5 C9        	ret
                 
- 04C3 DBED      chrin:	in	0edh
- 04C5 E601      	ani	00000001b
+ 04C6 DBED      chrin:	in	0edh
+ 04C8 E601      	ani	00000001b
                 	jrz	chrin
- 04C7+28FA      	DB	28H,CHRIN-$-1
- 04C9 DBE8      	in	0e8h
- 04CB E67F      	ani	01111111b
- 04CD C9        	ret
+ 04CA+28FA      	DB	28H,CHRIN-$-1
+ 04CC DBE8      	in	0e8h
+ 04CE E67F      	ani	01111111b
+ 04D0 C9        	ret
                 
- 04CE DBED      ckctlc:	in	0edh
- 04D0 E601      	ani	00000001b
- 04D2 C8        	rz
- 04D3 DBE8      	in	0e8h
- 04D5 E67F      	ani	01111111b
- 04D7 FE03      	cpi	CTLC	; cancel
- 04D9 C0        	rnz
- 04DA 37        	stc	; CY=cancel
- 04DB C9        	ret
+ 04D1 DBED      ckctlc:	in	0edh
+ 04D3 E601      	ani	00000001b
+ 04D5 C8        	rz
+ 04D6 DBE8      	in	0e8h
+ 04D8 E67F      	ani	01111111b
+ 04DA FE03      	cpi	CTLC	; cancel
+ 04DC C0        	rnz
+ 04DD 37        	stc	; CY=cancel
+ 04DE C9        	ret
                 
- 04DC 1A        print:	ldax	d
- 04DD B7        	ora	a
- 04DE C8        	rz
- 04DF CDB804    	call	chrout
- 04E2 13        	inx	d
+ 04DF 1A        print:	ldax	d
+ 04E0 B7        	ora	a
+ 04E1 C8        	rz
+ 04E2 CDBB04    	call	chrout
+ 04E5 13        	inx	d
                 	jr	print
- 04E3+18F7      	DB	18H,PRINT-$-1
+ 04E6+18F7      	DB	18H,PRINT-$-1
                 
                 ; hack to support 3 drives on H17
                 m$sdp:
- 04E5 3E0A      	mvi	a,10
- 04E7 32B420    	sta	DECNT
- 04EA 3A3121    	lda	AIO$UNI
- 04ED F5        	push	psw	; 0,1,2
- 04EE C6FE      	adi	-2	;
- 04F0 CE03      	aci	3	; 1,2,4
- 04F2 C33C1E    	jmp	rsdp+10	; hacked R.SDP for 3-drives
+ 04E8 3E0A      	mvi	a,10
+ 04EA 32B420    	sta	DECNT
+ 04ED 3A3121    	lda	AIO$UNI
+ 04F0 F5        	push	psw	; 0,1,2
+ 04F1 C6FE      	adi	-2	;
+ 04F3 CE03      	aci	3	; 1,2,4
+ 04F5 C33C1E    	jmp	rsdp+10	; hacked R.SDP for 3-drives
                 	; after this, dvolpt is setup correctly - leave it be
                 
                 ; Make a copy of the ROM's R.LPS routine, modified to neuter
                 ; the volume ID stuff.
- 04F5 CD8820    lps0:	call	dsts
+ 04F8 CD8820    lps0:	call	dsts
                 m$lps:
- 04F8 3A4E20    	lda	dlpsa	; num retries
- 04FB 47        	mov	b,a
- 04FC 3AA420    	lda	ddlyhs
- 04FF B7        	ora	a
- 0500 C2F504    	jnz	lps0
- 0503 F3        lps1:	di
- 0504 CD9120    	call	dwsc	; wait for SYNC
- 0507 DA2505    	jc	lps$err
+ 04FB 3A4E20    	lda	dlpsa	; num retries
+ 04FE 47        	mov	b,a
+ 04FF 3AA420    	lda	ddlyhs
+ 0502 B7        	ora	a
+ 0503 C2F804    	jnz	lps0
+ 0506 F3        lps1:	di
+ 0507 CD9120    	call	dwsc	; wait for SYNC
+ 050A DA2805    	jc	lps$err
                 ; just skip volume ID - do not enforce "protection".
                 ; Note: none of this works for (MMS) double-sided CP/M disks.
                 ;;;	lhld	dvolpt
- 050A CD8220    	call	drdb	; side/volume
+ 050D CD8220    	call	drdb	; side/volume
                 ;;;	cmp	m
                 ;;;	jnz	lps$err
- 050D 21A020    	lxi	h,dtt
- 0510 CD8220    	call	drdb	; track
- 0513 BE        	cmp	m
- 0514 C22505    	jnz	lps$err
- 0517 23        	inx	h
- 0518 CD8220    	call	drdb	; sector
- 051B BE        	cmp	m
- 051C C22505    	jnz	lps9
- 051F 62        	mov	h,d	; save CRC
- 0520 CD8220    	call	drdb	; CRC
- 0523 BC        	cmp	h
- 0524 C8        	rz	; all good - found sector
+ 0510 21A020    	lxi	h,dtt
+ 0513 CD8220    	call	drdb	; track
+ 0516 BE        	cmp	m
+ 0517 C22805    	jnz	lps$err
+ 051A 23        	inx	h
+ 051B CD8220    	call	drdb	; sector
+ 051E BE        	cmp	m
+ 051F C22805    	jnz	lps9
+ 0522 62        	mov	h,d	; save CRC
+ 0523 CD8220    	call	drdb	; CRC
+ 0526 BC        	cmp	h
+ 0527 C8        	rz	; all good - found sector
                 	; CRC error
                 lps$err:
                 	; update counters?
- 0525 CD8820    lps9:	call	dsts
- 0528 05        	dcr	b
- 0529 C20305    	jnz	lps1
- 052C 37        	stc	; out of chances - return failure
- 052D C9        	ret
+ 0528 CD8820    lps9:	call	dsts
+ 052B 05        	dcr	b
+ 052C C20605    	jnz	lps1
+ 052F 37        	stc	; out of chances - return failure
+ 0530 C9        	ret
                 
- 052E 5573696E67msgusg:	db	'Using drive ',0
- 053B 2C20766F6Cusg1:	db	', volume ',0
- 0545 2C20736563usg2:	db	', secmap',0
- 054E 4838445554prompt:	db	'H8DUTIL> ',0
- 0558 4838445554signon:	db	'H8DUTIL v',(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0',0
- 0565 202D205479phelp:	db		' - Type H(cr) for help',CR,LF,0
- 057E 20436F6D6Dhelp:	db		' Commands:',CR,LF
- 058A 202044206E	db	'  D n     set Drive number',CR,LF
- 05A6 202056206E	db	'  V n     set Volume ID',CR,LF
- 05BF 202049206E	db	'  I n     set sector Interleave',CR,LF
- 05E0 2020522066	db	'  R file  Restore image from file (Recreate floppy)',CR,LF
- 0615 2020532066	db	'  S file  Save image to file (Save floppy)',CR,LF
- 0641 2020482020	db	'  H       Print this help message',CR,LF
- 0664 00        	db	0
- 0665 496E76616Cinvld:	db	'Invalid command',CR,LF,0
- 0677 53796E7461syntax:	db	'Syntax error',CR,LF,0
- 0686 436F6D6D61failed:	db	'Command failed',CR,LF,0
- 0697 202A61626Fabrted:	db	' *aborted*',CR,LF,0
+ 0531 5573696E67msgusg:	db	'Using drive ',0
+ 053E 2C20766F6Cusg1:	db	', volume ',0
+ 0548 2C20736563usg2:	db	', secmap',0
+ 0551 4838445554prompt:	db	'H8DUTIL> ',0
+ 055B 4838445554signon:	db	'H8DUTIL v',(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0',0
+ 0568 202D205479phelp:	db		' - Type H(cr) for help',CR,LF,0
+ 0581 20436F6D6Dhelp:	db		' Commands:',CR,LF
+ 058D 202044206E	db	'  D n     set Drive number',CR,LF
+ 05A9 202056206E	db	'  V n     set Volume ID',CR,LF
+ 05C2 202049206E	db	'  I n     set sector Interleave',CR,LF
+ 05E3 2020522066	db	'  R file  Restore image from file (Recreate floppy)',CR,LF
+ 0618 2020532066	db	'  S file  Save image to file (Save floppy)',CR,LF
+ 0644 2020482020	db	'  H       Print this help message',CR,LF
+ 0667 00        	db	0
+ 0668 496E76616Cinvld:	db	'Invalid command',CR,LF,0
+ 067A 53796E7461syntax:	db	'Syntax error',CR,LF,0
+ 0689 436F6D6D61failed:	db	'Command failed',CR,LF,0
+ 069A 202A61626Fabrted:	db	' *aborted*',CR,LF,0
                 
- 06A4 00        isinit:	db	0
- 06A5 00        curdrv:	db	0
- 06A6 00        curvol:	db	0
- 06A7 0001020304sectbl:	db	0,1,2,3,4,5,6,7,8,9
- 06B1 00        secend:	db	0	; still used?
+ 06A7 00        isinit:	db	0
+ 06A8 00        curdrv:	db	0
+ 06A9 00        curvol:	db	0
+ 06AA 0001020304sectbl:	db	0,1,2,3,4,5,6,7,8,9
+ 06B4 00        secend:	db	0	; still used?
                 
- 06B2 00        opsts:	db	0
- 06B3 A706      secpntr: dw	sectbl
- 06B5 00        curtrk:	db	0
- 06B6 0000      secnum:	dw	0	; 100K disk = 400 sectors max
- 06B8 FF00FF00  dummy:	db	0ffh,0,0ffh,0	; insure async alignment
+ 06B5 00        opsts:	db	0
+ 06B6 AA06      secpntr: dw	sectbl
+ 06B8 00        curtrk:	db	0
+ 06B9 0000      secnum:	dw	0	; 100K disk = 400 sectors max
+ 06BB FF00FF00  dummy:	db	0ffh,0,0ffh,0	; insure async alignment
                 
                 dbend:
                 buffer:
- 06BC           	ds	zbuf
+ 06BF           	ds	zbuf
                 
- 10BC           vdbuf:	ds	512
-                
- 12BC           	ds	zstk
+ 10BF           vdbuf:	ds	512
+                
+ 12BF           	ds	zstk
                 spint:
                 
- 13BC           	end
-
+ 13BF           	end
+

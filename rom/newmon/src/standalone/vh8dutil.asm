@@ -1,6 +1,6 @@
 ; Standalone utility to dump core for CP/M 3 (H8x512K) on VDIP1
 ; linked with vdip1.rel
-VERN	equ	012h
+VERN	equ	013h
 
 	extrn	strcpy,strcmp,sync,runout
 	extrn	vdcmd,vdend,vdrd,vdmsg,vdout,vdprmp
@@ -160,10 +160,11 @@ ftrk:
 	mvi	a,2
 	sta	ddlyhs
 	xra	a
-	out	7fh
+	out	7fh	; de-selects drive, motors off, ... (why?)
 	sta	ddvctl
 	sta	ddlymo
 	ei
+	call	m$sdp	; hacked sdp - restart motors, too
 	call	dsdt	; seek to track (dis intrs)
 	xra	a
 	out	7eh
